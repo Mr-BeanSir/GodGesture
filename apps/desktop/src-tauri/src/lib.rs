@@ -96,6 +96,94 @@ fn engine_is_paused(state: tauri::State<Arc<EngineShared>>) -> bool {
     state.is_paused()
 }
 
+/// 托盘:暂停/继续 · 设置 · 退出(对齐 WGestures 托盘菜单)
+#[cfg(windows)]
+fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::TrayIconBuilder;
+
+    let pause_item = MenuItemBuilder::with_id("pause", "暂停").build(app)?;
+    let settings_item = MenuItemBuilder::with_id("settings", "设置").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&pause_item)
+        .separator()
+        .item(&settings_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+    let _tray = TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().cloned().expect("app icon missing"))
+        .tooltip(format!("GodGesture {}", env!("CARGO_PKG_VERSION")))
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(move |app, event| match event.id().as_ref() {
+            "pause" => {
+                let paused = shared.toggle_paused();
+                let _ = pause_item.set_text(if paused { "继续" } else { "暂停" });
+                log::info!("手势{}", if paused { "已暂停" } else { "已继续" });
+            }
+            "settings" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // 双击打开设置
+            if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                if let Some(win) = tray.app_handle().get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+/// 全局暂停/继续快捷键(默认 Ctrl+Shift+Alt+W,配置可改)
+#[cfg(windows)]
+fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+    let hk = {
+        let cfg = &shared_config_pause_hotkey(&shared);
+        let mods = cfg.0.join("+");
+        if mods.is_empty() {
+            cfg.1.clone()
+        } else {
+            format!("{}+{}", mods, cfg.1)
+        }
+    };
+    let shared_hk = Arc::clone(&shared);
+    let result = app.handle().plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(move |_app, _shortcut, event| {
+                if event.state() == ShortcutState::Pressed {
+                    let paused = shared_hk.toggle_paused();
+                    log::info!("快捷键: 手势{}", if paused { "已暂停" } else { "已继续" });
+                }
+            })
+            .build(),
+    );
+    if result.is_ok() {
+        if let Err(e) = app.handle().global_shortcut().register(hk.as_str()) {
+            log::warn!("暂停快捷键注册失败({hk}): {e}");
+        }
+    }
+}
+
+#[cfg(windows)]
+fn shared_config_pause_hotkey(shared: &Arc<EngineShared>) -> (Vec<String>, String) {
+    let hk = shared.pause_hotkey();
+    (hk.0, hk.1)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -124,6 +212,8 @@ pub fn run() {
                 let overlay = platform::windows::overlay::Overlay::spawn();
                 spawn_engine_consumer(rx, Arc::clone(&shared), overlay);
                 let hook = platform::windows::start(Arc::clone(&shared));
+                setup_tray(app, Arc::clone(&shared))?;
+                setup_pause_hotkey(app, Arc::clone(&shared));
                 // 钩子随应用生存期存活
                 app.manage(shared);
                 app.manage(hook);

@@ -115,6 +115,13 @@ impl EngineShared {
         self.finder.lock().replace_config(config);
     }
 
+    /// 暂停/继续快捷键 (修饰键列表, 主键)
+    pub fn pause_hotkey(&self) -> (Vec<String>, String) {
+        let finder = self.finder.lock();
+        let hk = &finder.config().preferences.pause_hotkey;
+        (hk.modifiers.clone(), hk.key.clone())
+    }
+
     /// 触发键对应的轨迹配色 (主色, 未识别色) 与显示开关 (show_path, fade_out)
     pub fn trail_style_for(&self, trigger: TriggerButton) -> (u32, u32, bool, bool) {
         let finder = self.finder.lock();
