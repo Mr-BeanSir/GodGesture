@@ -4,8 +4,9 @@
  * 打开时调用 capture_start,订阅 "gesture-captured" 事件实时刷新助记符;
  * 关闭 / 取消时调用 capture_cancel 并退订。识别到与现有意图冲突时给出覆盖提示。
  */
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
 import type {
   GestureIntent,
   GestureSpec,
@@ -37,7 +38,15 @@ const visible = computed({
 });
 
 const captured = ref<{ trigger: TriggerButton; strokes: StrokeDirection[] } | null>(null);
+const cancelError = ref<string | null>(null);
+const startError = ref<string | null>(null);
+const lifecycleBusy = ref(false);
+
 let unlisten: (() => void) | null = null;
+let generation = 0;
+let queuedOperations = 0;
+let unmounted = false;
+let lifecycle = Promise.resolve();
 
 const capturedSpec = computed<GestureSpec | null>(() =>
   captured.value
@@ -57,34 +66,128 @@ const conflict = computed<GestureIntent | null>(() => {
 
 const liveMnemonic = computed(() => (capturedSpec.value ? gestureMnemonic(capturedSpec.value) : ""));
 
-function onCaptured(g: CapturedGesture) {
+function onCaptured(g: CapturedGesture, epoch: number) {
+  if (unmounted || epoch !== generation || !props.modelValue) return;
   captured.value = {
     trigger: g.trigger as TriggerButton,
     strokes: g.strokes as StrokeDirection[],
   };
 }
 
-async function start() {
-  captured.value = null;
-  unlisten = await backend.onGestureCaptured(onCaptured);
-  await backend.captureStart();
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
-async function stop() {
+function detachListener(listener: (() => void) | null = unlisten) {
+  if (!listener) return;
+  if (unlisten === listener) unlisten = null;
+  try {
+    listener();
+  } catch (error) {
+    // A failed unlisten must be observable, even though capture_cancel remains
+    // the authoritative native cleanup below.
+    startError.value = errorMessage(error);
+    console.error("Failed to remove gesture capture listener", error);
+  }
+}
+
+async function cancelRecording(): Promise<boolean> {
+  detachListener();
   try {
     await backend.captureCancel();
-  } catch {
-    /* ignore */
-  }
-  if (unlisten) {
-    unlisten();
-    unlisten = null;
+    cancelError.value = null;
+    return true;
+  } catch (error) {
+    const wasPending = cancelError.value !== null;
+    cancelError.value = errorMessage(error);
+    console.error("Failed to cancel gesture recording", error);
+    if (!wasPending) ElMessage.error(t("capture.cancelError"));
+    return false;
   }
 }
 
-async function restart() {
-  await stop();
-  await start();
+function isCurrentOpen(epoch: number): boolean {
+  return !unmounted && epoch === generation && props.modelValue;
+}
+
+async function start(epoch: number) {
+  if (!isCurrentOpen(epoch)) return;
+
+  captured.value = null;
+  startError.value = null;
+
+  // If a prior cancel failed, do not layer a new recording session over an
+  // unknown native state. A later open/restart doubles as the retained retry.
+  if (cancelError.value && !(await cancelRecording())) return;
+  if (!isCurrentOpen(epoch)) return;
+
+  let listener: (() => void) | null = null;
+  try {
+    listener = await backend.onGestureCaptured((gesture) => onCaptured(gesture, epoch));
+    if (!isCurrentOpen(epoch)) {
+      detachListener(listener);
+      await cancelRecording();
+      return;
+    }
+    unlisten = listener;
+
+    await backend.captureStart();
+    if (!isCurrentOpen(epoch)) {
+      detachListener(listener);
+      await cancelRecording();
+    }
+  } catch (error) {
+    detachListener(listener);
+    // capture_start may have reached Rust before its promise rejected. Always
+    // issue the matching cancel so recording cannot remain stuck globally.
+    await cancelRecording();
+    startError.value = errorMessage(error);
+    console.error("Failed to start gesture recording", error);
+  }
+}
+
+function enqueue(operation: () => Promise<void>): void {
+  queuedOperations += 1;
+  lifecycleBusy.value = true;
+  const run = lifecycle.then(operation, operation).catch((error) => {
+    startError.value = errorMessage(error);
+    console.error("Unexpected gesture capture lifecycle failure", error);
+  });
+  lifecycle = run.finally(() => {
+    queuedOperations -= 1;
+    lifecycleBusy.value = queuedOperations > 0;
+  });
+}
+
+function requestStart() {
+  const epoch = ++generation;
+  enqueue(() => start(epoch));
+}
+
+function requestStop() {
+  ++generation;
+  enqueue(async () => {
+    await cancelRecording();
+  });
+}
+
+function restart() {
+  const epoch = ++generation;
+  enqueue(async () => {
+    const stopped = await cancelRecording();
+    if (stopped && isCurrentOpen(epoch)) await start(epoch);
+  });
+}
+
+function retryCleanup() {
+  if (props.modelValue) requestStart();
+  else requestStop();
 }
 
 function onConfirm() {
@@ -96,13 +199,33 @@ function onConfirm() {
 
 watch(
   () => props.modelValue,
-  (open) => {
-    if (open) void start();
-    else void stop();
+  (open, wasOpen) => {
+    if (open) requestStart();
+    else if (wasOpen) requestStop();
   },
+  { immediate: true },
 );
 
-onBeforeUnmount(() => void stop());
+function onVisibilityChange() {
+  if (document.visibilityState === "hidden") requestStop();
+  else if (props.modelValue) requestStart();
+}
+
+function onPageHide() {
+  requestStop();
+}
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pagehide", onPageHide);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  window.removeEventListener("pagehide", onPageHide);
+  unmounted = true;
+  requestStop();
+});
 </script>
 
 <template>
@@ -131,6 +254,29 @@ onBeforeUnmount(() => void stop());
         :title="t('capture.conflictTitle')"
       >
         {{ t("capture.conflictMessage", { mnemonic: liveMnemonic, name: conflict.name }) }}
+      </el-alert>
+
+      <el-alert
+        v-if="cancelError"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="t('capture.cancelError')"
+      >
+        <div class="capture__error-detail">{{ cancelError }}</div>
+        <el-button link type="danger" :loading="lifecycleBusy" @click="retryCleanup">
+          {{ t("capture.retryCleanup") }}
+        </el-button>
+      </el-alert>
+
+      <el-alert
+        v-else-if="startError"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="t('capture.startError')"
+      >
+        {{ startError }}
       </el-alert>
     </div>
 
@@ -172,5 +318,8 @@ onBeforeUnmount(() => void stop());
 }
 .capture__waiting {
   color: var(--el-text-color-placeholder);
+}
+.capture__error-detail {
+  overflow-wrap: anywhere;
 }
 </style>

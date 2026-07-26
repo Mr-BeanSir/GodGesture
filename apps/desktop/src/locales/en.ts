@@ -148,6 +148,9 @@ export default {
     conflictMessage: "Gesture {mnemonic} is already used by \"{name}\". Overwrite it? (the old intent will be deleted)",
     overwrite: "Overwrite",
     restart: "Restart recording",
+    startError: "Could not start gesture recording",
+    cancelError: "Could not stop gesture recording. Retry before continuing.",
+    retryCleanup: "Retry cleanup",
   },
   command: {
     typeLabel: "Command type",

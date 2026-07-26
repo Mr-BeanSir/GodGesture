@@ -148,6 +148,9 @@ export default {
     conflictMessage: "手势 {mnemonic} 已被「{name}」使用,覆盖它吗?(原意图将被删除)",
     overwrite: "覆盖",
     restart: "重新录制",
+    startError: "无法开始录制手势",
+    cancelError: "无法停止录制手势，请先重试清理。",
+    retryCleanup: "重试清理",
   },
   command: {
     typeLabel: "命令类型",

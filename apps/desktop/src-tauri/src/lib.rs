@@ -417,6 +417,21 @@ pub fn run() {
             pick_window,
             app_icon,
         ])
+        .on_window_event(|window, event| {
+            #[cfg(windows)]
+            if window.label() == "main"
+                && matches!(
+                    event,
+                    tauri::WindowEvent::CloseRequested { .. }
+                        | tauri::WindowEvent::Destroyed
+                )
+            {
+                // Frontend cleanup is asynchronous and may be interrupted by
+                // the WebView closing. Keep recording bounded by the settings
+                // window lifetime even when capture_cancel never reaches IPC.
+                window.state::<Arc<EngineShared>>().cancel_recording();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
