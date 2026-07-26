@@ -2,6 +2,7 @@
 
 pub mod hook;
 pub mod input;
+pub mod overlay;
 pub mod window;
 
 use crate::engine::intents::ForegroundApp;

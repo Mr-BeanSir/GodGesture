@@ -6,9 +6,14 @@ use engine::runtime::{EngineMsg, EngineShared};
 use std::sync::Arc;
 use tauri::Manager;
 
-/// 引擎产物消费线程:M1 先落日志与命令分发骨架;
-/// 覆盖层渲染与命令执行器(M2)都从这里接出去。
-fn spawn_engine_consumer(rx: crossbeam_channel::Receiver<EngineMsg>) {
+/// 引擎产物消费线程:驱动轨迹覆盖层;命令执行器(M2)也从这里接出去。
+#[cfg(windows)]
+fn spawn_engine_consumer(
+    rx: crossbeam_channel::Receiver<EngineMsg>,
+    shared: Arc<EngineShared>,
+    overlay: platform::windows::overlay::Overlay,
+) {
+    use platform::windows::overlay::{OverlayCmd, TrailColors};
     std::thread::Builder::new()
         .name("gg-engine-consumer".into())
         .spawn(move || {
@@ -16,10 +21,21 @@ fn spawn_engine_consumer(rx: crossbeam_channel::Receiver<EngineMsg>) {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
+                        let (main, unrecognized, show_path, fade_out) =
+                            shared.trail_style_for(trigger);
+                        overlay.send(OverlayCmd::Begin {
+                            origin,
+                            colors: TrailColors { main, unrecognized },
+                            show_path,
+                            fade_out,
+                        });
                     }
-                    EngineMsg::PathGrown { .. } => {}
+                    EngineMsg::PathGrown { point } => {
+                        overlay.send(OverlayCmd::Grow(point));
+                    }
                     EngineMsg::RecognitionChanged(name) => {
                         log::debug!("识别变化: {name:?}");
+                        overlay.send(OverlayCmd::Recognized(name.is_some()));
                     }
                     EngineMsg::ModifierFired { intent, modifier } => {
                         log::info!(
@@ -28,20 +44,24 @@ fn spawn_engine_consumer(rx: crossbeam_channel::Receiver<EngineMsg>) {
                         );
                         // TODO(M2): execute_on_modifier 意图立即执行
                     }
-                    EngineMsg::PathEnded { intent, modifier } => match intent {
-                        Some(intent) => {
-                            log::info!(
-                                "手势完成: [{}] {} (修饰 {modifier:?}) → 命令 {:?}",
-                                intent.gesture.trigger.mnemonic_dirs(&intent.gesture.strokes),
-                                intent.name,
-                                intent.command
-                            );
-                            // TODO(M2): 命令执行器
+                    EngineMsg::PathEnded { intent, modifier } => {
+                        overlay.send(OverlayCmd::End);
+                        match intent {
+                            Some(intent) => {
+                                log::info!(
+                                    "手势完成: [{}] {} (修饰 {modifier:?}) → 命令 {:?}",
+                                    intent.gesture.trigger.mnemonic_dirs(&intent.gesture.strokes),
+                                    intent.name,
+                                    intent.command
+                                );
+                                // TODO(M2): 命令执行器
+                            }
+                            None => log::debug!("手势结束: 无匹配意图"),
                         }
-                        None => log::debug!("手势结束: 无匹配意图"),
-                    },
+                    }
                     EngineMsg::PathCancelled => {
                         log::debug!("手势取消");
+                        overlay.send(OverlayCmd::Cancel);
                     }
                 }
             }
@@ -101,7 +121,8 @@ pub fn run() {
             {
                 let platform = Arc::new(platform::windows::WindowsPlatform);
                 let (shared, rx) = EngineShared::new(config, platform);
-                spawn_engine_consumer(rx);
+                let overlay = platform::windows::overlay::Overlay::spawn();
+                spawn_engine_consumer(rx, Arc::clone(&shared), overlay);
                 let hook = platform::windows::start(Arc::clone(&shared));
                 // 钩子随应用生存期存活
                 app.manage(shared);

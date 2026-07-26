@@ -115,6 +115,23 @@ impl EngineShared {
         self.finder.lock().replace_config(config);
     }
 
+    /// 触发键对应的轨迹配色 (主色, 未识别色) 与显示开关 (show_path, fade_out)
+    pub fn trail_style_for(&self, trigger: TriggerButton) -> (u32, u32, bool, bool) {
+        let finder = self.finder.lock();
+        let v = &finder.config().preferences.gesture_view;
+        let main = match trigger {
+            TriggerButton::Right => parse_argb(&v.right_button_path_color),
+            TriggerButton::Middle => parse_argb(&v.middle_button_path_color),
+            TriggerButton::X1 | TriggerButton::X2 => parse_argb(&v.x_button_path_color),
+        };
+        (
+            main,
+            parse_argb(&v.unrecognized_path_color),
+            v.show_path,
+            v.fade_out,
+        )
+    }
+
     /// 钩子线程入口:裁决是否吞事件
     pub fn on_hook_event(self: &Arc<Self>, input: Input) -> bool {
         let now = Instant::now();
@@ -275,6 +292,13 @@ impl TrackerHost for HostImpl<'_> {
             .as_ref()
             .is_some_and(|s| !s.parser.strokes().is_empty())
     }
+}
+
+/// "#AARRGGBB" → u32(解析失败返回不透明白,便于肉眼发现配置错误)
+fn parse_argb(s: &str) -> u32 {
+    s.strip_prefix('#')
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        .unwrap_or(0xFFFFFFFF)
 }
 
 fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
