@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { TokenService, sha256Hex } from './token.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Env } from '../config/env';
+import { Prisma } from '@prisma/client';
 
 describe('TokenService(刷新令牌轮换)', () => {
   const now = Date.now();
@@ -129,6 +130,28 @@ describe('TokenService(刷新令牌轮换)', () => {
     await expect(service.rotateRefreshToken(raw)).rejects.toThrow(
       UnauthorizedException,
     );
+    expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('轮换期间设备被删除导致 P2025 → 401 invalid_refresh_token', async () => {
+    const raw = 'deleted-device-token';
+    prisma.refreshToken.findUnique.mockResolvedValue(activeRecord(raw));
+    prisma.device.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('record not found', {
+        code: 'P2025',
+        clientVersion: '6.19.3',
+        meta: { modelName: 'Device' },
+      }),
+    );
+
+    const error = await service
+      .rotateRefreshToken(raw)
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toEqual({
+      error: 'invalid_refresh_token',
+    });
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
 });

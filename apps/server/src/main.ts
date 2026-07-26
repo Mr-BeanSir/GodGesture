@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { PrismaExceptionFilter } from './common/prisma-exception.filter';
 import type { Env } from './config/env';
 
 async function bootstrap(): Promise<void> {
@@ -11,6 +12,7 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
+  app.useGlobalFilters(new PrismaExceptionFilter());
 
   // CORS:Web 控制台源 + 额外配置源;Tauri 桌面端 WebView 源默认放行
   const origins = new Set<string>([

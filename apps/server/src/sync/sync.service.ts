@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type {
@@ -13,6 +14,7 @@ import type {
   RestoreSnapshotResponse,
 } from '@godgesture/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { isPrismaError } from '../common/prisma-exception.filter';
 
 /** 快照留存条数:每用户保留最新 100 个,推送事务内裁剪 */
 export const SNAPSHOT_RETENTION = 100;
@@ -50,16 +52,61 @@ export class SyncService {
     deviceId: string,
     dto: PushConfigRequest,
   ): Promise<PushConfigResponse> {
-    return this.prisma.$transaction(async (tx) => {
-      const result = await this.advanceVersion(
-        tx,
-        userId,
-        deviceId,
-        dto.baseVersion,
-        dto.document,
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const result = await this.advanceVersion(
+          tx,
+          userId,
+          deviceId,
+          dto.baseVersion,
+          dto.document,
+        );
+        return result;
+      });
+    } catch (error) {
+      return this.rethrowSyncWriteError(error, userId);
+    }
+  }
+
+  private isVersionConflict(error: unknown): boolean {
+    if (error instanceof ConflictException) {
+      const response = error.getResponse();
+      return (
+        typeof response === 'object' &&
+        response !== null &&
+        'error' in response &&
+        response.error === 'version_conflict'
       );
-      return result;
-    });
+    }
+    if (!isPrismaError(error, 'P2002')) return false;
+    const modelName = error.meta?.modelName;
+    return modelName === 'UserConfig' || modelName === 'ConfigSnapshot';
+  }
+
+  private async rethrowSyncWriteError(
+    error: unknown,
+    userId: string,
+  ): Promise<never> {
+    if (this.isVersionConflict(error)) {
+      // A P2002 aborts PostgreSQL's transaction, so re-read only after the
+      // rollback. This also reports the winning version for update CAS races.
+      const current = await this.prisma.userConfig.findUnique({
+        where: { userId },
+        select: { version: true },
+      });
+      if (current) {
+        throw new ConflictException({
+          error: 'version_conflict',
+          serverVersion: current.version,
+        });
+      }
+    }
+    if (isPrismaError(error, 'P2003')) {
+      // The user/device was valid in the guard but disappeared before the
+      // snapshot insert. Treat revocation as an authentication failure.
+      throw new UnauthorizedException({ error: 'invalid_access_token' });
+    }
+    throw error;
   }
 
   async listSnapshots(userId: string): Promise<ListSnapshotsResponse> {
@@ -85,23 +132,27 @@ export class SyncService {
     deviceId: string,
     version: number,
   ): Promise<RestoreSnapshotResponse> {
-    return this.prisma.$transaction(async (tx) => {
-      const snapshot = await tx.configSnapshot.findUnique({
-        where: { userId_version: { userId, version } },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const snapshot = await tx.configSnapshot.findUnique({
+          where: { userId_version: { userId, version } },
+        });
+        if (!snapshot) {
+          throw new NotFoundException({ error: 'snapshot_not_found' });
+        }
+        const current = await tx.userConfig.findUnique({ where: { userId } });
+        // 回滚以服务端当前版本为基准推进,不做乐观并发拒绝
+        return this.advanceVersion(
+          tx,
+          userId,
+          deviceId,
+          current?.version ?? 0,
+          snapshot.document as ConfigDocument,
+        );
       });
-      if (!snapshot) {
-        throw new NotFoundException({ error: 'snapshot_not_found' });
-      }
-      const current = await tx.userConfig.findUnique({ where: { userId } });
-      // 回滚以服务端当前版本为基准推进,不做乐观并发拒绝
-      return this.advanceVersion(
-        tx,
-        userId,
-        deviceId,
-        current?.version ?? 0,
-        snapshot.document as ConfigDocument,
-      );
-    });
+    } catch (error) {
+      return this.rethrowSyncWriteError(error, userId);
+    }
   }
 
   /**

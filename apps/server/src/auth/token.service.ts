@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { TokenPairResponse } from '@godgesture/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Env } from '../config/env';
+import { isPrismaError } from '../common/prisma-exception.filter';
 
 export function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
@@ -84,10 +85,17 @@ export class TokenService {
       await this.revokeDeviceTokens(record.deviceId);
       throw new UnauthorizedException({ error: 'refresh_token_reused' });
     }
-    await this.prisma.device.update({
-      where: { id: record.deviceId },
-      data: { lastSeenAt: new Date() },
-    });
+    try {
+      await this.prisma.device.update({
+        where: { id: record.deviceId },
+        data: { lastSeenAt: new Date() },
+      });
+    } catch (error) {
+      if (isPrismaError(error, 'P2025')) {
+        throw new UnauthorizedException({ error: 'invalid_refresh_token' });
+      }
+      throw error;
+    }
     return this.issueTokenPair(record.device.userId, record.deviceId);
   }
 

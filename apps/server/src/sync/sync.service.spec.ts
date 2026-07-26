@@ -1,10 +1,26 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { ConfigDocument } from '@godgesture/shared';
 import { SyncService, SNAPSHOT_RETENTION } from './sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** 文档内容本身不在 Service 层校验(由控制器的 ZodValidationPipe 负责) */
 const doc = { formatVersion: 1, apps: [] } as unknown as ConfigDocument;
+
+function prismaError(
+  code: string,
+  modelName: string,
+): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('test database failure', {
+    code,
+    clientVersion: '6.19.3',
+    meta: { modelName },
+  });
+}
 
 describe('SyncService(乐观并发 + 快照)', () => {
   let tx: {
@@ -126,6 +142,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
 
     it('baseVersion 落后 → 409 version_conflict(附 serverVersion),不写库', async () => {
       tx.userConfig.findUnique.mockResolvedValue({ version: 6 });
+      prisma.userConfig.findUnique.mockResolvedValue({ version: 7 });
 
       const err = await service
         .push('user-1', 'dev-1', { baseVersion: 4, document: doc })
@@ -134,7 +151,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
       expect(err).toBeInstanceOf(ConflictException);
       expect((err as ConflictException).getResponse()).toEqual({
         error: 'version_conflict',
-        serverVersion: 6,
+        serverVersion: 7,
       });
       expect(tx.userConfig.updateMany).not.toHaveBeenCalled();
       expect(tx.configSnapshot.create).not.toHaveBeenCalled();
@@ -143,17 +160,78 @@ describe('SyncService(乐观并发 + 快照)', () => {
     it('事务窗口内被并发写抢先(updateMany 命中 0 行)→ 409', async () => {
       tx.userConfig.findUnique.mockResolvedValue({ version: 4 });
       tx.userConfig.updateMany.mockResolvedValue({ count: 0 });
+      prisma.userConfig.findUnique.mockResolvedValue({ version: 5 });
+
+      const error = await service
+        .push('user-1', 'dev-1', { baseVersion: 4, document: doc })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toEqual({
+        error: 'version_conflict',
+        serverVersion: 5,
+      });
+      expect(tx.configSnapshot.create).not.toHaveBeenCalled();
+    });
+
+    it('并发首次创建的唯一约束失败 → 回滚后重读 winner 并返回 409', async () => {
+      tx.userConfig.findUnique.mockResolvedValue(null);
+      tx.userConfig.create.mockRejectedValue(
+        prismaError('P2002', 'UserConfig'),
+      );
+      prisma.userConfig.findUnique.mockResolvedValue({ version: 1 });
+
+      const error = await service
+        .push('user-1', 'dev-1', { baseVersion: 0, document: doc })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toEqual({
+        error: 'version_conflict',
+        serverVersion: 1,
+      });
+      expect(prisma.userConfig.findUnique).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        select: { version: true },
+      });
+      expect(tx.configSnapshot.create).not.toHaveBeenCalled();
+    });
+
+    it('guard 后设备被删除导致快照 FK 失败 → 401 会话错误', async () => {
+      tx.userConfig.findUnique.mockResolvedValue({ version: 2 });
+      tx.configSnapshot.create.mockRejectedValue(
+        prismaError('P2003', 'ConfigSnapshot'),
+      );
+
+      const error = await service
+        .push('user-1', 'deleted-device', {
+          baseVersion: 2,
+          document: doc,
+        })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as UnauthorizedException).getResponse()).toEqual({
+        error: 'invalid_access_token',
+      });
+    });
+
+    it('非同步约束的 P2002 不猜测为版本冲突', async () => {
+      const databaseError = prismaError('P2002', 'OAuthAccount');
+      tx.userConfig.findUnique.mockRejectedValue(databaseError);
 
       await expect(
-        service.push('user-1', 'dev-1', { baseVersion: 4, document: doc }),
-      ).rejects.toThrow(ConflictException);
-      expect(tx.configSnapshot.create).not.toHaveBeenCalled();
+        service.push('user-1', 'dev-1', { baseVersion: 0, document: doc }),
+      ).rejects.toBe(databaseError);
     });
 
     it('留存裁剪:同事务内删除版本 ≤ newVersion-100 的旧快照', async () => {
       tx.userConfig.findUnique.mockResolvedValue({ version: 149 });
 
-      await service.push('user-1', 'dev-1', { baseVersion: 149, document: doc });
+      await service.push('user-1', 'dev-1', {
+        baseVersion: 149,
+        document: doc,
+      });
 
       expect(tx.configSnapshot.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', version: { lte: 150 - SNAPSHOT_RETENTION } },
@@ -189,6 +267,27 @@ describe('SyncService(乐观并发 + 快照)', () => {
       await expect(
         service.restoreSnapshot('user-1', 'dev-1', 99),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('回滚写入前设备被删除导致 P2003 → 401 会话错误', async () => {
+      tx.configSnapshot.findUnique.mockResolvedValue({
+        userId: 'user-1',
+        version: 3,
+        document: doc,
+      });
+      tx.userConfig.findUnique.mockResolvedValue({ version: 9 });
+      tx.configSnapshot.create.mockRejectedValue(
+        prismaError('P2003', 'ConfigSnapshot'),
+      );
+
+      const error = await service
+        .restoreSnapshot('user-1', 'deleted-device', 3)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as UnauthorizedException).getResponse()).toEqual({
+        error: 'invalid_access_token',
+      });
     });
   });
 
