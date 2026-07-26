@@ -3,7 +3,7 @@
  * 深度侦听改动 -> 防抖 500ms -> zod 校验 -> config_set(保存并即时生效)。
  */
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, onScopeDispose, ref, watch } from "vue";
 import { watchDebounced } from "@vueuse/core";
 import { ConfigDocument, MachineLocalSettings } from "@godgesture/shared";
 import { useBackend } from "../api/backend";
@@ -26,6 +26,25 @@ export const useConfigStore = defineStore("config", () => {
   let lastPersistedMachine: string | null = null;
   let docSaveQueue = Promise.resolve();
   let machineSaveQueue = Promise.resolve();
+  let unlistenPause: (() => void) | null = null;
+  let pauseEventVersion = 0;
+  let disposed = false;
+
+  onScopeDispose(() => {
+    disposed = true;
+    unlistenPause?.();
+    unlistenPause = null;
+  });
+
+  async function ensurePauseListener() {
+    if (unlistenPause) return;
+    const unlisten = await backend.onPauseChanged((next) => {
+      pauseEventVersion += 1;
+      paused.value = next;
+    });
+    if (disposed) unlisten();
+    else unlistenPause = unlisten;
+  }
 
   function serializedDoc(): string | null {
     if (!doc.value) return null;
@@ -52,6 +71,12 @@ export const useConfigStore = defineStore("config", () => {
     loadError.value = null;
     ready.value = false;
     try {
+      try {
+        await ensurePauseListener();
+      } catch (err) {
+        console.error("[config] pause listener setup failed", err);
+      }
+      const pauseVersionAtRead = pauseEventVersion;
       const [d, m, p] = await Promise.all([
         backend.configGet(),
         backend.machineGet(),
@@ -63,7 +88,7 @@ export const useConfigStore = defineStore("config", () => {
       lastPersistedMachine = JSON.stringify(parsedMachine);
       doc.value = parsedDoc;
       machine.value = parsedMachine;
-      paused.value = p;
+      if (pauseEventVersion === pauseVersionAtRead) paused.value = p;
       saveState.value = "idle";
       ready.value = true;
     } catch (err) {

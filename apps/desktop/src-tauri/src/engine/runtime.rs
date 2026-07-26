@@ -64,6 +64,8 @@ pub enum EngineMsg {
         /// 命中时的光标位置(命令执行上下文的 origin)
         origin: Point,
     },
+    /// 暂停状态由任意入口改变（设置、托盘、快捷键、和弦或命令）。
+    PauseChanged(bool),
 }
 
 /// 平台服务:运行时需要但因平台而异的操作(由 platform 层注入)
@@ -167,7 +169,10 @@ impl EngineShared {
     }
 
     pub fn set_paused(&self, paused: bool) {
-        self.paused.store(paused, Ordering::SeqCst);
+        let previous = self.paused.swap(paused, Ordering::SeqCst);
+        if previous != paused {
+            let _ = self.tx.send(EngineMsg::PauseChanged(paused));
+        }
     }
 
     pub fn is_paused(&self) -> bool {
@@ -175,8 +180,8 @@ impl EngineShared {
     }
 
     pub fn toggle_paused(&self) -> bool {
-        let now = !self.is_paused();
-        self.set_paused(now);
+        let now = !self.paused.fetch_xor(true, Ordering::SeqCst);
+        let _ = self.tx.send(EngineMsg::PauseChanged(now));
         now
     }
 
@@ -551,5 +556,47 @@ fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
         initial_stay_timeout_ms: p.initial_stay_timeout_ms,
         stay_timeout: p.stay_timeout,
         stay_timeout_ms: p.stay_timeout_ms,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct StubPlatform;
+
+    impl PlatformServices for StubPlatform {
+        fn resolve_foreground_app(
+            &self,
+            _pos: Point,
+            _prefer_cursor_window: bool,
+        ) -> ForegroundApp {
+            ForegroundApp::default()
+        }
+
+        fn is_fullscreen(&self) -> bool {
+            false
+        }
+
+        fn synthesize_click(&self, _button: MouseButton, _pos: Point) {}
+
+        fn synthesize_down(&self, _button: MouseButton, _pos: Point) {}
+
+        fn screen_at(&self, _pos: Point) -> Option<ScreenInfo> {
+            None
+        }
+    }
+
+    #[test]
+    fn pause_changes_are_atomic_and_published() {
+        let (shared, rx) = EngineShared::new(ConfigDocument::default(), Arc::new(StubPlatform));
+
+        assert!(shared.toggle_paused());
+        assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(true)));
+        shared.set_paused(false);
+        assert!(matches!(
+            rx.recv().unwrap(),
+            EngineMsg::PauseChanged(false)
+        ));
     }
 }

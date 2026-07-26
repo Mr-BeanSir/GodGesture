@@ -1,10 +1,18 @@
 pub mod engine;
 pub mod platform;
 
+#[cfg(windows)]
+use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 use engine::runtime::{EngineMsg, EngineShared};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+#[cfg(windows)]
+struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
+
+#[cfg(windows)]
+struct PauseMenuItem(tauri::menu::MenuItem<tauri::Wry>);
 
 /// 引擎产物消费线程:驱动轨迹覆盖层;命令执行器(M2)也从这里接出去。
 #[cfg(windows)]
@@ -15,7 +23,6 @@ fn spawn_engine_consumer(
     app: tauri::AppHandle,
 ) {
     use platform::windows::overlay::{OverlayCmd, TrailColors};
-    use tauri::Emitter;
     std::thread::Builder::new()
         .name("gg-engine-consumer".into())
         .spawn(move || {
@@ -109,6 +116,7 @@ fn spawn_engine_consumer(
                         log::debug!("手势取消");
                         overlay.send(OverlayCmd::Cancel);
                     }
+                    EngineMsg::PauseChanged(paused) => publish_pause_state(&app, paused),
                 }
             }
         })
@@ -175,8 +183,26 @@ fn config_set(
     document: ConfigDocument,
     store: tauri::State<Arc<ConfigStore>>,
     engine: tauri::State<Arc<EngineShared>>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    store.save_config(&document).map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    let _ = &app;
+    #[cfg(windows)]
+    let previous_hotkey = engine.pause_hotkey();
+    #[cfg(windows)]
+    replace_pause_hotkey(&app, &document.preferences.pause_hotkey)?;
+
+    if let Err(err) = store.save_config(&document) {
+        #[cfg(windows)]
+        if let Err(rollback_err) = replace_pause_hotkey_parts(
+            &app,
+            &previous_hotkey.0,
+            &previous_hotkey.1,
+        ) {
+            log::error!("配置保存失败后恢复暂停快捷键也失败: {rollback_err}");
+        }
+        return Err(err.to_string());
+    }
     engine.replace_config(document);
     Ok(())
 }
@@ -190,8 +216,22 @@ fn machine_get(store: tauri::State<Arc<ConfigStore>>) -> MachineLocalSettings {
 fn machine_set(
     settings: MachineLocalSettings,
     store: tauri::State<Arc<ConfigStore>>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    store.save_machine(&settings).map_err(|e| e.to_string())
+    #[cfg(not(windows))]
+    let _ = &app;
+    #[cfg(windows)]
+    let previous = store.load_machine();
+    #[cfg(windows)]
+    set_tray_visible(&app, settings.tray_icon_visible)?;
+    if let Err(err) = store.save_machine(&settings) {
+        #[cfg(windows)]
+        if let Err(rollback_err) = set_tray_visible(&app, previous.tray_icon_visible) {
+            log::error!("本机设置保存失败后恢复托盘可见性也失败: {rollback_err}");
+        }
+        return Err(err.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -278,7 +318,11 @@ async fn app_icon(exe_name: String) -> Option<String> {
 
 /// 托盘:暂停/继续 · 设置 · 退出(对齐 WGestures 托盘菜单)
 #[cfg(windows)]
-fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> {
+fn setup_tray(
+    app: &tauri::App,
+    shared: Arc<EngineShared>,
+    visible: bool,
+) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
 
@@ -293,7 +337,8 @@ fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> 
         .item(&quit_item)
         .build()?;
 
-    let _tray = TrayIconBuilder::with_id("main-tray")
+    app.manage(PauseMenuItem(pause_item.clone()));
+    let tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().cloned().expect("app icon missing"))
         .tooltip(format!("GodGesture {}", env!("CARGO_PKG_VERSION")))
         .menu(&menu)
@@ -301,7 +346,6 @@ fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> 
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "pause" => {
                 let paused = shared.toggle_paused();
-                let _ = pause_item.set_text(if paused { "继续" } else { "暂停" });
                 log::info!("手势{}", if paused { "已暂停" } else { "已继续" });
             }
             "settings" => {
@@ -323,34 +367,36 @@ fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> 
             }
         })
         .build(app)?;
+    tray.set_visible(visible)?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn set_tray_visible(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
+    let tray = app
+        .tray_by_id("main-tray")
+        .ok_or_else(|| "tray icon is unavailable".to_string())?;
+    tray.set_visible(visible).map_err(|err| err.to_string())
+}
+
+#[cfg(windows)]
+fn publish_pause_state(app: &tauri::AppHandle, paused: bool) {
+    if let Some(item) = app.try_state::<PauseMenuItem>() {
+        if let Err(err) = item.0.set_text(if paused { "继续" } else { "暂停" }) {
+            log::warn!("托盘暂停菜单更新失败: {err}");
+        }
+    }
+    if let Err(err) = app.emit("pause-changed", paused) {
+        log::warn!("暂停状态事件发送失败: {err}");
+    }
 }
 
 /// 全局暂停/继续快捷键(默认 Ctrl+Shift+Alt+W,配置可改)
 #[cfg(windows)]
 fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    use tauri_plugin_global_shortcut::ShortcutState;
 
-    let pause_hotkey = shared_config_pause_hotkey(&shared);
-    if pause_hotkey.1.is_empty() {
-        log::info!("暂停快捷键已禁用");
-        return;
-    }
-    let hk = {
-        let cfg = &pause_hotkey;
-        // global-hotkey 的字符串语法把跨平台 meta 称为 Super。
-        let mods = cfg
-            .0
-            .iter()
-            .map(|modifier| if modifier == "meta" { "super" } else { modifier })
-            .collect::<Vec<_>>()
-            .join("+");
-        if mods.is_empty() {
-            cfg.1.clone()
-        } else {
-            format!("{}+{}", mods, cfg.1)
-        }
-    };
+    app.manage(PauseHotkeyRegistration(parking_lot::Mutex::new(None)));
     let shared_hk = Arc::clone(&shared);
     let result = app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
@@ -362,17 +408,83 @@ fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
             })
             .build(),
     );
-    if result.is_ok() {
-        if let Err(e) = app.handle().global_shortcut().register(hk.as_str()) {
-            log::warn!("暂停快捷键注册失败({hk}): {e}");
-        }
+    if let Err(err) = result {
+        log::warn!("暂停快捷键插件初始化失败: {err}");
+        return;
+    }
+    let hotkey = shared.pause_hotkey();
+    if let Err(err) = replace_pause_hotkey_parts(app.handle(), &hotkey.0, &hotkey.1) {
+        log::warn!("暂停快捷键注册失败: {err}");
     }
 }
 
 #[cfg(windows)]
-fn shared_config_pause_hotkey(shared: &Arc<EngineShared>) -> (Vec<String>, String) {
-    let hk = shared.pause_hotkey();
-    (hk.0, hk.1)
+fn format_pause_hotkey(modifiers: &[String], key: &str) -> Option<String> {
+    if key.is_empty() {
+        return None;
+    }
+    // global-hotkey 的字符串语法把跨平台 meta 称为 Super。
+    let modifiers = modifiers
+        .iter()
+        .map(|modifier| if modifier == "meta" { "super" } else { modifier })
+        .collect::<Vec<_>>()
+        .join("+");
+    Some(if modifiers.is_empty() {
+        key.to_string()
+    } else {
+        format!("{modifiers}+{key}")
+    })
+}
+
+#[cfg(windows)]
+fn replace_pause_hotkey(app: &tauri::AppHandle, hotkey: &PauseHotkey) -> Result<(), String> {
+    replace_pause_hotkey_parts(app, &hotkey.modifiers, &hotkey.key)
+}
+
+#[cfg(windows)]
+fn replace_pause_hotkey_parts(
+    app: &tauri::AppHandle,
+    modifiers: &[String],
+    key: &str,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    let next = format_pause_hotkey(modifiers, key);
+    let state = app.state::<PauseHotkeyRegistration>();
+    let mut current = state.0.lock();
+    if *current == next {
+        return Ok(());
+    }
+    let previous = current.clone();
+    if let Some(shortcut) = previous.as_deref() {
+        app.global_shortcut()
+            .unregister(shortcut)
+            .map_err(|err| format!("无法注销旧快捷键 {shortcut}: {err}"))?;
+    }
+    if let Some(shortcut) = next.as_deref() {
+        if let Err(err) = app.global_shortcut().register(shortcut) {
+            let rollback = previous.as_deref().map(|old| {
+                app.global_shortcut()
+                    .register(old)
+                    .map_err(|rollback_err| rollback_err.to_string())
+            });
+            *current = if rollback.as_ref().is_none_or(Result::is_ok) {
+                previous
+            } else {
+                None
+            };
+            return Err(match rollback {
+                Some(Err(rollback_err)) => format!(
+                    "无法注册快捷键 {shortcut}: {err}; 恢复旧快捷键也失败: {rollback_err}"
+                ),
+                _ => format!("无法注册快捷键 {shortcut}: {err}"),
+            });
+        }
+    } else {
+        log::info!("暂停快捷键已禁用");
+    }
+    *current = next;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -395,6 +507,8 @@ pub fn run() {
                 .expect("cannot resolve app config dir");
             let store = Arc::new(ConfigStore::new(config_dir));
             let config = store.load_config();
+            #[cfg(windows)]
+            let machine = store.load_machine();
             app.manage(store);
 
             #[cfg(windows)]
@@ -408,11 +522,11 @@ pub fn run() {
                     overlay,
                     app.handle().clone(),
                 );
-                let hook = platform::windows::start(Arc::clone(&shared));
-                setup_tray(app, Arc::clone(&shared))?;
+                app.manage(Arc::clone(&shared));
+                setup_tray(app, Arc::clone(&shared), machine.tray_icon_visible)?;
                 setup_pause_hotkey(app, Arc::clone(&shared));
+                let hook = platform::windows::start(Arc::clone(&shared));
                 // 钩子随应用生存期存活
-                app.manage(shared);
                 app.manage(hook);
             }
             #[cfg(not(windows))]
@@ -436,17 +550,22 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             #[cfg(windows)]
-            if window.label() == "main"
-                && matches!(
-                    event,
-                    tauri::WindowEvent::CloseRequested { .. }
-                        | tauri::WindowEvent::Destroyed
-                )
-            {
-                // Frontend cleanup is asynchronous and may be interrupted by
-                // the WebView closing. Keep recording bounded by the settings
-                // window lifetime even when capture_cancel never reaches IPC.
-                window.state::<Arc<EngineShared>>().cancel_recording();
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        // Frontend cleanup is asynchronous and may be interrupted by a hide.
+                        // Always bound recording in Rust before keeping the settings WebView alive.
+                        window.state::<Arc<EngineShared>>().cancel_recording();
+                        api.prevent_close();
+                        if let Err(err) = window.hide() {
+                            log::warn!("设置窗口隐藏失败: {err}");
+                        }
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        window.state::<Arc<EngineShared>>().cancel_recording();
+                    }
+                    _ => {}
+                }
             }
         })
         .run(tauri::generate_context!())
@@ -471,5 +590,16 @@ mod tests {
         assert_eq!(json["trigger"], "right");
         assert_eq!(json["strokes"], serde_json::json!(["up", "rightDown"]));
         assert_eq!(json["mnemonic"], "◑↑↘");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn pause_hotkey_format_uses_global_shortcut_super_name() {
+        assert_eq!(
+            format_pause_hotkey(&["ctrl".into(), "meta".into()], "w").as_deref(),
+            Some("ctrl+super+w")
+        );
+        assert_eq!(format_pause_hotkey(&[], "f12").as_deref(), Some("f12"));
+        assert_eq!(format_pause_hotkey(&["ctrl".into()], ""), None);
     }
 }

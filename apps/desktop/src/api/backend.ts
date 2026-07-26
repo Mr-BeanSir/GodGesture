@@ -8,6 +8,7 @@
  * - machine_set(settings: MachineLocalSettings)
  * - engine_is_paused(): boolean
  * - engine_toggle_pause(): boolean
+ *     + Tauri event "pause-changed", payload: boolean
  * - capture_start() / capture_cancel()
  *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, mnemonic}
  * - pick_window(): {exeName, exePath, appName} | null
@@ -43,6 +44,7 @@ export interface Backend {
 
   engineIsPaused(): Promise<boolean>;
   engineTogglePause(): Promise<boolean>;
+  onPauseChanged(handler: (paused: boolean) => void): Promise<() => void>;
 
   captureStart(): Promise<void>;
   captureCancel(): Promise<void>;
@@ -90,6 +92,10 @@ function createTauriBackend(): Backend {
     async engineTogglePause() {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<boolean>("engine_toggle_pause");
+    },
+    async onPauseChanged(handler) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<boolean>("pause-changed", (event) => handler(event.payload));
     },
     async captureStart() {
       const { invoke } = await import("@tauri-apps/api/core");

@@ -101,6 +101,7 @@ export function createMockBackend(): Backend {
   let paused = false;
 
   const listeners = new Set<(g: CapturedGesture) => void>();
+  const pauseListeners = new Set<(paused: boolean) => void>();
   let captureTimers: ReturnType<typeof setTimeout>[] = [];
 
   function stopCapture() {
@@ -132,7 +133,12 @@ export function createMockBackend(): Backend {
     },
     async engineTogglePause() {
       paused = !paused;
+      pauseListeners.forEach((listener) => listener(paused));
       return paused;
+    },
+    async onPauseChanged(handler) {
+      pauseListeners.add(handler);
+      return () => pauseListeners.delete(handler);
     },
 
     async captureStart() {
