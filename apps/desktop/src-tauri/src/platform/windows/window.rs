@@ -10,6 +10,7 @@ use crate::engine::intents::ForegroundApp;
 use crate::engine::types::Point;
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -19,8 +20,8 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId,
-    WindowFromPoint, GA_ROOT,
+    GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
 };
 
 /// pid → (exe_name, exe_path) 缓存(pid 复用风险低,进程退出后条目自然失效)
@@ -52,6 +53,63 @@ pub fn window_pid(hwnd: HWND) -> u32 {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
     }
     pid
+}
+
+/// 窗口标题(GetWindowTextW);空标题返回 None
+pub fn window_title(hwnd: HWND) -> Option<String> {
+    let mut buf = [0u16; 512];
+    let n = unsafe { GetWindowTextW(hwnd, &mut buf) };
+    if n <= 0 {
+        None
+    } else {
+        Some(String::from_utf16_lossy(&buf[..n as usize]))
+    }
+}
+
+/// 目标窗口所属进程 exe 的所在目录(供 Cmd 的 auto_set_working_dir)
+pub fn exe_dir_of_window(hwnd: HWND) -> Option<PathBuf> {
+    let pid = window_pid(hwnd);
+    if pid == 0 {
+        return None;
+    }
+    let (_, path) = query_exe(pid)?;
+    std::path::Path::new(&path)
+        .parent()
+        .map(|p| p.to_path_buf())
+}
+
+/// 前台窗口应用信息(供设置界面"拾取窗口":exe 名/路径/标题/pid)
+pub struct WindowAppInfo {
+    pub exe_name: String,
+    pub exe_path: String,
+    pub title: String,
+    pub pid: u32,
+}
+
+/// 指定窗口的应用信息。
+pub fn window_info(hwnd: HWND) -> Option<WindowAppInfo> {
+    if hwnd.is_invalid() {
+        return None;
+    }
+    let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
+    let hwnd = if root.is_invalid() { hwnd } else { root };
+    let pid = window_pid(hwnd);
+    if pid == 0 {
+        return None;
+    }
+    let (exe_name, exe_path) = query_exe(pid)?;
+    let title = window_title(hwnd).unwrap_or_default();
+    Some(WindowAppInfo {
+        exe_name,
+        exe_path,
+        title,
+        pid,
+    })
+}
+
+pub fn foreground_window_info() -> Option<WindowAppInfo> {
+    let hwnd = unsafe { GetForegroundWindow() };
+    window_info(hwnd)
 }
 
 fn query_exe(pid: u32) -> Option<(String, String)> {
@@ -108,6 +166,7 @@ pub fn resolve_foreground_app(pos: Point, prefer_cursor_window: bool) -> Foregro
         exe_path: Some(entry.1),
         aumid: None, // TODO(M2): 商店应用 AUMID 解析(GetApplicationUserModelId)
         bundle_id: None,
+        native_window: hwnd.0 as isize as i64,
     }
 }
 

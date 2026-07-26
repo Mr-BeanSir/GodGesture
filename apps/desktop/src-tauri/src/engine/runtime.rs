@@ -12,14 +12,23 @@ use super::config::{ConfigDocument, GestureIntent};
 use super::intents::{ForegroundApp, IntentFinder};
 use super::parser::{StrokeEvent, StrokeParser};
 use super::tracker::{Action, Input, PathTracker, TrackerHost, TrackerParams};
-use super::types::{Modifier, Point, TriggerButton};
+use super::types::{Direction, Modifier, Point, TriggerButton};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// 发往执行线程的消息(命令执行 + 视图更新;视图消费方在 M1 后段接入)
+/// 命令执行所需的手势上下文(平台无关;native_window 由平台层在解析前台窗口时填充)。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GestureContext {
+    /// 手势起点(屏幕物理像素)
+    pub origin: Point,
+    /// 目标窗口的不透明原生句柄(Windows = HWND as i64;0 表示无)
+    pub native_window: i64,
+}
+
+/// 发往执行线程的消息(命令执行 + 视图更新)
 #[derive(Debug, Clone)]
 pub enum EngineMsg {
     PathStarted {
@@ -34,11 +43,18 @@ pub enum EngineMsg {
     PathEnded {
         intent: Option<GestureIntent>,
         modifier: Modifier,
+        context: GestureContext,
     },
     PathCancelled,
     ModifierFired {
         intent: Option<GestureIntent>,
         modifier: Modifier,
+        context: GestureContext,
+    },
+    /// 录制模式下捕获到一条手势(设置界面的手势录制器消费)
+    GestureCaptured {
+        trigger: TriggerButton,
+        strokes: Vec<Direction>,
     },
 }
 
@@ -55,8 +71,12 @@ struct Session {
     parser: StrokeParser,
     fg: ForegroundApp,
     trigger: TriggerButton,
+    /// 手势起点(命令执行上下文用)
+    origin: Point,
     /// 手势期间最后一次触发的修饰(用于 PathEnd 时的意图键)
     active_modifier: Modifier,
+    /// 是否已在修饰触发时执行过命令(execute_on_modifier);PathEnd 据此避免二次执行
+    executed_on_modifier: bool,
     /// 上次增量识别的结果名(去重用)
     last_recognized: Option<String>,
 }
@@ -73,6 +93,8 @@ pub struct EngineShared {
     session: Mutex<Option<Session>>,
     finder: Mutex<IntentFinder>,
     paused: AtomicBool,
+    /// 录制模式:设置界面录制手势时置位,期间放行一切前台/暂停限制且不执行命令
+    recording: AtomicBool,
     platform: Arc<dyn PlatformServices>,
     tx: Sender<EngineMsg>,
     /// 有效点距(识别一笔所需位移):屏宽 * 0.025,由平台层在启动/分辨率变化时更新
@@ -92,12 +114,31 @@ impl EngineShared {
             session: Mutex::new(None),
             finder: Mutex::new(IntentFinder::new(config)),
             paused: AtomicBool::new(false),
+            recording: AtomicBool::new(false),
             platform,
             tx,
             effective_move_px: Mutex::new(48.0),
             chord: Mutex::new(ChordState::default()),
         });
         (shared, rx)
+    }
+
+    /// 进入手势录制模式。
+    pub fn start_recording(&self) {
+        self.recording.store(true, Ordering::SeqCst);
+    }
+
+    /// 退出录制并取消正在进行的捕获;下一次触发键抬起仍会被追踪器吞掉。
+    pub fn cancel_recording(&self) {
+        self.recording.store(false, Ordering::SeqCst);
+        if self.tracker.lock().cancel_capture() {
+            *self.session.lock() = None;
+            let _ = self.tx.send(EngineMsg::PathCancelled);
+        }
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.recording.load(Ordering::SeqCst)
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -213,7 +254,9 @@ impl EngineShared {
                         parser: StrokeParser::new(origin, eff, enable8),
                         fg,
                         trigger,
+                        origin,
                         active_modifier: Modifier::None,
+                        executed_on_modifier: false,
                         last_recognized: None,
                     });
                     let _ = self.tx.send(EngineMsg::PathStarted { trigger, origin });
@@ -240,21 +283,50 @@ impl EngineShared {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         s.active_modifier = m;
-                        let intent = self
-                            .finder
-                            .lock()
-                            .find(s.trigger, s.parser.strokes(), m, &s.fg)
-                            .cloned();
+                        let intent = if self.is_recording() {
+                            None
+                        } else {
+                            self.finder
+                                .lock()
+                                .find(s.trigger, s.parser.strokes(), m, &s.fg)
+                                .cloned()
+                        };
+                        // 立即执行型意图(如滚轮调音量)在此触发;标记以免 PathEnd 二次执行
+                        if intent.as_ref().is_some_and(|i| i.execute_on_modifier) {
+                            s.executed_on_modifier = true;
+                        }
+                        let context = GestureContext {
+                            origin: s.origin,
+                            native_window: s.fg.native_window,
+                        };
                         let _ = self.tx.send(EngineMsg::ModifierFired {
                             intent,
                             modifier: m,
+                            context,
                         });
                     }
                 }
                 Action::PathEnd { pos: _ } => {
                     let session = self.session.lock().take();
                     if let Some(s) = session {
-                        let intent = {
+                        // 录制模式:只上报捕获到的手势,不查找/不执行命令。
+                        // 录制持续到前端显式 cancel_recording,期间可反复重画覆盖上一次结果,
+                        // 避免录制器开着时误执行命令(例如把设置窗口关掉)。
+                        if self.is_recording() {
+                            let _ = self.tx.send(EngineMsg::GestureCaptured {
+                                trigger: s.trigger,
+                                strokes: s.parser.strokes().to_vec(),
+                            });
+                            continue;
+                        }
+                        let context = GestureContext {
+                            origin: s.origin,
+                            native_window: s.fg.native_window,
+                        };
+                        let intent = if s.executed_on_modifier {
+                            // 已在修饰触发时执行,避免二次执行
+                            None
+                        } else {
                             let finder = self.finder.lock();
                             finder
                                 .find(s.trigger, s.parser.strokes(), s.active_modifier, &s.fg)
@@ -268,6 +340,7 @@ impl EngineShared {
                         let _ = self.tx.send(EngineMsg::PathEnded {
                             intent,
                             modifier: s.active_modifier,
+                            context,
                         });
                     }
                 }
@@ -312,6 +385,10 @@ struct HostImpl<'a> {
 impl TrackerHost for HostImpl<'_> {
     fn is_gesturing_allowed(&mut self, pos: Point) -> bool {
         let shared = self.shared;
+        // 录制模式:放行一切(即便暂停/黑名单/全屏),以便在任意界面上录制手势
+        if shared.is_recording() {
+            return true;
+        }
         if shared.is_paused() {
             return false;
         }

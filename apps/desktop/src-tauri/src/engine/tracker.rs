@@ -177,6 +177,16 @@ impl PathTracker {
         matches!(self.state, State::Pending { .. } | State::Tracking { .. })
     }
 
+    /// 取消当前捕获。若有触发键按下,转入等待其抬起的吞键状态。
+    pub fn cancel_capture(&mut self) -> bool {
+        let button = match &self.state {
+            State::Pending { button, .. } | State::Tracking { button, .. } => *button,
+            _ => return false,
+        };
+        self.state = State::CancelledAwaitUp { button };
+        true
+    }
+
     /// 下一次需要 tick 的期限(无则 None);平台层用它设置等待超时
     pub fn next_deadline(&self) -> Option<Instant> {
         match &self.state {
@@ -569,6 +579,23 @@ mod tests {
         );
         assert!(o.swallow && o.actions.is_empty());
         assert!(!t.is_capturing());
+    }
+
+    #[test]
+    fn cancel_capture_swallows_trigger_up_from_pending_and_tracking() {
+        for move_first in [false, true] {
+            let (mut t, mut h, t0) = setup(TrackerParams::default());
+            t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+            if move_first {
+                t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+            }
+
+            assert!(t.cancel_capture());
+            assert!(!t.is_capturing());
+            let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
+            assert!(o.swallow && o.actions.is_empty());
+            assert!(!t.cancel_capture());
+        }
     }
 
     #[test]

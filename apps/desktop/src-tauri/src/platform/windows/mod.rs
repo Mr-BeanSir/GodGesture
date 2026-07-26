@@ -1,7 +1,10 @@
 //! Windows 平台实现。
 
+pub mod clipboard;
+pub mod commands;
 pub mod hook;
 pub mod input;
+pub mod keys;
 pub mod overlay;
 pub mod window;
 

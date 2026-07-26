@@ -18,6 +18,9 @@ pub struct ForegroundApp {
     pub exe_path: Option<String>,
     /// macOS: Bundle ID
     pub bundle_id: Option<String>,
+    /// 不透明原生窗口句柄(Windows = HWND as i64;macOS 暂 0)。
+    /// 仅供命令执行定位目标窗口,**不参与应用匹配**。
+    pub native_window: i64,
 }
 
 pub struct IntentFinder {
