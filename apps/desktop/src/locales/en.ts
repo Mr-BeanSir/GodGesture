@@ -18,6 +18,11 @@ export default {
     language: "Language",
     languageAuto: "Follow system",
   },
+  load: {
+    title: "Could not load settings",
+    description: "The settings could not be read or use an incompatible format. Retry, then check the app logs if the problem continues.",
+    retry: "Retry",
+  },
   footer: {
     autoSave: "Changes are saved automatically and take effect immediately",
     saving: "Saving…",
@@ -67,7 +72,7 @@ export default {
     view: {
       title: "Display",
       showPath: "Show trail",
-      showCommandName: "Show gesture name",
+      showCommandName: "Show command hint",
       fadeOut: "Fade out after execution",
       rightColor: "Right-button trail color",
       middleColor: "Middle-button trail color",

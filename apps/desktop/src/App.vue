@@ -7,6 +7,8 @@ import { computed, onMounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
+import zhCn from "element-plus/es/locale/lang/zh-cn";
+import en from "element-plus/es/locale/lang/en";
 import { useConfigStore } from "./stores/config";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
 import OptionsView from "./views/OptionsView.vue";
@@ -18,7 +20,7 @@ import AboutView from "./views/AboutView.vue";
 type Section = "options" | "gestures" | "cornersEdges" | "account" | "about";
 type LocaleSetting = "auto" | AppLocale;
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const store = useConfigStore();
 
 const isDark = useDark();
@@ -44,6 +46,7 @@ const localeSetting = computed<LocaleSetting>({
 });
 
 const isTauri = computed(() => store.backend.isTauri);
+const elementLocale = computed(() => (locale.value === "zh-CN" ? zhCn : en));
 
 function onSelectSection(index: string) {
   active.value = index as Section;
@@ -61,11 +64,12 @@ watchEffect(() => {
   if (typeof document !== "undefined") document.title = t("app.title");
 });
 
-onMounted(() => store.load());
+onMounted(() => void store.load());
 </script>
 
 <template>
-  <el-container class="app">
+  <el-config-provider :locale="elementLocale">
+    <el-container class="app">
     <el-header class="app__header">
       <div class="app__brand">{{ t("app.title") }}</div>
       <div class="app__actions">
@@ -108,6 +112,18 @@ onMounted(() => store.load());
 
       <el-main class="app__main">
         <component :is="currentView" v-if="!needsConfig || store.ready" />
+        <el-result
+          v-else-if="store.loadError"
+          icon="error"
+          :title="t('load.title')"
+          :sub-title="t('load.description')"
+        >
+          <template #extra>
+            <el-button type="primary" :loading="store.loading" @click="store.load()">
+              {{ t("load.retry") }}
+            </el-button>
+          </template>
+        </el-result>
         <el-skeleton v-else :rows="6" animated />
       </el-main>
     </el-container>
@@ -120,7 +136,8 @@ onMounted(() => store.load());
       <span v-else-if="store.saveState === 'error'" class="app__save app__save--err">{{ t("footer.saveError") }}</span>
       <el-tag v-if="!isTauri" type="info" size="small" class="app__mock">{{ t("footer.mockMode") }}</el-tag>
     </el-footer>
-  </el-container>
+    </el-container>
+  </el-config-provider>
 </template>
 
 <style scoped>

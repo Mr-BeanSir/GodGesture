@@ -18,6 +18,11 @@ export default {
     language: "界面语言",
     languageAuto: "跟随系统",
   },
+  load: {
+    title: "无法载入配置",
+    description: "配置读取失败或格式不兼容。请重试；若问题持续，请检查应用日志。",
+    retry: "重试",
+  },
   footer: {
     autoSave: "改动将自动保存并立即生效",
     saving: "保存中…",
@@ -67,7 +72,7 @@ export default {
     view: {
       title: "显示",
       showPath: "显示轨迹",
-      showCommandName: "显示手势名称",
+      showCommandName: "显示命令提示",
       fadeOut: "执行后淡出",
       rightColor: "右键轨迹颜色",
       middleColor: "中键轨迹颜色",
@@ -115,7 +120,7 @@ export default {
     editorTitle: "命令编辑",
     intentName: "名称",
     modifier: "修饰",
-    executeOnModifier: "修饰键触发时立即执行",
+    executeOnModifier: "修饰触发时立即执行",
     noSelection: "在上方列表中选择一个手势意图,或录制新手势",
     emptyIntents: "此应用还没有手势意图",
   },

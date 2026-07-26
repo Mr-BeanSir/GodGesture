@@ -1,8 +1,8 @@
 //! 意图查找 —— 应用匹配与继承/黑名单语义(与 WGestures 对齐):
 //! - 命中应用条目且其含该手势 → 用之;
 //! - 未含且 inherit_global_gestures → 回退全局;
-//! - 应用黑名单(gesturing_enabled=false)在路径开始前拦截;
-//!   未命中任何应用条目时,全局开关即总开关。
+//! - 全局开关是总开关，关闭后所有应用都禁止手势;
+//! - 应用黑名单(gesturing_enabled=false)在路径开始前进一步拦截。
 
 use super::config::{AppEntry, Command, ConfigDocument, GestureIntent};
 use super::types::{Direction, Modifier, TriggerButton};
@@ -90,9 +90,12 @@ impl IntentFinder {
 
     /// 路径开始前的放行判定(黑名单/总开关)
     pub fn is_gesturing_enabled_for(&self, fg: &ForegroundApp) -> bool {
+        if !self.config.global.gesturing_enabled {
+            return false;
+        }
         match self.match_app(fg) {
             Some(app) => app.gesturing_enabled,
-            None => self.config.global.gesturing_enabled,
+            None => true,
         }
     }
 
@@ -241,6 +244,20 @@ mod tests {
             ..Default::default()
         };
         assert!(f.is_gesturing_enabled_for(&other));
+    }
+
+    #[test]
+    fn global_switch_disables_gestures_for_all_apps() {
+        let mut doc = config_with_chrome(true, true);
+        doc.global.gesturing_enabled = false;
+        let f = IntentFinder::new(doc);
+
+        assert!(!f.is_gesturing_enabled_for(&chrome_fg()));
+        let other = ForegroundApp {
+            exe_name: Some("notepad.exe".into()),
+            ..Default::default()
+        };
+        assert!(!f.is_gesturing_enabled_for(&other));
     }
 
     #[test]

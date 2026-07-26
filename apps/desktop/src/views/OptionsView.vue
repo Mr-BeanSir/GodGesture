@@ -35,6 +35,12 @@ function onPauseModifiers(mods: HotkeyModifier[]) {
 function onPauseKeys(keys: HotkeyKeyName[]) {
   prefs.value.pauseHotkey.key = keys[0] ?? "";
 }
+
+type TrackerNumberKey = "initialValidMovePx" | "initialStayTimeoutMs" | "stayTimeoutMs";
+function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number, max: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return;
+  tracker.value[key] = Math.min(max, Math.max(min, Math.round(value)));
+}
 </script>
 
 <template>
@@ -104,7 +110,12 @@ function onPauseKeys(keys: HotkeyKeyName[]) {
       <div class="gg-field">
         <label class="gg-field-label">{{ t("options.tracker.initialValidMovePx") }}</label>
         <div class="options__inline">
-          <el-input-number v-model="tracker.initialValidMovePx" :min="1" :max="50" />
+          <el-input-number
+            :model-value="tracker.initialValidMovePx"
+            :min="1"
+            :max="50"
+            @update:model-value="updateTrackerNumber('initialValidMovePx', $event, 1, 50)"
+          />
           <span class="gg-unit">{{ t("options.tracker.initialValidMovePxUnit") }}</span>
         </div>
       </div>
@@ -115,11 +126,12 @@ function onPauseKeys(keys: HotkeyKeyName[]) {
         </div>
         <div class="options__inline options__indent">
           <el-input-number
-            v-model="tracker.initialStayTimeoutMs"
+            :model-value="tracker.initialStayTimeoutMs"
             :min="20"
             :max="2000"
             :step="20"
             :disabled="!tracker.initialStayTimeout"
+            @update:model-value="updateTrackerNumber('initialStayTimeoutMs', $event, 20, 2000)"
           />
           <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
         </div>
@@ -131,11 +143,12 @@ function onPauseKeys(keys: HotkeyKeyName[]) {
         </div>
         <div class="options__inline options__indent">
           <el-input-number
-            v-model="tracker.stayTimeoutMs"
+            :model-value="tracker.stayTimeoutMs"
             :min="50"
             :max="10000"
             :step="50"
             :disabled="!tracker.stayTimeout"
+            @update:model-value="updateTrackerNumber('stayTimeoutMs', $event, 50, 10000)"
           />
           <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
         </div>

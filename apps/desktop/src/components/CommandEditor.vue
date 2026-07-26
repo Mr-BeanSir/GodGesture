@@ -60,6 +60,11 @@ const SEARCH_PRESETS: SearchPreset[] = [
 function applyPreset(p: SearchPreset) {
   patch({ engineName: p.name, engineUrl: p.url });
 }
+
+function updateVolumeDelta(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return;
+  patch({ delta: Math.min(20, Math.max(1, Math.round(value))) });
+}
 </script>
 
 <template>
@@ -320,7 +325,7 @@ function applyPreset(p: SearchPreset) {
           :min="1"
           :max="20"
           :model-value="asVolume.delta"
-          @update:model-value="patch({ delta: $event ?? 1 })"
+          @update:model-value="updateVolumeDelta"
         />
         <p class="gg-hint">{{ t("command.audioVolume.hint") }}</p>
       </div>
