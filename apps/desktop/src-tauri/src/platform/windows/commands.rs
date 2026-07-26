@@ -9,12 +9,15 @@
 use super::{clipboard, input, window};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
+use crate::engine::types::Modifier;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_UP};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    VK_LWIN, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos,
@@ -23,8 +26,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL, WM_CLOSE, WS_EX_TOPMOST,
 };
 
-/// 执行一条命令。`ctx` 提供手势起点与目标窗口句柄。
-pub fn execute(cmd: &Command, ctx: &GestureContext) {
+/// 执行一条命令。`modifier` 是本次手势修饰,`ctx` 提供手势起点与目标窗口句柄。
+pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
     match cmd {
         // 由 consumer 特判 / 无动作 / 待 M3
         Command::Pause | Command::DoNothing => {}
@@ -50,7 +53,7 @@ pub fn execute(cmd: &Command, ctx: &GestureContext) {
         Command::WebSearch {
             engine_url, browser, ..
         } => web_search(engine_url, browser.as_deref(), ctx),
-        Command::AudioVolume { delta } => audio_volume(*delta),
+        Command::AudioVolume { delta } => audio_volume(modifier, *delta),
         Command::Cmd {
             code,
             show_window,
@@ -183,15 +186,31 @@ fn dock_half(hwnd: HWND, left: bool) {
     }
 }
 
-fn audio_volume(delta: i32) {
+#[derive(Debug, PartialEq, Eq)]
+enum AudioVolumeAction {
+    Mute,
+    Up(u32),
+    Down(u32),
+}
+
+fn audio_volume_action(modifier: Modifier, delta: i32) -> AudioVolumeAction {
     // 上限对齐 schema 的 max(20)。不封顶的话,一个手改出来的
     // delta = i32::MIN 会敲 21 亿次音量键,把执行线程彻底挂住。
     const MAX_STEPS: u32 = 20;
     let steps = delta.unsigned_abs().min(MAX_STEPS);
-    if steps == 0 {
-        return;
+    match modifier {
+        Modifier::WheelForward => AudioVolumeAction::Up(steps),
+        Modifier::WheelBackward => AudioVolumeAction::Down(steps),
+        _ => AudioVolumeAction::Mute,
     }
-    let vk = if delta > 0 { VK_VOLUME_UP } else { VK_VOLUME_DOWN };
+}
+
+fn audio_volume(modifier: Modifier, delta: i32) {
+    let (vk, steps) = match audio_volume_action(modifier, delta) {
+        AudioVolumeAction::Mute => (VK_VOLUME_MUTE, 1),
+        AudioVolumeAction::Up(steps) => (VK_VOLUME_UP, steps),
+        AudioVolumeAction::Down(steps) => (VK_VOLUME_DOWN, steps),
+    };
     for _ in 0..steps {
         input::tap_vk(vk);
     }
@@ -300,6 +319,46 @@ fn hex_digit(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_volume_none_toggles_mute() {
+        assert_eq!(
+            audio_volume_action(Modifier::None, 20),
+            AudioVolumeAction::Mute
+        );
+    }
+
+    #[test]
+    fn audio_volume_middle_button_toggles_mute() {
+        assert_eq!(
+            audio_volume_action(Modifier::MiddleButtonDown, 7),
+            AudioVolumeAction::Mute
+        );
+    }
+
+    #[test]
+    fn audio_volume_wheel_forward_uses_delta_as_up_amplitude() {
+        assert_eq!(
+            audio_volume_action(Modifier::WheelForward, 7),
+            AudioVolumeAction::Up(7)
+        );
+    }
+
+    #[test]
+    fn audio_volume_wheel_backward_uses_delta_as_down_amplitude() {
+        assert_eq!(
+            audio_volume_action(Modifier::WheelBackward, 7),
+            AudioVolumeAction::Down(7)
+        );
+    }
+
+    #[test]
+    fn audio_volume_other_modifiers_use_safe_mute_fallback() {
+        assert_eq!(
+            audio_volume_action(Modifier::LeftButtonDown, 7),
+            AudioVolumeAction::Mute
+        );
+    }
 
     #[test]
     fn url_encode_basics() {

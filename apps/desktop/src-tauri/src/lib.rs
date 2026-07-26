@@ -51,7 +51,7 @@ fn spawn_engine_consumer(
                         );
                         if !shared.is_recording() {
                             if let Some(intent) = intent.filter(|i| i.execute_on_modifier) {
-                                execute_intent(&intent.command, &context, &shared);
+                                execute_intent(&intent.command, modifier, &context, &shared);
                             }
                         }
                     }
@@ -69,7 +69,7 @@ fn spawn_engine_consumer(
                                     intent.name,
                                     intent.command
                                 );
-                                execute_intent(&intent.command, &context, &shared);
+                                execute_intent(&intent.command, modifier, &context, &shared);
                             }
                             None => log::debug!("手势结束: 无匹配意图"),
                         }
@@ -98,7 +98,12 @@ fn spawn_engine_consumer(
                             origin,
                             native_window: fg.native_window,
                         };
-                        execute_intent(&command, &context, &shared);
+                        execute_intent(
+                            &command,
+                            engine::types::Modifier::None,
+                            &context,
+                            &shared,
+                        );
                     }
                     EngineMsg::PathCancelled => {
                         log::debug!("手势取消");
@@ -121,6 +126,7 @@ struct CapturedGesture {
 #[cfg(windows)]
 fn execute_intent(
     command: &engine::config::Command,
+    modifier: engine::types::Modifier,
     context: &engine::runtime::GestureContext,
     shared: &Arc<EngineShared>,
 ) {
@@ -128,7 +134,7 @@ fn execute_intent(
         let paused = shared.toggle_paused();
         log::info!("命令: 手势{}", if paused { "已暂停" } else { "已继续" });
     } else {
-        platform::windows::commands::execute(command, context);
+        platform::windows::commands::execute(command, modifier, context);
     }
 }
 
