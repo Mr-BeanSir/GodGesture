@@ -1,5 +1,5 @@
 {
-  "name": "@godgesture/desktop",
+  "name": "@godgesture/web-console",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,27 +7,23 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
-    "test": "echo \"(desktop: no tests yet)\"",
-    "preview": "vite preview",
-    "tauri": "tauri"
+    "test": "echo \"(web-console: no tests yet)\"",
+    "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.0",
     "@godgesture/shared": "workspace:*",
+    "element-plus": "^2.9.0",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
     "vue-i18n": "^11.0.0",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2",
     "vue-router": "^4.5.0",
-    "element-plus": "^2.9.0",
-    "@element-plus/icons-vue": "^2.3.0",
-    "@vueuse/core": "^12.0.0"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "vue-tsc": "^2.1.10",
-    "@tauri-apps/cli": "^2"
+    "vue-tsc": "^2.1.10"
   }
 }
