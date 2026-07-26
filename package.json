@@ -1,0 +1,26 @@
+{
+  "name": "godgesture",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GodGesture — cross-platform mouse gesture tool (Tauri) with cloud sync, successor to WGestures",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver",
+      "vue-demi"
+    ]
+  },
+  "scripts": {
+    "dev:desktop": "pnpm --filter @godgesture/desktop tauri dev",
+    "dev:server": "pnpm --filter @godgesture/server start:dev",
+    "build:desktop": "pnpm --filter @godgesture/desktop tauri build",
+    "build:server": "pnpm --filter @godgesture/server build",
+    "build:shared": "pnpm --filter @godgesture/shared build",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r test"
+  }
+}

@@ -1,0 +1,33 @@
+# --- OS / editor ---
+Thumbs.db
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- reference clone (not part of this repo) ---
+/WGestures/
+/.codex/
+
+# --- node ---
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.pnpm-store/
+
+# --- rust / tauri ---
+target/
+apps/desktop/src-tauri/gen/
+
+# --- env & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- logs ---
+*.log
+
+# --- local agent config (machine-specific symlinks) ---
+/.claude/
