@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   OAuthExchangeRequest,
@@ -159,6 +163,21 @@ export class OAuthService {
       const byEmail = await this.prisma.user.findUnique({
         where: { email: identity.email },
       });
+      if (byEmail?.passwordHash) {
+        // 不按邮箱自动关联到"本地密码账户"。
+        //
+        // register 不做任何邮箱验证,所以密码账户上的邮箱从未被证明属于注册者:
+        // 攻击者先用受害者的邮箱注册一个账户,受害者之后用 OAuth 登录同一邮箱时,
+        // 就会被并进攻击者的账户 —— 而同步文档里带 Cmd / Script 命令
+        // (packages/shared/src/config/gestures.ts),接管账户会进一步升级成
+        // 在受害者机器上执行任意命令。宁可让登录失败,也不能自动合并。
+        //
+        // 显式关联(登录后在设置里绑定 provider)属于后续里程碑;在那之前,
+        // 用户仍可用密码正常登录。
+        throw new ConflictException({ error: 'oauth_email_conflict' });
+      }
+      // 纯 OAuth 账户(无密码)之间仍按邮箱合并:这类账户的邮箱来自 provider 断言,
+      // 而非用户自称。
       if (byEmail) userId = byEmail.id;
     }
     if (!userId) {

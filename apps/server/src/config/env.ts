@@ -8,7 +8,7 @@ const bool = z
   .optional()
   .transform((v) => v === 'true' || v === '1');
 
-export const EnvSchema = z.object({
+const BaseEnvSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
@@ -19,8 +19,17 @@ export const EnvSchema = z.object({
 
   /** JWT 签名密钥(HS256),生产环境务必使用长随机串 */
   JWT_SECRET: z.string().min(16),
-  /** 访问令牌有效期(秒),默认 15 分钟 */
-  ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().positive().default(900),
+  /**
+   * 访问令牌有效期(秒),默认 15 分钟,上限 1 小时。
+   * 上限是安全约束而非口味:目前 JwtAuthGuard 只验签名、不查设备是否仍存在,
+   * 所以"Web 控制台踢下线"最长要等这么久才真正生效(见 jwt-auth.guard.ts)。
+   */
+  ACCESS_TOKEN_TTL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(3600)
+    .default(900),
   /** 刷新令牌有效期(天),默认 30 天 */
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
@@ -44,6 +53,32 @@ export const EnvSchema = z.object({
   OAUTH_QQ_ENABLED: bool,
   OAUTH_QQ_APP_ID: z.string().optional(),
   OAUTH_QQ_APP_SECRET: z.string().optional(),
+});
+
+/**
+ * .env.example 里那个占位密钥是公开在仓库里的 —— 谁都能拿它签出任意用户的
+ * 访问令牌。它有 33 个字符,恰好能过 min(16),所以必须单独挡掉,
+ * 否则 `cp .env.example .env` 就能一路启动成功而毫无提示。
+ */
+const PLACEHOLDER_JWT_SECRET = 'change-me-to-a-long-random-secret';
+
+export const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
+  if (env.JWT_SECRET === PLACEHOLDER_JWT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_SECRET'],
+      message:
+        '仍是 .env.example 里的占位密钥(该值已公开在仓库中,等同于没有密钥)。' +
+        '请生成随机串,例如 openssl rand -base64 48',
+    });
+  }
+  if (env.NODE_ENV === 'production' && env.JWT_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_SECRET'],
+      message: '生产环境至少需要 32 个字符',
+    });
+  }
 });
 
 export type Env = z.infer<typeof EnvSchema>;
