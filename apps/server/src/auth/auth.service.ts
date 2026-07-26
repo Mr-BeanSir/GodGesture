@@ -1,7 +1,7 @@
-import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import {
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import type {
@@ -16,9 +16,17 @@ import {
   mapPrismaException,
 } from '../common/prisma-exception.filter';
 import { TokenService } from './token.service';
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  passwordHashUpgradeOptions,
+  verifyPassword,
+} from './password-hash';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
@@ -36,7 +44,7 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           email: dto.email,
-          passwordHash: await argon2Hash(dto.password),
+          passwordHash: await hashPassword(dto.password),
         },
       });
     } catch (error) {
@@ -60,12 +68,32 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    if (!user?.passwordHash) {
+    let passwordMatches = false;
+    try {
+      passwordMatches = await verifyPassword(
+        user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+        dto.password,
+      );
+    } catch (error) {
+      this.logger.error('Argon2 password verification failed', error);
+    }
+    if (!user?.passwordHash || !passwordMatches) {
       throw new UnauthorizedException({ error: 'invalid_credentials' });
     }
-    const ok = await argon2Verify(user.passwordHash, dto.password);
-    if (!ok) {
-      throw new UnauthorizedException({ error: 'invalid_credentials' });
+
+    const upgradeOptions = passwordHashUpgradeOptions(user.passwordHash);
+    if (upgradeOptions) {
+      try {
+        const upgradedHash = await hashPassword(dto.password, upgradeOptions);
+        await this.prisma.user.updateMany({
+          where: { id: user.id, passwordHash: user.passwordHash },
+          data: { passwordHash: upgradedHash },
+        });
+      } catch (error) {
+        // A rehash is maintenance after a successful verification. Do not lock
+        // a user out during a transient write failure; the next login retries.
+        this.logger.warn('Password hash upgrade failed', error);
+      }
     }
     const device = await this.prisma.device.create({
       data: {
