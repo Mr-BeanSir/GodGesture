@@ -1,4 +1,5 @@
 export * from "./config/hotkeys.js";
+export * from "./config/limits.js";
 export * from "./config/gestures.js";
 export * from "./config/preferences.js";
 export * from "./config/document.js";

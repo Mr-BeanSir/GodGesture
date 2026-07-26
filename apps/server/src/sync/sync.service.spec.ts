@@ -1,15 +1,48 @@
 import {
   ConflictException,
+  HttpException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { ConfigDocument } from '@godgesture/shared';
+import {
+  ConfigDocument as ConfigDocumentSchema,
+  MAX_COMMAND_TEXT_LENGTH,
+  MAX_CONFIG_DOCUMENT_BYTES,
+  configDocumentSizeBytes,
+  type ConfigDocument,
+} from '@godgesture/shared';
 import { SyncService, SNAPSHOT_RETENTION } from './sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** 文档内容本身不在 Service 层校验(由控制器的 ZodValidationPipe 负责) */
 const doc = { formatVersion: 1, apps: [] } as unknown as ConfigDocument;
+
+function sizedDocument(targetBytes: number): ConfigDocument {
+  const intents = Array.from({ length: 17 }, (_, index) => ({
+    id: `20000000-0000-4000-8000-${index.toString().padStart(12, '0')}`,
+    name: `Command ${index}`,
+    gesture: { trigger: 'right', strokes: ['up'], modifier: 'none' },
+    command: { type: 'cmd', code: '' },
+    executeOnModifier: false,
+    order: index,
+  }));
+  const document = ConfigDocumentSchema.parse({ global: { intents } });
+  let remaining = targetBytes - configDocumentSizeBytes(document);
+  if (remaining < 0)
+    throw new Error('target is smaller than the document shell');
+  for (const entry of document.global.intents) {
+    if (remaining === 0) break;
+    if (entry.command.type !== 'cmd') throw new Error('expected cmd command');
+    const length = Math.min(remaining, MAX_COMMAND_TEXT_LENGTH);
+    entry.command.code = 'x'.repeat(length);
+    remaining -= length;
+  }
+  if (remaining !== 0 || configDocumentSizeBytes(document) !== targetBytes) {
+    throw new Error('could not construct an exact-size valid document');
+  }
+  return document;
+}
 
 function prismaError(
   code: string,
@@ -95,6 +128,36 @@ describe('SyncService(乐观并发 + 快照)', () => {
   });
 
   describe('push', () => {
+    it('接受恰好 256 KiB 的文档并记录精确快照字节数', async () => {
+      tx.userConfig.findUnique.mockResolvedValue(null);
+      const document = sizedDocument(MAX_CONFIG_DOCUMENT_BYTES);
+
+      await service.push('user-1', 'dev-1', {
+        baseVersion: 0,
+        document,
+      });
+
+      expect(tx.configSnapshot.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sizeBytes: MAX_CONFIG_DOCUMENT_BYTES }),
+      });
+    });
+
+    it('超过文档上限 1 字节时在进入事务前返回 413', async () => {
+      const document = sizedDocument(MAX_CONFIG_DOCUMENT_BYTES + 1);
+
+      const error = await service
+        .push('user-1', 'dev-1', { baseVersion: 0, document })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(413);
+      expect((error as HttpException).getResponse()).toEqual({
+        error: 'config_too_large',
+        maxBytes: MAX_CONFIG_DOCUMENT_BYTES,
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('首次推送(baseVersion 0)→ 创建 version 1 并入快照', async () => {
       tx.userConfig.findUnique.mockResolvedValue(null);
 

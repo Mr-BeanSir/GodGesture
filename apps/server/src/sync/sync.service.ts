@@ -1,4 +1,6 @@
 import {
+  HttpException,
+  HttpStatus,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,6 +14,10 @@ import type {
   PushConfigRequest,
   PushConfigResponse,
   RestoreSnapshotResponse,
+} from '@godgesture/shared';
+import {
+  MAX_CONFIG_DOCUMENT_BYTES,
+  configDocumentSizeBytes,
 } from '@godgesture/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { isPrismaError } from '../common/prisma-exception.filter';
@@ -52,6 +58,7 @@ export class SyncService {
     deviceId: string,
     dto: PushConfigRequest,
   ): Promise<PushConfigResponse> {
+    const sizeBytes = this.assertConfigSize(dto.document);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const result = await this.advanceVersion(
@@ -60,6 +67,7 @@ export class SyncService {
           deviceId,
           dto.baseVersion,
           dto.document,
+          sizeBytes,
         );
         return result;
       });
@@ -148,6 +156,7 @@ export class SyncService {
           deviceId,
           current?.version ?? 0,
           snapshot.document as ConfigDocument,
+          this.assertConfigSize(snapshot.document),
         );
       });
     } catch (error) {
@@ -165,6 +174,7 @@ export class SyncService {
     deviceId: string,
     baseVersion: number,
     document: ConfigDocument,
+    sizeBytes: number,
   ): Promise<PushConfigResponse> {
     const current = await tx.userConfig.findUnique({ where: { userId } });
     const currentVersion = current?.version ?? 0;
@@ -212,7 +222,7 @@ export class SyncService {
         userId,
         version: newVersion,
         document: json,
-        sizeBytes: Buffer.byteLength(JSON.stringify(document), 'utf8'),
+        sizeBytes,
         deviceId,
         createdAt: now,
       },
@@ -226,5 +236,16 @@ export class SyncService {
     });
 
     return { version: newVersion, updatedAt: now.toISOString() };
+  }
+
+  private assertConfigSize(document: unknown): number {
+    const sizeBytes = configDocumentSizeBytes(document);
+    if (sizeBytes > MAX_CONFIG_DOCUMENT_BYTES) {
+      throw new HttpException(
+        { error: 'config_too_large', maxBytes: MAX_CONFIG_DOCUMENT_BYTES },
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+    return sizeBytes;
   }
 }

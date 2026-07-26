@@ -198,6 +198,7 @@ export default {
     device_not_found: "Device not found or already removed",
     snapshot_not_found: "Snapshot not found",
     version_conflict: "Configuration version conflict. Refresh and retry.",
+    config_too_large: "The configuration is too large to sync.",
     session_expired: "Session expired. Please sign in again.",
   },
 };

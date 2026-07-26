@@ -12,6 +12,7 @@ const KNOWN_CODES = new Set([
   "device_not_found",
   "snapshot_not_found",
   "version_conflict",
+  "config_too_large",
   "session_expired",
 ]);
 

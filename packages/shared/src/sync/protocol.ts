@@ -37,6 +37,13 @@ export const PushConflictResponse = z.object({
 });
 export type PushConflictResponse = z.infer<typeof PushConflictResponse>;
 
+/** 413:配置文档超过协议字节上限。 */
+export const ConfigTooLargeResponse = z.object({
+  error: z.literal("config_too_large"),
+  maxBytes: z.number().int().positive(),
+});
+export type ConfigTooLargeResponse = z.infer<typeof ConfigTooLargeResponse>;
+
 /** GET /sync/snapshots 列表项(不含载荷) */
 export const SnapshotMeta = z.object({
   version: z.number().int().positive(),

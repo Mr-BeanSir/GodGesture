@@ -5,13 +5,17 @@
 import { z } from "zod";
 import { TriggerButton } from "./gestures.js";
 import { HotkeyKeyName, HotkeyModifier } from "./hotkeys.js";
+import { MAX_HOTKEY_MODIFIERS } from "./limits.js";
 
 /** ARGB 十六进制颜色,如 "#FF32C864" */
 const argb = z.string().regex(/^#[0-9A-Fa-f]{8}$/);
 
 export const PathTrackerPreferences = z.object({
   /** 启用的触发键集合 */
-  triggerButtons: z.array(TriggerButton).default(["right", "middle", "x1", "x2"]),
+  triggerButtons: z
+    .array(TriggerButton)
+    .max(4)
+    .default(["right", "middle", "x1", "x2"]),
   /** 允许斜线(8 向)手势 */
   enable8Directions: z.boolean().default(true),
   /** Windows 键触发(等价于右键;Windows 平台专有能力,mac 端忽略) */
@@ -44,7 +48,10 @@ export type GestureViewPreferences = z.infer<typeof GestureViewPreferences>;
 
 /** 暂停/继续全局快捷键(跨平台键码名 + 修饰键) */
 export const PauseHotkey = z.object({
-  modifiers: z.array(HotkeyModifier).default(["ctrl", "shift", "alt"]),
+  modifiers: z
+    .array(HotkeyModifier)
+    .max(MAX_HOTKEY_MODIFIERS)
+    .default(["ctrl", "shift", "alt"]),
   /** 空串显式表示禁用全局暂停快捷键。 */
   key: z.union([HotkeyKeyName, z.literal("")]).default("w"),
 });

@@ -4,6 +4,16 @@
  */
 import { z } from "zod";
 import { HotkeyKeyName, HotkeyModifier } from "./hotkeys.js";
+import {
+  MAX_COMMAND_TEXT_LENGTH,
+  MAX_HOTKEY_KEYS,
+  MAX_HOTKEY_MODIFIERS,
+  MAX_INTENTS_PER_SCOPE,
+  MAX_PATH_LENGTH,
+  MAX_SCRIPT_SLOT_LENGTH,
+  MAX_SCRIPT_TOTAL_LENGTH,
+  MAX_URL_LENGTH,
+} from "./limits.js";
 
 /** 触发键:按住即进入手势状态的鼠标键 */
 export const TriggerButton = z.enum(["right", "middle", "x1", "x2"]);
@@ -56,17 +66,19 @@ export const HotKeyCommand = z.object({
   /** 修饰键 + 主键序列,解析时迁移旧别名并拒绝未知键名 */
   // Keep Command's established string[] TypeScript surface for importers and
   // consumers; the runtime schemas still canonicalize every array element.
-  modifiers: z.array(HotkeyModifier) as z.ZodType<string[]>,
-  keys: z.array(HotkeyKeyName) as z.ZodType<string[]>,
+  modifiers: z.array(HotkeyModifier).max(MAX_HOTKEY_MODIFIERS) as z.ZodType<
+    string[]
+  >,
+  keys: z.array(HotkeyKeyName).max(MAX_HOTKEY_KEYS) as z.ZodType<string[]>,
 });
 
 export const WebSearchCommand = z.object({
   ...base("webSearch"),
-  engineName: z.string(),
+  engineName: z.string().max(64),
   /** 含 {0} 占位符的搜索 URL */
-  engineUrl: z.string(),
+  engineUrl: z.string().max(MAX_URL_LENGTH),
   /** null = 系统默认浏览器;否则为浏览器标识(本机解析) */
-  browser: z.string().nullable().default(null),
+  browser: z.string().max(MAX_PATH_LENGTH).nullable().default(null),
 });
 
 export const WindowControlCommand = z.object({
@@ -85,23 +97,23 @@ export const TaskSwitcherCommand = z.object(base("taskSwitcher"));
 
 export const OpenFileCommand = z.object({
   ...base("openFile"),
-  path: z.string(),
+  path: z.string().max(MAX_PATH_LENGTH),
 });
 
 export const SendTextCommand = z.object({
   ...base("sendText"),
   /** 按键序列文本,支持 {sleep N} 停顿标记 */
-  text: z.string(),
+  text: z.string().max(MAX_COMMAND_TEXT_LENGTH),
 });
 
 export const GotoUrlCommand = z.object({
   ...base("gotoUrl"),
-  url: z.string(),
+  url: z.string().max(MAX_URL_LENGTH),
 });
 
 export const CmdCommand = z.object({
   ...base("cmd"),
-  code: z.string(),
+  code: z.string().max(MAX_COMMAND_TEXT_LENGTH),
   showWindow: z.boolean().default(true),
   autoSetWorkingDir: z.boolean().default(true),
 });
@@ -111,12 +123,12 @@ export const ScriptCommand = z.object({
   ...base("script"),
   /** 语言标记:导入的老 WGestures Lua 脚本保留原文并标 "lua"(不可执行,待手动改写) */
   language: z.enum(["js", "lua"]).default("js"),
-  initScript: z.string().default(""),
-  script: z.string().default(""),
+  initScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
+  script: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
   handleModifiers: z.boolean().default(false),
-  gestureRecognizedScript: z.string().default(""),
-  modifierTriggeredScript: z.string().default(""),
-  gestureEndedScript: z.string().default(""),
+  gestureRecognizedScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
+  modifierTriggeredScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
+  gestureEndedScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
 });
 
 export const PauseCommand = z.object(base("pause"));
@@ -126,20 +138,40 @@ export const AudioVolumeCommand = z.object({
   delta: z.number().int().min(1).max(20).default(1),
 });
 
-export const Command = z.discriminatedUnion("type", [
-  DoNothingCommand,
-  HotKeyCommand,
-  WebSearchCommand,
-  WindowControlCommand,
-  TaskSwitcherCommand,
-  OpenFileCommand,
-  SendTextCommand,
-  GotoUrlCommand,
-  CmdCommand,
-  ScriptCommand,
-  PauseCommand,
-  AudioVolumeCommand,
-]);
+export const Command = z
+  .discriminatedUnion("type", [
+    DoNothingCommand,
+    HotKeyCommand,
+    WebSearchCommand,
+    WindowControlCommand,
+    TaskSwitcherCommand,
+    OpenFileCommand,
+    SendTextCommand,
+    GotoUrlCommand,
+    CmdCommand,
+    ScriptCommand,
+    PauseCommand,
+    AudioVolumeCommand,
+  ])
+  .superRefine((command, ctx) => {
+    if (command.type !== "script") return;
+    const total =
+      command.initScript.length +
+      command.script.length +
+      command.gestureRecognizedScript.length +
+      command.modifierTriggeredScript.length +
+      command.gestureEndedScript.length;
+    if (total > MAX_SCRIPT_TOTAL_LENGTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        maximum: MAX_SCRIPT_TOTAL_LENGTH,
+        inclusive: true,
+        type: "string",
+        path: ["script"],
+        message: `Combined script content must be at most ${MAX_SCRIPT_TOTAL_LENGTH} characters`,
+      });
+    }
+  });
 export type Command = z.infer<typeof Command>;
 
 // ---------------------------------------------------------------------------
@@ -166,15 +198,15 @@ export type GestureIntent = z.infer<typeof GestureIntent>;
  * macOS:  Bundle ID(如 "com.google.Chrome")。
  */
 export const WindowsBinding = z.object({
-  exeName: z.string().min(1),
-  aumid: z.string().optional(),
-  exactPath: z.string().optional(),
+  exeName: z.string().min(1).max(255),
+  aumid: z.string().max(512).optional(),
+  exactPath: z.string().max(MAX_PATH_LENGTH).optional(),
   matchByExactPath: z.boolean().default(false),
 });
 export type WindowsBinding = z.infer<typeof WindowsBinding>;
 
 export const MacBinding = z.object({
-  bundleId: z.string().min(1),
+  bundleId: z.string().min(1).max(512),
 });
 export type MacBinding = z.infer<typeof MacBinding>;
 
@@ -187,7 +219,7 @@ export const AppEntry = z.object({
   /** 黑名单开关:false = 在该应用上禁用一切手势 */
   gesturingEnabled: z.boolean().default(true),
   inheritGlobalGestures: z.boolean().default(true),
-  intents: z.array(GestureIntent).default([]),
+  intents: z.array(GestureIntent).max(MAX_INTENTS_PER_SCOPE).default([]),
   order: z.number().int().default(0),
 });
 export type AppEntry = z.infer<typeof AppEntry>;
@@ -195,7 +227,7 @@ export type AppEntry = z.infer<typeof AppEntry>;
 /** 全局应用:兜底条目;其 gesturingEnabled 是总开关 */
 export const GlobalApp = z.object({
   gesturingEnabled: z.boolean().default(true),
-  intents: z.array(GestureIntent).default([]),
+  intents: z.array(GestureIntent).max(MAX_INTENTS_PER_SCOPE).default([]),
 });
 export type GlobalApp = z.infer<typeof GlobalApp>;
 
@@ -203,7 +235,12 @@ export type GlobalApp = z.infer<typeof GlobalApp>;
 // 触发角 & 摩擦边(全部命令类型可选 —— 相对 WGestures 的放开项)
 // ---------------------------------------------------------------------------
 
-export const ScreenCorner = z.enum(["leftTop", "rightTop", "leftBottom", "rightBottom"]);
+export const ScreenCorner = z.enum([
+  "leftTop",
+  "rightTop",
+  "leftBottom",
+  "rightBottom",
+]);
 export type ScreenCorner = z.infer<typeof ScreenCorner>;
 
 export const ScreenEdge = z.enum(["left", "top", "right", "bottom"]);

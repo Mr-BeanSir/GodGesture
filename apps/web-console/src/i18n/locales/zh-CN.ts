@@ -193,6 +193,7 @@ export default {
     device_not_found: "设备不存在或已被移除",
     snapshot_not_found: "快照不存在",
     version_conflict: "配置版本冲突,请刷新后重试",
+    config_too_large: "配置内容过大，无法同步",
     session_expired: "登录已过期,请重新登录",
   },
 };
