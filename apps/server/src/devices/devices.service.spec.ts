@@ -1,18 +1,15 @@
 import { NotFoundException } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { TokenService } from '../auth/token.service';
 
 describe('DevicesService(列表 / 改名 / 踢下线,归属校验)', () => {
   let prisma: {
     device: {
       findMany: jest.Mock;
       updateMany: jest.Mock;
-      findFirst: jest.Mock;
-      delete: jest.Mock;
+      deleteMany: jest.Mock;
     };
   };
-  let tokens: { revokeDeviceTokens: jest.Mock };
   let service: DevicesService;
 
   beforeEach(() => {
@@ -20,15 +17,10 @@ describe('DevicesService(列表 / 改名 / 踢下线,归属校验)', () => {
       device: {
         findMany: jest.fn(),
         updateMany: jest.fn(),
-        findFirst: jest.fn(),
-        delete: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn(),
       },
     };
-    tokens = { revokeDeviceTokens: jest.fn().mockResolvedValue(undefined) };
-    service = new DevicesService(
-      prisma as unknown as PrismaService,
-      tokens as unknown as TokenService,
-    );
+    service = new DevicesService(prisma as unknown as PrismaService);
   });
 
   describe('list', () => {
@@ -108,38 +100,50 @@ describe('DevicesService(列表 / 改名 / 踢下线,归属校验)', () => {
   });
 
   describe('remove', () => {
-    it('撤销该设备全部刷新令牌后删除设备', async () => {
-      prisma.device.findFirst.mockResolvedValue({ id: 'dev-1' });
+    it('删除唯一的写语句必须带 userId(归属校验与删除一步完成)', async () => {
+      prisma.device.deleteMany.mockResolvedValue({ count: 1 });
 
       await service.remove('user-1', 'dev-1');
 
-      expect(prisma.device.findFirst).toHaveBeenCalledWith({
+      expect(prisma.device.deleteMany).toHaveBeenCalledTimes(1);
+      expect(prisma.device.deleteMany).toHaveBeenCalledWith({
         where: { id: 'dev-1', userId: 'user-1' },
-        select: { id: true },
-      });
-      expect(tokens.revokeDeviceTokens).toHaveBeenCalledWith('dev-1');
-      expect(prisma.device.delete).toHaveBeenCalledWith({
-        where: { id: 'dev-1' },
       });
     });
 
     it('允许删除当前设备(等效登出)—— 服务层不做特殊限制', async () => {
-      prisma.device.findFirst.mockResolvedValue({ id: 'dev-current' });
+      prisma.device.deleteMany.mockResolvedValue({ count: 1 });
 
       await expect(
         service.remove('user-1', 'dev-current'),
       ).resolves.toBeUndefined();
-      expect(tokens.revokeDeviceTokens).toHaveBeenCalledWith('dev-current');
     });
 
-    it('设备不属于该用户 → 404,不撤销、不删除', async () => {
-      prisma.device.findFirst.mockResolvedValue(null);
+    it('设备不属于该用户 → 404,且不产生任何其他写操作', async () => {
+      prisma.device.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.remove('user-1', 'dev-other')).rejects.toThrow(
+      const err = await service
+        .remove('user-1', 'dev-other')
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(NotFoundException);
+      expect((err as NotFoundException).getResponse()).toEqual({
+        error: 'device_not_found',
+      });
+      expect(prisma.device.updateMany).not.toHaveBeenCalled();
+    });
+
+    // 并发重复踢下线:第二次删到 0 行。旧实现是 findFirst 通过后再 delete by id,
+    // 两次都能通过校验,第二次 delete 抛 P2025 → 500;deleteMany 是幂等的 404。
+    it('并发重复删除 → 第二次 404,而不是 Prisma 记录不存在错误', async () => {
+      prisma.device.deleteMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.remove('user-1', 'dev-1')).resolves.toBeUndefined();
+      await expect(service.remove('user-1', 'dev-1')).rejects.toThrow(
         NotFoundException,
       );
-      expect(tokens.revokeDeviceTokens).not.toHaveBeenCalled();
-      expect(prisma.device.delete).not.toHaveBeenCalled();
     });
   });
 });
