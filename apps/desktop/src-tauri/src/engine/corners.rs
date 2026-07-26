@@ -7,14 +7,37 @@
 //! 检测只观察光标移动,**永不吞事件**(与参考一致:鼠标移动消息从不拦截)。
 //!
 //! 与参考实现的**有意出入**(勿"改回去"):
+//!
 //! 1. 屏幕矩形用**闭区间**(`right`/`bottom` = 最后一个可达像素)。参考直接拿 C#
 //!    `Rectangle` 的开区间边界当角点,角点其实落在屏幕外 1px,靠 `TRIGGER_DIST = 2`
-//!    的余量兜住;闭区间写法更直白,实际触发范围等价。
-//! 2. 抑制条件统一成"暂停 / 录制 / 任意鼠标键按下 / 手势捕获中"(判定在 runtime)。
-//!    参考里检测侧只看 L/R、分发侧只看 L/M/R、两侧都不看 X1/X2,且录制手势时完全不抑制
-//!    —— 那是历史遗留的不一致,不是设计。录制期间放行会让录制器里的一次误触真的执行命令。
-//! 3. 只有边带厚度按 DPI 缩放(与参考一致);`MIN_MOVE`、复位距离等仍是未缩放像素。
-//!    参考就是这么写的,没有实测数据支持改动。
+//!    的余量兜住。闭区间更直白,但**触发范围并不完全等价**,右/下侧各宽 1px:
+//!    - 角:参考左上是 3×3、右下是 2×2(不对称);本实现四个角一律 3×3。
+//!      本实现的触发集是参考的超集 —— 只会更早触发,不会漏。
+//!    - 边:参考左/上带宽 17px、右/下带宽 16px;本实现一律 17px。
+//!    - `dist_to_edge` 的右侧复位距离比参考短 1px(无实际影响)。
+//!
+//! 2. `dist_to_edge` 的**下边缘**没有照抄参考。参考 `GetDistToEdge`
+//!    (`ScreenEdgeInteractDetector.cs:345`)用**绝对**的 `_screenBounds.Bottom` 去减
+//!    **显示器局部**的 y(局部化发生在同文件 :88),而同函数的右侧用的是局部的 `Width`
+//!    —— 是个复制粘贴失误,不是约定。后果在主屏之外双向翻车:副屏在主屏下方时下边缘
+//!    一触发就立刻复位(可连发),副屏在主屏上方时下边缘永远无法按距离复位、只能靠
+//!    1500ms 静止兜底。本实现用局部高度,不复现该 bug —— 这是多显示器下与 WGestures
+//!    行为可见不同的唯一一处。
+//!
+//! 3. 抑制条件统一成"暂停 / 录制 / 任意鼠标键按下 / 手势捕获中"。参考里检测侧只看 L/R、
+//!    分发侧只看 L/M/R、两侧都不看 X1/X2,且录制手势时完全不抑制 —— 那是历史遗留的
+//!    不一致,不是设计。录制期间放行会让录制器里的一次误触真的执行命令。
+//!    **但按键抑制的位置与参考一致地放在"执行命令之前"而非"喂状态机之前"**
+//!    (见 `runtime.rs::detect_corner_edge`):命中要照常消耗掉武装,否则按住左键把窗口
+//!    拖到角落(Aero Snap)会把武装完整留到松手,松手一动就误触发。
+//!
+//! 4. 边带厚度按 DPI 缩放这点与参考一致(`MIN_MOVE`、复位距离、角的两个距离仍是未缩放
+//!    像素,参考如此,没有实测数据支持改动);但**取 DPI 的来源不同**:参考取进程级的
+//!    桌面 DC DPI(全屏幕一个值),本实现取光标所在显示器的 `GetDpiForMonitor`。
+//!    混合 DPI 多显示器下参考两块屏都用 16px 带,本实现分别是 16px 与 24px。
+//!    该正确性依赖进程是 Per-Monitor-V2 感知:若退回系统级 DPI 感知,
+//!    `GetMonitorInfoW` 返回的是虚拟化坐标而 `GetDpiForMonitor` 仍返回真实 DPI,
+//!    带宽会按缩放比例失真。
 
 use super::types::Point;
 use std::time::{Duration, Instant};
@@ -713,5 +736,84 @@ mod tests {
     fn no_screen_means_no_hit() {
         let mut det = CornerEdgeDetector::new();
         assert_eq!(det.on_move(p(0, 0), Instant::now(), || None), None);
+    }
+
+    /// 同向继续移动只外推"峰值"、不计数,折返时以峰值为基准量距离。
+    /// 这是移植里最微妙的一条:少了它,一次快速划动被拆成多条中间事件时会被多计。
+    #[test]
+    fn rub_edge_slides_peak_on_same_direction() {
+        let mut s = Sim::new();
+        assert_eq!(s.mv(5, 500), None); // 进入边带,峰值 500
+        s.advance(100);
+        assert_eq!(s.mv(5, 600), None); // 1(方向 +,峰值 600)
+        s.advance(100);
+        assert_eq!(s.mv(5, 650), None); // 同向:只把峰值推到 650,不计数
+        s.advance(100);
+        // 从峰值 650 折返 80px 才算数;若上一步误计或没推峰值,这里只有 30px,不会计数
+        assert_eq!(s.mv(5, 570), None); // 2
+        s.advance(100);
+        assert_eq!(s.mv(5, 660), None); // 3
+        s.advance(100);
+        assert_eq!(s.mv(5, 580), Some(CornerEdgeHit::Edge(ScreenEdge::Left))); // 4
+    }
+
+    /// 闭区间换算只在 `screen_at` 做一次,右/下边界不能多减也不能少减一。
+    /// 这两处正是与参考实现差 1px 的地方,必须钉住,别被"顺手对齐参考"改回去。
+    #[test]
+    fn closed_interval_right_and_bottom_boundaries() {
+        // 边带:右侧最外 17px 在带内,再往里一格就出带
+        assert_eq!(active_edge(p(W - 1 - 16, 500), W, H, 16), Some(ScreenEdge::Right));
+        assert_eq!(active_edge(p(W - 1 - 17, 500), W, H, 16), None);
+        assert_eq!(active_edge(p(500, H - 1 - 16), W, H, 16), Some(ScreenEdge::Bottom));
+        assert_eq!(active_edge(p(500, H - 1 - 17), W, H, 16), None);
+
+        // 角:到角点距离 2 触发、3 不触发(右下与左上一致的 3×3)
+        let mut s = Sim::new();
+        assert_eq!(
+            s.mv(W - 3, H - 1),
+            Some(CornerEdgeHit::Corner(ScreenCorner::RightBottom))
+        );
+        let mut s = Sim::new();
+        assert_eq!(s.mv(W - 4, H - 1), None);
+    }
+
+    /// 下边缘 + 非零 top 偏移的显示器:参考实现在这里是坏的(见文件头出入说明 2),
+    /// 本实现必须能正常触发,且按"垂直离开 50px"复位。
+    #[test]
+    fn rub_bottom_edge_on_monitor_below_primary() {
+        // 主屏下方的第二块屏:y ∈ [1080, 2159]
+        let below = ScreenInfo {
+            bounds: ScreenRect {
+                left: 0,
+                top: 1080,
+                right: W - 1,
+                bottom: 1080 + H - 1,
+            },
+            dpi_scale: 1.0,
+        };
+        let mut det = CornerEdgeDetector::new();
+        let mut t = Instant::now();
+        let mut mv = |det: &mut CornerEdgeDetector, t: &mut Instant, x: i32, y: i32| {
+            *t += Duration::from_millis(100);
+            det.on_move(p(x, y), *t, || Some(below))
+        };
+
+        // 局部 y = 2150 - 1080 = 1070 ≥ 1080-1-16,在下边带内
+        assert_eq!(mv(&mut det, &mut t, 500, 2150), None); // 进入边带
+        assert_eq!(mv(&mut det, &mut t, 600, 2150), None); // 1
+        assert_eq!(mv(&mut det, &mut t, 500, 2150), None); // 2
+        assert_eq!(mv(&mut det, &mut t, 600, 2150), None); // 3
+        assert_eq!(
+            mv(&mut det, &mut t, 500, 2150),
+            Some(CornerEdgeHit::Edge(ScreenEdge::Bottom))
+        );
+
+        // 仍贴着边:不复位(参考实现在这里会立刻复位,可连发)
+        assert_eq!(mv(&mut det, &mut t, 600, 2150), None);
+        assert!(det.rub.is_some(), "贴边未离开,不应复位");
+
+        // 垂直离开 ≥50px(局部 y = 1020,到下边距离 59)→ 复位
+        assert_eq!(mv(&mut det, &mut t, 600, 2100), None);
+        assert!(det.rub.is_none(), "离开 50px 后应复位");
     }
 }

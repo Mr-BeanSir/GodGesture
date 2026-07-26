@@ -280,12 +280,10 @@ impl EngineShared {
         if !corners && !edges {
             return;
         }
-        // 抑制:暂停 / 录制手势中 / 任意鼠标键按下 / 手势捕获中。
-        // 录制期间抑制是有意为之(见 corners.rs 头部说明),参考实现不抑制。
+        // 暂停 / 录制 / 手势捕获中:整个状态机停摆,不喂数据。
+        // 参考实现里 _isPaused 短路整个钩子过程、_captured 挡住触发角判定的调用点,
+        // 语义一致;录制期间抑制是本项目有意加的(见 corners.rs 头部说明)。
         if self.is_paused() || self.is_recording() {
-            return;
-        }
-        if self.buttons_down.load(Ordering::Relaxed) != 0 {
             return;
         }
         if self.tracker.lock().is_capturing() {
@@ -299,6 +297,15 @@ impl EngineShared {
         let Some(hit) = hit else {
             return;
         };
+
+        // 鼠标键按下时**照样喂状态机**,只是不执行命令 —— 参考实现的按键判定在分发处
+        // (OnHotCorner / OnRubEdge),不在检测处,于是命中会"烧掉"这一次武装。
+        // 这个位置差别是用户可见的:按住左键把窗口拖到左上角(Aero Snap)再松手,
+        // 若在喂之前就 return,武装被完整保留,松手后随便动一下就会误触发角命令 ——
+        // 等于每次贴角吸附窗口都白触发一次。
+        if self.buttons_down.load(Ordering::Relaxed) != 0 {
+            return;
+        }
 
         // 未配命令就当没这回事(查找函数内部已校验 enabled 开关)
         let (command, disable_in_fullscreen) = {
