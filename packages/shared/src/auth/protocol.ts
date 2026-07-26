@@ -10,6 +10,8 @@ export type OAuthProvider = z.infer<typeof OAuthProvider>;
 export const DevicePlatform = z.enum(["windows", "macos", "web"]);
 export type DevicePlatform = z.infer<typeof DevicePlatform>;
 
+const DeviceName = z.string().trim().min(1).max(64);
+
 export const RegisterRequest = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
@@ -20,7 +22,7 @@ export const LoginRequest = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   device: z.object({
-    name: z.string().max(64),
+    name: DeviceName,
     platform: DevicePlatform,
   }),
 });
@@ -56,7 +58,7 @@ export const ListDevicesResponse = z.object({
 export type ListDevicesResponse = z.infer<typeof ListDevicesResponse>;
 
 export const RenameDeviceRequest = z.object({
-  name: z.string().min(1).max(64),
+  name: DeviceName,
 });
 export type RenameDeviceRequest = z.infer<typeof RenameDeviceRequest>;
 
@@ -68,7 +70,7 @@ export const OAuthExchangeRequest = z.object({
   /** 一次性授权码(5 分钟内有效,用后即焚) */
   code: z.string().min(1),
   device: z.object({
-    name: z.string().max(64),
+    name: DeviceName,
     platform: DevicePlatform,
   }),
 });
