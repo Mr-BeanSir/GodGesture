@@ -187,6 +187,7 @@ export default {
     network: "网络异常,请检查连接",
     invalid_credentials: "邮箱或密码不正确",
     email_taken: "该邮箱已被注册",
+    oauth_email_conflict: "该邮箱已注册密码账户，请使用邮箱和密码登录",
     validation_failed: "输入内容不符合要求",
     device_not_found: "设备不存在或已被移除",
     snapshot_not_found: "快照不存在",

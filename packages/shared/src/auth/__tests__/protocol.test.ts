@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LoginRequest,
+  OAuthEmailConflictResponse,
   OAuthExchangeRequest,
   RenameDeviceRequest,
 } from "../protocol.js";
@@ -45,5 +46,16 @@ describe.each(deviceNameSchemas)("$request", ({ parse }) => {
 
   it("rejects more than 64 characters after trimming", () => {
     expect(() => parse(`  ${"a".repeat(65)}\t`)).toThrow();
+  });
+});
+
+describe("OAuthEmailConflictResponse", () => {
+  it("accepts only the locked OAuth/password email conflict code", () => {
+    expect(
+      OAuthEmailConflictResponse.parse({ error: "oauth_email_conflict" }),
+    ).toEqual({ error: "oauth_email_conflict" });
+    expect(() =>
+      OAuthEmailConflictResponse.parse({ error: "email_taken" }),
+    ).toThrow();
   });
 });

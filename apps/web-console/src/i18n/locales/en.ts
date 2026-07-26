@@ -191,6 +191,7 @@ export default {
     network: "Network error. Please check your connection.",
     invalid_credentials: "Incorrect email or password",
     email_taken: "This email is already registered",
+    oauth_email_conflict: "This email has a password account. Sign in with email and password.",
     validation_failed: "Invalid input",
     device_not_found: "Device not found or already removed",
     snapshot_not_found: "Snapshot not found",
