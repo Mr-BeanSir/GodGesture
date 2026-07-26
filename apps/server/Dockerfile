@@ -53,6 +53,7 @@ COPY --chown=node:node --from=prod-deps /repo/node_modules node_modules
 COPY --chown=node:node --from=prod-deps /repo/packages/shared packages/shared
 COPY --chown=node:node --from=prod-deps /repo/apps/server apps/server
 COPY --chown=node:node --from=build /repo/packages/shared/dist packages/shared/dist
+COPY --chown=node:node --from=build /repo/packages/shared/dist-cjs packages/shared/dist-cjs
 COPY --chown=node:node --from=build /repo/apps/server/dist apps/server/dist
 
 WORKDIR /repo/apps/server

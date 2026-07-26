@@ -13,6 +13,7 @@ Thumbs.db
 # --- node ---
 node_modules/
 dist/
+dist-cjs/
 coverage/
 *.tsbuildinfo
 .pnpm-store/
