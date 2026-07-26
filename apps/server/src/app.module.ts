@@ -4,6 +4,7 @@ import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { SyncModule } from './sync/sync.module';
+import { DevicesModule } from './devices/devices.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -15,6 +16,7 @@ import { AppController } from './app.controller';
     PrismaModule,
     AuthModule,
     SyncModule,
+    DevicesModule,
   ],
   controllers: [AppController],
 })
