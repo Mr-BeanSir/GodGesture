@@ -331,9 +331,20 @@ fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>) -> tauri::Result<()> 
 fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+    let pause_hotkey = shared_config_pause_hotkey(&shared);
+    if pause_hotkey.1.is_empty() {
+        log::info!("暂停快捷键已禁用");
+        return;
+    }
     let hk = {
-        let cfg = &shared_config_pause_hotkey(&shared);
-        let mods = cfg.0.join("+");
+        let cfg = &pause_hotkey;
+        // global-hotkey 的字符串语法把跨平台 meta 称为 Super。
+        let mods = cfg
+            .0
+            .iter()
+            .map(|modifier| if modifier == "meta" { "super" } else { modifier })
+            .collect::<Vec<_>>()
+            .join("+");
         if mods.is_empty() {
             cfg.1.clone()
         } else {

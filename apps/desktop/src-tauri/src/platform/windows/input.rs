@@ -128,13 +128,36 @@ fn send_inputs(inputs: &[INPUT]) {
     }
 }
 
+fn resolve_key_names(
+    names: &[String],
+    role: &str,
+    expect_modifier: bool,
+) -> Result<Vec<VIRTUAL_KEY>, String> {
+    names
+        .iter()
+        .map(|name| {
+            if keys::is_modifier_name(name) != expect_modifier {
+                let message = format!("{role}包含类型错位的键名: {name:?}");
+                log::error!("拒绝执行 HotKey 命令: {message}");
+                return Err(message);
+            }
+            keys::name_to_vk(name).ok_or_else(|| {
+                let message = format!("{role}包含未知 canonical 键名: {name:?}");
+                log::error!("拒绝执行 HotKey 命令: {message}");
+                message
+            })
+        })
+        .collect()
+}
+
 /// 合成一次组合键:按住所有修饰键 → 依次按下/抬起主键 → 逆序释放修饰键。
-/// modifiers/keys 用统一键名(见 keys.rs),无法识别的键名忽略。
-pub fn synthesize_key_combo(modifiers: &[String], keys: &[String]) {
-    let mod_vks: Vec<VIRTUAL_KEY> = modifiers.iter().filter_map(|m| keys::name_to_vk(m)).collect();
-    let key_vks: Vec<VIRTUAL_KEY> = keys.iter().filter_map(|k| keys::name_to_vk(k)).collect();
+/// modifiers/keys 用 shared canonical 键名;任一未知值都会让整条命令失败并记录日志,
+/// 禁止部分执行(例如静默丢掉主键却仍按下修饰键)。
+pub fn synthesize_key_combo(modifiers: &[String], keys: &[String]) -> Result<(), String> {
+    let mod_vks = resolve_key_names(modifiers, "修饰键", true)?;
+    let key_vks = resolve_key_names(keys, "主键", false)?;
     if key_vks.is_empty() && mod_vks.is_empty() {
-        return;
+        return Ok(());
     }
 
     let mut inputs: Vec<INPUT> = Vec::new();
@@ -152,6 +175,7 @@ pub fn synthesize_key_combo(modifiers: &[String], keys: &[String]) {
         inputs.push(vk_input(m, false));
     }
     send_inputs(&inputs);
+    Ok(())
 }
 
 /// 敲一个虚拟键(down+up),用于音量键、任务切换等。
@@ -232,4 +256,22 @@ fn split_sleep_tokens(text: &str) -> Vec<TextSegment> {
         out.push(TextSegment::Text(rest.to_string()));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_key_rejects_the_whole_combo() {
+        let names = vec!["c".to_string(), "not-a-real-key".to_string()];
+        let error = resolve_key_names(&names, "主键", false).unwrap_err();
+        assert!(error.contains("not-a-real-key"));
+    }
+
+    #[test]
+    fn misplaced_modifier_rejects_the_whole_combo() {
+        let error = resolve_key_names(&["ctrl".to_string()], "主键", false).unwrap_err();
+        assert!(error.contains("类型错位"));
+    }
 }

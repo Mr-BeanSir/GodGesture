@@ -2,8 +2,11 @@
  * Windows Virtual-Key(VK)数值 → 跨平台键名字符串。
  * 数值表来源:WGestures 参考克隆 WindowsInput/Native/VirtualKeyCode.cs。
  */
+import { HotkeyKeyName, HotkeyModifier } from "../config/hotkeys.js";
 
-const VK_NAMES = new Map<number, string>([
+export type VkHotkeyName = HotkeyModifier | HotkeyKeyName;
+
+const VK_NAMES = new Map<number, VkHotkeyName>([
   [0x08, "backspace"],
   [0x09, "tab"],
   [0x0c, "clear"],
@@ -26,8 +29,8 @@ const VK_NAMES = new Map<number, string>([
   [0x2c, "printScreen"], // SNAPSHOT
   [0x2d, "insert"],
   [0x2e, "delete"],
-  [0x5b, "win"], // LWIN
-  [0x5c, "win"], // RWIN
+  [0x5b, "meta"], // LWIN
+  [0x5c, "meta"], // RWIN
   [0x5d, "contextMenu"], // APPS
   [0x5f, "sleep"],
   [0x6a, "numpadMultiply"],
@@ -77,38 +80,38 @@ const VK_NAMES = new Map<number, string>([
 ]);
 
 // 0-9
-for (let vk = 0x30; vk <= 0x39; vk++) VK_NAMES.set(vk, String.fromCharCode(vk));
+for (let vk = 0x30; vk <= 0x39; vk++) VK_NAMES.set(vk, String.fromCharCode(vk) as HotkeyKeyName);
 // a-z(小写)
-for (let vk = 0x41; vk <= 0x5a; vk++) VK_NAMES.set(vk, String.fromCharCode(vk + 0x20));
+for (let vk = 0x41; vk <= 0x5a; vk++) VK_NAMES.set(vk, String.fromCharCode(vk + 0x20) as HotkeyKeyName);
 // numpad0-numpad9
-for (let vk = 0x60; vk <= 0x69; vk++) VK_NAMES.set(vk, `numpad${vk - 0x60}`);
+for (let vk = 0x60; vk <= 0x69; vk++) VK_NAMES.set(vk, `numpad${vk - 0x60}` as HotkeyKeyName);
 // f1-f24
-for (let vk = 0x70; vk <= 0x87; vk++) VK_NAMES.set(vk, `f${vk - 0x70 + 1}`);
+for (let vk = 0x70; vk <= 0x87; vk++) VK_NAMES.set(vk, `f${vk - 0x70 + 1}` as HotkeyKeyName);
 
 /** VK 数值 → 键名;未知数值返回 undefined */
-export function vkToKeyName(vk: number): string | undefined {
+export function vkToKeyName(vk: number): VkHotkeyName | undefined {
   return VK_NAMES.get(vk);
 }
 
 /** 解码后的全局快捷键组合(暂停/继续热键即用此结构) */
 export interface HotKeyCombo {
-  /** 规范化修饰键名,顺序固定为 ctrl→shift→alt→win */
-  modifiers: string[];
+  /** 规范化修饰键名,顺序固定为 ctrl→shift→alt→meta */
+  modifiers: HotkeyModifier[];
   /** 主键名;仅有修饰键或数值非法时为 undefined */
-  key?: string;
+  key?: HotkeyKeyName;
 }
 
 /**
  * ModifierKeys 位 → 键名。
  * 来源:WGestures GlobalHotKeyManager —— System.Windows.Input.ModifierKeys
- * (Alt=1, Control=2, Shift=4, Windows=8)。顺序刻意选为 ctrl,shift,alt,win,
+ * (Alt=1, Control=2, Shift=4, Windows=8)。顺序刻意选为 ctrl,shift,alt,meta,
  * 使默认暂停热键 7 解出 ["ctrl","shift","alt"],与 PauseHotkey 默认序一致。
  */
-const HOTKEY_MODIFIERS: ReadonlyArray<readonly [number, string]> = [
+const HOTKEY_MODIFIER_BITS: ReadonlyArray<readonly [number, HotkeyModifier]> = [
   [2, "ctrl"],
   [4, "shift"],
   [1, "alt"],
-  [8, "win"],
+  [8, "meta"],
 ];
 
 /**
@@ -124,11 +127,16 @@ export function decodeHotKeyCombo(bytes: Uint8Array): HotKeyCombo | undefined {
   if (bytes.length < 8) return undefined;
   const keyCode = ((bytes[0]! | (bytes[1]! << 8) | (bytes[2]! << 16)) | (bytes[3]! << 24)) >>> 0;
   const modBits = ((bytes[4]! | (bytes[5]! << 8) | (bytes[6]! << 16)) | (bytes[7]! << 24)) >>> 0;
-  const modifiers: string[] = [];
-  for (const [bit, name] of HOTKEY_MODIFIERS) {
+  const modifiers: HotkeyModifier[] = [];
+  for (const [bit, name] of HOTKEY_MODIFIER_BITS) {
     if ((modBits & bit) !== 0) modifiers.push(name);
   }
-  const vk = keyCode & 0xffff;
-  const key = vk === 0 ? undefined : vkToKeyName(vk);
-  return key === undefined ? { modifiers } : { modifiers, key };
+  if (keyCode === 0) return { modifiers };
+  if (keyCode > 0xffff) return undefined;
+  const vk = keyCode;
+  const key = vkToKeyName(vk);
+  // A modifier VK is not a valid main key, and an unknown VK must not degrade
+  // into a modifiers-only shortcut. Only the explicit VK=0 encoding has no key.
+  if (key === undefined || HotkeyModifier.safeParse(key).success) return undefined;
+  return { modifiers, key: key as HotkeyKeyName };
 }

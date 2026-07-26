@@ -79,6 +79,7 @@ export default {
     placeholder: "点击后按下快捷键",
     recording: "请按下快捷键…",
     clear: "清除",
+    unsupportedKey: "该物理按键不支持快捷键；字符内容请使用“按键序列”命令",
   },
   modifier: {
     none: "无",

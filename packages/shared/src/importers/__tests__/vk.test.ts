@@ -11,8 +11,13 @@ describe("vkToKeyName", () => {
     expect(vkToKeyName(0x87)).toBe("f24");
     expect(vkToKeyName(0x60)).toBe("numpad0");
     expect(vkToKeyName(0xa2)).toBe("ctrl"); // LCONTROL
-    expect(vkToKeyName(0x5b)).toBe("win"); // LWIN
+    expect(vkToKeyName(0x5b)).toBe("meta"); // LWIN
     expect(vkToKeyName(0xbc)).toBe("comma");
+    expect(vkToKeyName(0x6f)).toBe("numpadDivide");
+    expect(vkToKeyName(0x5d)).toBe("contextMenu");
+    expect(vkToKeyName(0xa6)).toBe("browserBack");
+    expect(vkToKeyName(0xb0)).toBe("mediaNextTrack");
+    expect(vkToKeyName(0xad)).toBe("volumeMute");
   });
 
   it("未知 VK 返回 undefined", () => {
@@ -37,7 +42,22 @@ describe("decodeHotKeyCombo", () => {
 
   it("仅修饰键(无主键)时 key 省略", () => {
     const bytes = new Uint8Array([0, 0, 0, 0, 0x08, 0, 0, 0]);
-    expect(decodeHotKeyCombo(bytes)).toEqual({ modifiers: ["win"] });
+    expect(decodeHotKeyCombo(bytes)).toEqual({ modifiers: ["meta"] });
+  });
+
+  it("未知非零 VK 不退化为仅修饰键组合", () => {
+    const bytes = new Uint8Array([0x07, 0, 0, 0, 0x02, 0, 0, 0]);
+    expect(decodeHotKeyCombo(bytes)).toBeUndefined();
+  });
+
+  it("修饰键 VK 不能冒充主键", () => {
+    const bytes = new Uint8Array([0x11, 0, 0, 0, 0x00, 0, 0, 0]);
+    expect(decodeHotKeyCombo(bytes)).toBeUndefined();
+  });
+
+  it("只有完整 keyCode 为零时才允许省略主键", () => {
+    const bytes = new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x02, 0, 0, 0]);
+    expect(decodeHotKeyCombo(bytes)).toBeUndefined();
   });
 
   it("不足 8 字节返回 undefined", () => {

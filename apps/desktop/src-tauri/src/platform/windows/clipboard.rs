@@ -111,7 +111,7 @@ pub fn get_selected_text() -> Option<String> {
     let saved = get_text();
     clear();
 
-    super::input::synthesize_key_combo(&["ctrl".to_string()], &["c".to_string()]);
+    let _ = super::input::synthesize_key_combo(&["ctrl".to_string()], &["c".to_string()]);
 
     // 目标程序响应 Ctrl+C 需要时间,轮询至多 ~200ms
     let mut result = None;

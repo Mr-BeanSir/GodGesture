@@ -37,7 +37,7 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
 
         Command::HotKey { modifiers, keys } => {
             activate_target(ctx);
-            input::synthesize_key_combo(modifiers, keys);
+            let _ = input::synthesize_key_combo(modifiers, keys);
         }
         Command::SendText { text } => {
             activate_target(ctx);

@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { TriggerButton } from "./gestures.js";
+import { HotkeyKeyName, HotkeyModifier } from "./hotkeys.js";
 
 /** ARGB 十六进制颜色,如 "#FF32C864" */
 const argb = z.string().regex(/^#[0-9A-Fa-f]{8}$/);
@@ -43,8 +44,9 @@ export type GestureViewPreferences = z.infer<typeof GestureViewPreferences>;
 
 /** 暂停/继续全局快捷键(跨平台键码名 + 修饰键) */
 export const PauseHotkey = z.object({
-  modifiers: z.array(z.string()).default(["ctrl", "shift", "alt"]),
-  key: z.string().default("w"),
+  modifiers: z.array(HotkeyModifier).default(["ctrl", "shift", "alt"]),
+  /** 空串显式表示禁用全局暂停快捷键。 */
+  key: z.union([HotkeyKeyName, z.literal("")]).default("w"),
 });
 export type PauseHotkey = z.infer<typeof PauseHotkey>;
 

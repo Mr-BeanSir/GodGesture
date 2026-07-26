@@ -19,7 +19,7 @@ describe("importLegacyConfig(wg2 + config.plist)", () => {
     expect(document.global.intents).toHaveLength(2);
     expect(document.apps).toHaveLength(1);
     expect(document.hotCorners.commands.leftBottom).toEqual({ type: "taskSwitcher" });
-    expect(document.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["win"], keys: ["d"] });
+    expect(document.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["meta"], keys: ["d"] });
   });
 
   it("PathTracker 偏好映射", () => {

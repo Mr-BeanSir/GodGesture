@@ -6,6 +6,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { InfoFilled } from "@element-plus/icons-vue";
+import type { HotkeyKeyName, HotkeyModifier } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { useBackend } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
@@ -25,13 +26,13 @@ onMounted(async () => {
   version.value = await backend.getAppVersion();
 });
 
-const pauseKeys = computed<string[]>(() =>
+const pauseKeys = computed<HotkeyKeyName[]>(() =>
   prefs.value.pauseHotkey.key ? [prefs.value.pauseHotkey.key] : [],
 );
-function onPauseModifiers(mods: string[]) {
+function onPauseModifiers(mods: HotkeyModifier[]) {
   prefs.value.pauseHotkey.modifiers = mods;
 }
-function onPauseKeys(keys: string[]) {
+function onPauseKeys(keys: HotkeyKeyName[]) {
   prefs.value.pauseHotkey.key = keys[0] ?? "";
 }
 </script>

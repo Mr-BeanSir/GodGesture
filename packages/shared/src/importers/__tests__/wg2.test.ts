@@ -43,7 +43,7 @@ describe("importWg2", () => {
   it("触发角槽 0 = leftBottom 任务切换;摩擦边槽 4 = left → Win+D", () => {
     expect(result.hotCorners.enabled).toBe(true); // wg2 不含开关,取 schema 默认
     expect(result.hotCorners.commands.leftBottom).toEqual({ type: "taskSwitcher" });
-    expect(result.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["win"], keys: ["d"] });
+    expect(result.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["meta"], keys: ["d"] });
   });
 
   it("无未知类型告警", () => {
@@ -53,6 +53,29 @@ describe("importWg2", () => {
   it("FileVersion 2:GestureButton 数值 +1 还原触发键", () => {
     const v2 = importWg2(GESTURES_WG2_V2);
     expect(v2.global.intents[0]!.gesture.trigger).toBe("right");
+  });
+
+  it("未知 VK 禁用整条快捷键命令而不是部分执行", () => {
+    const imported = importWg2(JSON.stringify({
+      FileVersion: "3",
+      Global: {
+        GestureIntents: [{
+          Name: "坏快捷键",
+          Gesture: { GestureButton: 1, Dirs: [0], Modifier: 0 },
+          Command: {
+            $type: "WGestures.Core.Commands.Impl.HotKeyCommand, WGestures.Core",
+            Modifiers: [0x11],
+            Keys: [0x43, 0x07],
+          },
+        }],
+      },
+      Apps: {},
+      HotCornerCommands: [],
+    }));
+
+    expect(imported.global.intents[0]!.command).toEqual({ type: "doNothing" });
+    expect(imported.warnings.some((warning) => warning.includes("未知 VK 数值 7"))).toBe(true);
+    expect(imported.warnings.some((warning) => warning.includes("替换为“什么也不做”"))).toBe(true);
   });
 });
 

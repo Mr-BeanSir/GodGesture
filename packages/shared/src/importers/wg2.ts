@@ -19,6 +19,7 @@ import {
   GestureSpec,
   GlobalApp,
   HotCornersConfig,
+  HotKeyCommand,
   RubEdgesConfig,
   ScreenCorner,
   ScreenEdge,
@@ -148,7 +149,8 @@ class Wg2Importer {
     for (const item of list) {
       const vk = asInt(item);
       if (vk === undefined) {
-        this.warn(`${context}: 忽略非法 VK 值 ${String(item)}`);
+        this.warn(`${context}: 非法 VK 值 ${String(item)},快捷键命令将禁用`);
+        names.push(`invalidVk:${String(item)}`);
         continue;
       }
       const name = vkToKeyName(vk);
@@ -172,11 +174,19 @@ class Wg2Importer {
       case "DoNothingCommand":
         return { type: "doNothing" };
       case "HotKeyCommand":
-        return {
-          type: "hotKey",
-          modifiers: this.mapVkList(raw["Modifiers"], `${context}(修饰键)`),
-          keys: this.mapVkList(raw["Keys"], `${context}(主键)`),
-        };
+        {
+          const candidate = {
+            type: "hotKey",
+            modifiers: this.mapVkList(raw["Modifiers"], `${context}(修饰键)`),
+            keys: this.mapVkList(raw["Keys"], `${context}(主键)`),
+          };
+          const parsed = HotKeyCommand.safeParse(candidate);
+          if (!parsed.success) {
+            this.warn(`${context}: 快捷键含未知或错位键名,替换为“什么也不做”`);
+            return { type: "doNothing" };
+          }
+          return parsed.data;
+        }
       case "WebSearchCommand":
         return {
           type: "webSearch",

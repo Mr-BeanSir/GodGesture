@@ -3,6 +3,7 @@
  * 这是同步的载荷格式,也是桌面端本地配置的持久化格式(单一事实源)。
  */
 import { z } from "zod";
+import { HotkeyKeyName, HotkeyModifier } from "./hotkeys.js";
 
 /** 触发键:按住即进入手势状态的鼠标键 */
 export const TriggerButton = z.enum(["right", "middle", "x1", "x2"]);
@@ -52,9 +53,11 @@ export const DoNothingCommand = z.object(base("doNothing"));
 
 export const HotKeyCommand = z.object({
   ...base("hotKey"),
-  /** 修饰键 + 主键序列,取值为跨平台键码名(见 keycodes.ts) */
-  modifiers: z.array(z.string()),
-  keys: z.array(z.string()),
+  /** 修饰键 + 主键序列,解析时迁移旧别名并拒绝未知键名 */
+  // Keep Command's established string[] TypeScript surface for importers and
+  // consumers; the runtime schemas still canonicalize every array element.
+  modifiers: z.array(HotkeyModifier) as z.ZodType<string[]>,
+  keys: z.array(HotkeyKeyName) as z.ZodType<string[]>,
 });
 
 export const WebSearchCommand = z.object({

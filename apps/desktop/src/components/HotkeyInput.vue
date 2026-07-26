@@ -7,6 +7,13 @@
  */
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
+import {
+  HOTKEY_MODIFIERS,
+  HotkeyKeyName,
+  hotkeyKeyNameFromKeyboardCode,
+  type HotkeyModifier,
+} from "@godgesture/shared";
 
 const props = withDefaults(
   defineProps<{
@@ -17,15 +24,14 @@ const props = withDefaults(
   { multiKeys: false },
 );
 const emit = defineEmits<{
-  (e: "update:modifiers", value: string[]): void;
-  (e: "update:keys", value: string[]): void;
+  (e: "update:modifiers", value: HotkeyModifier[]): void;
+  (e: "update:keys", value: HotkeyKeyName[]): void;
 }>();
 
 const { t } = useI18n();
 const recording = ref(false);
 const boxRef = ref<HTMLElement | null>(null);
 
-const MOD_ORDER = ["ctrl", "shift", "alt", "meta"] as const;
 const MOD_LABELS: Record<string, string> = {
   ctrl: "Ctrl",
   shift: "Shift",
@@ -33,35 +39,19 @@ const MOD_LABELS: Record<string, string> = {
   meta: "Win/Cmd",
 };
 
-function normalizeKey(e: KeyboardEvent): string | null {
-  const key = e.key;
-  if (["Control", "Shift", "Alt", "Meta"].includes(key)) return null;
-  if (key === " ") return "space";
-  if (/^[a-zA-Z0-9]$/.test(key)) return key.toLowerCase();
-  if (/^F\d{1,2}$/.test(key)) return key.toLowerCase();
-  const map: Record<string, string> = {
-    ArrowUp: "up",
-    ArrowDown: "down",
-    ArrowLeft: "left",
-    ArrowRight: "right",
-    Escape: "esc",
-    Enter: "enter",
-    Backspace: "backspace",
-    Delete: "delete",
-    Tab: "tab",
-    Home: "home",
-    End: "end",
-    PageUp: "pageup",
-    PageDown: "pagedown",
-    Insert: "insert",
-  };
-  if (key in map) return map[key];
-  if (key.length === 1) return key.toLowerCase();
-  return null;
-}
+const MODIFIER_CODES = new Set([
+  "ControlLeft",
+  "ControlRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "AltLeft",
+  "AltRight",
+  "MetaLeft",
+  "MetaRight",
+]);
 
-function eventModifiers(e: KeyboardEvent): string[] {
-  const mods: string[] = [];
+function eventModifiers(e: KeyboardEvent): HotkeyModifier[] {
+  const mods: HotkeyModifier[] = [];
   if (e.ctrlKey) mods.push("ctrl");
   if (e.shiftKey) mods.push("shift");
   if (e.altKey) mods.push("alt");
@@ -73,13 +63,17 @@ function onKeydown(e: KeyboardEvent) {
   if (!recording.value) return;
   e.preventDefault();
   e.stopPropagation();
-  const key = normalizeKey(e);
-  if (!key) return; // 仅按下修饰键时等待主键
+  if (MODIFIER_CODES.has(e.code)) return; // 仅按下修饰键时等待主键
+  const key = hotkeyKeyNameFromKeyboardCode(e.code);
+  if (!key) {
+    ElMessage.warning(t("hotkey.unsupportedKey"));
+    return;
+  }
   const mods = eventModifiers(e);
   if (props.multiKeys) {
     // 序列模式:首个键确定修饰,后续键仅追加主键
     if (props.keys.length === 0) emit("update:modifiers", mods);
-    emit("update:keys", [...props.keys, key]);
+    emit("update:keys", [...props.keys.map((name) => HotkeyKeyName.parse(name)), key]);
   } else {
     emit("update:modifiers", mods);
     emit("update:keys", [key]);
@@ -101,7 +95,9 @@ function clearAll() {
 }
 
 const display = computed(() => {
-  const mods = MOD_ORDER.filter((m) => props.modifiers.includes(m)).map((m) => MOD_LABELS[m]);
+  const mods = HOTKEY_MODIFIERS.filter((m) => props.modifiers.includes(m)).map(
+    (m) => MOD_LABELS[m],
+  );
   const keys = props.keys.map((k) => (k.length === 1 ? k.toUpperCase() : k));
   return [...mods, ...keys].join(" + ");
 });

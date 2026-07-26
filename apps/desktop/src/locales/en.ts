@@ -79,6 +79,7 @@ export default {
     placeholder: "Click, then press a shortcut",
     recording: "Press a shortcut…",
     clear: "Clear",
+    unsupportedKey: "This physical key is unsupported. Use Send text for character input.",
   },
   modifier: {
     none: "None",
