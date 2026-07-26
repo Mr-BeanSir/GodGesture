@@ -3,6 +3,7 @@
 pub mod clipboard;
 pub mod commands;
 pub mod hook;
+pub mod icon;
 pub mod input;
 pub mod keys;
 pub mod overlay;

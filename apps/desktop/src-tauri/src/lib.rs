@@ -249,9 +249,23 @@ fn pick_window_blocking() -> Option<PickedWindow> {
     None
 }
 
-/// 图标提取与 PNG 编码在后续 UI 完善项落地;契约允许失败时返回 null。
+/// exe 名 → 图标 PNG 的 base64(裸 base64,前端自行拼 data: 前缀);
+/// 解析不到路径或取不到图标时返回 null(契约允许)。
+/// 解析要枚举窗口/读注册表,和 pick_window 一样丢到 blocking 线程,别卡住设置窗口。
+#[cfg(windows)]
 #[tauri::command]
-fn app_icon(exe_name: String) -> Option<String> {
+async fn app_icon(exe_name: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        platform::windows::icon::app_icon_base64(&exe_name)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+async fn app_icon(exe_name: String) -> Option<String> {
     let _ = exe_name;
     None
 }
