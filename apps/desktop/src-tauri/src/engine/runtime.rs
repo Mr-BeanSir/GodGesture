@@ -61,6 +61,13 @@ struct Session {
     last_recognized: Option<String>,
 }
 
+/// 左键+中键和弦(暂停/继续)的检测状态
+#[derive(Default)]
+struct ChordState {
+    left_down: bool,
+    swallow_next_middle_up: bool,
+}
+
 pub struct EngineShared {
     tracker: Mutex<PathTracker>,
     session: Mutex<Option<Session>>,
@@ -70,6 +77,7 @@ pub struct EngineShared {
     tx: Sender<EngineMsg>,
     /// 有效点距(识别一笔所需位移):屏宽 * 0.025,由平台层在启动/分辨率变化时更新
     effective_move_px: Mutex<f64>,
+    chord: Mutex<ChordState>,
 }
 
 impl EngineShared {
@@ -87,6 +95,7 @@ impl EngineShared {
             platform,
             tx,
             effective_move_px: Mutex::new(48.0),
+            chord: Mutex::new(ChordState::default()),
         });
         (shared, rx)
     }
@@ -122,8 +131,9 @@ impl EngineShared {
         (hk.modifiers.clone(), hk.key.clone())
     }
 
-    /// 触发键对应的轨迹配色 (主色, 未识别色) 与显示开关 (show_path, fade_out)
-    pub fn trail_style_for(&self, trigger: TriggerButton) -> (u32, u32, bool, bool) {
+    /// 触发键对应的轨迹配色与显示开关
+    /// 返回 (主色, 未识别色, show_path, show_label, fade_out)
+    pub fn trail_style_for(&self, trigger: TriggerButton) -> (u32, u32, bool, bool, bool) {
         let finder = self.finder.lock();
         let v = &finder.config().preferences.gesture_view;
         let main = match trigger {
@@ -135,12 +145,37 @@ impl EngineShared {
             main,
             parse_argb(&v.unrecognized_path_color),
             v.show_path,
+            v.show_command_name,
             v.fade_out,
         )
     }
 
     /// 钩子线程入口:裁决是否吞事件
     pub fn on_hook_event(self: &Arc<Self>, input: Input) -> bool {
+        use super::tracker::MouseButton;
+
+        // 左键+中键和弦 = 暂停/继续(仅在非捕获状态,对齐 WGestures)
+        {
+            let mut chord = self.chord.lock();
+            match &input {
+                Input::ButtonDown(MouseButton::Left, _) => chord.left_down = true,
+                Input::ButtonUp(MouseButton::Left, _) => chord.left_down = false,
+                Input::ButtonDown(MouseButton::Middle, _)
+                    if chord.left_down && !self.tracker.lock().is_capturing() =>
+                {
+                    chord.swallow_next_middle_up = true;
+                    let paused = self.toggle_paused();
+                    log::info!("和弦: 手势{}", if paused { "已暂停" } else { "已继续" });
+                    return true;
+                }
+                Input::ButtonUp(MouseButton::Middle, _) if chord.swallow_next_middle_up => {
+                    chord.swallow_next_middle_up = false;
+                    return true;
+                }
+                _ => {}
+            }
+        }
+
         let now = Instant::now();
         let mut host = HostImpl { shared: self };
         let outcome = self.tracker.lock().handle(input, now, &mut host);

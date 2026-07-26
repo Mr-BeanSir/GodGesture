@@ -51,11 +51,12 @@ pub enum OverlayCmd {
         origin: Point,
         colors: TrailColors,
         show_path: bool,
+        show_label: bool,
         fade_out: bool,
     },
     Grow(Point),
-    /// 当前笔画是否命中了某个意图(轨迹变色)
-    Recognized(bool),
+    /// 当前笔画命中的意图名(None = 无匹配;轨迹变色 + 提示标签)
+    Recognized(Option<String>),
     /// 手势正常结束(fade_out 则淡出,否则立即消失)
     End,
     /// 取消/超时:立即消失
@@ -102,11 +103,14 @@ struct OverlayState {
     points: Vec<Point>,
     colors: TrailColors,
     recognized: bool,
+    label: Option<String>,
     show_path: bool,
+    show_label: bool,
     fade_out: bool,
     visible: bool,
     alpha: u16,
     dpi_factor: f32,
+    font: Option<ab_glyph::FontVec>,
 }
 
 fn overlay_thread_main(rx: Receiver<OverlayCmd>, tid_slot: Arc<AtomicU32>) {
@@ -163,11 +167,14 @@ fn overlay_thread_main(rx: Receiver<OverlayCmd>, tid_slot: Arc<AtomicU32>) {
                 unrecognized: 0xFFFF8040,
             },
             recognized: false,
+            label: None,
             show_path: true,
+            show_label: true,
             fade_out: true,
             visible: false,
             alpha: 255,
             dpi_factor: 1.0,
+            font: load_label_font(),
         };
 
         let mut msg = MSG::default();
@@ -199,6 +206,7 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
                     origin,
                     colors,
                     show_path,
+                    show_label,
                     fade_out,
                 } => {
                     stop_fade(state);
@@ -206,7 +214,9 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
                     state.points.push(origin);
                     state.colors = colors;
                     state.recognized = false;
+                    state.label = None;
                     state.show_path = show_path;
+                    state.show_label = show_label;
                     state.fade_out = fade_out;
                     state.alpha = 255;
                     ensure_surface_for(state, origin);
@@ -224,9 +234,11 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
                         dirty = true;
                     }
                 }
-                OverlayCmd::Recognized(r) => {
-                    if state.recognized != r {
-                        state.recognized = r;
+                OverlayCmd::Recognized(name) => {
+                    let recognized = name.is_some();
+                    if state.recognized != recognized || state.label != name {
+                        state.recognized = recognized;
+                        state.label = name;
                         dirty = true;
                     }
                 }
@@ -250,9 +262,30 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
             Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
         }
     }
-    if dirty && state.show_path && state.points.len() >= 2 {
+    let has_trail = state.show_path && state.points.len() >= 2;
+    let has_label = state.show_label && state.label.is_some();
+    if dirty && (has_trail || has_label) {
         render(state);
     }
+}
+
+/// 加载标签字体:微软雅黑(TTC 首字体),备选黑体/宋体
+fn load_label_font() -> Option<ab_glyph::FontVec> {
+    let candidates = [
+        "C:\\Windows\\Fonts\\msyh.ttc",
+        "C:\\Windows\\Fonts\\msyhbd.ttc",
+        "C:\\Windows\\Fonts\\simhei.ttf",
+        "C:\\Windows\\Fonts\\simsun.ttc",
+    ];
+    for path in candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Ok(font) = ab_glyph::FontVec::try_from_vec_and_index(bytes, 0) {
+                return Some(font);
+            }
+        }
+    }
+    log::warn!("命令提示标签字体加载失败,标签将不渲染");
+    None
 }
 
 /// 为起点所在显示器准备绘制表面(尺寸变化时重建 DIB)
@@ -366,46 +399,55 @@ fn render(state: &mut OverlayState) {
         return;
     };
 
-    // 构造轨迹路径(转为覆盖层本地坐标)
-    let (ox, oy) = state.monitor_origin;
-    let mut pb = PathBuilder::new();
-    let first = state.points[0];
-    pb.move_to((first.x - ox) as f32, (first.y - oy) as f32);
-    for p in &state.points[1..] {
-        pb.line_to((p.x - ox) as f32, (p.y - oy) as f32);
+    // 轨迹(转为覆盖层本地坐标)
+    if state.show_path && state.points.len() >= 2 {
+        let (ox, oy) = state.monitor_origin;
+        let mut pb = PathBuilder::new();
+        let first = state.points[0];
+        pb.move_to((first.x - ox) as f32, (first.y - oy) as f32);
+        for p in &state.points[1..] {
+            pb.line_to((p.x - ox) as f32, (p.y - oy) as f32);
+        }
+        if let Some(path) = pb.finish() {
+            let dpi = state.dpi_factor.max(1.0);
+            let main_width = 2.0 * dpi;
+            let stroke = |width: f32| Stroke {
+                width,
+                line_cap: LineCap::Round,
+                line_join: LineJoin::Round,
+                ..Default::default()
+            };
+
+            // 白色描边打底
+            let mut border_paint = Paint::default();
+            border_paint.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+            border_paint.anti_alias = true;
+            pixmap.stroke_path(
+                &path,
+                &border_paint,
+                &stroke(main_width + 2.0 * dpi),
+                Transform::identity(),
+                None,
+            );
+
+            // 主线(识别状态决定颜色)
+            let color = if state.recognized {
+                state.colors.main
+            } else {
+                state.colors.unrecognized
+            };
+            let mut main_paint = Paint::default();
+            main_paint.set_color(skia_color(color));
+            main_paint.anti_alias = true;
+            pixmap.stroke_path(&path, &main_paint, &stroke(main_width), Transform::identity(), None);
+        }
     }
-    let Some(path) = pb.finish() else { return };
 
-    let main_width = 2.0 * state.dpi_factor.max(1.0);
-    let stroke = |width: f32| Stroke {
-        width,
-        line_cap: LineCap::Round,
-        line_join: LineJoin::Round,
-        ..Default::default()
-    };
-
-    // 白色描边打底
-    let mut border_paint = Paint::default();
-    border_paint.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
-    border_paint.anti_alias = true;
-    pixmap.stroke_path(
-        &path,
-        &border_paint,
-        &stroke(main_width + 4.0 * state.dpi_factor.max(1.0) / 2.0),
-        Transform::identity(),
-        None,
-    );
-
-    // 主线(识别状态决定颜色)
-    let color = if state.recognized {
-        state.colors.main
-    } else {
-        state.colors.unrecognized
-    };
-    let mut main_paint = Paint::default();
-    main_paint.set_color(skia_color(color));
-    main_paint.anti_alias = true;
-    pixmap.stroke_path(&path, &main_paint, &stroke(main_width), Transform::identity(), None);
+    if state.show_label {
+        if let Some(text) = state.label.clone() {
+            draw_label(state, &mut pixmap, &text);
+        }
+    }
 
     // premultiplied RGBA → BGRA 拷入 DIB
     unsafe {
@@ -428,6 +470,75 @@ fn render(state: &mut OverlayState) {
             let _ = ShowWindow(state.hwnd, SW_SHOWNOACTIVATE);
         }
         state.visible = true;
+    }
+}
+
+/// 命令提示标签:半透明黑底 + 白字,水平居中,
+/// 纵向位置 = 屏高/2 + 屏宽/8(对齐 WGestures)
+fn draw_label(state: &OverlayState, pixmap: &mut Pixmap, text: &str) {
+    use ab_glyph::{Font, ScaleFont};
+    let Some(font) = &state.font else { return };
+
+    let px = 32.0 * state.dpi_factor.max(1.0);
+    let scaled = font.as_scaled(ab_glyph::PxScale::from(px));
+
+    // 布局:一行,累计 advance
+    let mut glyphs = Vec::new();
+    let mut cursor = 0.0f32;
+    for ch in text.chars() {
+        let id = scaled.glyph_id(ch);
+        let glyph = id.with_scale_and_position(px, ab_glyph::point(cursor, 0.0));
+        cursor += scaled.h_advance(id);
+        glyphs.push(glyph);
+    }
+    let text_w = cursor;
+    let ascent = scaled.ascent();
+    let text_h = ascent - scaled.descent();
+
+    let pad_x = 24.0 * state.dpi_factor;
+    let pad_y = 10.0 * state.dpi_factor;
+    let box_w = text_w + pad_x * 2.0;
+    let box_h = text_h + pad_y * 2.0;
+    let box_x = (state.width as f32 - box_w) / 2.0;
+    let box_y = state.height as f32 / 2.0 + state.width as f32 / 8.0 - box_h / 2.0;
+
+    // 背景(识别态半透明黑)
+    if let Some(rect) = tiny_skia::Rect::from_xywh(box_x, box_y, box_w, box_h) {
+        let mut bg = Paint::default();
+        bg.set_color(tiny_skia::Color::from_rgba8(0, 0, 0, 140));
+        bg.anti_alias = true;
+        pixmap.fill_rect(rect, &bg, Transform::identity(), None);
+    }
+
+    // 白字(premultiplied source-over 手工合成)
+    let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
+    let data = pixmap.data_mut();
+    let origin_x = box_x + pad_x;
+    let origin_y = box_y + pad_y + ascent;
+    for glyph in glyphs {
+        let mut g = glyph;
+        g.position = ab_glyph::point(g.position.x + origin_x, origin_y);
+        if let Some(outlined) = font.outline_glyph(g) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|gx, gy, coverage| {
+                let x = bounds.min.x as i32 + gx as i32;
+                let y = bounds.min.y as i32 + gy as i32;
+                if x < 0 || y < 0 || x >= pw || y >= ph {
+                    return;
+                }
+                let a = (coverage * 255.0) as u16;
+                if a == 0 {
+                    return;
+                }
+                let idx = ((y * pw + x) * 4) as usize;
+                let inv = 255 - a;
+                // 白色 premultiplied = (a, a, a, a)
+                for ch in 0..4 {
+                    let dst = data[idx + ch] as u16;
+                    data[idx + ch] = (a + dst * inv / 255).min(255) as u8;
+                }
+            });
+        }
     }
 }
 

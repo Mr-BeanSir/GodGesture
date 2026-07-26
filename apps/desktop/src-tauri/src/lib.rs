@@ -21,12 +21,13 @@ fn spawn_engine_consumer(
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
-                        let (main, unrecognized, show_path, fade_out) =
+                        let (main, unrecognized, show_path, show_label, fade_out) =
                             shared.trail_style_for(trigger);
                         overlay.send(OverlayCmd::Begin {
                             origin,
                             colors: TrailColors { main, unrecognized },
                             show_path,
+                            show_label,
                             fade_out,
                         });
                     }
@@ -35,7 +36,7 @@ fn spawn_engine_consumer(
                     }
                     EngineMsg::RecognitionChanged(name) => {
                         log::debug!("识别变化: {name:?}");
-                        overlay.send(OverlayCmd::Recognized(name.is_some()));
+                        overlay.send(OverlayCmd::Recognized(name));
                     }
                     EngineMsg::ModifierFired { intent, modifier } => {
                         log::info!(

@@ -381,6 +381,69 @@ impl Default for MachineLocalSettings {
 // 持久化:%APPDATA%/GodGesture/{config.json, machine.json}
 // ---------------------------------------------------------------------------
 
+/// 首次启动的默认手势库(对齐 WGestures 出厂常用项;命令执行 M2 生效)
+pub fn default_seed() -> ConfigDocument {
+    use super::types::{Direction as D, TriggerButton as T};
+    let intent = |name: &str, trigger: T, strokes: Vec<super::types::Direction>, command: Command| {
+        GestureIntent {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            gesture: GestureSpecConfig {
+                trigger,
+                strokes,
+                modifier: super::types::Modifier::None,
+            },
+            command,
+            execute_on_modifier: false,
+            order: 0,
+        }
+    };
+    let hotkey = |mods: &[&str], keys: &[&str]| Command::HotKey {
+        modifiers: mods.iter().map(|s| s.to_string()).collect(),
+        keys: keys.iter().map(|s| s.to_string()).collect(),
+    };
+
+    let mut doc = ConfigDocument::default();
+    doc.global.intents = vec![
+        intent(
+            "关闭窗口",
+            T::Right,
+            vec![D::Down, D::Right],
+            Command::WindowControl {
+                operation: WindowOperation::Close,
+            },
+        ),
+        intent(
+            "最大化/还原",
+            T::Right,
+            vec![D::Up],
+            Command::WindowControl {
+                operation: WindowOperation::MaximizeRestore,
+            },
+        ),
+        intent(
+            "最小化",
+            T::Right,
+            vec![D::Down],
+            Command::WindowControl {
+                operation: WindowOperation::Minimize,
+            },
+        ),
+        intent("后退", T::Right, vec![D::Left], hotkey(&["alt"], &["left"])),
+        intent("前进", T::Right, vec![D::Right], hotkey(&["alt"], &["right"])),
+        intent("复制", T::Right, vec![D::RightDown], hotkey(&["ctrl"], &["c"])),
+        intent("粘贴", T::Right, vec![D::RightUp], hotkey(&["ctrl"], &["v"])),
+        intent("任务切换", T::Right, vec![D::Down, D::Up], Command::TaskSwitcher),
+        intent(
+            "刷新",
+            T::Right,
+            vec![D::Up, D::Down],
+            hotkey(&[], &["f5"]),
+        ),
+    ];
+    doc
+}
+
 pub struct ConfigStore {
     dir: PathBuf,
 }
@@ -397,8 +460,17 @@ impl ConfigStore {
         self.dir.join("machine.json")
     }
 
+    /// 加载配置;文件不存在时写入默认手势库种子
     pub fn load_config(&self) -> ConfigDocument {
-        Self::load_or_default(&self.config_path())
+        let path = self.config_path();
+        if !path.exists() {
+            let seed = default_seed();
+            if let Err(e) = self.save_config(&seed) {
+                log::warn!("默认配置种子写入失败: {e}");
+            }
+            return seed;
+        }
+        Self::load_or_default(&path)
     }
 
     pub fn load_machine(&self) -> MachineLocalSettings {
