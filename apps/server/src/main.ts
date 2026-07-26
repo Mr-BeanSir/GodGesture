@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -7,9 +8,17 @@ import { PrismaExceptionFilter } from './common/prisma-exception.filter';
 import type { Env } from './config/env';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   const config = app.get(ConfigService<Env, true>);
 
+  app.set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }));
+  app.useBodyParser('json', { limit: '300kb', strict: true });
+  app.useBodyParser('urlencoded', {
+    limit: '16kb',
+    extended: false,
+  });
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
   app.useGlobalFilters(new PrismaExceptionFilter());
@@ -31,20 +40,25 @@ async function bootstrap(): Promise<void> {
   }
   app.enableCors({ origin: [...origins], credentials: true });
 
-  // Swagger(/docs):仅粗粒度文档,协议以 @godgesture/shared 的 zod Schema 为准
-  const doc = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle('GodGesture API')
-      .setDescription(
-        'GodGesture 同步后端。请求/响应契约的唯一事实来源是 @godgesture/shared 中的 zod Schema。',
-      )
-      .setVersion('0.1.0')
-      .addBearerAuth()
-      .build(),
-  );
-  SwaggerModule.setup('docs', app, doc);
+  // 生产环境不暴露 API 枚举面；协议仍以 shared zod Schema 为准。
+  if (config.get('NODE_ENV', { infer: true }) !== 'production') {
+    const doc = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('GodGesture API')
+        .setDescription(
+          'GodGesture 同步后端。请求/响应契约的唯一事实来源是 @godgesture/shared 中的 zod Schema。',
+        )
+        .setVersion('0.1.0')
+        .addBearerAuth()
+        .build(),
+    );
+    SwaggerModule.setup('docs', app, doc);
+  }
 
-  await app.listen(config.get('PORT', { infer: true }));
+  await app.listen(
+    config.get('PORT', { infer: true }),
+    config.get('HOST', { infer: true }),
+  );
 }
 void bootstrap();

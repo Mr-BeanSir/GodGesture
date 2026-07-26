@@ -20,6 +20,8 @@ services:
       # 覆盖 .env 里的本地开发连接串,指向内网 postgres
       DATABASE_URL: postgresql://godgesture:${POSTGRES_PASSWORD}@postgres:5432/godgesture?schema=public
       PORT: '3000'
+      HOST: 0.0.0.0
+      TRUST_PROXY_HOPS: '1'
     depends_on:
       postgres:
         condition: service_healthy

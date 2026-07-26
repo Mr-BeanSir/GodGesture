@@ -7,6 +7,7 @@ const KNOWN_CODES = new Set([
   "invalid_credentials",
   "email_taken",
   "oauth_email_conflict",
+  "rate_limited",
   "validation_failed",
   "device_not_found",
   "snapshot_not_found",

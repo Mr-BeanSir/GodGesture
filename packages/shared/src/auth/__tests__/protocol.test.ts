@@ -3,6 +3,7 @@ import {
   LoginRequest,
   OAuthEmailConflictResponse,
   OAuthExchangeRequest,
+  RateLimitedResponse,
   RenameDeviceRequest,
 } from "../protocol.js";
 
@@ -57,5 +58,14 @@ describe("OAuthEmailConflictResponse", () => {
     expect(() =>
       OAuthEmailConflictResponse.parse({ error: "email_taken" }),
     ).toThrow();
+  });
+});
+
+describe("RateLimitedResponse", () => {
+  it("accepts only the rate limit error code", () => {
+    expect(RateLimitedResponse.parse({ error: "rate_limited" })).toEqual({
+      error: "rate_limited",
+    });
+    expect(() => RateLimitedResponse.parse({ error: "network" })).toThrow();
   });
 });

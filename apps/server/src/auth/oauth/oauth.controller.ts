@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import { OAuthExchangeRequest, TokenPairResponse } from '@godgesture/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { OAuthService } from './oauth.service';
+import { RateLimit } from '../../common/rate-limit.decorator';
 
 @ApiTags('auth/oauth')
 @Controller('auth/oauth')
@@ -21,6 +22,7 @@ export class OAuthController {
   constructor(private readonly oauth: OAuthService) {}
 
   @Get(':provider/authorize')
+  @RateLimit('oauth-authorize', 10, 60 * 1000)
   @ApiOperation({
     summary: '跳转提供方授权页(redirect_uri 仅限桌面回环或 Web 控制台)',
   })
@@ -35,6 +37,7 @@ export class OAuthController {
   }
 
   @Get(':provider/callback')
+  @RateLimit('oauth-callback', 20, 60 * 1000)
   @ApiOperation({
     summary: '提供方回调:换取身份并携一次性授权码回跳客户端',
   })
@@ -49,6 +52,7 @@ export class OAuthController {
   }
 
   @Post('exchange')
+  @RateLimit('oauth-exchange', 10, 60 * 1000)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '一次性授权码换令牌对(登记设备)' })
   exchange(

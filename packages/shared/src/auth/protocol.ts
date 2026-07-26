@@ -80,7 +80,15 @@ export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequest>;
 export const OAuthEmailConflictResponse = z.object({
   error: z.literal("oauth_email_conflict"),
 });
-export type OAuthEmailConflictResponse = z.infer<typeof OAuthEmailConflictResponse>;
+export type OAuthEmailConflictResponse = z.infer<
+  typeof OAuthEmailConflictResponse
+>;
+
+/** 请求频率超过服务端窗口额度时的 429 响应。 */
+export const RateLimitedResponse = z.object({
+  error: z.literal("rate_limited"),
+});
+export type RateLimitedResponse = z.infer<typeof RateLimitedResponse>;
 
 export const MeResponse = z.object({
   id: z.string().uuid(),

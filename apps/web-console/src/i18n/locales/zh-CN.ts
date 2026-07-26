@@ -188,6 +188,7 @@ export default {
     invalid_credentials: "邮箱或密码不正确",
     email_taken: "该邮箱已被注册",
     oauth_email_conflict: "该邮箱已注册密码账户，请使用邮箱和密码登录",
+    rate_limited: "请求过于频繁，请稍后重试",
     validation_failed: "输入内容不符合要求",
     device_not_found: "设备不存在或已被移除",
     snapshot_not_found: "快照不存在",

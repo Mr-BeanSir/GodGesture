@@ -20,6 +20,7 @@ import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentDevice, CurrentUser } from './auth.decorators';
+import { RateLimit } from '../common/rate-limit.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -30,6 +31,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @RateLimit('register', 3, 60 * 60 * 1000)
   @ApiOperation({ summary: '邮箱+密码注册(argon2id)' })
   register(
     @Body(new ZodValidationPipe(RegisterRequest)) dto: RegisterRequest,
@@ -38,6 +40,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @RateLimit('login', 5, 60 * 1000)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '登录:登记设备并签发令牌对' })
   login(
@@ -47,6 +50,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @RateLimit('refresh', 20, 60 * 1000)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '刷新令牌轮换(旧令牌作废)' })
   refresh(

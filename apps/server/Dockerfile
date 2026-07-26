@@ -48,14 +48,15 @@ ENV NODE_ENV=production
 WORKDIR /repo
 
 # pnpm 的 node_modules 结构依赖相对符号链接,按 workspace 布局整体拷贝
-COPY --from=prod-deps /repo/package.json /repo/pnpm-workspace.yaml ./
-COPY --from=prod-deps /repo/node_modules node_modules
-COPY --from=prod-deps /repo/packages/shared packages/shared
-COPY --from=prod-deps /repo/apps/server apps/server
-COPY --from=build /repo/packages/shared/dist packages/shared/dist
-COPY --from=build /repo/apps/server/dist apps/server/dist
+COPY --chown=node:node --from=prod-deps /repo/package.json /repo/pnpm-workspace.yaml ./
+COPY --chown=node:node --from=prod-deps /repo/node_modules node_modules
+COPY --chown=node:node --from=prod-deps /repo/packages/shared packages/shared
+COPY --chown=node:node --from=prod-deps /repo/apps/server apps/server
+COPY --chown=node:node --from=build /repo/packages/shared/dist packages/shared/dist
+COPY --chown=node:node --from=build /repo/apps/server/dist apps/server/dist
 
 WORKDIR /repo/apps/server
 EXPOSE 3000
+USER node
 # 启动前先跑迁移(幂等),再启动应用
 CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main.js"]

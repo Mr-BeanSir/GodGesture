@@ -13,6 +13,9 @@ const BaseEnvSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+  HOST: z.string().ip().default('127.0.0.1'),
+  /** 可信反向代理跳数。直接运行=0，1Panel/OpenResty 单跳=1。 */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(2).default(0),
 
   /** PostgreSQL 连接串 */
   DATABASE_URL: z.string().min(1),
