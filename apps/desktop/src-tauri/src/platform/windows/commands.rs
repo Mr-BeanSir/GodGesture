@@ -17,7 +17,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_UP};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindow,
+    GetClassNameW, GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos,
+    ShowWindow,
     GWL_EXSTYLE, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL, WM_CLOSE, WS_EX_TOPMOST,
 };
@@ -76,10 +77,42 @@ fn activate_target(ctx: &GestureContext) {
     }
 }
 
+/// 外壳窗口(桌面/任务栏等)的类名。窗口类命令一律不作用于它们。
+///
+/// 触发角/摩擦边把命令指向**前台窗口**,而光标停在屏幕角落或边缘时,前台窗口
+/// 经常正是这些外壳窗口 —— 给触发角绑一个"关闭窗口",就会朝 `Progman` 发
+/// `WM_CLOSE`,足以把资源管理器桌面干掉。手势路径同样可能命中(在桌面上画手势)。
+const SHELL_WINDOW_CLASSES: &[&str] = &[
+    "Progman",           // 桌面
+    "WorkerW",           // 壁纸/桌面工作窗口
+    "Shell_TrayWnd",     // 主任务栏
+    "Shell_SecondaryTrayWnd", // 副屏任务栏
+    "Shell_ChargeBar",
+    "NotifyIconOverflowWindow",
+    "Windows.UI.Core.CoreWindow", // 开始菜单 / 搜索 / 通知中心等 shell UI
+    "XamlExplorerHostIslandWindow",
+    "ForegroundStaging",
+    "MultitaskingViewFrame", // 任务视图
+];
+
+fn is_shell_window(hwnd: HWND) -> bool {
+    let mut buf = [0u16; 128];
+    let n = unsafe { GetClassNameW(hwnd, &mut buf) } as usize;
+    if n == 0 {
+        return false;
+    }
+    let class = String::from_utf16_lossy(&buf[..n]);
+    SHELL_WINDOW_CLASSES.iter().any(|c| *c == class)
+}
+
 fn window_control(op: WindowOperation, ctx: &GestureContext) {
     let Some(hwnd) = hwnd_of(ctx) else {
         return;
     };
+    if is_shell_window(hwnd) {
+        log::debug!("窗口命令跳过外壳窗口(桌面/任务栏)");
+        return;
+    }
     unsafe {
         match op {
             WindowOperation::MaximizeRestore => {
@@ -151,7 +184,10 @@ fn dock_half(hwnd: HWND, left: bool) {
 }
 
 fn audio_volume(delta: i32) {
-    let steps = delta.unsigned_abs();
+    // 上限对齐 schema 的 max(20)。不封顶的话,一个手改出来的
+    // delta = i32::MIN 会敲 21 亿次音量键,把执行线程彻底挂住。
+    const MAX_STEPS: u32 = 20;
+    let steps = delta.unsigned_abs().min(MAX_STEPS);
     if steps == 0 {
         return;
     }
@@ -177,7 +213,17 @@ fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &Gest
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     activate_target(ctx);
-    let selected_text = clipboard::get_selected_text().unwrap_or_default();
+    // 只有脚本真的引用了 WG_SELECTED_TEXT 才去取选中文本。
+    // 取选中文本要朝前台窗口合成 Ctrl+C —— 无条件做的话,在控制台
+    // (cmd / PowerShell / WSL / 正在跑的编译)上画一次 Cmd 手势就会
+    // 把 Ctrl+C 打进去中断那个进程,而且每次白白阻塞 200ms~1.4s。
+    // 参考实现的 CmdCommand 根本不提供这个变量,这里算是折中保留。
+    let wants_selection = code.contains("WG_SELECTED_TEXT");
+    let selected_text = if wants_selection {
+        clipboard::get_selected_text().unwrap_or_default()
+    } else {
+        String::new()
+    };
     let mut command = std::process::Command::new("cmd");
     command.arg("/C").arg(code);
 

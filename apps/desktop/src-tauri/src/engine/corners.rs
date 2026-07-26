@@ -793,7 +793,7 @@ mod tests {
         };
         let mut det = CornerEdgeDetector::new();
         let mut t = Instant::now();
-        let mut mv = |det: &mut CornerEdgeDetector, t: &mut Instant, x: i32, y: i32| {
+        let mv = |det: &mut CornerEdgeDetector, t: &mut Instant, x: i32, y: i32| {
             *t += Duration::from_millis(100);
             det.on_move(p(x, y), *t, || Some(below))
         };

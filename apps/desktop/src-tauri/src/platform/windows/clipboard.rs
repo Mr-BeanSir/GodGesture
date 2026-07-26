@@ -10,7 +10,9 @@ use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{
+    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+};
 
 const CF_UNICODETEXT: u32 = 13;
 
@@ -38,8 +40,12 @@ pub fn get_text() -> Option<String> {
                 if ptr.is_null() {
                     None
                 } else {
+                    // 用 GlobalSize 封住扫描范围:若某个程序放上来的 CF_UNICODETEXT
+                    // 没有以 NUL 结尾(有 bug 的程序就会这样),无界扫描会读出分配区
+                    // 之外并直接把进程读崩。
+                    let max_chars = GlobalSize(hglobal) / std::mem::size_of::<u16>();
                     let mut len = 0usize;
-                    while *ptr.add(len) != 0 {
+                    while len < max_chars && *ptr.add(len) != 0 {
                         len += 1;
                     }
                     let s = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len));

@@ -201,6 +201,9 @@ enum TextSegment {
     Sleep(u64),
 }
 
+/// 单个 `{sleep N}` 的最大生效时长
+const MAX_SLEEP_MS: u64 = 10_000;
+
 /// 把含 `{sleep N}` 的文本拆成文本段与休眠段。
 fn split_sleep_tokens(text: &str) -> Vec<TextSegment> {
     let mut out = Vec::new();
@@ -213,7 +216,10 @@ fn split_sleep_tokens(text: &str) -> Vec<TextSegment> {
                 if start > 0 {
                     out.push(TextSegment::Text(rest[..start].to_string()));
                 }
-                out.push(TextSegment::Sleep(ms));
+                // 封顶 10s:这段休眠跑在命令执行线程上,一个手改(或从别的设备
+                // 同步过来)的 {sleep 99999999999} 会把该线程永久挂住,
+                // 之后所有手势命令都不再执行,只能重启。
+                out.push(TextSegment::Sleep(ms.min(MAX_SLEEP_MS)));
                 rest = &rest[end + 1..];
                 continue;
             }
