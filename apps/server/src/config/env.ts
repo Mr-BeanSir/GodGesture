@@ -19,11 +19,7 @@ const BaseEnvSchema = z.object({
 
   /** JWT 签名密钥(HS256),生产环境务必使用长随机串 */
   JWT_SECRET: z.string().min(16),
-  /**
-   * 访问令牌有效期(秒),默认 15 分钟,上限 1 小时。
-   * 上限是安全约束而非口味:目前 JwtAuthGuard 只验签名、不查设备是否仍存在,
-   * 所以"Web 控制台踢下线"最长要等这么久才真正生效(见 jwt-auth.guard.ts)。
-   */
+  /** 访问令牌有效期(秒),默认 15 分钟,上限 1 小时 */
   ACCESS_TOKEN_TTL_SEC: z.coerce
     .number()
     .int()

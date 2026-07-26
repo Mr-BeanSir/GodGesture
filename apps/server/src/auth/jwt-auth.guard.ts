@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface AuthContext {
   userId: string;
@@ -19,9 +20,15 @@ interface AccessTokenPayload {
   dev: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthedRequest>();
@@ -29,14 +36,36 @@ export class JwtAuthGuard implements CanActivate {
     if (!header?.startsWith('Bearer ')) {
       throw new UnauthorizedException({ error: 'missing_access_token' });
     }
+    let payload: AccessTokenPayload;
     try {
-      const payload = await this.jwt.verifyAsync<AccessTokenPayload>(
+      payload = await this.jwt.verifyAsync<AccessTokenPayload>(
         header.slice('Bearer '.length),
       );
-      req.auth = { userId: payload.sub, deviceId: payload.dev };
-      return true;
     } catch {
       throw new UnauthorizedException({ error: 'invalid_access_token' });
     }
+
+    if (
+      typeof payload.sub !== 'string' ||
+      typeof payload.dev !== 'string' ||
+      !UUID_PATTERN.test(payload.sub) ||
+      !UUID_PATTERN.test(payload.dev)
+    ) {
+      throw new UnauthorizedException({ error: 'invalid_access_token' });
+    }
+
+    // Device removal is the access-token revocation boundary. Keep this lookup
+    // outside the JWT verification catch: a database outage is not an invalid
+    // token and must remain visible to the global error handling/monitoring.
+    const device = await this.prisma.device.findUnique({
+      where: { id: payload.dev },
+      select: { id: true, userId: true },
+    });
+    if (!device || device.userId !== payload.sub) {
+      throw new UnauthorizedException({ error: 'invalid_access_token' });
+    }
+
+    req.auth = { userId: payload.sub, deviceId: device.id };
+    return true;
   }
 }
