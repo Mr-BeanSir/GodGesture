@@ -1,0 +1,14 @@
+# BuildKit 的 Dockerfile 专属忽略(与 apps/server/Dockerfile 配套)
+# 防止宿主机(Windows)的 node_modules / 构建产物污染镜像内的 Linux 安装
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+.git
+apps/desktop
+WGestures
+docs
+**/*.log
+**/target

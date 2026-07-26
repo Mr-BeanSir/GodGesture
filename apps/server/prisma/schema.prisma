@@ -3,6 +3,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // native = 本机开发;debian-openssl-3.0.x = 生产镜像(node:22-slim)
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

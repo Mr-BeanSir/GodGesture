@@ -1,0 +1,53 @@
+# ============================================================
+# 生产部署(1Panel 手动部署,ADR-0004)
+#   - postgres 仅在内部网络,不对外
+#   - app 仅绑定 127.0.0.1:${APP_PORT},由 1Panel(OpenResty)反向代理并终止 HTTPS
+# 使用:
+#   1) 在本目录放 .env(参照 .env.example,另需 POSTGRES_PASSWORD / APP_PORT)
+#   2) docker compose -f docker-compose.prod.yml up -d --build
+# ============================================================
+name: godgesture
+
+services:
+  app:
+    build:
+      context: ../.. # 仓库根(pnpm workspace)
+      dockerfile: apps/server/Dockerfile
+    image: godgesture-server:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # 覆盖 .env 里的本地开发连接串,指向内网 postgres
+      DATABASE_URL: postgresql://godgesture:${POSTGRES_PASSWORD}@postgres:5432/godgesture?schema=public
+      PORT: '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    ports:
+      # 仅绑定回环地址;1Panel 反代到 http://127.0.0.1:${APP_PORT:-3000}
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: godgesture
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: godgesture
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U godgesture -d godgesture']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
