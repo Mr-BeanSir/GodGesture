@@ -280,7 +280,13 @@ class Wg2Importer {
     return { trigger, strokes, modifier };
   }
 
-  mapIntents(rawList: unknown, buttonShift: number, scope: string): GestureIntent[] {
+  mapIntents(
+    rawList: unknown,
+    buttonShift: number,
+    scope: string,
+    idScope = scope,
+    unwrapV1 = false,
+  ): GestureIntent[] {
     if (rawList === undefined || rawList === null) return [];
     if (!Array.isArray(rawList)) {
       this.warn(`${scope}: GestureIntents 不是数组,已忽略`);
@@ -288,15 +294,19 @@ class Wg2Importer {
     }
     const intents: GestureIntent[] = [];
     for (let i = 0; i < rawList.length; i++) {
-      const raw = rawList[i];
+      const entry = rawList[i];
+      const raw = unwrapV1 && isObject(entry) ? entry["Value"] : entry;
       if (!isObject(raw)) {
-        this.warn(`${scope}: 忽略第 ${i + 1} 条非法手势意图`);
+        this.warn(
+          `${scope}: 忽略第 ${i + 1} 条非法手势意图` +
+            (unwrapV1 ? "(FileVersion 1 条目必须包含 Value)" : ""),
+        );
         continue;
       }
       const name = asString(raw["Name"]).slice(0, 64);
       const context = `${scope} → 意图「${name || `#${i + 1}`}」`;
       intents.push({
-        id: deterministicUuid(`intent:${scope}:${i}:${name}`),
+        id: deterministicUuid(`intent:${idScope}:${i}:${name}`),
         name,
         gesture: this.mapGesture(raw["Gesture"], buttonShift, context),
         command: this.mapCommand(raw["Command"], context),
@@ -325,6 +335,7 @@ export function importWg2(json: string): Wg2ImportResult {
   const fileVersion = asString(root["FileVersion"], "3");
   // FileVersion 1/2 时代 GestureButton 数值整体小 1(见 JsonGestureIntentStore.Deserialize)
   const buttonShift = fileVersion === "1" || fileVersion === "2" ? 1 : 0;
+  const unwrapV1 = fileVersion === "1";
   if (fileVersion !== "3" && buttonShift === 0) {
     importer.warnings.push(`未知的 FileVersion "${fileVersion}",按版本 3 处理`);
   }
@@ -333,7 +344,13 @@ export function importWg2(json: string): Wg2ImportResult {
   const rawGlobal = isObject(root["Global"]) ? root["Global"] : {};
   const global = GlobalApp.parse({
     gesturingEnabled: asBool(rawGlobal["IsGesturingEnabled"], true),
-    intents: importer.mapIntents(rawGlobal["GestureIntents"], buttonShift, "全局"),
+    intents: importer.mapIntents(
+      rawGlobal["GestureIntents"],
+      buttonShift,
+      "全局",
+      "global",
+      unwrapV1,
+    ),
   });
 
   // 应用列表(保留 JSON 键序)
@@ -363,7 +380,13 @@ export function importWg2(json: string): Wg2ImportResult {
         },
         gesturingEnabled: asBool(rawApp["IsGesturingEnabled"], true),
         inheritGlobalGestures: asBool(rawApp["InheritGlobalGestures"], true),
-        intents: importer.mapIntents(rawApp["GestureIntents"], buttonShift, `应用「${name}」`),
+        intents: importer.mapIntents(
+          rawApp["GestureIntents"],
+          buttonShift,
+          `应用「${name}」`,
+          `app:${appIndex}:${executablePath.toLowerCase()}`,
+          unwrapV1,
+        ),
         order: asInt(rawApp["Order"]) ?? appIndex,
       }),
     );

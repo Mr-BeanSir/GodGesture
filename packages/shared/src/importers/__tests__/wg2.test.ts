@@ -55,6 +55,46 @@ describe("importWg2", () => {
     expect(v2.global.intents[0]!.gesture.trigger).toBe("right");
   });
 
+  it("FileVersion 1:解包 Key/Value 意图且同名应用不会碰撞 intent id", () => {
+    const pair = (name: string, dirs: number[]) => ({
+      Key: { GestureButton: 0, Dirs: [7], Modifier: 0 },
+      Value: {
+        Name: name,
+        Gesture: { GestureButton: 0, Dirs: dirs, Modifier: 0 },
+        Command: {
+          $type: "WGestures.Core.Commands.Impl.DoNothingCommand, WGestures.Core",
+        },
+      },
+    });
+    const imported = importWg2(JSON.stringify({
+      FileVersion: "1",
+      Global: { GestureIntents: [pair("全局旧格式", [2])] },
+      Apps: {
+        first: {
+          Name: "同名应用",
+          ExecutablePath: "C:\\One\\same.exe",
+          GestureIntents: [pair("同名意图", [0])],
+        },
+        second: {
+          Name: "同名应用",
+          ExecutablePath: "D:\\Two\\same.exe",
+          GestureIntents: [pair("同名意图", [0])],
+        },
+      },
+      HotCornerCommands: [],
+    }));
+
+    expect(imported.global.intents[0]!.name).toBe("全局旧格式");
+    expect(imported.global.intents[0]!.gesture).toMatchObject({
+      trigger: "right",
+      strokes: ["right"],
+    });
+    expect(imported.apps).toHaveLength(2);
+    expect(imported.apps[0]!.intents[0]!.id).not.toBe(
+      imported.apps[1]!.intents[0]!.id,
+    );
+  });
+
   it("未知 VK 禁用整条快捷键命令而不是部分执行", () => {
     const imported = importWg2(JSON.stringify({
       FileVersion: "3",
