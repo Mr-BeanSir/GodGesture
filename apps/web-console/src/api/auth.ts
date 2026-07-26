@@ -1,0 +1,50 @@
+import {
+  LoginRequest,
+  MeResponse,
+  OAuthExchangeRequest,
+  RegisterRequest,
+  TokenPairResponse,
+} from "@godgesture/shared";
+import { apiRequest, apiRequestVoid, clearSession, setTokenPair } from "./client";
+
+export function registerAccount(input: RegisterRequest): Promise<MeResponse> {
+  return apiRequest(MeResponse, "/auth/register", {
+    method: "POST",
+    body: input,
+    auth: false,
+  });
+}
+
+export async function login(input: LoginRequest): Promise<void> {
+  const pair = await apiRequest(TokenPairResponse, "/auth/login", {
+    method: "POST",
+    body: input,
+    auth: false,
+  });
+  setTokenPair(pair);
+}
+
+export async function exchangeOAuthCode(
+  input: OAuthExchangeRequest,
+): Promise<void> {
+  const pair = await apiRequest(TokenPairResponse, "/auth/oauth/exchange", {
+    method: "POST",
+    body: input,
+    auth: false,
+  });
+  setTokenPair(pair);
+}
+
+export function fetchMe(): Promise<MeResponse> {
+  return apiRequest(MeResponse, "/auth/me");
+}
+
+/** 登出:撤销当前设备刷新令牌 + 清理本地 token */
+export async function logout(): Promise<void> {
+  try {
+    await apiRequestVoid("/auth/logout", { method: "POST" });
+  } catch {
+    // 服务端撤销失败(如已过期)不阻塞本地登出
+  }
+  clearSession();
+}
