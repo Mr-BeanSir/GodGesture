@@ -60,6 +60,20 @@ export const RenameDeviceRequest = z.object({
 });
 export type RenameDeviceRequest = z.infer<typeof RenameDeviceRequest>;
 
+/**
+ * POST /auth/oauth/exchange 请求:用回调阶段发放的一次性授权码换取令牌对,
+ * 同时登记设备(桌面回环 RFC 8252 / Web 控制台共用)。
+ */
+export const OAuthExchangeRequest = z.object({
+  /** 一次性授权码(5 分钟内有效,用后即焚) */
+  code: z.string().min(1),
+  device: z.object({
+    name: z.string().max(64),
+    platform: DevicePlatform,
+  }),
+});
+export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequest>;
+
 export const MeResponse = z.object({
   id: z.string().uuid(),
   email: z.string().email().nullable(),

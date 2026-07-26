@@ -1,0 +1,636 @@
+//! 路径追踪器 —— 平台无关状态机,移植 Win32MousePathTracker2 的行为语义:
+//!
+//! - 触发键按下先"待定"(Pending),位移达到起始阈值才真正开始手势;
+//! - 起始超时:按住不动超过阈值 → 放弃捕获,合成按下事件透传为普通拖拽;
+//! - 点击透传:按下后无有效位移即抬起 → 合成一次完整点击;
+//! - 停留超时:手势中途停留过久 → 取消,等待抬起并吞掉;
+//! - 修饰:手势期间滚轮(100ms 节流)与其它按键成为修饰事件;
+//! - 手势结束后 300ms 内的滚轮事件吞掉(防止目标程序收到 Ctrl+滚轮之类)。
+//!
+//! 平台层职责:把钩子事件喂给 `handle`,按返回值决定是否吞事件,并执行 `Action`。
+
+use super::types::{Modifier, Point, TriggerButton};
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    X1,
+    X2,
+}
+
+impl MouseButton {
+    pub fn as_trigger(self) -> Option<TriggerButton> {
+        match self {
+            MouseButton::Right => Some(TriggerButton::Right),
+            MouseButton::Middle => Some(TriggerButton::Middle),
+            MouseButton::X1 => Some(TriggerButton::X1),
+            MouseButton::X2 => Some(TriggerButton::X2),
+            MouseButton::Left => None,
+        }
+    }
+
+    fn as_modifier(self) -> Modifier {
+        match self {
+            MouseButton::Left => Modifier::LeftButtonDown,
+            MouseButton::Right => Modifier::RightButtonDown,
+            MouseButton::Middle => Modifier::MiddleButtonDown,
+            MouseButton::X1 => Modifier::X1Down,
+            MouseButton::X2 => Modifier::X2Down,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Input {
+    ButtonDown(MouseButton, Point),
+    ButtonUp(MouseButton, Point),
+    Move(Point),
+    /// forward = 滚轮向前(远离使用者)
+    Wheel { forward: bool, pos: Point },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// 手势正式开始(已越过起始阈值)
+    PathStart { trigger: TriggerButton, origin: Point },
+    /// 路径生长(渲染与识别都从这里喂)
+    PathGrow(Point),
+    /// 修饰触发
+    ModifierFired(Modifier),
+    /// 正常结束:交由引擎按识别结果执行/取消
+    PathEnd { pos: Point },
+    /// 停留超时取消(轨迹应立即消失,后续抬起会被吞)
+    PathTimeout,
+    /// 待定期抬起:合成一次完整点击(down+up)
+    SynthesizeClick { button: MouseButton, pos: Point },
+    /// 起始超时:合成按下,转普通拖拽透传
+    SynthesizeDown { button: MouseButton, pos: Point },
+}
+
+/// `handle` 的返回:是否吞掉当前这条真实事件 + 待执行动作
+#[derive(Debug, Default)]
+pub struct Outcome {
+    pub swallow: bool,
+    pub actions: Vec<Action>,
+}
+
+impl Outcome {
+    fn pass() -> Self {
+        Outcome::default()
+    }
+    fn swallowed(actions: Vec<Action>) -> Self {
+        Outcome {
+            swallow: true,
+            actions,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackerParams {
+    pub trigger_buttons: Vec<TriggerButton>,
+    pub initial_valid_move_px: u32,
+    pub initial_stay_timeout: bool,
+    pub initial_stay_timeout_ms: u32,
+    pub stay_timeout: bool,
+    pub stay_timeout_ms: u32,
+}
+
+impl Default for TrackerParams {
+    fn default() -> Self {
+        Self {
+            trigger_buttons: vec![
+                TriggerButton::Right,
+                TriggerButton::Middle,
+                TriggerButton::X1,
+                TriggerButton::X2,
+            ],
+            initial_valid_move_px: 4,
+            initial_stay_timeout: false,
+            initial_stay_timeout_ms: 200,
+            stay_timeout: false,
+            stay_timeout_ms: 500,
+        }
+    }
+}
+
+/// 由引擎实现,回答追踪器无法自知的问题
+pub trait TrackerHost {
+    /// 路径开始前的放行判定(黑名单/总开关/全屏禁用)——必须快
+    fn is_gesturing_allowed(&mut self, pos: Point) -> bool;
+    /// 当前手势是否已识别出至少一笔或用过修饰(决定抬起时透传点击还是结束手势)
+    fn has_path_content(&self) -> bool;
+}
+
+const WHEEL_THROTTLE: Duration = Duration::from_millis(100);
+const POST_GESTURE_WHEEL_SWALLOW: Duration = Duration::from_millis(300);
+
+#[derive(Debug)]
+enum State {
+    Idle,
+    /// 触发键已按下,尚未越过起始阈值
+    Pending {
+        button: MouseButton,
+        trigger: TriggerButton,
+        origin: Point,
+        since: Instant,
+    },
+    /// 手势进行中
+    Tracking {
+        button: MouseButton,
+        modifier_used: bool,
+        last_wheel: Option<Instant>,
+        last_activity: Instant,
+        /// 手势期间按下的其它按键(其抬起也要吞)
+        held_modifier_buttons: Vec<MouseButton>,
+    },
+    /// 起始超时后转普通拖拽:一切透传,等触发键抬起
+    PassthroughDrag { button: MouseButton },
+    /// 已取消(停留超时),吞掉即将到来的触发键抬起
+    CancelledAwaitUp { button: MouseButton },
+}
+
+pub struct PathTracker {
+    params: TrackerParams,
+    state: State,
+    last_gesture_end: Option<Instant>,
+}
+
+impl PathTracker {
+    pub fn new(params: TrackerParams) -> Self {
+        Self {
+            params,
+            state: State::Idle,
+            last_gesture_end: None,
+        }
+    }
+
+    pub fn set_params(&mut self, params: TrackerParams) {
+        self.params = params;
+    }
+
+    /// 是否处于手势捕获中(供上层决定是否转发修饰等)
+    pub fn is_capturing(&self) -> bool {
+        matches!(self.state, State::Pending { .. } | State::Tracking { .. })
+    }
+
+    /// 下一次需要 tick 的期限(无则 None);平台层用它设置等待超时
+    pub fn next_deadline(&self) -> Option<Instant> {
+        match &self.state {
+            State::Pending { since, .. } if self.params.initial_stay_timeout => {
+                Some(*since + Duration::from_millis(self.params.initial_stay_timeout_ms as u64))
+            }
+            State::Tracking { last_activity, .. } if self.params.stay_timeout => {
+                Some(*last_activity + Duration::from_millis(self.params.stay_timeout_ms as u64))
+            }
+            _ => None,
+        }
+    }
+
+    /// 时间驱动:检查各超时
+    pub fn tick(&mut self, now: Instant) -> Vec<Action> {
+        match &self.state {
+            State::Pending {
+                button,
+                origin,
+                since,
+                ..
+            } if self.params.initial_stay_timeout
+                && now.duration_since(*since)
+                    >= Duration::from_millis(self.params.initial_stay_timeout_ms as u64) =>
+            {
+                let (button, origin) = (*button, *origin);
+                self.state = State::PassthroughDrag { button };
+                vec![Action::SynthesizeDown {
+                    button,
+                    pos: origin,
+                }]
+            }
+            State::Tracking {
+                button,
+                last_activity,
+                ..
+            } if self.params.stay_timeout
+                && now.duration_since(*last_activity)
+                    >= Duration::from_millis(self.params.stay_timeout_ms as u64) =>
+            {
+                let button = *button;
+                self.state = State::CancelledAwaitUp { button };
+                vec![Action::PathTimeout]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn handle(&mut self, input: Input, now: Instant, host: &mut dyn TrackerHost) -> Outcome {
+        match input {
+            Input::ButtonDown(btn, pos) => self.on_button_down(btn, pos, now, host),
+            Input::ButtonUp(btn, pos) => self.on_button_up(btn, pos, now, host),
+            Input::Move(pos) => self.on_move(pos, now),
+            Input::Wheel { forward, pos } => self.on_wheel(forward, pos, now),
+        }
+    }
+
+    fn on_button_down(
+        &mut self,
+        btn: MouseButton,
+        pos: Point,
+        now: Instant,
+        host: &mut dyn TrackerHost,
+    ) -> Outcome {
+        match &mut self.state {
+            State::Idle => {
+                let Some(trigger) = btn.as_trigger() else {
+                    return Outcome::pass();
+                };
+                if !self.params.trigger_buttons.contains(&trigger) {
+                    return Outcome::pass();
+                }
+                if !host.is_gesturing_allowed(pos) {
+                    return Outcome::pass();
+                }
+                self.state = State::Pending {
+                    button: btn,
+                    trigger,
+                    origin: pos,
+                    since: now,
+                };
+                Outcome::swallowed(Vec::new())
+            }
+            // 手势期间按下其它键 → 修饰
+            State::Tracking {
+                modifier_used,
+                held_modifier_buttons,
+                last_activity,
+                button,
+                ..
+            } => {
+                if btn == *button {
+                    return Outcome::swallowed(Vec::new());
+                }
+                *modifier_used = true;
+                *last_activity = now;
+                held_modifier_buttons.push(btn);
+                Outcome::swallowed(vec![Action::ModifierFired(btn.as_modifier())])
+            }
+            // 待定期按下其它键:直接放弃捕获,透传(与"这不是手势"一致)
+            State::Pending { button, origin, .. } => {
+                let (button, origin) = (*button, *origin);
+                self.state = State::PassthroughDrag { button };
+                Outcome {
+                    swallow: false,
+                    actions: vec![Action::SynthesizeDown {
+                        button,
+                        pos: origin,
+                    }],
+                }
+            }
+            State::PassthroughDrag { .. } | State::CancelledAwaitUp { .. } => Outcome::pass(),
+        }
+    }
+
+    fn on_button_up(
+        &mut self,
+        btn: MouseButton,
+        pos: Point,
+        now: Instant,
+        host: &mut dyn TrackerHost,
+    ) -> Outcome {
+        match &mut self.state {
+            State::Pending { button, .. } if btn == *button => {
+                let button = *button;
+                self.state = State::Idle;
+                self.last_gesture_end = Some(now);
+                Outcome::swallowed(vec![Action::SynthesizeClick { button, pos }])
+            }
+            State::Tracking {
+                button,
+                modifier_used,
+                held_modifier_buttons,
+                ..
+            } => {
+                if btn == *button {
+                    let button = *button;
+                    let had_content = host.has_path_content() || *modifier_used;
+                    self.state = State::Idle;
+                    self.last_gesture_end = Some(now);
+                    if had_content {
+                        Outcome::swallowed(vec![Action::PathEnd { pos }])
+                    } else {
+                        Outcome::swallowed(vec![Action::SynthesizeClick { button, pos }])
+                    }
+                } else if let Some(i) = held_modifier_buttons.iter().position(|b| *b == btn) {
+                    held_modifier_buttons.remove(i);
+                    Outcome::swallowed(Vec::new())
+                } else {
+                    Outcome::pass()
+                }
+            }
+            State::PassthroughDrag { button } | State::CancelledAwaitUp { button }
+                if btn == *button =>
+            {
+                let swallow = matches!(self.state, State::CancelledAwaitUp { .. });
+                self.state = State::Idle;
+                self.last_gesture_end = Some(now);
+                Outcome {
+                    swallow,
+                    actions: Vec::new(),
+                }
+            }
+            _ => Outcome::pass(),
+        }
+    }
+
+    fn on_move(&mut self, pos: Point, now: Instant) -> Outcome {
+        match &mut self.state {
+            State::Pending {
+                button,
+                trigger,
+                origin,
+                ..
+            } => {
+                let threshold = self.params.initial_valid_move_px as i64;
+                if origin.dist_sq(pos) >= threshold * threshold {
+                    let (trigger, origin, button) = (*trigger, *origin, *button);
+                    self.state = State::Tracking {
+                        button,
+                        modifier_used: false,
+                        last_wheel: None,
+                        last_activity: now,
+                        held_modifier_buttons: Vec::new(),
+                    };
+                    Outcome {
+                        swallow: false,
+                        actions: vec![Action::PathStart { trigger, origin }, Action::PathGrow(pos)],
+                    }
+                } else {
+                    Outcome::pass()
+                }
+            }
+            State::Tracking { last_activity, .. } => {
+                *last_activity = now;
+                Outcome {
+                    swallow: false,
+                    actions: vec![Action::PathGrow(pos)],
+                }
+            }
+            _ => Outcome::pass(),
+        }
+    }
+
+    fn on_wheel(&mut self, forward: bool, _pos: Point, now: Instant) -> Outcome {
+        match &mut self.state {
+            State::Tracking {
+                modifier_used,
+                last_wheel,
+                last_activity,
+                ..
+            } => {
+                *last_activity = now;
+                if last_wheel.is_some_and(|t| now.duration_since(t) < WHEEL_THROTTLE) {
+                    return Outcome::swallowed(Vec::new());
+                }
+                *last_wheel = Some(now);
+                *modifier_used = true;
+                let m = if forward {
+                    Modifier::WheelForward
+                } else {
+                    Modifier::WheelBackward
+                };
+                Outcome::swallowed(vec![Action::ModifierFired(m)])
+            }
+            // 手势刚结束的滚轮吞掉,防止目标程序收到意外的 Ctrl+滚轮等
+            State::Idle
+                if self
+                    .last_gesture_end
+                    .is_some_and(|t| now.duration_since(t) < POST_GESTURE_WHEEL_SWALLOW) =>
+            {
+                Outcome::swallowed(Vec::new())
+            }
+            _ => Outcome::pass(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Host {
+        allowed: bool,
+        has_content: bool,
+    }
+
+    impl TrackerHost for Host {
+        fn is_gesturing_allowed(&mut self, _pos: Point) -> bool {
+            self.allowed
+        }
+        fn has_path_content(&self) -> bool {
+            self.has_content
+        }
+    }
+
+    fn pt(x: i32, y: i32) -> Point {
+        Point { x, y }
+    }
+
+    fn setup(params: TrackerParams) -> (PathTracker, Host, Instant) {
+        (
+            PathTracker::new(params),
+            Host {
+                allowed: true,
+                has_content: false,
+            },
+            Instant::now(),
+        )
+    }
+
+    #[test]
+    fn full_gesture_flow() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        let o = t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        assert!(o.swallow && o.actions.is_empty());
+
+        let o = t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+        assert_eq!(
+            o.actions[0],
+            Action::PathStart {
+                trigger: TriggerButton::Right,
+                origin: pt(0, 0)
+            }
+        );
+
+        h.has_content = true;
+        let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(60, 0)), t0, &mut h);
+        assert!(o.swallow);
+        assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(60, 0) }]);
+        assert!(!t.is_capturing());
+    }
+
+    #[test]
+    fn click_passthrough_when_no_movement() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(1, 1)), t0, &mut h);
+        assert!(o.swallow);
+        assert_eq!(
+            o.actions,
+            vec![Action::SynthesizeClick {
+                button: MouseButton::Right,
+                pos: pt(1, 1)
+            }]
+        );
+    }
+
+    #[test]
+    fn click_passthrough_when_moved_but_no_strokes() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+        h.has_content = false; // 引擎:未长出笔画
+        let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
+        assert_eq!(
+            o.actions,
+            vec![Action::SynthesizeClick {
+                button: MouseButton::Right,
+                pos: pt(30, 0)
+            }]
+        );
+    }
+
+    #[test]
+    fn not_allowed_passes_through() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        h.allowed = false;
+        let o = t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        assert!(!o.swallow);
+        assert!(!t.is_capturing());
+    }
+
+    #[test]
+    fn non_trigger_button_ignored() {
+        let params = TrackerParams {
+            trigger_buttons: vec![TriggerButton::Right],
+            ..Default::default()
+        };
+        let (mut t, mut h, t0) = setup(params);
+        let o = t.handle(Input::ButtonDown(MouseButton::Middle, pt(0, 0)), t0, &mut h);
+        assert!(!o.swallow);
+    }
+
+    #[test]
+    fn initial_stay_timeout_becomes_drag() {
+        let params = TrackerParams {
+            initial_stay_timeout: true,
+            initial_stay_timeout_ms: 200,
+            ..Default::default()
+        };
+        let (mut t, mut h, t0) = setup(params);
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(5, 5)), t0, &mut h);
+        assert!(t.next_deadline().is_some());
+        let actions = t.tick(t0 + Duration::from_millis(201));
+        assert_eq!(
+            actions,
+            vec![Action::SynthesizeDown {
+                button: MouseButton::Right,
+                pos: pt(5, 5)
+            }]
+        );
+        // 之后一切透传,真实抬起也不吞
+        let o = t.handle(Input::Move(pt(50, 50)), t0 + Duration::from_millis(250), &mut h);
+        assert!(!o.swallow && o.actions.is_empty());
+        let o = t.handle(
+            Input::ButtonUp(MouseButton::Right, pt(50, 50)),
+            t0 + Duration::from_millis(300),
+            &mut h,
+        );
+        assert!(!o.swallow);
+    }
+
+    #[test]
+    fn stay_timeout_cancels_and_swallows_up() {
+        let params = TrackerParams {
+            stay_timeout: true,
+            stay_timeout_ms: 500,
+            ..Default::default()
+        };
+        let (mut t, mut h, t0) = setup(params);
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+        let actions = t.tick(t0 + Duration::from_millis(501));
+        assert_eq!(actions, vec![Action::PathTimeout]);
+        let o = t.handle(
+            Input::ButtonUp(MouseButton::Right, pt(30, 0)),
+            t0 + Duration::from_millis(600),
+            &mut h,
+        );
+        assert!(o.swallow && o.actions.is_empty());
+        assert!(!t.is_capturing());
+    }
+
+    #[test]
+    fn wheel_modifier_with_throttle() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+
+        let o = t.handle(Input::Wheel { forward: true, pos: pt(30, 0) }, t0, &mut h);
+        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::WheelForward)]);
+        // 100ms 内的第二次被节流(但仍吞)
+        let o = t.handle(
+            Input::Wheel { forward: true, pos: pt(30, 0) },
+            t0 + Duration::from_millis(50),
+            &mut h,
+        );
+        assert!(o.swallow && o.actions.is_empty());
+        // 100ms 后恢复
+        let o = t.handle(
+            Input::Wheel { forward: false, pos: pt(30, 0) },
+            t0 + Duration::from_millis(200),
+            &mut h,
+        );
+        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::WheelBackward)]);
+    }
+
+    #[test]
+    fn other_button_is_modifier_and_its_up_swallowed() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+
+        let o = t.handle(Input::ButtonDown(MouseButton::Left, pt(30, 0)), t0, &mut h);
+        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::LeftButtonDown)]);
+        let o = t.handle(Input::ButtonUp(MouseButton::Left, pt(30, 0)), t0, &mut h);
+        assert!(o.swallow && o.actions.is_empty());
+
+        // 修饰用过后,即使无笔画,抬起也按 PathEnd 处理(引擎决定执行与否)
+        h.has_content = false;
+        let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
+        assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(30, 0) }]);
+    }
+
+    #[test]
+    fn post_gesture_wheel_swallowed_briefly() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(30, 0)), t0, &mut h);
+        h.has_content = true;
+        t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
+
+        let o = t.handle(
+            Input::Wheel { forward: true, pos: pt(30, 0) },
+            t0 + Duration::from_millis(100),
+            &mut h,
+        );
+        assert!(o.swallow);
+        let o = t.handle(
+            Input::Wheel { forward: true, pos: pt(30, 0) },
+            t0 + Duration::from_millis(400),
+            &mut h,
+        );
+        assert!(!o.swallow);
+    }
+}

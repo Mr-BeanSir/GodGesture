@@ -1,3 +1,7 @@
+/**
+ * e2e 冒烟:需要可达的 PostgreSQL(docker-compose.dev.yml)与最小环境变量,
+ * 不纳入常规 `pnpm test`(那只跑 src 下的单元测试)。
+ */
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -16,11 +20,11 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/health (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/health')
       .expect(200)
-      .expect('Hello World!');
+      .expect({ status: 'ok' });
   });
 
   afterEach(async () => {

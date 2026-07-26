@@ -1,0 +1,108 @@
+// GodGesture 后端数据模型(M5)
+// 领域对应:设备 Device、配置快照 ConfigSnapshot、整库版本化 UserConfig(ADR-0009)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// OAuth 提供方(github/google 先行,wechat/qq 留配置位)
+enum OAuthProviderKind {
+  github
+  google
+  wechat
+  qq
+}
+
+/// 客户端平台
+enum DevicePlatform {
+  windows
+  macos
+  web
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// 纯 OAuth 用户可为空
+  email        String?  @unique
+  /// 纯 OAuth 用户可为空(argon2id)
+  passwordHash String?
+  createdAt    DateTime @default(now())
+
+  oauthAccounts OAuthAccount[]
+  devices       Device[]
+  config        UserConfig?
+  snapshots     ConfigSnapshot[]
+}
+
+model OAuthAccount {
+  id             String            @id @default(uuid()) @db.Uuid
+  provider       OAuthProviderKind
+  providerUserId String
+  userId         String            @db.Uuid
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime          @default(now())
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+/// 设备 = 登录了同一账户的一个客户端安装实例(CONTEXT.md)
+model Device {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  platform   DevicePlatform
+  createdAt  DateTime       @default(now())
+  lastSeenAt DateTime?
+
+  refreshTokens RefreshToken[]
+  snapshots     ConfigSnapshot[]
+
+  @@index([userId])
+}
+
+/// 刷新令牌:不透明随机串的 sha256 哈希,按设备撤销,轮换时旧令牌置 revokedAt
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  deviceId  String    @db.Uuid
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([deviceId])
+}
+
+/// 用户配置当前版本(整库文档,ADR-0009)
+model UserConfig {
+  userId            String   @id @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version           Int
+  document          Json     @db.JsonB
+  /// 服务端在推送事务里显式写入(不用 @updatedAt,便于返回精确时间)
+  updatedAt         DateTime
+  updatedByDeviceId String?  @db.Uuid
+}
+
+/// 配置快照:每次成功推送保留的历史版本(保留最近 100 个)
+model ConfigSnapshot {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version   Int
+  document  Json     @db.JsonB
+  sizeBytes Int
+  deviceId  String?  @db.Uuid
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, version])
+  @@index([userId, version(sort: Desc)])
+}
