@@ -1,160 +1,239 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+/**
+ * 设置窗口外壳:顶栏(暂停开关 / 深浅主题 / 语言)、左侧导航、内容区、底部保存状态。
+ * 深浅主题为本机偏好(localStorage,不入同步载荷);语言写 preferences.locale(同步)。
+ */
+import { computed, onMounted, ref, watch, watchEffect } from "vue";
+import { useI18n } from "vue-i18n";
+import { useDark, useToggle } from "@vueuse/core";
+import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
+import { useConfigStore } from "./stores/config";
+import { resolveLocale, setLocale, type AppLocale } from "./locales";
+import OptionsView from "./views/OptionsView.vue";
+import GesturesView from "./views/GesturesView.vue";
+import CornersEdgesView from "./views/CornersEdgesView.vue";
+import AccountView from "./views/AccountView.vue";
+import AboutView from "./views/AboutView.vue";
 
-const greetMsg = ref("");
-const name = ref("");
+type Section = "options" | "gestures" | "cornersEdges" | "account" | "about";
+type LocaleSetting = "auto" | AppLocale;
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+const { t } = useI18n();
+const store = useConfigStore();
+
+const isDark = useDark();
+const toggleDark = useToggle(isDark);
+
+const active = ref<Section>("options");
+const SECTION_VIEWS = {
+  options: OptionsView,
+  gestures: GesturesView,
+  cornersEdges: CornersEdgesView,
+  account: AccountView,
+  about: AboutView,
+} as const;
+const currentView = computed(() => SECTION_VIEWS[active.value]);
+const needsConfig = computed(() => active.value !== "account" && active.value !== "about");
+
+const localeSetting = computed<LocaleSetting>({
+  get: () => store.doc?.preferences.locale ?? "auto",
+  set: (v) => {
+    if (store.doc) store.doc.preferences.locale = v;
+    setLocale(resolveLocale(v));
+  },
+});
+
+const isTauri = computed(() => store.backend.isTauri);
+
+function onSelectSection(index: string) {
+  active.value = index as Section;
 }
+
+// 配置载入后应用已保存的语言
+watch(
+  () => store.doc?.preferences.locale,
+  (loc) => {
+    if (loc) setLocale(resolveLocale(loc));
+  },
+);
+
+watchEffect(() => {
+  if (typeof document !== "undefined") document.title = t("app.title");
+});
+
+onMounted(() => store.load());
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <el-container class="app">
+    <el-header class="app__header">
+      <div class="app__brand">{{ t("app.title") }}</div>
+      <div class="app__actions">
+        <el-tooltip :content="t('header.pauseTooltip')" placement="bottom">
+          <el-button
+            :type="store.paused ? 'warning' : 'success'"
+            :icon="store.paused ? VideoPlay : VideoPause"
+            round
+            size="small"
+            @click="store.togglePause()"
+          >
+            {{ store.paused ? t("header.paused") : t("header.running") }}
+          </el-button>
+        </el-tooltip>
 
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+        <el-tooltip :content="t('header.theme')" placement="bottom">
+          <el-button circle size="small" @click="toggleDark()">
+            <el-icon><Moon v-if="!isDark" /><Sunny v-else /></el-icon>
+          </el-button>
+        </el-tooltip>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+        <el-select v-model="localeSetting" size="small" class="app__lang">
+          <el-option :label="t('header.languageAuto')" value="auto" />
+          <el-option label="简体中文" value="zh-CN" />
+          <el-option label="English" value="en" />
+        </el-select>
+      </div>
+    </el-header>
+
+    <el-container class="app__body">
+      <el-aside width="180px" class="app__aside">
+        <el-menu :default-active="active" class="app__menu" @select="onSelectSection">
+          <el-menu-item index="options">{{ t("nav.options") }}</el-menu-item>
+          <el-menu-item index="gestures">{{ t("nav.gestures") }}</el-menu-item>
+          <el-menu-item index="cornersEdges">{{ t("nav.cornersEdges") }}</el-menu-item>
+          <el-menu-item index="account">{{ t("nav.account") }}</el-menu-item>
+          <el-menu-item index="about">{{ t("nav.about") }}</el-menu-item>
+        </el-menu>
+      </el-aside>
+
+      <el-main class="app__main">
+        <component :is="currentView" v-if="!needsConfig || store.ready" />
+        <el-skeleton v-else :rows="6" animated />
+      </el-main>
+    </el-container>
+
+    <el-footer class="app__footer">
+      <span class="gg-hint">{{ t("footer.autoSave") }}</span>
+      <span class="app__spacer" />
+      <span v-if="store.saveState === 'saving'" class="app__save app__save--busy">{{ t("footer.saving") }}</span>
+      <span v-else-if="store.saveState === 'saved'" class="app__save app__save--ok">{{ t("footer.saved") }}</span>
+      <span v-else-if="store.saveState === 'error'" class="app__save app__save--err">{{ t("footer.saveError") }}</span>
+      <el-tag v-if="!isTauri" type="info" size="small" class="app__mock">{{ t("footer.mockMode") }}</el-tag>
+    </el-footer>
+  </el-container>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
+.app {
+  height: 100vh;
 }
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  height: 52px;
 }
-
+.app__brand {
+  font-weight: 600;
+  font-size: 15px;
+}
+.app__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.app__lang {
+  width: 116px;
+}
+.app__body {
+  overflow: hidden;
+}
+.app__aside {
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+.app__menu {
+  border-right: none;
+  height: 100%;
+}
+.app__main {
+  overflow-y: auto;
+  background: var(--el-fill-color-blank);
+}
+.app__footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  font-size: 12px;
+}
+.app__spacer {
+  flex: 1;
+}
+.app__save--busy {
+  color: var(--el-color-warning);
+}
+.app__save--ok {
+  color: var(--el-color-success);
+}
+.app__save--err {
+  color: var(--el-color-danger);
+}
 </style>
+
 <style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
+/* 全局基础样式与跨组件工具类 */
+html,
+body,
+#app {
+  height: 100%;
   margin: 0;
-  padding-top: 10vh;
+}
+#app {
+  font-family: "Segoe UI", "Microsoft YaHei", Inter, system-ui, sans-serif;
+}
+.gg-section {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  gap: 12px;
 }
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.gg-section-title {
+  margin: 0 0 2px;
+  font-size: 15px;
 }
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+.gg-field {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
 }
-
-a {
+.gg-field-label {
+  font-size: 13px;
   font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+  color: var(--el-text-color-regular);
 }
-
-a:hover {
-  color: #535bf2;
+.gg-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
-
-h1 {
-  text-align: center;
+.gg-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
 }
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.gg-unit {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
-
-button {
-  cursor: pointer;
+.gg-info {
+  color: var(--el-text-color-secondary);
+  cursor: help;
 }
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>
