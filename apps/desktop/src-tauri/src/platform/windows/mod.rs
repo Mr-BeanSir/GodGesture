@@ -8,6 +8,7 @@ pub mod keys;
 pub mod overlay;
 pub mod window;
 
+use crate::engine::corners::ScreenInfo;
 use crate::engine::intents::ForegroundApp;
 use crate::engine::runtime::{EngineShared, PlatformServices};
 use crate::engine::tracker::{Input, MouseButton};
@@ -32,6 +33,10 @@ impl PlatformServices for WindowsPlatform {
 
     fn synthesize_down(&self, button: MouseButton, pos: Point) {
         input::synthesize_down(button, pos);
+    }
+
+    fn screen_at(&self, pos: Point) -> Option<ScreenInfo> {
+        window::screen_at(pos)
     }
 }
 

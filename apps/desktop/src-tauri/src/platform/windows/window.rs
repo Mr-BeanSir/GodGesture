@@ -6,6 +6,7 @@
 //! - 全屏检测:前台根窗口矩形 == 所在显示器矩形,且类名不在白名单
 //!   (桌面/开始菜单等宿主类)。
 
+use crate::engine::corners::{ScreenInfo, ScreenRect};
 use crate::engine::intents::ForegroundApp;
 use crate::engine::types::Point;
 use parking_lot::Mutex;
@@ -14,8 +15,10 @@ use std::path::PathBuf;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, HMONITOR, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,
 };
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
@@ -178,6 +181,56 @@ const FULLSCREEN_CLASS_WHITELIST: &[&str] = &[
     "ImmersiveLauncher",
     "Windows.UI.Core.CoreWindow",
 ];
+
+/// 光标所在显示器的边界与 DPI 缩放(触发角/摩擦边判定用)。
+///
+/// - 用 `rcMonitor`(完整边界,**含任务栏**)而非 `rcWork` —— 与 WGestures 一致:
+///   贴着任务栏的屏幕下沿也应该能触发。
+/// - 该点不在任何显示器上(`MONITOR_DEFAULTTONULL`)时返回 None,调用方跳过本次判定。
+/// - 返回的矩形是**闭区间**:right/bottom 换算成最后一个可达像素。
+pub fn screen_at(pos: Point) -> Option<ScreenInfo> {
+    unsafe {
+        let monitor = MonitorFromPoint(POINT { x: pos.x, y: pos.y }, MONITOR_DEFAULTTONULL);
+        if monitor.is_invalid() {
+            return None;
+        }
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(monitor, &mut mi).as_bool() {
+            return None;
+        }
+        let m = mi.rcMonitor;
+        if m.right <= m.left || m.bottom <= m.top {
+            return None;
+        }
+        Some(ScreenInfo {
+            bounds: ScreenRect {
+                left: m.left,
+                top: m.top,
+                right: m.right - 1,
+                bottom: m.bottom - 1,
+            },
+            dpi_scale: monitor_dpi_scale(monitor),
+        })
+    }
+}
+
+/// 显示器的有效 DPI 缩放;查询失败按 100% 处理
+fn monitor_dpi_scale(monitor: HMONITOR) -> f64 {
+    let mut dpi_x = 96u32;
+    let mut dpi_y = 96u32;
+    unsafe {
+        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_err() {
+            return 1.0;
+        }
+    }
+    if dpi_x == 0 {
+        return 1.0;
+    }
+    dpi_x as f64 / 96.0
+}
 
 /// 前台窗口是否真全屏(用于"全屏时自动禁用手势")
 pub fn is_foreground_fullscreen() -> bool {

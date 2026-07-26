@@ -85,6 +85,21 @@ fn spawn_engine_consumer(
                             log::warn!("手势录制事件发送失败: {e}");
                         }
                     }
+                    EngineMsg::CornerEdgeFired {
+                        hit,
+                        command,
+                        origin,
+                    } => {
+                        log::info!("{hit} 触发 → 命令 {command:?}");
+                        // 目标窗口取前台窗口:此刻光标停在屏幕边角,指针下方的窗口
+                        // 多半不是用户想操作的那个。
+                        let fg = platform::windows::window::resolve_foreground_app(origin, false);
+                        let context = engine::runtime::GestureContext {
+                            origin,
+                            native_window: fg.native_window,
+                        };
+                        execute_intent(&command, &context, &shared);
+                    }
                     EngineMsg::PathCancelled => {
                         log::debug!("手势取消");
                         overlay.send(OverlayCmd::Cancel);

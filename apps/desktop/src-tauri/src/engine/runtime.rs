@@ -8,14 +8,15 @@
 //! 输入合成(SynthesizeClick/Down)在钩子线程内直接调用 —— 必须与吞事件的
 //! 裁决保持同一时序,否则真实事件与合成事件可能乱序。
 
-use super::config::{ConfigDocument, GestureIntent};
-use super::intents::{ForegroundApp, IntentFinder};
+use super::config::{Command, ConfigDocument, GestureIntent};
+use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
+use super::intents::{hot_corner_command, rub_edge_command, ForegroundApp, IntentFinder};
 use super::parser::{StrokeEvent, StrokeParser};
-use super::tracker::{Action, Input, PathTracker, TrackerHost, TrackerParams};
+use super::tracker::{Action, Input, MouseButton, PathTracker, TrackerHost, TrackerParams};
 use super::types::{Direction, Modifier, Point, TriggerButton};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -56,6 +57,13 @@ pub enum EngineMsg {
         trigger: TriggerButton,
         strokes: Vec<Direction>,
     },
+    /// 触发角 / 摩擦边命中,命令已按配置解析出来
+    CornerEdgeFired {
+        hit: CornerEdgeHit,
+        command: Command,
+        /// 命中时的光标位置(命令执行上下文的 origin)
+        origin: Point,
+    },
 }
 
 /// 平台服务:运行时需要但因平台而异的操作(由 platform 层注入)
@@ -64,6 +72,9 @@ pub trait PlatformServices: Send + Sync {
     fn is_fullscreen(&self) -> bool;
     fn synthesize_click(&self, button: super::tracker::MouseButton, pos: Point);
     fn synthesize_down(&self, button: super::tracker::MouseButton, pos: Point);
+    /// 光标所在显示器的完整边界与 DPI 缩放(触发角/摩擦边判定用)。
+    /// 该点不属于任何已知显示器时返回 None。
+    fn screen_at(&self, pos: Point) -> Option<ScreenInfo>;
 }
 
 /// 手势进行中的会话状态(仅钩子线程与定时线程经锁访问)
@@ -100,6 +111,14 @@ pub struct EngineShared {
     /// 有效点距(识别一笔所需位移):屏宽 * 0.025,由平台层在启动/分辨率变化时更新
     effective_move_px: Mutex<f64>,
     chord: Mutex<ChordState>,
+    /// 触发角 / 摩擦边检测状态(仅钩子线程访问)
+    corner_edge: Mutex<CornerEdgeDetector>,
+    /// 物理按下的鼠标键位掩码 —— 任意键按下即抑制触发角/摩擦边。
+    /// 从钩子事件自行累计,避免在钩子线程上做 GetAsyncKeyState 系统调用。
+    buttons_down: AtomicU8,
+    /// 两个开关的缓存,免得每条鼠标移动都去锁配置
+    corners_enabled: AtomicBool,
+    edges_enabled: AtomicBool,
 }
 
 impl EngineShared {
@@ -109,6 +128,8 @@ impl EngineShared {
     ) -> (Arc<Self>, Receiver<EngineMsg>) {
         let (tx, rx) = unbounded();
         let params = tracker_params_from(&config);
+        let corners_enabled = config.hot_corners.enabled;
+        let edges_enabled = config.rub_edges.enabled;
         let shared = Arc::new(Self {
             tracker: Mutex::new(PathTracker::new(params)),
             session: Mutex::new(None),
@@ -119,6 +140,10 @@ impl EngineShared {
             tx,
             effective_move_px: Mutex::new(48.0),
             chord: Mutex::new(ChordState::default()),
+            corner_edge: Mutex::new(CornerEdgeDetector::new()),
+            buttons_down: AtomicU8::new(0),
+            corners_enabled: AtomicBool::new(corners_enabled),
+            edges_enabled: AtomicBool::new(edges_enabled),
         });
         (shared, rx)
     }
@@ -162,6 +187,10 @@ impl EngineShared {
     /// 配置变更(设置界面保存/同步拉取后调用)
     pub fn replace_config(&self, config: ConfigDocument) {
         self.tracker.lock().set_params(tracker_params_from(&config));
+        self.corners_enabled
+            .store(config.hot_corners.enabled, Ordering::Relaxed);
+        self.edges_enabled
+            .store(config.rub_edges.enabled, Ordering::Relaxed);
         self.finder.lock().replace_config(config);
     }
 
@@ -193,7 +222,21 @@ impl EngineShared {
 
     /// 钩子线程入口:裁决是否吞事件
     pub fn on_hook_event(self: &Arc<Self>, input: Input) -> bool {
-        use super::tracker::MouseButton;
+        // 先记录物理按键状态:下面的和弦分支会提前 return,放这里才不会漏记
+        match &input {
+            Input::ButtonDown(b, _) => {
+                self.buttons_down.fetch_or(button_bit(*b), Ordering::Relaxed);
+            }
+            Input::ButtonUp(b, _) => {
+                self.buttons_down
+                    .fetch_and(!button_bit(*b), Ordering::Relaxed);
+            }
+            _ => {}
+        }
+        let move_pos = match &input {
+            Input::Move(p) => Some(*p),
+            _ => None,
+        };
 
         // 左键+中键和弦 = 暂停/继续(仅在非捕获状态,对齐 WGestures)
         {
@@ -221,7 +264,68 @@ impl EngineShared {
         let mut host = HostImpl { shared: self };
         let outcome = self.tracker.lock().handle(input, now, &mut host);
         self.apply_actions(outcome.actions);
+
+        // 触发角 / 摩擦边:纯观察,不参与吞事件的裁决
+        if let Some(pos) = move_pos {
+            self.detect_corner_edge(pos, now);
+        }
         outcome.swallow
+    }
+
+    /// 触发角 / 摩擦边判定(钩子线程)。命中即把解析好的命令投给执行线程 ——
+    /// 命令执行可能很慢(如取选中文本要轮询剪贴板 ~200ms),绝不能在钩子线程里做。
+    fn detect_corner_edge(self: &Arc<Self>, pos: Point, now: Instant) {
+        let corners = self.corners_enabled.load(Ordering::Relaxed);
+        let edges = self.edges_enabled.load(Ordering::Relaxed);
+        if !corners && !edges {
+            return;
+        }
+        // 抑制:暂停 / 录制手势中 / 任意鼠标键按下 / 手势捕获中。
+        // 录制期间抑制是有意为之(见 corners.rs 头部说明),参考实现不抑制。
+        if self.is_paused() || self.is_recording() {
+            return;
+        }
+        if self.buttons_down.load(Ordering::Relaxed) != 0 {
+            return;
+        }
+        if self.tracker.lock().is_capturing() {
+            return;
+        }
+
+        let hit = self
+            .corner_edge
+            .lock()
+            .on_move(pos, now, || self.platform.screen_at(pos));
+        let Some(hit) = hit else {
+            return;
+        };
+
+        // 未配命令就当没这回事(查找函数内部已校验 enabled 开关)
+        let (command, disable_in_fullscreen) = {
+            let finder = self.finder.lock();
+            let config = finder.config();
+            let command = match hit {
+                CornerEdgeHit::Corner(c) => hot_corner_command(config, c.key()),
+                CornerEdgeHit::Edge(e) => rub_edge_command(config, e.key()),
+            }
+            .cloned();
+            (
+                command,
+                config.preferences.path_tracker.disable_in_fullscreen,
+            )
+        };
+        let Some(command) = command else {
+            return;
+        };
+        // 全屏抑制与手势共用同一偏好;放在最后才查,免得每次移动都问系统
+        if disable_in_fullscreen && self.platform.is_fullscreen() {
+            return;
+        }
+        let _ = self.tx.send(EngineMsg::CornerEdgeFired {
+            hit,
+            command,
+            origin: pos,
+        });
     }
 
     /// 定时线程入口
@@ -410,6 +514,17 @@ impl TrackerHost for HostImpl<'_> {
             .lock()
             .as_ref()
             .is_some_and(|s| !s.parser.strokes().is_empty())
+    }
+}
+
+/// 鼠标键在 `buttons_down` 掩码里的位
+fn button_bit(button: MouseButton) -> u8 {
+    match button {
+        MouseButton::Left => 1,
+        MouseButton::Middle => 1 << 1,
+        MouseButton::Right => 1 << 2,
+        MouseButton::X1 => 1 << 3,
+        MouseButton::X2 => 1 << 4,
     }
 }
 
