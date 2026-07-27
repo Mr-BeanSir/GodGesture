@@ -10,7 +10,7 @@
 | --------------------- | ----------------------------------------------------------------------------- |
 | M0 仓库奠基           | 已完成                                                                        |
 | M1 Windows 手势引擎   | Windows 主体已实现并通过运行时 smoke;因 macOS 未实现,不满足双平台正式完成定义 |
-| M2 Windows 命令与设置 | 部分完成;主引擎和主要设置 UI 可用,仍有明确缺口见下文                          |
+| M2 Windows 命令与设置 | 部分完成;主引擎、主要设置 UI、开机自启和管理员运行可用,仍有明确缺口见下文   |
 | M3 QuickJS            | 未开始;Script 模型/编辑器已存在,执行器会记录警告后跳过                        |
 | M4 macOS 引擎         | 未开始;只有跨平台数据模型和条件编译占位                                       |
 | M5 后端与账户         | 服务端主体已实现;外部 OAuth 凭证仍由部署环境提供                              |
@@ -39,6 +39,7 @@
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
 - `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界。
+- `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
@@ -49,6 +50,7 @@
 - 页面:`OptionsView`, `GesturesView`, `CornersEdgesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。
 - `api/backend.ts` 是唯一 Tauri IPC 网关;浏览器运行时自动使用 `api/mock.ts`。
 - `stores/config.ts` 负责加载、可取消防抖、串行保存、导入 barrier 和即时生效;协议变更必须同步核对 Rust `engine/config.rs`。
+- 本机设置通过显式串行更新操作保存,可观察 Task Scheduler/UAC pending 与结构化错误;`rollback_incomplete` 会重读后端状态,文档保存不会清除本机错误。
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
 - 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。
 - `stores/account.ts` 与 `AccountView.vue` 是演示 mock,不进行真实登录、令牌保存或同步。
@@ -68,8 +70,8 @@
 - macOS 没有 CGEventTap、原生覆盖层、Bundle ID 解析或命令平台实现。
 - 桌面账户与云同步未连接 Server;没有防抖推送、启动/定时拉取或 409 拉取重推。
 - 应用窗口选取目前是短时轮询前台窗口,不是完整准星体验;拖放添加应用未实现。
-- `autoStart` 和 `runAsAdmin` 可编辑并持久化,但未接任务计划/系统启动逻辑;托盘显隐已生效。
-- Updater、手势模板库、安装包验收、快速引导、Windows 提权运行和 macOS 签名公证未完成。
+- Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS 登录项/授权仍未实现。安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效。
+- Updater、手势模板库、安装包验收、快速引导和 macOS 签名公证未完成。
 
 ## 不得破坏的语义
 
@@ -81,6 +83,7 @@
 - 外壳窗口不得执行窗口控制命令。
 - Windows `SendInput` 可能同步重入鼠标钩子;当前 TLS handler 临时取出、嵌套事件 fail-open 和 FFI panic 防护不得回退。
 - OAuth 不得按未验证密码账户邮箱自动关联。
+- Windows 启动任务按当前用户 SID 命名并校验 GodGesture 所有权;不得覆盖同名的非本项目任务,不得改回 `schtasks.exe` 或加入 `uiAccess`。
 
 ## 本地开发与运行时 QA
 
@@ -109,7 +112,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 10/10 + typecheck/build;web-console typecheck/build;Rust 114/114。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 16/16 + typecheck/build;web-console typecheck/build;Rust 124/124。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
