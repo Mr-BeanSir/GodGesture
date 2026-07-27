@@ -59,6 +59,7 @@ function makeBackend() {
     machineSet: vi.fn(async (next: MachineLocalSettings) => {
       machine = MachineLocalSettings.parse(next);
     }),
+    machineStatus: vi.fn(async () => ({ healthy: true, code: null, message: null })),
     legacyImportApply: vi.fn(async (nextDocument: ConfigDocument, nextMachine: MachineLocalSettings) => {
       document = ConfigDocument.parse(nextDocument);
       machine = MachineLocalSettings.parse(nextMachine);
@@ -162,5 +163,129 @@ describe("config store legacy import", () => {
       runAsAdmin: false,
       trayIconVisible: false,
     });
+  });
+});
+
+describe("config store machine updates", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    backendSlot.current = makeBackend();
+    setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    backendSlot.current = null;
+  });
+
+  it("serializes explicit writes and exposes pending state", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const backend = backendSlot.current!;
+    backend.machineSet.mockImplementationOnce(async () => pending);
+    const store = useConfigStore();
+    await store.load();
+
+    const write = store.updateMachineSetting("autoStart", true)!;
+    await Promise.resolve();
+    expect(store.machinePending.autoStart).toBe(1);
+    expect(store.machine!.autoStart).toBe(true);
+
+    release();
+    await write;
+    expect(store.machinePending.autoStart).toBe(0);
+    expect(backend.machineSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the confirmed value after a complete failure", async () => {
+    const backend = backendSlot.current!;
+    backend.machineSet.mockRejectedValueOnce(new BackendError("uac_cancelled", "cancelled"));
+    const store = useConfigStore();
+    await store.load();
+
+    await expect(store.updateMachineSetting("autoStart", true)).rejects.toMatchObject({
+      code: "uac_cancelled",
+    });
+    expect(store.machine!.autoStart).toBe(false);
+    expect(store.machineError?.code).toBe("uac_cancelled");
+  });
+
+  it("does not let an older failed request overwrite a newer edit", async () => {
+    let rejectFirst!: (error: Error) => void;
+    const firstCall = new Promise<void>((_, reject) => { rejectFirst = reject; });
+    const backend = backendSlot.current!;
+    backend.machineSet.mockImplementationOnce(async () => firstCall);
+    const store = useConfigStore();
+    await store.load();
+
+    const first = store.updateMachineSetting("runAsAdmin", false)!;
+    await Promise.resolve();
+    const second = store.updateMachineSetting("runAsAdmin", true)!;
+    rejectFirst(new BackendError("apply_failed", "failed"));
+
+    await expect(first).rejects.toMatchObject({ code: "apply_failed" });
+    expect(store.machine!.runAsAdmin).toBe(true);
+    await second;
+    expect(store.machine!.runAsAdmin).toBe(true);
+  });
+
+  it("keeps a newer whole-document request consistent across different fields", async () => {
+    let rejectFirst!: (error: Error) => void;
+    const firstCall = new Promise<void>((_, reject) => { rejectFirst = reject; });
+    const backend = backendSlot.current!;
+    backend.machineSet.mockImplementationOnce(async () => firstCall);
+    const store = useConfigStore();
+    await store.load();
+
+    const first = store.updateMachineSetting("autoStart", true)!;
+    await Promise.resolve();
+    const second = store.updateMachineSetting("trayIconVisible", false)!;
+    rejectFirst(new BackendError("apply_failed", "failed"));
+
+    await expect(first).rejects.toMatchObject({ code: "apply_failed" });
+    expect(store.machine).toMatchObject({ autoStart: true, trayIconVisible: false });
+    await second;
+    expect(backend.machineSet.mock.calls[1][0]).toMatchObject({
+      autoStart: true,
+      trayIconVisible: false,
+    });
+    expect(store.machine).toMatchObject({ autoStart: true, trayIconVisible: false });
+  });
+
+  it("reloads machine state after an incomplete rollback", async () => {
+    const backend = backendSlot.current!;
+    backend.machineSet.mockImplementationOnce(async () => {
+      backend.setDiskState(
+        documentWithLocale("auto"),
+        MachineLocalSettings.parse({ autoStart: true, runAsAdmin: false, trayIconVisible: false }),
+      );
+      throw new BackendError("rollback_incomplete", "incomplete");
+    });
+    const store = useConfigStore();
+    await store.load();
+
+    await expect(store.updateMachineSetting("trayIconVisible", false)).rejects.toMatchObject({
+      code: "rollback_incomplete",
+    });
+    expect(backend.machineGet).toHaveBeenCalledTimes(2);
+    expect(store.machine).toMatchObject({
+      autoStart: true,
+      runAsAdmin: false,
+      trayIconVisible: false,
+    });
+  });
+
+  it("keeps machine errors independent from later document saves", async () => {
+    const backend = backendSlot.current!;
+    backend.machineSet.mockRejectedValueOnce(new BackendError("apply_failed", "failed"));
+    const store = useConfigStore();
+    await store.load();
+    await expect(store.updateMachineSetting("autoStart", true)).rejects.toBeInstanceOf(BackendError);
+
+    store.doc!.preferences.locale = "en";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backend.configSet).toHaveBeenCalledTimes(1);
+    expect(store.machineError?.code).toBe("apply_failed");
   });
 });

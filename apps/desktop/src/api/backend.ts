@@ -6,6 +6,7 @@
  * - config_set(document: ConfigDocument)        // 保存并即时生效
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
+ * - machine_status(): MachineRuntimeStatus
  * - legacy_import_apply(document, machine)       // 双配置批量应用与进程内回滚
  * - engine_is_paused(): boolean
  * - engine_toggle_pause(): boolean
@@ -36,6 +37,12 @@ export interface PickedWindow {
 
 export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
 
+export interface MachineRuntimeStatus {
+  healthy: boolean;
+  code: string | null;
+  message: string | null;
+}
+
 /** Stable error contract for callers that must distinguish an incomplete rollback. */
 export class BackendError extends Error {
   public readonly cause: unknown;
@@ -60,6 +67,7 @@ export interface Backend {
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
+  machineStatus(): Promise<MachineRuntimeStatus>;
   /** Atomically applies a legacy import, or restores the previous backend state. */
   legacyImportApply(document: ConfigDocument, machine: MachineLocalSettings): Promise<void>;
 
@@ -140,7 +148,15 @@ function createTauriBackend(): Backend {
     },
     async machineSet(settings) {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("machine_set", { settings });
+      try {
+        await invoke("machine_set", { settings });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async machineStatus() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<MachineRuntimeStatus>("machine_status");
     },
     async legacyImportApply(document, machine) {
       const { invoke } = await import("@tauri-apps/api/core");

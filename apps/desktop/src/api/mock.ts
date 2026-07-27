@@ -128,6 +128,9 @@ export function createMockBackend(): Backend {
     async machineSet(settings) {
       machine = MachineLocalSettings.parse(settings);
     },
+    async machineStatus() {
+      return { healthy: true, code: null, message: null };
+    },
     async legacyImportApply(document, settings) {
       // Parse both values before either assignment so validation failure is atomic.
       const nextDocument = ConfigDocument.parse(document);
