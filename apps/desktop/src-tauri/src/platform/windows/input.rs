@@ -293,65 +293,288 @@ pub fn tap_with_modifiers(mods: &[VIRTUAL_KEY], key: VIRTUAL_KEY) {
     }
 }
 
-/// 输入一段文本(Unicode 直接注入,不受键盘布局影响)。
-/// 支持 `{sleep 毫秒}` 占位:在该处暂停,便于目标程序处理前一段输入。
+/// 输入 SendKeys 序列。必须先完整解析成功才执行，避免在尾部语法错误时已经输入前缀。
 pub fn type_text_with_sleeps(text: &str) {
-    for segment in split_sleep_tokens(text) {
-        match segment {
-            TextSegment::Text(s) => type_text(&s),
-            TextSegment::Sleep(ms) => std::thread::sleep(std::time::Duration::from_millis(ms)),
+    let actions = match parse_send_keys(text) {
+        Ok(actions) => actions,
+        Err(error) => {
+            log::error!("拒绝执行 SendText 命令: {error}");
+            return;
+        }
+    };
+    for action in actions {
+        let result = match action {
+            SendTextAction::Text(text) => type_text(&text),
+            SendTextAction::Key { modifiers, key } => synthesize_key_combo(&modifiers, &[key]),
+            SendTextAction::Sleep(ms) => {
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                Ok(())
+            }
+        };
+        if let Err(error) = result {
+            log::error!("SendText 命令执行失败，已停止剩余序列: {error}");
+            return;
         }
     }
 }
 
-fn type_text(text: &str) {
+fn type_text(text: &str) -> Result<(), String> {
     let mut inputs: Vec<INPUT> = Vec::with_capacity(text.len() * 2);
+    let mut transitions = Vec::with_capacity(text.len() * 2);
     let mut buf = [0u16; 2];
     for ch in text.chars() {
         for unit in ch.encode_utf16(&mut buf) {
             inputs.push(unicode_input(*unit, true));
+            transitions.push((*unit, true));
             inputs.push(unicode_input(*unit, false));
+            transitions.push((*unit, false));
         }
     }
-    let _ = send_inputs(&inputs);
+    match send_inputs(&inputs) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            recover_unicode_units(&transitions, error.inserted);
+            Err(error.to_string())
+        }
+    }
 }
 
-enum TextSegment {
+fn recover_unicode_units(transitions: &[(u16, bool)], inserted: usize) {
+    for unit in unicode_releases_after_prefix(transitions, inserted) {
+        let _ = send_inputs(&[unicode_input(unit, false)]);
+    }
+}
+
+fn unicode_releases_after_prefix(transitions: &[(u16, bool)], inserted: usize) -> Vec<u16> {
+    let mut pressed = Vec::new();
+    for &(unit, down) in transitions.iter().take(inserted) {
+        if down {
+            pressed.push(unit);
+        } else if let Some(index) = pressed
+            .iter()
+            .rposition(|pressed_unit| *pressed_unit == unit)
+        {
+            pressed.remove(index);
+        }
+    }
+    pressed.reverse();
+    pressed
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SendTextAction {
     Text(String),
+    Key { modifiers: Vec<String>, key: String },
     Sleep(u64),
 }
 
 /// 单个 `{sleep N}` 的最大生效时长
 const MAX_SLEEP_MS: u64 = 10_000;
 
-/// 把含 `{sleep N}` 的文本拆成文本段与休眠段。
-fn split_sleep_tokens(text: &str) -> Vec<TextSegment> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("{sleep ") {
-        if let Some(end_rel) = rest[start..].find('}') {
-            let end = start + end_rel;
-            let inner = &rest[start + "{sleep ".len()..end];
-            if let Ok(ms) = inner.trim().parse::<u64>() {
-                if start > 0 {
-                    out.push(TextSegment::Text(rest[..start].to_string()));
-                }
-                // 封顶 10s:这段休眠跑在命令执行线程上,一个手改(或从别的设备
-                // 同步过来)的 {sleep 99999999999} 会把该线程永久挂住,
-                // 之后所有手势命令都不再执行,只能重启。
-                out.push(TextSegment::Sleep(ms.min(MAX_SLEEP_MS)));
-                rest = &rest[end + 1..];
+enum BracedAtom {
+    Text(char),
+    Key(String),
+    Sleep(u64),
+}
+
+struct SendKeysParser<'a> {
+    source: &'a str,
+    position: usize,
+    actions: Vec<SendTextAction>,
+}
+
+fn parse_send_keys(source: &str) -> Result<Vec<SendTextAction>, String> {
+    SendKeysParser {
+        source,
+        position: 0,
+        actions: Vec::new(),
+    }
+    .parse()
+}
+
+impl SendKeysParser<'_> {
+    fn parse(mut self) -> Result<Vec<SendTextAction>, String> {
+        while let Some(ch) = self.peek() {
+            let modifiers = self.take_modifiers();
+            if !modifiers.is_empty() {
+                self.parse_modified_atom(modifiers)?;
                 continue;
             }
+            match ch {
+                '{' => match self.take_braced_atom()? {
+                    BracedAtom::Text(ch) => self.push_text(ch),
+                    BracedAtom::Key(key) => self.actions.push(SendTextAction::Key {
+                        modifiers: Vec::new(),
+                        key,
+                    }),
+                    BracedAtom::Sleep(ms) => self.actions.push(SendTextAction::Sleep(ms)),
+                },
+                '}' => return Err(self.error("未转义的右花括号；请写成 {}}")),
+                _ => {
+                    self.take();
+                    self.push_text(ch);
+                }
+            }
         }
-        // 不是合法的 sleep 记号:把 '{' 之前(含)当普通文本继续扫描
-        out.push(TextSegment::Text(rest[..start + 1].to_string()));
-        rest = &rest[start + 1..];
+        Ok(self.actions)
     }
-    if !rest.is_empty() {
-        out.push(TextSegment::Text(rest.to_string()));
+
+    fn parse_modified_atom(&mut self, modifiers: Vec<String>) -> Result<(), String> {
+        let Some(ch) = self.peek() else {
+            return Err(self.error("修饰符后缺少按键"));
+        };
+        let key = if ch == '{' {
+            match self.take_braced_atom()? {
+                BracedAtom::Key(key) => key,
+                BracedAtom::Sleep(_) => return Err(self.error("sleep 不能带键盘修饰符")),
+                BracedAtom::Text(_) => return Err(self.error("转义字符不能带键盘修饰符")),
+            }
+        } else {
+            if ch == '}' {
+                return Err(self.error("未转义的右花括号；请写成 {}}"));
+            }
+            self.take();
+            modified_char_key_name(ch)
+                .ok_or_else(|| self.error(&format!("修饰符不支持作用于字符 {ch:?}")))?
+        };
+        self.actions.push(SendTextAction::Key { modifiers, key });
+        Ok(())
     }
-    out
+
+    fn take_modifiers(&mut self) -> Vec<String> {
+        let mut modifiers = Vec::new();
+        while let Some(ch) = self.peek() {
+            let modifier = match ch {
+                '^' => "ctrl",
+                '%' => "alt",
+                '+' => "shift",
+                _ => break,
+            };
+            self.take();
+            if !modifiers.iter().any(|existing| existing == modifier) {
+                modifiers.push(modifier.to_string());
+            }
+        }
+        modifiers
+    }
+
+    fn take_braced_atom(&mut self) -> Result<BracedAtom, String> {
+        let rest = &self.source[self.position..];
+        for (syntax, literal) in [
+            ("{{}", '{'),
+            ("{}}", '}'),
+            ("{^}", '^'),
+            ("{%}", '%'),
+            ("{+}", '+'),
+        ] {
+            if rest.starts_with(syntax) {
+                self.position += syntax.len();
+                return Ok(BracedAtom::Text(literal));
+            }
+        }
+
+        let token_start = self.position;
+        self.take(); // '{'
+        let Some(end_offset) = self.source[self.position..].find('}') else {
+            return Err(self.error_at(token_start, "未闭合的命名键或 sleep token"));
+        };
+        let end = self.position + end_offset;
+        let token = &self.source[self.position..end];
+        self.position = end + 1;
+
+        if token
+            .get(.."sleep".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("sleep"))
+        {
+            let digits = token["sleep".len()..].trim_start_matches(' ');
+            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(
+                    self.error_at(token_start, "sleep 必须写成 {sleep毫秒} 或 {sleep 毫秒}")
+                );
+            }
+            let ms = digits.bytes().fold(0u64, |value, byte| {
+                value
+                    .saturating_mul(10)
+                    .saturating_add((byte - b'0') as u64)
+            });
+            return Ok(BracedAtom::Sleep(ms.min(MAX_SLEEP_MS)));
+        }
+
+        named_key(token)
+            .map(BracedAtom::Key)
+            .ok_or_else(|| self.error_at(token_start, &format!("未知命名键 {{{token}}}")))
+    }
+
+    fn push_text(&mut self, ch: char) {
+        match self.actions.last_mut() {
+            Some(SendTextAction::Text(text)) => text.push(ch),
+            _ => self.actions.push(SendTextAction::Text(ch.to_string())),
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.source[self.position..].chars().next()
+    }
+
+    fn take(&mut self) -> Option<char> {
+        let ch = self.peek()?;
+        self.position += ch.len_utf8();
+        Some(ch)
+    }
+
+    fn error(&self, message: &str) -> String {
+        self.error_at(self.position, message)
+    }
+
+    fn error_at(&self, position: usize, message: &str) -> String {
+        format!("SendKeys 字节位置 {position}: {message}")
+    }
+}
+
+fn named_key(token: &str) -> Option<String> {
+    let upper = token.to_ascii_uppercase();
+    let canonical = match upper.as_str() {
+        "ENTER" => "enter",
+        "TAB" => "tab",
+        "ESC" | "ESCAPE" => "esc",
+        "BACKSPACE" => "backspace",
+        "DELETE" => "delete",
+        "LEFT" => "left",
+        "UP" => "up",
+        "RIGHT" => "right",
+        "DOWN" => "down",
+        _ => {
+            let suffix = upper.strip_prefix('F')?;
+            let number = suffix.parse::<u8>().ok()?;
+            if !(1..=24).contains(&number) || suffix != number.to_string() {
+                return None;
+            }
+            return Some(format!("f{number}"));
+        }
+    };
+    Some(canonical.to_string())
+}
+
+fn modified_char_key_name(ch: char) -> Option<String> {
+    let canonical = match ch {
+        'a'..='z' => return Some(ch.to_string()),
+        'A'..='Z' => return Some(ch.to_ascii_lowercase().to_string()),
+        '0'..='9' => return Some(ch.to_string()),
+        ' ' => "space",
+        '-' => "minus",
+        '=' => "equals",
+        ',' => "comma",
+        '.' => "period",
+        '/' => "slash",
+        ';' => "semicolon",
+        '\'' => "quote",
+        '[' => "bracketLeft",
+        ']' => "bracketRight",
+        '\\' => "backslash",
+        '`' => "backquote",
+        _ => return None,
+    };
+    Some(canonical.to_string())
 }
 
 #[cfg(test)]
@@ -439,5 +662,136 @@ mod tests {
     fn misplaced_modifier_rejects_the_whole_combo() {
         let error = resolve_key_names(&["ctrl".to_string()], "主键", false).unwrap_err();
         assert!(error.contains("类型错位"));
+    }
+
+    fn send_key(modifiers: &[&str], key: &str) -> SendTextAction {
+        SendTextAction::Key {
+            modifiers: modifiers
+                .iter()
+                .map(|modifier| modifier.to_string())
+                .collect(),
+            key: key.to_string(),
+        }
+    }
+
+    #[test]
+    fn send_keys_parser_builds_the_complete_ordered_sequence() {
+        assert_eq!(
+            parse_send_keys("before{sleep1}^c%{F4}after").unwrap(),
+            [
+                SendTextAction::Text("before".to_string()),
+                SendTextAction::Sleep(1),
+                send_key(&["ctrl"], "c"),
+                send_key(&["alt"], "f4"),
+                SendTextAction::Text("after".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn send_keys_parser_keeps_plain_unicode_as_text() {
+        assert_eq!(
+            parse_send_keys("Hello 世界\r\n").unwrap(),
+            [SendTextAction::Text("Hello 世界\r\n".to_string())]
+        );
+    }
+
+    #[test]
+    fn send_keys_parser_supports_all_named_keys_case_insensitively() {
+        let source = concat!(
+            "{ENTER}{tab}{Esc}{BACKSPACE}{delete}",
+            "{LEFT}{UP}{RIGHT}{DOWN}",
+            "{F1}{f12}{F24}"
+        );
+        assert_eq!(
+            parse_send_keys(source).unwrap(),
+            [
+                send_key(&[], "enter"),
+                send_key(&[], "tab"),
+                send_key(&[], "esc"),
+                send_key(&[], "backspace"),
+                send_key(&[], "delete"),
+                send_key(&[], "left"),
+                send_key(&[], "up"),
+                send_key(&[], "right"),
+                send_key(&[], "down"),
+                send_key(&[], "f1"),
+                send_key(&[], "f12"),
+                send_key(&[], "f24"),
+            ]
+        );
+    }
+
+    #[test]
+    fn send_keys_modifiers_apply_only_to_the_next_key() {
+        assert_eq!(
+            parse_send_keys("^c%{F4}+{TAB}^+A").unwrap(),
+            [
+                send_key(&["ctrl"], "c"),
+                send_key(&["alt"], "f4"),
+                send_key(&["shift"], "tab"),
+                send_key(&["ctrl", "shift"], "a"),
+            ]
+        );
+    }
+
+    #[test]
+    fn send_keys_parser_supports_reserved_character_escapes() {
+        assert_eq!(
+            parse_send_keys("{{}{}}{^}{%}{+}").unwrap(),
+            [SendTextAction::Text("{}^%+".to_string())]
+        );
+    }
+
+    #[test]
+    fn sleep_is_case_insensitive_allows_zero_spaces_and_is_bounded() {
+        assert_eq!(
+            parse_send_keys(
+                "{sleep0}{SLEEP10}{sLeEp 20}{sleep    999999999999999999999999999999999}"
+            )
+            .unwrap(),
+            [
+                SendTextAction::Sleep(0),
+                SendTextAction::Sleep(10),
+                SendTextAction::Sleep(20),
+                SendTextAction::Sleep(MAX_SLEEP_MS),
+            ]
+        );
+    }
+
+    #[test]
+    fn syntax_errors_reject_the_entire_sequence_before_execution() {
+        for source in [
+            "prefix{UNKNOWN}",
+            "prefix{ENTER",
+            "prefix}",
+            "prefix^",
+            "prefix{sleep}",
+            "prefix{sleep nope}",
+            "prefix{F25}",
+            "prefix^{sleep 1}",
+        ] {
+            assert!(parse_send_keys(source).is_err(), "should reject {source:?}");
+        }
+    }
+
+    #[test]
+    fn modified_non_ascii_character_is_rejected() {
+        let error = parse_send_keys("^中").unwrap_err();
+        assert!(error.contains("不支持作用于字符"));
+    }
+
+    #[test]
+    fn unicode_short_write_releases_only_unmatched_units_in_reverse() {
+        let transitions = [
+            (0x0041, true),
+            (0x0041, false),
+            (0xD83D, true),
+            (0xDE00, true),
+        ];
+        assert_eq!(
+            unicode_releases_after_prefix(&transitions, transitions.len()),
+            [0xDE00, 0xD83D]
+        );
     }
 }
