@@ -6,6 +6,7 @@
  * - config_set(document: ConfigDocument)        // 保存并即时生效
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
+ * - legacy_import_apply(document, machine)       // 双配置批量应用与进程内回滚
  * - engine_is_paused(): boolean
  * - engine_toggle_pause(): boolean
  *     + Tauri event "pause-changed", payload: boolean
@@ -33,6 +34,23 @@ export interface PickedWindow {
   aumid: string | null;
 }
 
+export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
+
+/** Stable error contract for callers that must distinguish an incomplete rollback. */
+export class BackendError extends Error {
+  public readonly cause: unknown;
+
+  constructor(
+    public readonly code: string,
+    message: string,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = "BackendError";
+    this.cause = cause;
+  }
+}
+
 export interface Backend {
   readonly isTauri: boolean;
 
@@ -42,6 +60,8 @@ export interface Backend {
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
+  /** Atomically applies a legacy import, or restores the previous backend state. */
+  legacyImportApply(document: ConfigDocument, machine: MachineLocalSettings): Promise<void>;
 
   engineIsPaused(): Promise<boolean>;
   engineTogglePause(): Promise<boolean>;
@@ -60,6 +80,42 @@ export interface Backend {
   openExternal(url: string): Promise<void>;
 
   getAppVersion(): Promise<string>;
+}
+
+function normalizeBackendError(error: unknown): BackendError {
+  if (error instanceof BackendError) return error;
+
+  if (typeof error === "object" && error !== null) {
+    const value = error as { code?: unknown; message?: unknown };
+    if (typeof value.code === "string") {
+      return new BackendError(
+        value.code,
+        typeof value.message === "string" ? value.message : value.code,
+        error,
+      );
+    }
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    const parsed = JSON.parse(message) as { code?: unknown; message?: unknown };
+    if (typeof parsed.code === "string") {
+      return new BackendError(
+        parsed.code,
+        typeof parsed.message === "string" ? parsed.message : message,
+        error,
+      );
+    }
+  } catch {
+    // Tauri may reject with a plain string; fall through to the stable-code scan.
+  }
+
+  const code = message.includes("rollback_incomplete")
+    ? "rollback_incomplete"
+    : message.includes("apply_failed")
+      ? "apply_failed"
+      : "unknown";
+  return new BackendError(code, message, error);
 }
 
 export function isTauriRuntime(): boolean {
@@ -85,6 +141,14 @@ function createTauriBackend(): Backend {
     async machineSet(settings) {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("machine_set", { settings });
+    },
+    async legacyImportApply(document, machine) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("legacy_import_apply", { document, machine });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
     },
     async engineIsPaused() {
       const { invoke } = await import("@tauri-apps/api/core");

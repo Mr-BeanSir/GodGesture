@@ -5,12 +5,13 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { InfoFilled } from "@element-plus/icons-vue";
+import { InfoFilled, UploadFilled } from "@element-plus/icons-vue";
 import type { HotkeyKeyName, HotkeyModifier } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { useBackend } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
 import ArgbColorPicker from "../components/ArgbColorPicker.vue";
+import LegacyImportDialog from "../components/LegacyImportDialog.vue";
 
 const { t } = useI18n();
 const store = useConfigStore();
@@ -22,6 +23,7 @@ const view = computed(() => store.doc!.preferences.gestureView);
 const machine = computed(() => store.machine!);
 
 const version = ref("");
+const legacyImportVisible = ref(false);
 onMounted(async () => {
   version.value = await backend.getAppVersion();
 });
@@ -187,7 +189,17 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
         <ArgbColorPicker v-model="view.unrecognizedPathColor" />
       </div>
     </section>
+
+    <section class="gg-section">
+      <h3 class="gg-section-title">{{ t("options.legacyImport.sectionTitle") }}</h3>
+      <div>
+        <el-button :icon="UploadFilled" @click="legacyImportVisible = true">
+          {{ t("options.legacyImport.openAction") }}
+        </el-button>
+      </div>
+    </section>
   </div>
+  <LegacyImportDialog v-model="legacyImportVisible" />
 </template>
 
 <style scoped>

@@ -4,9 +4,12 @@
  */
 import { defineStore } from "pinia";
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { watchDebounced } from "@vueuse/core";
-import { ConfigDocument, MachineLocalSettings } from "@godgesture/shared";
-import { useBackend } from "../api/backend";
+import {
+  ConfigDocument,
+  MachineLocalSettings,
+  type LegacyImportResult,
+} from "@godgesture/shared";
+import { BackendError, useBackend } from "../api/backend";
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -26,12 +29,17 @@ export const useConfigStore = defineStore("config", () => {
   let lastPersistedMachine: string | null = null;
   let docSaveQueue = Promise.resolve();
   let machineSaveQueue = Promise.resolve();
+  let docSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let machineSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let saveGeneration = 0;
+  let applyingImport = false;
   let unlistenPause: (() => void) | null = null;
   let pauseEventVersion = 0;
   let disposed = false;
 
   onScopeDispose(() => {
     disposed = true;
+    clearSaveTimers();
     unlistenPause?.();
     unlistenPause = null;
   });
@@ -107,7 +115,7 @@ export const useConfigStore = defineStore("config", () => {
     if (!parsed.success) {
       saveState.value = "error";
       console.warn("[config] validation failed", parsed.error.issues);
-      return;
+      throw new Error("config validation failed");
     }
     const serialized = JSON.stringify(parsed.data);
     if (serialized === lastPersistedDoc) return;
@@ -119,6 +127,7 @@ export const useConfigStore = defineStore("config", () => {
     } catch (err) {
       saveState.value = "error";
       console.error("[config] config_set failed", err);
+      throw err;
     }
   }
 
@@ -132,7 +141,7 @@ export const useConfigStore = defineStore("config", () => {
     const parsed = MachineLocalSettings.safeParse(machine.value);
     if (!parsed.success) {
       saveState.value = "error";
-      return;
+      throw new Error("machine settings validation failed");
     }
     const serialized = JSON.stringify(parsed.data);
     if (serialized === lastPersistedMachine) return;
@@ -144,6 +153,7 @@ export const useConfigStore = defineStore("config", () => {
     } catch (err) {
       saveState.value = "error";
       console.error("[config] machine_set failed", err);
+      throw err;
     }
   }
 
@@ -152,31 +162,93 @@ export const useConfigStore = defineStore("config", () => {
     return machineSaveQueue;
   }
 
-  // 改动自动保存(防抖 500ms)
-  watchDebounced(
-    doc,
-    () => {
-      void persistDoc();
-    },
-    { deep: true, debounce: 500 },
-  );
+  function clearSaveTimers() {
+    if (docSaveTimer) clearTimeout(docSaveTimer);
+    if (machineSaveTimer) clearTimeout(machineSaveTimer);
+    docSaveTimer = null;
+    machineSaveTimer = null;
+  }
 
-  watchDebounced(
-    machine,
-    () => {
-      void persistMachine();
-    },
-    { deep: true, debounce: 300 },
-  );
+  function scheduleDocSave() {
+    if (applyingImport) return;
+    if (docSaveTimer) clearTimeout(docSaveTimer);
+    const generation = saveGeneration;
+    docSaveTimer = setTimeout(() => {
+      docSaveTimer = null;
+      if (!applyingImport && generation === saveGeneration) {
+        void persistDoc().catch(() => undefined);
+      }
+    }, 500);
+  }
 
-  // 有改动立刻进入 saving 展示(先于防抖落盘)
+  function scheduleMachineSave() {
+    if (applyingImport) return;
+    if (machineSaveTimer) clearTimeout(machineSaveTimer);
+    const generation = saveGeneration;
+    machineSaveTimer = setTimeout(() => {
+      machineSaveTimer = null;
+      if (!applyingImport && generation === saveGeneration) {
+        void persistMachine().catch(() => undefined);
+      }
+    }, 300);
+  }
+
   watch(
     doc,
     () => {
       if (serializedDoc() !== lastPersistedDoc) saveState.value = "saving";
+      scheduleDocSave();
     },
     { deep: true },
   );
+
+  watch(
+    machine,
+    () => {
+      if (serializedMachine() !== lastPersistedMachine) saveState.value = "saving";
+      scheduleMachineSave();
+    },
+    { deep: true },
+  );
+
+  async function flushPendingSaves() {
+    clearSaveTimers();
+    saveGeneration += 1;
+    await Promise.all([persistDoc(), persistMachine()]);
+  }
+
+  async function applyLegacyImport(result: LegacyImportResult) {
+    if (!doc.value || !machine.value) throw new Error("config is not ready");
+    const importedDoc = ConfigDocument.parse(result.document);
+    const importedMachine = MachineLocalSettings.parse(result.machineLocal);
+    const nextMachine = MachineLocalSettings.parse({
+      ...machine.value,
+      autoStart: importedMachine.autoStart,
+      trayIconVisible: importedMachine.trayIconVisible,
+    });
+
+    applyingImport = true;
+    clearSaveTimers();
+    saveGeneration += 1;
+    try {
+      await flushPendingSaves();
+      await backend.legacyImportApply(importedDoc, nextMachine);
+
+      lastPersistedDoc = JSON.stringify(importedDoc);
+      lastPersistedMachine = JSON.stringify(nextMachine);
+      doc.value = importedDoc;
+      machine.value = nextMachine;
+      saveState.value = "saved";
+    } catch (err) {
+      if (err instanceof BackendError && err.code === "rollback_incomplete") {
+        await load();
+      }
+      throw err;
+    } finally {
+      applyingImport = false;
+      saveGeneration += 1;
+    }
+  }
 
   async function togglePause() {
     paused.value = await backend.engineTogglePause();
@@ -196,5 +268,6 @@ export const useConfigStore = defineStore("config", () => {
     preferences,
     load,
     togglePause,
+    applyLegacyImport,
   };
 });
