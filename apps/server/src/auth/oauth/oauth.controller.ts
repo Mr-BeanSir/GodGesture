@@ -30,9 +30,17 @@ export class OAuthController {
     @Param('provider') provider: string,
     @Query('redirect_uri') redirectUri: string | undefined,
     @Query('state') state: string | undefined,
+    @Query('code_challenge') codeChallenge: string | undefined,
+    @Query('code_challenge_method') codeChallengeMethod: string | undefined,
     @Res() res: Response,
   ): void {
-    const url = this.oauth.buildAuthorizeRedirect(provider, redirectUri, state);
+    const url = this.oauth.buildAuthorizeRedirect(
+      provider,
+      redirectUri,
+      state,
+      codeChallenge,
+      codeChallengeMethod,
+    );
     res.redirect(HttpStatus.FOUND, url);
   }
 

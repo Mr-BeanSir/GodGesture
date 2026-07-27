@@ -8,6 +8,10 @@ import { login, registerAccount } from "../api/auth";
 import { apiUrl } from "../api/client";
 import { detectBrowserDeviceName } from "../utils/device";
 import { errorMessageKey } from "../utils/errors";
+import {
+  createOAuthPkce,
+  saveOAuthPkceSession,
+} from "../utils/oauth-pkce";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -17,7 +21,6 @@ const activeTab = ref<"login" | "register">("login");
 const form = reactive({ email: "", password: "" });
 const submitting = ref(false);
 
-const OAUTH_STATE_KEY = "godgesture.oauthState";
 const enabledProviders: OAuthProvider[] = ["github", "google"];
 const comingSoonProviders: OAuthProvider[] = ["wechat", "qq"];
 
@@ -51,14 +54,21 @@ async function onSubmit(): Promise<void> {
   }
 }
 
-function startOAuth(provider: OAuthProvider): void {
-  const state = crypto.randomUUID();
-  sessionStorage.setItem(OAUTH_STATE_KEY, state);
-  const redirectUri = `${window.location.origin}/oauth/callback`;
-  window.location.href =
-    apiUrl(`/auth/oauth/${provider}/authorize`) +
-    `?redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&state=${encodeURIComponent(state)}`;
+async function startOAuth(provider: OAuthProvider): Promise<void> {
+  try {
+    const { session, challenge } = await createOAuthPkce();
+    saveOAuthPkceSession(sessionStorage, session);
+    const redirectUri = `${window.location.origin}/oauth/callback`;
+    const query = new URLSearchParams({
+      redirect_uri: redirectUri,
+      state: session.state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+    window.location.href = `${apiUrl(`/auth/oauth/${provider}/authorize`)}?${query}`;
+  } catch (err) {
+    ElMessage.error(t(errorMessageKey(err)));
+  }
 }
 </script>
 

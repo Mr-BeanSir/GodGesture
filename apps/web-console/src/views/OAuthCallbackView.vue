@@ -5,30 +5,30 @@ import { useI18n } from "vue-i18n";
 import { exchangeOAuthCode } from "../api/auth";
 import { detectBrowserDeviceName } from "../utils/device";
 import { errorMessageKey } from "../utils/errors";
+import { consumeOAuthPkceSession } from "../utils/oauth-pkce";
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const OAUTH_STATE_KEY = "godgesture.oauthState";
 const errorKey = ref<string | null>(null);
 
 onMounted(async () => {
   const code = route.query.code;
   const state = route.query.state;
-  if (typeof code !== "string" || code.length === 0) {
-    errorKey.value = "oauth.missingCode";
+  const pkce = consumeOAuthPkceSession(sessionStorage);
+  if (!pkce || state !== pkce.state) {
+    errorKey.value = "oauth.stateMismatch";
     return;
   }
-  const expected = sessionStorage.getItem(OAUTH_STATE_KEY);
-  sessionStorage.removeItem(OAUTH_STATE_KEY);
-  if (!expected || state !== expected) {
-    errorKey.value = "oauth.stateMismatch";
+  if (typeof code !== "string" || code.length === 0) {
+    errorKey.value = "oauth.missingCode";
     return;
   }
   try {
     await exchangeOAuthCode({
       code,
+      codeVerifier: pkce.verifier,
       device: { name: detectBrowserDeviceName(), platform: "web" },
     });
     void router.replace("/");

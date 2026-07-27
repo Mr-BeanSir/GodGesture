@@ -2,6 +2,8 @@
  * 认证与设备协议 —— 邮箱+密码 + JWT 双令牌(设备级可撤销)+ OAuth(ADR/共识)。
  */
 import { z } from "zod";
+import { OAuthCodeVerifier } from "./pkce.js";
+export * from "./pkce.js";
 
 export const OAuthProvider = z.enum(["github", "google", "wechat", "qq"]);
 export type OAuthProvider = z.infer<typeof OAuthProvider>;
@@ -69,6 +71,8 @@ export type RenameDeviceRequest = z.infer<typeof RenameDeviceRequest>;
 export const OAuthExchangeRequest = z.object({
   /** 一次性授权码(5 分钟内有效,用后即焚) */
   code: z.string().min(1),
+  /** 与 authorize 阶段 code_challenge 匹配的 RFC 7636 verifier。 */
+  codeVerifier: OAuthCodeVerifier,
   device: z.object({
     name: DeviceName,
     platform: DevicePlatform,

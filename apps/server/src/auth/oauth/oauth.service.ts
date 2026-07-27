@@ -3,7 +3,13 @@ import {
   ConflictException,
   Injectable,
 } from '@nestjs/common';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
+import {
+  OAuthCodeChallenge,
+  OAuthCodeChallengeMethod,
+  OAuthCodeVerifier,
+} from '@godgesture/shared';
 import type {
   OAuthExchangeRequest,
   OAuthProvider,
@@ -22,6 +28,13 @@ interface PendingAuthorization {
   redirectUri: string;
   /** 客户端自带的 state,原样带回 */
   clientState: string | null;
+  /** RFC 7636 S256 challenge,与最终一次性授权码绑定。 */
+  codeChallenge: string;
+}
+
+interface AuthorizationCodeGrant {
+  userId: string;
+  codeChallenge: string;
 }
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -38,8 +51,10 @@ export class OAuthService {
   private readonly pendingStates = new OneTimeStore<PendingAuthorization>(
     STATE_TTL_MS,
   );
-  /** 一次性授权码 → userId(5 分钟 TTL,用后即焚) */
-  private readonly authCodes = new OneTimeStore<string>(AUTH_CODE_TTL_MS);
+  /** 一次性授权码 → userId + PKCE challenge(5 分钟 TTL,用后即焚) */
+  private readonly authCodes = new OneTimeStore<AuthorizationCodeGrant>(
+    AUTH_CODE_TTL_MS,
+  );
 
   constructor(
     private readonly registry: OAuthProviderRegistry,
@@ -67,7 +82,9 @@ export class OAuthService {
       url.protocol === 'http:' && url.hostname === '127.0.0.1';
     const webOrigin = this.config.get('WEB_CONSOLE_ORIGIN', { infer: true });
     const isWebConsole = webOrigin != null && url.origin === webOrigin;
-    if (!isLoopback && !isWebConsole) {
+    const hasUnsafeComponents =
+      url.username.length > 0 || url.password.length > 0 || url.hash.length > 0;
+    if (hasUnsafeComponents || (!isLoopback && !isWebConsole)) {
       throw new BadRequestException({
         error: 'redirect_uri_not_allowed',
         message:
@@ -81,16 +98,28 @@ export class OAuthService {
     providerName: string,
     redirectUri: string | undefined,
     clientState: string | undefined,
+    codeChallenge: string | undefined,
+    codeChallengeMethod: string | undefined,
   ): string {
     const plugin = this.registry.resolveEnabled(providerName);
     if (!redirectUri) {
       throw new BadRequestException({ error: 'missing_redirect_uri' });
     }
     this.assertRedirectUriAllowed(redirectUri);
+    if (!OAuthCodeChallengeMethod.safeParse(codeChallengeMethod).success) {
+      throw new BadRequestException({
+        error: 'unsupported_code_challenge_method',
+      });
+    }
+    const parsedChallenge = OAuthCodeChallenge.safeParse(codeChallenge);
+    if (!parsedChallenge.success) {
+      throw new BadRequestException({ error: 'invalid_code_challenge' });
+    }
     const state = this.pendingStates.put({
       provider: plugin.name,
       redirectUri,
       clientState: clientState ?? null,
+      codeChallenge: parsedChallenge.data,
     });
     return plugin.buildAuthorizeUrl(this.callbackUrl(plugin.name), state);
   }
@@ -114,7 +143,10 @@ export class OAuthService {
       this.callbackUrl(plugin.name),
     );
     const userId = await this.upsertOAuthUser(plugin.name, identity);
-    const authCode = this.authCodes.put(userId);
+    const authCode = this.authCodes.put({
+      userId,
+      codeChallenge: pending.codeChallenge,
+    });
     const target = new URL(pending.redirectUri);
     target.searchParams.set('code', authCode);
     if (pending.clientState != null) {
@@ -125,19 +157,34 @@ export class OAuthService {
 
   /** POST /auth/oauth/exchange → 令牌对 */
   async exchange(dto: OAuthExchangeRequest): Promise<TokenPairResponse> {
-    const userId = this.authCodes.consume(dto.code);
-    if (!userId) {
+    // 先消费授权码再校验 verifier:错误 verifier 同样焚毁 code,不能反复猜测。
+    const grant = this.authCodes.consume(dto.code);
+    if (!grant) {
       throw new BadRequestException({ error: 'invalid_or_expired_auth_code' });
+    }
+    if (!OAuthCodeVerifier.safeParse(dto.codeVerifier).success) {
+      throw new BadRequestException({ error: 'invalid_code_verifier' });
+    }
+    const actualChallenge = createHash('sha256')
+      .update(dto.codeVerifier, 'ascii')
+      .digest('base64url');
+    const expected = Buffer.from(grant.codeChallenge, 'ascii');
+    const actual = Buffer.from(actualChallenge, 'ascii');
+    if (
+      expected.length !== actual.length ||
+      !timingSafeEqual(expected, actual)
+    ) {
+      throw new BadRequestException({ error: 'invalid_code_verifier' });
     }
     const device = await this.prisma.device.create({
       data: {
-        userId,
+        userId: grant.userId,
         name: dto.device.name,
         platform: dto.device.platform,
         lastSeenAt: new Date(),
       },
     });
-    return this.tokens.issueTokenPair(userId, device.id);
+    return this.tokens.issueTokenPair(grant.userId, device.id);
   }
 
   /**
