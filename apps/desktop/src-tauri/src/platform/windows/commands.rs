@@ -25,9 +25,9 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos,
-    ShowWindow,
-    GWL_EXSTYLE, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL, WM_CLOSE, WS_EX_TOPMOST,
+    ShowWindowAsync, GWL_EXSTYLE, HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL,
+    WM_CLOSE, WS_EX_TOPMOST,
 };
 
 /// 执行一条命令。`modifier` 是本次手势修饰,`ctx` 提供手势起点与目标窗口句柄。
@@ -190,17 +190,19 @@ fn window_control(op: WindowOperation, ctx: &GestureContext) {
         match op {
             WindowOperation::MaximizeRestore => {
                 if IsZoomed(hwnd).as_bool() {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                    enqueue_show_window(hwnd, SW_RESTORE, "还原");
                 } else {
-                    let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                    enqueue_show_window(hwnd, SW_MAXIMIZE, "最大化");
                 }
             }
             WindowOperation::Minimize => {
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                enqueue_show_window(hwnd, SW_MINIMIZE, "最小化");
             }
             WindowOperation::Close => {
                 // 发 WM_CLOSE 走正常关闭流程(可弹保存提示),不强杀进程
-                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+                if let Err(error) = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)) {
+                    log::error!("窗口关闭消息入队失败: {error}");
+                }
             }
             WindowOperation::ToggleTopmost => toggle_topmost(hwnd),
             WindowOperation::DockLeft => dock_half(hwnd, true),
@@ -209,20 +211,32 @@ fn window_control(op: WindowOperation, ctx: &GestureContext) {
     }
 }
 
+fn enqueue_show_window(
+    hwnd: HWND,
+    command: windows::Win32::UI::WindowsAndMessaging::SHOW_WINDOW_CMD,
+    operation: &str,
+) {
+    if !unsafe { ShowWindowAsync(hwnd, command) }.as_bool() {
+        log::error!("窗口{operation}请求入队失败");
+    }
+}
+
 fn toggle_topmost(hwnd: HWND) {
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let is_topmost = (ex & WS_EX_TOPMOST.0 as isize) != 0;
         let insert_after = if is_topmost { HWND_NOTOPMOST } else { HWND_TOPMOST };
-        let _ = SetWindowPos(
+        if let Err(error) = SetWindowPos(
             hwnd,
             Some(insert_after),
             0,
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+        ) {
+            log::error!("窗口置顶状态请求入队失败: {error}");
+        }
     }
 }
 
@@ -231,7 +245,7 @@ fn dock_half(hwnd: HWND, left: bool) {
     unsafe {
         // 最大化状态下 SetWindowPos 不生效,先还原
         if IsZoomed(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
+            enqueue_show_window(hwnd, SW_RESTORE, "还原");
         }
         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         let mut mi = MONITORINFO {
@@ -244,15 +258,17 @@ fn dock_half(hwnd: HWND, left: bool) {
         let work = mi.rcWork;
         let half_w = (work.right - work.left) / 2;
         let x = if left { work.left } else { work.left + half_w };
-        let _ = SetWindowPos(
+        if let Err(error) = SetWindowPos(
             hwnd,
             None,
             x,
             work.top,
             half_w,
             work.bottom - work.top,
-            SWP_NOACTIVATE | SWP_NOZORDER,
-        );
+            SWP_NOACTIVATE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS,
+        ) {
+            log::error!("窗口停靠请求入队失败: {error}");
+        }
     }
 }
 
