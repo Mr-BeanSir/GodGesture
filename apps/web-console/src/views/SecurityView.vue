@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { OAuthProvider } from "@godgesture/shared";
 import { useAuthStore } from "../stores/auth";
-import { errorMessageKey } from "../utils/errors";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -27,12 +26,11 @@ async function onLogout(): Promise<void> {
   } catch {
     return; // 取消
   }
-  try {
-    await auth.logout();
-    void router.push({ name: "login" });
-  } catch (err) {
-    ElMessage.error(t(errorMessageKey(err)));
+  const outcome = await auth.logout();
+  if (outcome === "local_only") {
+    ElMessage.warning(t("auth.logoutLocalOnly"));
   }
+  void router.replace({ name: "login" });
 }
 </script>
 

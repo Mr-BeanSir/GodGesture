@@ -19,13 +19,14 @@ const API_ORIGIN = import.meta.env.VITE_API_BASE_URL ?? "";
 const API_BASE = `${API_ORIGIN}/api/v1`;
 const REFRESH_TOKEN_KEY = "godgesture.refreshToken";
 const REFRESH_LEASE_KEY = "godgesture.refreshLease";
+const SESSION_EVENT_KEY = "godgesture.sessionEvent";
 const REFRESH_TIMEOUT_MS = 15_000;
 
 const refreshCoordinator = new RefreshCoordinator(localStorage, {
   lockName: "godgesture.refresh",
   leaseKey: REFRESH_LEASE_KEY,
   channelName: "godgesture.session",
-  watchedStorageKeys: [REFRESH_TOKEN_KEY],
+  watchedStorageKeys: [REFRESH_TOKEN_KEY, SESSION_EVENT_KEY],
 });
 
 /** 构造后端 API URL(供整页跳转的 OAuth authorize 等非 fetch 场景) */
@@ -36,11 +37,18 @@ export function apiUrl(path: string): string {
 let accessToken: string | null = null;
 let accessTokenRefreshToken: string | null = null;
 let sessionExpiredHandler: (() => void) | null = null;
+let sessionLogoutHandler: (() => void) | null = null;
 let sessionExpiredLatched = false;
+let sessionLogoutLatched = false;
 
 export function setSessionExpiredHandler(handler: () => void): void {
   sessionExpiredHandler = handler;
   if (sessionExpiredLatched) handler();
+}
+
+export function setSessionLogoutHandler(handler: () => void): void {
+  sessionLogoutHandler = handler;
+  if (sessionLogoutLatched) handler();
 }
 
 export function setTokenPair(pair: TokenPairResponse): void {
@@ -52,12 +60,36 @@ function applyTokenPair(pair: TokenPairResponse): void {
   accessTokenRefreshToken = pair.refreshToken;
   localStorage.setItem(REFRESH_TOKEN_KEY, pair.refreshToken);
   sessionExpiredLatched = false;
+  sessionLogoutLatched = false;
 }
 
 export function clearSession(): void {
+  const refreshToken =
+    localStorage.getItem(REFRESH_TOKEN_KEY) ?? accessTokenRefreshToken;
   accessToken = null;
   accessTokenRefreshToken = null;
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  const message: SessionLogoutMessage | null =
+    refreshToken === null
+      ? null
+      : {
+          type: "session-logout",
+          refreshToken,
+          eventId: crypto.randomUUID(),
+        };
+  if (message !== null) {
+    try {
+      // Store the intent before removing the token so peer tabs do not mistake
+      // the subsequent storage event for an involuntary session expiry.
+      localStorage.setItem(SESSION_EVENT_KEY, JSON.stringify(message));
+    } catch {
+      // BroadcastChannel remains available when storage is temporarily full.
+    }
+  }
+  try {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  } finally {
+    if (message !== null) refreshCoordinator.publish(message);
+  }
 }
 
 function notifySessionExpired(): void {
@@ -66,16 +98,26 @@ function notifySessionExpired(): void {
   sessionExpiredHandler?.();
 }
 
+function notifySessionLogout(): void {
+  if (sessionLogoutLatched) return;
+  sessionLogoutLatched = true;
+  sessionLogoutHandler?.();
+}
+
 /** 本浏览器是否持有可尝试恢复的会话(refresh token) */
 export function hasStoredSession(): boolean {
   return localStorage.getItem(REFRESH_TOKEN_KEY) !== null;
 }
+
+export type ApiResponseContext = "default" | "config_document";
 
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | null,
     readonly body: unknown = null,
+    readonly endpoint: string | null = null,
+    readonly responseContext: ApiResponseContext = "default",
   ) {
     super(code ?? `http_${status}`);
     this.name = "ApiError";
@@ -111,6 +153,12 @@ interface RefreshSuccessMessage {
 interface SessionInvalidMessage {
   type: "session-invalid";
   attemptedToken: string;
+}
+
+interface SessionLogoutMessage {
+  type: "session-logout";
+  refreshToken: string;
+  eventId: string;
 }
 
 let refreshInFlight: Promise<RefreshResult> | null = null;
@@ -162,7 +210,7 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
     return {
       kind: "transient",
       status: res.status,
-      code: "refresh_response_invalid",
+      code: "invalid_server_response",
     };
   }
 
@@ -172,7 +220,7 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
       return {
         kind: "transient",
         status: res.status,
-        code: "refresh_response_invalid",
+        code: "invalid_server_response",
         body,
       };
     }
@@ -270,10 +318,51 @@ refreshCoordinator.subscribe((message) => {
       accessTokenRefreshToken = null;
       notifySessionExpired();
     }
+    return;
+  }
+  if ((message as { type: unknown }).type === "session-logout") {
+    applySessionLogoutMessage(message as Partial<SessionLogoutMessage>);
   }
 });
 
+function applySessionLogoutMessage(
+  candidate: Partial<SessionLogoutMessage>,
+): void {
+  if (
+    typeof candidate.refreshToken !== "string" ||
+    typeof candidate.eventId !== "string"
+  ) {
+    return;
+  }
+  const current = localStorage.getItem(REFRESH_TOKEN_KEY);
+  const matchesCurrent = current === candidate.refreshToken;
+  const matchesOrphanedMemory =
+    current === null && accessTokenRefreshToken === candidate.refreshToken;
+  if (!matchesCurrent && !matchesOrphanedMemory) {
+    return;
+  }
+  if (matchesCurrent) {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
+  accessToken = null;
+  accessTokenRefreshToken = null;
+  notifySessionLogout();
+}
+
 window.addEventListener("storage", (event) => {
+  if (event.key === SESSION_EVENT_KEY && event.newValue !== null) {
+    try {
+      const message = JSON.parse(
+        event.newValue,
+      ) as Partial<SessionLogoutMessage>;
+      if (message.type === "session-logout") {
+        applySessionLogoutMessage(message);
+      }
+    } catch {
+      // Ignore malformed same-origin storage data.
+    }
+    return;
+  }
   if (
     event.key === REFRESH_TOKEN_KEY &&
     event.newValue === null &&
@@ -294,7 +383,12 @@ function requireRefreshSuccess(result: RefreshResult): void {
     notifySessionExpired();
     throw new ApiError(401, "session_expired", { cause: result.code });
   }
-  throw new ApiError(result.status, result.code, result.body);
+  throw new ApiError(
+    result.status,
+    result.code,
+    result.body,
+    result.code === "invalid_server_response" ? "/auth/refresh" : null,
+  );
 }
 
 async function responseError(
@@ -424,7 +518,29 @@ export async function apiRequest<S extends z.ZodTypeAny>(
 ): Promise<z.infer<S>> {
   const res = await rawRequest(path, options);
   await ensureOk(res);
-  return schema.parse(await res.json()) as z.infer<S>;
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new ApiError(res.status, "invalid_server_response", null, path);
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const responseContext: ApiResponseContext =
+      path === "/sync/config" &&
+      (options.method ?? "GET") === "GET" &&
+      parsed.error.issues.some((issue) => issue.path[0] === "document")
+        ? "config_document"
+        : "default";
+    throw new ApiError(
+      res.status,
+      "invalid_server_response",
+      { response: body, issues: parsed.error.issues },
+      path,
+      responseContext,
+    );
+  }
+  return parsed.data as z.infer<S>;
 }
 
 /** 请求无响应体的端点(204) */

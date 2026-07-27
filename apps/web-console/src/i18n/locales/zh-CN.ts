@@ -38,6 +38,8 @@ export default {
     oauthNoneAvailable: "当前没有可用的第三方登录方式",
     logout: "登出",
     logoutConfirm: "确定登出当前会话吗?",
+    logoutLocalOnly:
+      "已退出本浏览器，但无法确认服务端凭证已撤销。请在网络恢复后从设备列表将此设备踢下线。",
     sessionExpired: "登录已过期,请重新登录",
   },
   oauth: {
@@ -188,7 +190,8 @@ export default {
     bound: "已绑定",
     notBound: "未绑定",
     session: "当前会话",
-    logoutHint: "登出后本浏览器的登录凭证将被撤销。",
+    logoutHint:
+      "登出时会尝试撤销服务端凭证，并始终清除本浏览器保存的登录凭证。",
   },
   errors: {
     generic: "请求失败,请稍后重试",
@@ -204,5 +207,7 @@ export default {
     version_conflict: "配置版本冲突,请刷新后重试",
     config_too_large: "配置内容过大，无法同步",
     session_expired: "登录已过期,请重新登录",
+    invalid_server_response:
+      "服务器返回了无法识别的数据，请稍后重试或更新控制台。",
   },
 };

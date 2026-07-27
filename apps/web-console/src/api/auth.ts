@@ -6,7 +6,14 @@ import {
   RegisterRequest,
   TokenPairResponse,
 } from "@godgesture/shared";
-import { apiRequest, apiRequestVoid, clearSession, setTokenPair } from "./client";
+import {
+  apiRequest,
+  apiRequestVoid,
+  clearSession,
+  setTokenPair,
+} from "./client";
+
+export type LogoutOutcome = "revoked" | "local_only";
 
 export function registerAccount(input: RegisterRequest): Promise<MeResponse> {
   return apiRequest(MeResponse, "/auth/register", {
@@ -47,11 +54,14 @@ export function fetchMe(): Promise<MeResponse> {
 }
 
 /** 登出:撤销当前设备刷新令牌 + 清理本地 token */
-export async function logout(): Promise<void> {
+export async function logout(): Promise<LogoutOutcome> {
+  let outcome: LogoutOutcome = "revoked";
   try {
     await apiRequestVoid("/auth/logout", { method: "POST" });
   } catch {
-    // 服务端撤销失败(如已过期)不阻塞本地登出
+    outcome = "local_only";
+  } finally {
+    clearSession();
   }
-  clearSession();
+  return outcome;
 }

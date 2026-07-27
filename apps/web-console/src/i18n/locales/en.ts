@@ -35,9 +35,12 @@ export default {
     oauthDivider: "or continue with",
     oauthComingSoon: "Coming soon",
     oauthUnavailable: "Third-party sign-in options are temporarily unavailable",
-    oauthNoneAvailable: "No third-party sign-in options are currently available",
+    oauthNoneAvailable:
+      "No third-party sign-in options are currently available",
     logout: "Sign out",
     logoutConfirm: "Sign out of the current session?",
+    logoutLocalOnly:
+      "Signed out locally, but server-side credential revocation could not be confirmed. Remove this device from the device list after reconnecting.",
     sessionExpired: "Session expired. Please sign in again.",
   },
   oauth: {
@@ -47,7 +50,8 @@ export default {
     accessDenied: "You cancelled third-party authorization.",
     providerUnavailable:
       "The third-party sign-in service is temporarily unavailable. Try again later.",
-    callbackFailed: "Third-party sign-in could not be completed. Please start over.",
+    callbackFailed:
+      "Third-party sign-in could not be completed. Please start over.",
     failed: "Third-party sign-in failed",
     backToLogin: "Back to sign-in",
   },
@@ -193,7 +197,8 @@ export default {
     bound: "Linked",
     notBound: "Not linked",
     session: "Current Session",
-    logoutHint: "Signing out revokes this browser's sign-in credentials.",
+    logoutHint:
+      "Signing out attempts to revoke server-side credentials and always removes credentials stored in this browser.",
   },
   errors: {
     generic: "Request failed. Please try again later.",
@@ -211,5 +216,7 @@ export default {
     version_conflict: "Configuration version conflict. Refresh and retry.",
     config_too_large: "The configuration is too large to sync.",
     session_expired: "Session expired. Please sign in again.",
+    invalid_server_response:
+      "The server returned an invalid response. Try again later or update the console.",
   },
 };

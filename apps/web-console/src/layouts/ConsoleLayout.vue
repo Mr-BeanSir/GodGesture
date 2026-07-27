@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   DataAnalysis,
   Document,
@@ -47,8 +47,11 @@ async function onLogout(): Promise<void> {
   } catch {
     return;
   }
-  await auth.logout();
-  void router.push({ name: "login" });
+  const outcome = await auth.logout();
+  if (outcome === "local_only") {
+    ElMessage.warning(t("auth.logoutLocalOnly"));
+  }
+  void router.replace({ name: "login" });
 }
 </script>
 
@@ -57,7 +60,11 @@ async function onLogout(): Promise<void> {
     <el-aside width="220px" class="console-aside">
       <div class="brand">{{ t("app.title") }}</div>
       <el-menu :default-active="activeName" @select="onSelect">
-        <el-menu-item v-for="item in navItems" :key="item.name" :index="item.name">
+        <el-menu-item
+          v-for="item in navItems"
+          :key="item.name"
+          :index="item.name"
+        >
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.label }}</span>
         </el-menu-item>
