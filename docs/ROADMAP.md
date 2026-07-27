@@ -23,7 +23,7 @@
 - WGestures 导入(gestures.wg2 + config.plist;Lua 脚本保留原文标记)
 - Script 在 M2 完成模型、编辑和持久化;QuickJS 执行器与宿主 API 按 ADR-0005 归 M3
 
-## M3 脚本引擎
+## M3 脚本引擎 ✅
 - rquickjs 单 Runtime / 每命令懒建 Context;四脚本槽
 - 宿主 API:Input(键鼠模拟)、Context(手势上下文)、窗口操作、剪贴板、ReportStatus
 - 设置界面 Monaco 编辑器 + `.d.ts` 类型提示
