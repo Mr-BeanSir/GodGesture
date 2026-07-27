@@ -13,6 +13,7 @@ import type {
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
+  RestoreSnapshotRequest,
   RestoreSnapshotResponse,
 } from '@godgesture/shared';
 import {
@@ -139,6 +140,7 @@ export class SyncService {
     userId: string,
     deviceId: string,
     version: number,
+    dto: RestoreSnapshotRequest,
   ): Promise<RestoreSnapshotResponse> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -148,13 +150,13 @@ export class SyncService {
         if (!snapshot) {
           throw new NotFoundException({ error: 'snapshot_not_found' });
         }
-        const current = await tx.userConfig.findUnique({ where: { userId } });
-        // 回滚以服务端当前版本为基准推进,不做乐观并发拒绝
+        // 使用用户确认时看到的版本推进。advanceVersion 会在同一事务先校验当前
+        // 版本，再以 updateMany(userId, version) 抵御确认后的并发写。
         return this.advanceVersion(
           tx,
           userId,
           deviceId,
-          current?.version ?? 0,
+          dto.baseVersion,
           snapshot.document as ConfigDocument,
           this.assertConfigSize(snapshot.document),
         );

@@ -174,8 +174,11 @@ export default {
     size: "大小",
     restore: "回滚到此版本",
     restoreConfirmTitle: "回滚配置",
+    currentVersion: "当前配置版本 v{version}",
     restoreConfirm:
-      "确定回滚到版本 {version} 吗?将以该快照内容推进一个新版本,各设备随后自动同步。",
+      "当前配置版本为 v{currentVersion}。确定回滚到版本 v{version} 吗?将以该快照内容推进一个新版本,各设备随后自动同步。",
+    restoreConflict:
+      "配置已在确认后更新,当前版本已刷新。请检查后重新确认回滚。",
     restoreSuccess: "已回滚,新版本为 {version}",
     empty: "暂无快照",
   },

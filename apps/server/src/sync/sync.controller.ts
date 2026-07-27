@@ -16,6 +16,7 @@ import {
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
+  RestoreSnapshotRequest,
   RestoreSnapshotResponse,
 } from '@godgesture/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -56,12 +57,16 @@ export class SyncController {
 
   @Post('snapshots/:version/restore')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '回滚:以快照内容推进一个新版本' })
+  @ApiOperation({
+    summary: '回滚:按确认时 baseVersion 以快照内容推进一个新版本',
+  })
   restore(
     @CurrentUser() userId: string,
     @CurrentDevice() deviceId: string,
     @Param('version', ParseIntPipe) version: number,
+    @Body(new ZodValidationPipe(RestoreSnapshotRequest))
+    dto: RestoreSnapshotRequest,
   ): Promise<RestoreSnapshotResponse> {
-    return this.sync.restoreSnapshot(userId, deviceId, version);
+    return this.sync.restoreSnapshot(userId, deviceId, version, dto);
   }
 }

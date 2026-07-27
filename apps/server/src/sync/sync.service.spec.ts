@@ -313,7 +313,9 @@ describe('SyncService(乐观并发 + 快照)', () => {
       });
       tx.userConfig.findUnique.mockResolvedValue({ version: 9 });
 
-      const res = await service.restoreSnapshot('user-1', 'dev-2', 3);
+      const res = await service.restoreSnapshot('user-1', 'dev-2', 3, {
+        baseVersion: 9,
+      });
 
       expect(res.version).toBe(10);
       expect(tx.userConfig.updateMany).toHaveBeenCalledWith({
@@ -328,8 +330,61 @@ describe('SyncService(乐观并发 + 快照)', () => {
     it('快照不存在 → 404', async () => {
       tx.configSnapshot.findUnique.mockResolvedValue(null);
       await expect(
-        service.restoreSnapshot('user-1', 'dev-1', 99),
+        service.restoreSnapshot('user-1', 'dev-1', 99, { baseVersion: 9 }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('确认时 baseVersion 已落后 → 409 且不写入', async () => {
+      tx.configSnapshot.findUnique.mockResolvedValue({
+        userId: 'user-1',
+        version: 3,
+        document: doc,
+      });
+      tx.userConfig.findUnique.mockResolvedValue({ version: 10 });
+      prisma.userConfig.findUnique.mockResolvedValue({ version: 10 });
+
+      const error = await service
+        .restoreSnapshot('user-1', 'dev-1', 3, { baseVersion: 9 })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toEqual({
+        error: 'version_conflict',
+        serverVersion: 10,
+      });
+      expect(tx.userConfig.updateMany).not.toHaveBeenCalled();
+      expect(tx.userConfig.create).not.toHaveBeenCalled();
+      expect(tx.configSnapshot.create).not.toHaveBeenCalled();
+      expect(tx.configSnapshot.deleteMany).not.toHaveBeenCalled();
+      expect(tx.device.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('确认后被并发写抢先 → CAS 返回 409 且事务内不建快照', async () => {
+      tx.configSnapshot.findUnique.mockResolvedValue({
+        userId: 'user-1',
+        version: 3,
+        document: doc,
+      });
+      tx.userConfig.findUnique.mockResolvedValue({ version: 9 });
+      tx.userConfig.updateMany.mockResolvedValue({ count: 0 });
+      prisma.userConfig.findUnique.mockResolvedValue({ version: 10 });
+
+      const error = await service
+        .restoreSnapshot('user-1', 'dev-1', 3, { baseVersion: 9 })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toEqual({
+        error: 'version_conflict',
+        serverVersion: 10,
+      });
+      expect(tx.userConfig.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', version: 9 },
+        data: expect.objectContaining({ version: 10 }),
+      });
+      expect(tx.configSnapshot.create).not.toHaveBeenCalled();
+      expect(tx.configSnapshot.deleteMany).not.toHaveBeenCalled();
+      expect(tx.device.updateMany).not.toHaveBeenCalled();
     });
 
     it('回滚写入前设备被删除导致 P2003 → 401 会话错误', async () => {
@@ -344,7 +399,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
       );
 
       const error = await service
-        .restoreSnapshot('user-1', 'deleted-device', 3)
+        .restoreSnapshot('user-1', 'deleted-device', 3, { baseVersion: 9 })
         .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(UnauthorizedException);

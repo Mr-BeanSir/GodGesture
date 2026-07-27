@@ -61,6 +61,12 @@ export const ListSnapshotsResponse = z.object({
 export type ListSnapshotsResponse = z.infer<typeof ListSnapshotsResponse>;
 
 /** POST /sync/snapshots/:version/restore —— 回滚 = 以该快照为内容推进一个新版本 */
+export const RestoreSnapshotRequest = z.object({
+  /** 用户确认回滚时看到的当前配置版本;其后版本变化则返回 409 */
+  baseVersion: z.number().int().nonnegative(),
+});
+export type RestoreSnapshotRequest = z.infer<typeof RestoreSnapshotRequest>;
+
 export const RestoreSnapshotResponse = z.object({
   version: z.number().int().positive(),
   updatedAt: z.string().datetime(),

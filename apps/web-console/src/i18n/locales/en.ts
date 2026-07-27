@@ -179,8 +179,11 @@ export default {
     size: "Size",
     restore: "Roll back to this version",
     restoreConfirmTitle: "Roll Back Configuration",
+    currentVersion: "Current config version: v{version}",
     restoreConfirm:
-      "Roll back to version {version}? A new version will be created from this snapshot and devices will sync automatically.",
+      "The current config is v{currentVersion}. Roll back to v{version}? A new version will be created from this snapshot and devices will sync automatically.",
+    restoreConflict:
+      "The config changed after confirmation. The current version has been refreshed; review it and confirm the rollback again.",
     restoreSuccess: "Rolled back. New version is {version}.",
     empty: "No snapshots yet",
   },
