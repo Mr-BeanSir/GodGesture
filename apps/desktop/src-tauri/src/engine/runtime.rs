@@ -39,8 +39,12 @@ pub enum EngineMsg {
     PathGrown {
         point: Point,
     },
-    /// 增量识别结果变化(Some=当前笔画命中的意图名,None=无匹配)
-    RecognitionChanged(Option<String>),
+    /// 增量识别结果变化(None=无匹配);TaskSwitcher 需要消费线程在识别期间
+    /// 保持 Alt,因此连同命令类型一起传递,不能只按可能重复的意图名判断。
+    RecognitionChanged {
+        name: Option<String>,
+        task_switcher: bool,
+    },
     PathEnded {
         intent: Option<GestureIntent>,
         modifier: Modifier,
@@ -91,7 +95,7 @@ struct Session {
     /// 是否已在修饰触发时执行过命令(execute_on_modifier);PathEnd 据此避免二次执行
     executed_on_modifier: bool,
     /// 上次增量识别的结果名(去重用)
-    last_recognized: Option<String>,
+    last_recognized: Option<(String, bool)>,
 }
 
 /// 左键+中键和弦(暂停/继续)的检测状态
@@ -383,14 +387,24 @@ impl EngineShared {
                         let grew = s.parser.feed(pt) == StrokeEvent::Grew;
                         let _ = self.tx.send(EngineMsg::PathGrown { point: pt });
                         if grew {
-                            let name = self
+                            let recognized = self
                                 .finder
                                 .lock()
                                 .find(s.trigger, s.parser.strokes(), Modifier::None, &s.fg)
-                                .map(|i| i.name.clone());
-                            if name != s.last_recognized {
-                                s.last_recognized = name.clone();
-                                let _ = self.tx.send(EngineMsg::RecognitionChanged(name));
+                                .map(|intent| {
+                                    (
+                                        intent.name.clone(),
+                                        matches!(&intent.command, Command::TaskSwitcher),
+                                    )
+                                });
+                            if recognized != s.last_recognized {
+                                s.last_recognized = recognized.clone();
+                                let (name, task_switcher) = recognized
+                                    .map_or((None, false), |(name, task)| (Some(name), task));
+                                let _ = self.tx.send(EngineMsg::RecognitionChanged {
+                                    name,
+                                    task_switcher,
+                                });
                             }
                         }
                     }
