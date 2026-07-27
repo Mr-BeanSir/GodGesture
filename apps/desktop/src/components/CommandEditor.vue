@@ -15,6 +15,7 @@ import {
   type CommandOfType,
 } from "../utils/commands";
 import HotkeyInput from "./HotkeyInput.vue";
+import ScriptEditor from "./ScriptEditor.vue";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
@@ -251,15 +252,13 @@ function updateVolumeDelta(value: unknown) {
       </div>
       <div class="gg-field">
         <label class="gg-field-label">{{ t("command.script.main") }}</label>
-        <el-input
-          type="textarea"
-          :autosize="{ minRows: 4 }"
+        <ScriptEditor
           :model-value="asScript.script"
-          :placeholder="t('command.script.mainPlaceholder')"
-          class="cmd-editor__code"
+          :language="asScript.language"
+          :editor-label="t('command.script.main')"
+          :height="220"
           @update:model-value="patch({ script: $event })"
         />
-        <p class="gg-hint">{{ t("command.script.editorNote") }}</p>
       </div>
       <el-collapse class="cmd-editor__advanced">
         <el-collapse-item :title="t('command.script.advanced')" name="advanced">
@@ -272,41 +271,37 @@ function updateVolumeDelta(value: unknown) {
           </div>
           <div class="gg-field">
             <label class="gg-field-label">{{ t("command.script.initScript") }}</label>
-            <el-input
-              type="textarea"
-              :autosize="{ minRows: 2 }"
+            <ScriptEditor
               :model-value="asScript.initScript"
-              class="cmd-editor__code"
+              :language="asScript.language"
+              :editor-label="t('command.script.initScript')"
               @update:model-value="patch({ initScript: $event })"
             />
           </div>
           <div class="gg-field">
             <label class="gg-field-label">{{ t("command.script.gestureRecognizedScript") }}</label>
-            <el-input
-              type="textarea"
-              :autosize="{ minRows: 2 }"
+            <ScriptEditor
               :model-value="asScript.gestureRecognizedScript"
-              class="cmd-editor__code"
+              :language="asScript.language"
+              :editor-label="t('command.script.gestureRecognizedScript')"
               @update:model-value="patch({ gestureRecognizedScript: $event })"
             />
           </div>
           <div class="gg-field">
             <label class="gg-field-label">{{ t("command.script.modifierTriggeredScript") }}</label>
-            <el-input
-              type="textarea"
-              :autosize="{ minRows: 2 }"
+            <ScriptEditor
               :model-value="asScript.modifierTriggeredScript"
-              class="cmd-editor__code"
+              :language="asScript.language"
+              :editor-label="t('command.script.modifierTriggeredScript')"
               @update:model-value="patch({ modifierTriggeredScript: $event })"
             />
           </div>
           <div class="gg-field">
             <label class="gg-field-label">{{ t("command.script.gestureEndedScript") }}</label>
-            <el-input
-              type="textarea"
-              :autosize="{ minRows: 2 }"
+            <ScriptEditor
               :model-value="asScript.gestureEndedScript"
-              class="cmd-editor__code"
+              :language="asScript.language"
+              :editor-label="t('command.script.gestureEndedScript')"
               @update:model-value="patch({ gestureEndedScript: $event })"
             />
           </div>
@@ -347,9 +342,6 @@ function updateVolumeDelta(value: unknown) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.cmd-editor__code :deep(textarea) {
-  font-family: "Cascadia Code", "Consolas", monospace;
 }
 .cmd-editor__advanced {
   border-top: none;
