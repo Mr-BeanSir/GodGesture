@@ -1,15 +1,21 @@
 pub mod engine;
+mod legacy_import;
 pub mod platform;
 
-#[cfg(windows)]
-use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
+#[cfg(windows)]
+use engine::config::{ConfigFilesSnapshot, PauseHotkey};
 use engine::runtime::{EngineMsg, EngineShared};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
+struct ConfigTransaction(parking_lot::Mutex<()>);
+
 #[cfg(windows)]
 struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
+
+#[cfg(windows)]
+struct TrayVisibility(parking_lot::Mutex<bool>);
 
 #[cfg(windows)]
 struct PauseMenuItem(tauri::menu::MenuItem<tauri::Wry>);
@@ -308,22 +314,20 @@ fn config_set(
     document: ConfigDocument,
     store: tauri::State<Arc<ConfigStore>>,
     engine: tauri::State<Arc<EngineShared>>,
+    transaction: tauri::State<ConfigTransaction>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _transaction = transaction.0.lock();
     #[cfg(not(windows))]
     let _ = &app;
     #[cfg(windows)]
-    let previous_hotkey = engine.pause_hotkey();
+    let previous_hotkey = current_pause_hotkey(&app);
     #[cfg(windows)]
     replace_pause_hotkey(&app, &document.preferences.pause_hotkey)?;
 
     if let Err(err) = store.save_config(&document) {
         #[cfg(windows)]
-        if let Err(rollback_err) = replace_pause_hotkey_parts(
-            &app,
-            &previous_hotkey.0,
-            &previous_hotkey.1,
-        ) {
+        if let Err(rollback_err) = replace_pause_hotkey_value(&app, previous_hotkey) {
             log::error!("配置保存失败后恢复暂停快捷键也失败: {rollback_err}");
         }
         return Err(err.to_string());
@@ -341,22 +345,148 @@ fn machine_get(store: tauri::State<Arc<ConfigStore>>) -> MachineLocalSettings {
 fn machine_set(
     settings: MachineLocalSettings,
     store: tauri::State<Arc<ConfigStore>>,
+    transaction: tauri::State<ConfigTransaction>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _transaction = transaction.0.lock();
     #[cfg(not(windows))]
     let _ = &app;
     #[cfg(windows)]
-    let previous = store.load_machine();
+    let previous_tray_visible = current_tray_visibility(&app);
     #[cfg(windows)]
     set_tray_visible(&app, settings.tray_icon_visible)?;
     if let Err(err) = store.save_machine(&settings) {
         #[cfg(windows)]
-        if let Err(rollback_err) = set_tray_visible(&app, previous.tray_icon_visible) {
+        if let Err(rollback_err) = set_tray_visible(&app, previous_tray_visible) {
             log::error!("本机设置保存失败后恢复托盘可见性也失败: {rollback_err}");
         }
         return Err(err.to_string());
     }
     Ok(())
+}
+
+#[cfg(windows)]
+struct DesktopLegacyImportSnapshot {
+    files: ConfigFilesSnapshot,
+    hotkey: Option<String>,
+    tray_visible: bool,
+}
+
+#[cfg(windows)]
+struct DesktopLegacyImportEffects<'a> {
+    store: &'a ConfigStore,
+    engine: &'a EngineShared,
+    app: &'a tauri::AppHandle,
+}
+
+#[cfg(windows)]
+impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
+    type Snapshot = DesktopLegacyImportSnapshot;
+
+    fn snapshot(&mut self) -> Result<Self::Snapshot, String> {
+        let files = self.store.snapshot_files().map_err(|err| err.to_string())?;
+        Ok(DesktopLegacyImportSnapshot {
+            files,
+            hotkey: current_pause_hotkey(self.app),
+            tray_visible: current_tray_visibility(self.app),
+        })
+    }
+
+    fn apply_hotkey(&mut self, hotkey: &PauseHotkey) -> Result<(), String> {
+        replace_pause_hotkey(self.app, hotkey)
+    }
+
+    fn apply_tray_visibility(&mut self, visible: bool) -> Result<(), String> {
+        set_tray_visible(self.app, visible)
+    }
+
+    fn save_config(&mut self, document: &ConfigDocument) -> Result<(), String> {
+        self.store
+            .save_config(document)
+            .map_err(|err| err.to_string())
+    }
+
+    fn save_machine(&mut self, machine: &MachineLocalSettings) -> Result<(), String> {
+        self.store
+            .save_machine(machine)
+            .map_err(|err| err.to_string())
+    }
+
+    fn rollback(
+        &mut self,
+        snapshot: &Self::Snapshot,
+        progress: legacy_import::ApplyProgress,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        if progress.machine_attempted {
+            if let Err(err) = self.store.restore_machine_snapshot(&snapshot.files) {
+                errors.push(format!("machine file restore failed: {err}"));
+            }
+        }
+        if progress.config_attempted {
+            if let Err(err) = self.store.restore_config_snapshot(&snapshot.files) {
+                errors.push(format!("config file restore failed: {err}"));
+            }
+        }
+        if progress.tray_attempted {
+            if let Err(err) = set_tray_visible(self.app, snapshot.tray_visible) {
+                errors.push(format!("tray restore failed: {err}"));
+            }
+        }
+        if progress.hotkey_attempted {
+            if let Err(err) = replace_pause_hotkey_value(self.app, snapshot.hotkey.clone()) {
+                errors.push(format!("hotkey restore failed: {err}"));
+            }
+        }
+        errors
+    }
+
+    fn replace_engine_config(&mut self, document: ConfigDocument) {
+        self.engine.replace_config(document);
+    }
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn legacy_import_apply(
+    document: ConfigDocument,
+    machine: MachineLocalSettings,
+    store: tauri::State<Arc<ConfigStore>>,
+    engine: tauri::State<Arc<EngineShared>>,
+    transaction: tauri::State<ConfigTransaction>,
+    app: tauri::AppHandle,
+) -> Result<(), legacy_import::LegacyImportError> {
+    let _transaction = transaction.0.lock();
+    let mut effects = DesktopLegacyImportEffects {
+        store: store.inner(),
+        engine: engine.inner(),
+        app: &app,
+    };
+    let result = legacy_import::apply_legacy_import(&mut effects, document, machine);
+    if let Err(err) = &result {
+        if err.code == "rollback_incomplete" {
+            log::error!(
+                "WGestures 导入回滚不完整: {}; {}",
+                err.message,
+                err.rollback_errors.join("; ")
+            );
+        } else {
+            log::warn!("WGestures 导入失败并已回滚: {}", err.message);
+        }
+    }
+    result
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn legacy_import_apply(
+    document: ConfigDocument,
+    machine: MachineLocalSettings,
+    transaction: tauri::State<ConfigTransaction>,
+) -> Result<(), legacy_import::LegacyImportError> {
+    let _transaction = transaction.0.lock();
+    let _ = (document, machine);
+    Err(legacy_import::LegacyImportError::unsupported())
 }
 
 #[tauri::command]
@@ -495,6 +625,7 @@ fn setup_tray(
         })
         .build(app)?;
     tray.set_visible(visible)?;
+    app.manage(TrayVisibility(parking_lot::Mutex::new(visible)));
     Ok(())
 }
 
@@ -503,7 +634,14 @@ fn set_tray_visible(app: &tauri::AppHandle, visible: bool) -> Result<(), String>
     let tray = app
         .tray_by_id("main-tray")
         .ok_or_else(|| "tray icon is unavailable".to_string())?;
-    tray.set_visible(visible).map_err(|err| err.to_string())
+    tray.set_visible(visible).map_err(|err| err.to_string())?;
+    *app.state::<TrayVisibility>().0.lock() = visible;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn current_tray_visibility(app: &tauri::AppHandle) -> bool {
+    *app.state::<TrayVisibility>().0.lock()
 }
 
 #[cfg(windows)]
@@ -574,9 +712,18 @@ fn replace_pause_hotkey_parts(
     modifiers: &[String],
     key: &str,
 ) -> Result<(), String> {
+    replace_pause_hotkey_value(app, format_pause_hotkey(modifiers, key))
+}
+
+#[cfg(windows)]
+fn current_pause_hotkey(app: &tauri::AppHandle) -> Option<String> {
+    app.state::<PauseHotkeyRegistration>().0.lock().clone()
+}
+
+#[cfg(windows)]
+fn replace_pause_hotkey_value(app: &tauri::AppHandle, next: Option<String>) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-    let next = format_pause_hotkey(modifiers, key);
     let state = app.state::<PauseHotkeyRegistration>();
     let mut current = state.0.lock();
     if *current == next {
@@ -637,6 +784,7 @@ pub fn run() {
             #[cfg(windows)]
             let machine = store.load_machine();
             app.manage(store);
+            app.manage(ConfigTransaction(parking_lot::Mutex::new(())));
 
             #[cfg(windows)]
             {
@@ -668,6 +816,7 @@ pub fn run() {
             config_set,
             machine_get,
             machine_set,
+            legacy_import_apply,
             engine_toggle_pause,
             engine_is_paused,
             capture_start,

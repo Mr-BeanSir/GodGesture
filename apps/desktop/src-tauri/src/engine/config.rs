@@ -3,7 +3,8 @@
 
 use super::types::{Direction, Modifier, TriggerButton};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -448,6 +449,16 @@ pub struct ConfigStore {
     dir: PathBuf,
 }
 
+pub(crate) struct ConfigFilesSnapshot {
+    config: FileSnapshot,
+    machine: FileSnapshot,
+}
+
+enum FileSnapshot {
+    Missing,
+    Present(Vec<u8>),
+}
+
 impl ConfigStore {
     pub fn new(dir: PathBuf) -> Self {
         Self { dir }
@@ -485,6 +496,24 @@ impl ConfigStore {
         self.save(&self.machine_path(), m)
     }
 
+    pub(crate) fn snapshot_files(&self) -> io::Result<ConfigFilesSnapshot> {
+        Ok(ConfigFilesSnapshot {
+            config: Self::snapshot_file(&self.config_path())?,
+            machine: Self::snapshot_file(&self.machine_path())?,
+        })
+    }
+
+    pub(crate) fn restore_config_snapshot(&self, snapshot: &ConfigFilesSnapshot) -> io::Result<()> {
+        self.restore_file(&self.config_path(), &snapshot.config)
+    }
+
+    pub(crate) fn restore_machine_snapshot(
+        &self,
+        snapshot: &ConfigFilesSnapshot,
+    ) -> io::Result<()> {
+        self.restore_file(&self.machine_path(), &snapshot.machine)
+    }
+
     fn load_or_default<T: Default + for<'de> Deserialize<'de>>(path: &PathBuf) -> T {
         match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -495,19 +524,92 @@ impl ConfigStore {
         }
     }
 
-    /// 原子写:先写临时文件再改名,避免崩溃留下半个文件
-    fn save<T: Serialize>(&self, path: &PathBuf, value: &T) -> std::io::Result<()> {
+    fn snapshot_file(path: &Path) -> io::Result<FileSnapshot> {
+        match std::fs::read(path) {
+            Ok(bytes) => Ok(FileSnapshot::Present(bytes)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Missing),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn restore_file(&self, path: &Path, snapshot: &FileSnapshot) -> io::Result<()> {
+        match snapshot {
+            FileSnapshot::Present(bytes) => self.atomic_write(path, bytes),
+            FileSnapshot::Missing => match std::fs::remove_file(path) {
+                Ok(()) => Ok(()),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(err) => Err(err),
+            },
+        }
+    }
+
+    /// 原子写:先写同目录临时文件再替换,避免崩溃留下半个文件。
+    fn save<T: Serialize>(&self, path: &Path, value: &T) -> std::io::Result<()> {
+        let bytes = serde_json::to_vec_pretty(value)?;
+        self.atomic_write(path, &bytes)
+    }
+
+    fn atomic_write(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(value)?)?;
-        std::fs::rename(&tmp, path)?;
-        Ok(())
+        std::fs::write(&tmp, bytes)?;
+        replace_file(&tmp, path)
     }
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|_| io::Error::last_os_error())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> io::Result<()> {
+    std::fs::rename(source, target)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("godgesture-config-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn config_document_roundtrip_defaults() {
@@ -544,5 +646,44 @@ mod tests {
         assert_eq!(v["trigger"], "right");
         assert_eq!(v["strokes"][0], "rightUp");
         assert_eq!(v["modifier"], "wheelForward");
+    }
+
+    #[test]
+    fn saving_same_config_path_twice_replaces_existing_file() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+        let first = ConfigDocument::default();
+        let mut second = first.clone();
+        second.preferences.auto_check_for_update = false;
+
+        store.save_config(&first).unwrap();
+        store.save_config(&second).unwrap();
+
+        assert_eq!(store.load_config(), second);
+    }
+
+    #[test]
+    fn file_snapshots_restore_contents_and_absence() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+        let original = ConfigDocument::default();
+        store.save_config(&original).unwrap();
+        let snapshot = store.snapshot_files().unwrap();
+
+        let mut changed = original.clone();
+        changed.preferences.auto_check_for_update = false;
+        store.save_config(&changed).unwrap();
+        store
+            .save_machine(&MachineLocalSettings {
+                auto_start: true,
+                ..MachineLocalSettings::default()
+            })
+            .unwrap();
+
+        store.restore_config_snapshot(&snapshot).unwrap();
+        store.restore_machine_snapshot(&snapshot).unwrap();
+
+        assert_eq!(store.load_config(), original);
+        assert!(!store.machine_path().exists());
     }
 }
