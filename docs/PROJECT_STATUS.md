@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-27。产品代码基线覆盖至 `27b2eaf`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-27。产品代码基线覆盖至 `8b4d8cd`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -11,7 +11,7 @@
 | M0 仓库奠基           | 已完成                                                                        |
 | M1 Windows 手势引擎   | Windows 主体已实现并通过运行时 smoke;因 macOS 未实现,不满足双平台正式完成定义 |
 | M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);Script 执行按 ADR-0005 归 M3                     |
-| M3 QuickJS            | 未开始;Script 模型/编辑器已存在,执行器会记录警告后跳过                        |
+| M3 QuickJS            | 已完成;QuickJS 运行时、Windows 宿主 API 和 Monaco 编辑器已验收                |
 | M4 macOS 引擎         | 未开始;只有跨平台数据模型和条件编译占位                                       |
 | M5 后端与账户         | 服务端主体已实现;外部 OAuth 凭证仍由部署环境提供                              |
 | M6 云同步             | shared 协议和服务端已实现;桌面账户/同步仍是本地 mock,未接后端                 |
@@ -34,7 +34,8 @@
 
 - `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 笔、阈值/超时、点击透传、修饰和捕获状态机。
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
-- `engine/runtime.rs`:钩子输入到识别、覆盖层、捕获事件、暂停和命令分发的协调层。
+- `engine/runtime.rs`:钩子输入到识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层。
+- `engine/script.rs`:单 QuickJS Runtime、按逻辑命令惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
@@ -42,6 +43,7 @@
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
+- `platform/windows/script.rs`:QuickJS 的 Windows 输入、鼠标、窗口和剪贴板宿主实现;脚本不获得原生句柄。
 - `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
 - `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动。
@@ -55,6 +57,7 @@
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
 - 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。
 - `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Rust 负责验证/规范化 `.exe` 并通过 Shell Link COM 解析 `.lnk`。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `stores/account.ts` 与 `AccountView.vue` 是演示 mock,不进行真实登录、令牌保存或同步。
 
 ## Shared、Server 与 Web
@@ -68,7 +71,7 @@
 
 ## 已知未完成边界
 
-- `Command.type = script` 可配置但不可执行;rquickjs 依赖和宿主 API 均未落地。
+- WGestures 导入的 `language = lua` 脚本只保留原文并可编辑,不会执行或自动转换为 JavaScript。
 - macOS 没有 CGEventTap、原生覆盖层、Bundle ID 解析或命令平台实现。
 - 桌面账户与云同步未连接 Server;没有防抖推送、启动/定时拉取或 409 拉取重推。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS 登录项/授权仍未实现。安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效。
@@ -83,6 +86,8 @@
 - 不复现 WGestures Bottom 边绝对/局部坐标 bug。
 - 外壳窗口不得执行窗口控制命令。
 - Windows `SendInput` 可能同步重入鼠标钩子;当前 TLS handler 临时取出、嵌套事件 fail-open 和 FFI panic 防护不得回退。
+- QuickJS 必须保持单 Runtime、按逻辑命令惰性隔离 Context;定义改变只重建对应 Context,删除配置时裁剪缓存。内存 64 MiB、栈 256 KiB、单槽 200 ms 上限及锁定宿主对象不得放宽。
+- `handleModifiers` 脚本切换时先结束旧脚本再识别新脚本;释放触发键时结束当前脚本,取消和录制模式不运行用户脚本槽。
 - OAuth 不得按未验证密码账户邮箱自动关联。
 - Windows 启动任务按当前用户 SID 命名并校验 GodGesture 所有权;不得覆盖同名的非本项目任务,不得改回 `schtasks.exe` 或加入 `uiAccess`。
 
@@ -94,6 +99,8 @@
 - 开发日志约定:`%TEMP%\godgesture-dev\stdout.log` 和 `%TEMP%\godgesture-dev\stderr.log`。
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
+- M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
+- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。已运行的提升权限 WGestures 会先消费低完整性合成鼠标事件,因此自动化完整右键手势注入未建立;未终止用户进程,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
 
 ## 验证基线
 
@@ -113,7 +120,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 18/18 + typecheck/build;web-console typecheck/build;Rust 130/130。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 20/20 + typecheck/build;web-console typecheck/build;Rust 139 passed + 1 ignored。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
