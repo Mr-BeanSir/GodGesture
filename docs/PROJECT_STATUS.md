@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-27。产品代码基线覆盖至 `1233554`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-27。产品代码基线覆盖至 `27b2eaf`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -10,7 +10,7 @@
 | --------------------- | ----------------------------------------------------------------------------- |
 | M0 仓库奠基           | 已完成                                                                        |
 | M1 Windows 手势引擎   | Windows 主体已实现并通过运行时 smoke;因 macOS 未实现,不满足双平台正式完成定义 |
-| M2 Windows 命令与设置 | 部分完成;主引擎、主要设置 UI、开机自启和管理员运行可用,仍有明确缺口见下文   |
+| M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);Script 执行按 ADR-0005 归 M3                     |
 | M3 QuickJS            | 未开始;Script 模型/编辑器已存在,执行器会记录警告后跳过                        |
 | M4 macOS 引擎         | 未开始;只有跨平台数据模型和条件编译占位                                       |
 | M5 后端与账户         | 服务端主体已实现;外部 OAuth 凭证仍由部署环境提供                              |
@@ -42,6 +42,7 @@
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
+- `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
 - `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动。
 
@@ -53,6 +54,7 @@
 - 本机设置通过显式串行更新操作保存,可观察 Task Scheduler/UAC pending 与结构化错误;`rollback_incomplete` 会重读后端状态,文档保存不会清除本机错误。
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
 - 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。
+- `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Rust 负责验证/规范化 `.exe` 并通过 Shell Link COM 解析 `.lnk`。
 - `stores/account.ts` 与 `AccountView.vue` 是演示 mock,不进行真实登录、令牌保存或同步。
 
 ## Shared、Server 与 Web
@@ -69,7 +71,6 @@
 - `Command.type = script` 可配置但不可执行;rquickjs 依赖和宿主 API 均未落地。
 - macOS 没有 CGEventTap、原生覆盖层、Bundle ID 解析或命令平台实现。
 - 桌面账户与云同步未连接 Server;没有防抖推送、启动/定时拉取或 409 拉取重推。
-- 应用窗口选取目前是短时轮询前台窗口,不是完整准星体验;拖放添加应用未实现。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS 登录项/授权仍未实现。安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效。
 - Updater、手势模板库、安装包验收、快速引导和 macOS 签名公证未完成。
 
@@ -112,7 +113,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 16/16 + typecheck/build;web-console typecheck/build;Rust 124/124。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 18/18 + typecheck/build;web-console typecheck/build;Rust 130/130。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
