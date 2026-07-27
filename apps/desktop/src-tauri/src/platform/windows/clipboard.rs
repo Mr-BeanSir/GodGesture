@@ -6,12 +6,15 @@
 
 use std::sync::{mpsc, OnceLock};
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::HGLOBAL;
+use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::Com::IDataObject;
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
+    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
+    SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+use windows::Win32::System::Memory::{
+    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+};
 use windows::Win32::System::Ole::{
     OleFlushClipboard, OleGetClipboard, OleInitialize, OleSetClipboard, OleUninitialize,
 };
@@ -36,11 +39,9 @@ static CLIPBOARD_WORKER: OnceLock<Result<mpsc::SyncSender<ClipboardRequest>, Str
     OnceLock::new();
 
 /// 打开剪贴板用于只读访问(带重试；其它程序可能短暂占用)。
-fn open_clipboard_for_read() -> bool {
+fn open_clipboard(owner: Option<HWND>) -> bool {
     for _ in 0..OPEN_RETRIES {
-        // OpenClipboard(NULL) 可以安全读取；禁止在这个打开方式下 EmptyClipboard 后
-        // SetClipboardData。恢复工作全部交给 OleSetClipboard，不走该危险路径。
-        if unsafe { OpenClipboard(None) }.is_ok() {
+        if unsafe { OpenClipboard(owner) }.is_ok() {
             return true;
         }
         std::thread::sleep(OPEN_RETRY_DELAY);
@@ -50,7 +51,9 @@ fn open_clipboard_for_read() -> bool {
 
 /// 读取剪贴板中的 Unicode 文本(无文本/失败返回 None)。
 fn get_text() -> Option<String> {
-    if !open_clipboard_for_read() {
+    // OpenClipboard(NULL) is safe for read-only access. Writes below always
+    // provide GodGesture's own window as the clipboard owner.
+    if !open_clipboard(None) {
         return None;
     }
     let result = unsafe {
@@ -77,6 +80,60 @@ fn get_text() -> Option<String> {
     };
     unsafe {
         let _ = CloseClipboard();
+    }
+    result
+}
+
+pub fn read_text() -> Option<String> {
+    get_text()
+}
+
+pub fn write_text(text: &str, owner_window: i64) -> Result<(), String> {
+    if owner_window == 0 {
+        return Err("clipboard owner window is unavailable".into());
+    }
+    let encoded: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes = encoded.len() * std::mem::size_of::<u16>();
+    let memory = unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes) }
+        .map_err(|error| format!("GlobalAlloc failed: {error}"))?;
+    let mut transferred = false;
+
+    let result = (|| {
+        let ptr = unsafe { GlobalLock(memory) } as *mut u16;
+        if ptr.is_null() {
+            return Err("GlobalLock failed".to_string());
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(encoded.as_ptr(), ptr, encoded.len());
+            let _ = GlobalUnlock(memory);
+        }
+
+        let owner = HWND(owner_window as *mut core::ffi::c_void);
+        if !open_clipboard(Some(owner)) {
+            return Err("OpenClipboard failed".to_string());
+        }
+        let write_result = unsafe {
+            EmptyClipboard()
+                .map_err(|error| format!("EmptyClipboard failed: {error}"))
+                .and_then(|()| {
+                    SetClipboardData(CF_UNICODETEXT, Some(HANDLE(memory.0)))
+                        .map(|_| ())
+                        .map_err(|error| format!("SetClipboardData failed: {error}"))
+                })
+        };
+        unsafe {
+            let _ = CloseClipboard();
+        }
+        if write_result.is_ok() {
+            transferred = true;
+        }
+        write_result
+    })();
+
+    if !transferred {
+        unsafe {
+            let _ = GlobalFree(Some(memory));
+        }
     }
     result
 }

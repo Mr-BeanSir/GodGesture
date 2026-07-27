@@ -7,6 +7,13 @@ use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 #[cfg(windows)]
 use engine::config::{ConfigFilesSnapshot, PauseHotkey};
 use engine::runtime::{EngineMsg, EngineShared};
+#[cfg(windows)]
+use engine::script::{
+    gesture_script_key, hot_corner_script_key, rub_edge_script_key, ScriptDefinition, ScriptEngine,
+    ScriptInvocation, ScriptSlot,
+};
+#[cfg(windows)]
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -126,6 +133,160 @@ impl Drop for TaskSwitcherConsumer {
     }
 }
 
+#[cfg(windows)]
+struct ActiveScript {
+    key: String,
+    definition: ScriptDefinition,
+    invocation: ScriptInvocation,
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModifierScriptTransition {
+    NoChange,
+    Start,
+    Continue,
+    Replace,
+    Finish,
+}
+
+#[cfg(windows)]
+fn modifier_script_transition(
+    active_key: Option<&str>,
+    incoming_key: Option<&str>,
+    has_immediate_intent: bool,
+) -> ModifierScriptTransition {
+    match (active_key, incoming_key, has_immediate_intent) {
+        (None, Some(_), _) => ModifierScriptTransition::Start,
+        (Some(active), Some(incoming), _) if active == incoming => {
+            ModifierScriptTransition::Continue
+        }
+        (Some(_), Some(_), _) => ModifierScriptTransition::Replace,
+        (Some(_), None, true) => ModifierScriptTransition::Finish,
+        _ => ModifierScriptTransition::NoChange,
+    }
+}
+
+#[cfg(windows)]
+fn run_script_slot(
+    engine: &mut Option<ScriptEngine>,
+    overlay: &platform::windows::overlay::Overlay,
+    key: &str,
+    definition: &ScriptDefinition,
+    slot: ScriptSlot,
+    invocation: ScriptInvocation,
+) -> bool {
+    let Some(engine) = engine.as_mut() else {
+        log::error!("QuickJS runtime is unavailable; script '{key}' was skipped");
+        return false;
+    };
+    match engine.run(key, definition, slot, invocation) {
+        Ok(status) => {
+            if let Some(status) = status {
+                if invocation.trigger.is_some() {
+                    overlay.send(platform::windows::overlay::OverlayCmd::Recognized(Some(
+                        status,
+                    )));
+                } else {
+                    log::info!("script '{key}' status: {status}");
+                }
+            }
+            true
+        }
+        Err(error) => {
+            log::error!("{error}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn end_active_script(
+    active_script: &mut Option<ActiveScript>,
+    engine: &mut Option<ScriptEngine>,
+    overlay: &platform::windows::overlay::Overlay,
+    invocation: Option<ScriptInvocation>,
+) {
+    let Some(mut active) = active_script.take() else {
+        return;
+    };
+    if let Some(invocation) = invocation {
+        active.invocation = invocation;
+    }
+    run_script_slot(
+        engine,
+        overlay,
+        &active.key,
+        &active.definition,
+        ScriptSlot::GestureEnded,
+        active.invocation,
+    );
+}
+
+#[cfg(windows)]
+fn start_active_script(
+    active_script: &mut Option<ActiveScript>,
+    engine: &mut Option<ScriptEngine>,
+    overlay: &platform::windows::overlay::Overlay,
+    key: String,
+    definition: ScriptDefinition,
+    invocation: ScriptInvocation,
+) {
+    if run_script_slot(
+        engine,
+        overlay,
+        &key,
+        &definition,
+        ScriptSlot::GestureRecognized,
+        invocation,
+    ) {
+        run_script_slot(
+            engine,
+            overlay,
+            &key,
+            &definition,
+            ScriptSlot::ModifierTriggered,
+            invocation,
+        );
+        *active_script = Some(ActiveScript {
+            key,
+            definition,
+            invocation,
+        });
+    }
+}
+
+#[cfg(windows)]
+fn script_key_for_intent(intent_id: &str) -> String {
+    gesture_script_key(intent_id)
+}
+
+#[cfg(windows)]
+fn script_key_for_corner_edge(hit: engine::corners::CornerEdgeHit) -> String {
+    match hit {
+        engine::corners::CornerEdgeHit::Corner(corner) => hot_corner_script_key(corner.key()),
+        engine::corners::CornerEdgeHit::Edge(edge) => rub_edge_script_key(edge.key()),
+    }
+}
+
+#[cfg(windows)]
+fn retain_live_script_contexts(
+    engine: &mut Option<ScriptEngine>,
+    live_keys: Option<&HashSet<String>>,
+    active_key: Option<&str>,
+) {
+    let (Some(engine), Some(live_keys)) = (engine.as_mut(), live_keys) else {
+        return;
+    };
+    if let Some(active_key) = active_key {
+        let mut retained = live_keys.clone();
+        retained.insert(active_key.to_string());
+        engine.retain_keys(&retained);
+    } else {
+        engine.retain_keys(live_keys);
+    }
+}
+
 /// 引擎产物消费线程:驱动轨迹覆盖层;命令执行器(M2)也从这里接出去。
 #[cfg(windows)]
 fn spawn_engine_consumer(
@@ -139,10 +300,31 @@ fn spawn_engine_consumer(
         .name("gg-engine-consumer".into())
         .spawn(move || {
             let mut task_switcher = TaskSwitcherConsumer::default();
+            let clipboard_owner = app
+                .get_webview_window("main")
+                .and_then(|window| window.hwnd().ok())
+                .map(|hwnd| hwnd.0 as i64)
+                .unwrap_or_default();
+            let script_host = platform::windows::script::WindowsScriptHost::new(clipboard_owner);
+            let mut script_engine = match ScriptEngine::new(Arc::new(script_host)) {
+                Ok(engine) => Some(engine),
+                Err(error) => {
+                    log::error!("QuickJS runtime initialization failed: {error}");
+                    None
+                }
+            };
+            let mut active_script: Option<ActiveScript> = None;
+            let mut live_script_keys: Option<HashSet<String>> = None;
             for msg in rx {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         task_switcher.finish();
+                        active_script = None;
+                        retain_live_script_contexts(
+                            &mut script_engine,
+                            live_script_keys.as_ref(),
+                            None,
+                        );
                         log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
                         let (main, unrecognized, show_path, show_label, fade_out) =
                             shared.trail_style_for(trigger);
@@ -169,6 +351,7 @@ fn spawn_engine_consumer(
                     }
                     EngineMsg::ModifierFired {
                         intent,
+                        trigger,
                         modifier,
                         context,
                     } => {
@@ -180,22 +363,125 @@ fn spawn_engine_consumer(
                             intent.as_ref().map(|i| &i.name)
                         );
                         if !shared.is_recording() {
-                            if let Some(intent) = intent.filter(|i| i.execute_on_modifier) {
-                                execute_intent(&intent.command, modifier, &context, &shared);
+                            let invocation = ScriptInvocation {
+                                gesture: context,
+                                trigger: Some(trigger),
+                                modifier,
+                            };
+                            let immediate_intent =
+                                intent.as_ref().filter(|intent| intent.execute_on_modifier);
+                            let lifecycle_script = immediate_intent.and_then(|intent| {
+                                ScriptDefinition::from_command(&intent.command)
+                                    .filter(|definition| definition.handle_modifiers)
+                                    .map(|definition| {
+                                        (script_key_for_intent(&intent.id), definition)
+                                    })
+                            });
+                            let transition = modifier_script_transition(
+                                active_script.as_ref().map(|active| active.key.as_str()),
+                                lifecycle_script.as_ref().map(|(key, _)| key.as_str()),
+                                immediate_intent.is_some(),
+                            );
+                            let has_lifecycle_script = lifecycle_script.is_some();
+
+                            match transition {
+                                ModifierScriptTransition::Continue => {
+                                    let active = active_script
+                                        .as_mut()
+                                        .expect("continue requires an active script");
+                                    active.invocation = invocation;
+                                    run_script_slot(
+                                        &mut script_engine,
+                                        &overlay,
+                                        &active.key,
+                                        &active.definition,
+                                        ScriptSlot::ModifierTriggered,
+                                        invocation,
+                                    );
+                                }
+                                ModifierScriptTransition::Start => {
+                                    let (key, definition) = lifecycle_script
+                                        .expect("start requires an incoming lifecycle script");
+                                    start_active_script(
+                                        &mut active_script,
+                                        &mut script_engine,
+                                        &overlay,
+                                        key,
+                                        definition,
+                                        invocation,
+                                    );
+                                }
+                                ModifierScriptTransition::Replace => {
+                                    end_active_script(
+                                        &mut active_script,
+                                        &mut script_engine,
+                                        &overlay,
+                                        Some(invocation),
+                                    );
+                                    let (key, definition) = lifecycle_script
+                                        .expect("replace requires an incoming lifecycle script");
+                                    start_active_script(
+                                        &mut active_script,
+                                        &mut script_engine,
+                                        &overlay,
+                                        key,
+                                        definition,
+                                        invocation,
+                                    );
+                                }
+                                ModifierScriptTransition::Finish => {
+                                    end_active_script(
+                                        &mut active_script,
+                                        &mut script_engine,
+                                        &overlay,
+                                        Some(invocation),
+                                    );
+                                }
+                                ModifierScriptTransition::NoChange => {}
+                            }
+
+                            if !has_lifecycle_script {
+                                if let Some(intent) = immediate_intent {
+                                    let key = script_key_for_intent(&intent.id);
+                                    execute_intent(
+                                        &key,
+                                        &intent.command,
+                                        invocation,
+                                        &shared,
+                                        &mut script_engine,
+                                        &overlay,
+                                    );
+                                }
                             }
                         }
                     }
                     EngineMsg::PathEnded {
                         intent,
+                        trigger,
                         modifier,
                         context,
                     } => {
-                        overlay.send(OverlayCmd::End);
+                        end_active_script(
+                            &mut active_script,
+                            &mut script_engine,
+                            &overlay,
+                            Some(ScriptInvocation {
+                                gesture: context,
+                                trigger: Some(trigger),
+                                modifier,
+                            }),
+                        );
+                        retain_live_script_contexts(
+                            &mut script_engine,
+                            live_script_keys.as_ref(),
+                            None,
+                        );
                         let final_is_task_switcher = intent.as_ref().is_some_and(|intent| {
                             matches!(&intent.command, engine::config::Command::TaskSwitcher)
                         });
                         let task_switcher_already_executed =
                             task_switcher.finish_path(final_is_task_switcher);
+                        let mut deferred_intent = None;
                         match intent {
                             Some(intent) => {
                                 log::info!(
@@ -208,11 +494,42 @@ fn spawn_engine_consumer(
                                     log::debug!(
                                         "TaskSwitcher 已在增量识别时执行,PathEnd 仅释放 Alt"
                                     );
+                                } else if ScriptDefinition::from_command(&intent.command).is_some()
+                                {
+                                    let key = script_key_for_intent(&intent.id);
+                                    execute_intent(
+                                        &key,
+                                        &intent.command,
+                                        ScriptInvocation {
+                                            gesture: context,
+                                            trigger: Some(trigger),
+                                            modifier,
+                                        },
+                                        &shared,
+                                        &mut script_engine,
+                                        &overlay,
+                                    );
                                 } else {
-                                    execute_intent(&intent.command, modifier, &context, &shared);
+                                    deferred_intent = Some(intent);
                                 }
                             }
                             None => log::debug!("手势结束: 无匹配意图"),
+                        }
+                        overlay.send(OverlayCmd::End);
+                        if let Some(intent) = deferred_intent {
+                            let key = script_key_for_intent(&intent.id);
+                            execute_intent(
+                                &key,
+                                &intent.command,
+                                ScriptInvocation {
+                                    gesture: context,
+                                    trigger: Some(trigger),
+                                    modifier,
+                                },
+                                &shared,
+                                &mut script_engine,
+                                &overlay,
+                            );
                         }
                     }
                     EngineMsg::GestureCaptured { trigger, strokes } => {
@@ -242,20 +559,40 @@ fn spawn_engine_consumer(
                             native_window: fg.native_window,
                         };
                         execute_intent(
+                            &script_key_for_corner_edge(hit),
                             &command,
-                            engine::types::Modifier::None,
-                            &context,
+                            ScriptInvocation {
+                                gesture: context,
+                                trigger: None,
+                                modifier: engine::types::Modifier::None,
+                            },
                             &shared,
+                            &mut script_engine,
+                            &overlay,
                         );
                     }
                     EngineMsg::PathCancelled => {
                         task_switcher.finish();
+                        active_script = None;
+                        retain_live_script_contexts(
+                            &mut script_engine,
+                            live_script_keys.as_ref(),
+                            None,
+                        );
                         log::debug!("手势取消");
                         overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::PauseChanged(paused) => {
                         task_switcher.finish();
                         publish_pause_state(&app, paused);
+                    }
+                    EngineMsg::ScriptConfigChanged { live_keys } => {
+                        live_script_keys = Some(live_keys.into_iter().collect());
+                        retain_live_script_contexts(
+                            &mut script_engine,
+                            live_script_keys.as_ref(),
+                            active_script.as_ref().map(|active| active.key.as_str()),
+                        );
                     }
                 }
             }
@@ -273,16 +610,27 @@ struct CapturedGesture {
 
 #[cfg(windows)]
 fn execute_intent(
+    key: &str,
     command: &engine::config::Command,
-    modifier: engine::types::Modifier,
-    context: &engine::runtime::GestureContext,
+    invocation: ScriptInvocation,
     shared: &Arc<EngineShared>,
+    script_engine: &mut Option<ScriptEngine>,
+    overlay: &platform::windows::overlay::Overlay,
 ) {
     if matches!(command, engine::config::Command::Pause) {
         let paused = shared.toggle_paused();
         log::info!("命令: 手势{}", if paused { "已暂停" } else { "已继续" });
+    } else if let Some(definition) = ScriptDefinition::from_command(command) {
+        run_script_slot(
+            script_engine,
+            overlay,
+            key,
+            &definition,
+            ScriptSlot::Execute,
+            invocation,
+        );
     } else {
-        platform::windows::commands::execute(command, modifier, context);
+        platform::windows::commands::execute(command, invocation.modifier, &invocation.gesture);
     }
 }
 
@@ -1227,6 +1575,35 @@ mod tests {
         assert_eq!(
             lifecycle.finish_path(false),
             (TaskSwitcherEffect::End, false)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn modifier_script_transition_covers_start_continue_replace_finish_and_no_change() {
+        assert_eq!(
+            modifier_script_transition(None, Some("a"), true),
+            ModifierScriptTransition::Start
+        );
+        assert_eq!(
+            modifier_script_transition(Some("a"), Some("a"), true),
+            ModifierScriptTransition::Continue
+        );
+        assert_eq!(
+            modifier_script_transition(Some("a"), Some("b"), true),
+            ModifierScriptTransition::Replace
+        );
+        assert_eq!(
+            modifier_script_transition(Some("a"), None, true),
+            ModifierScriptTransition::Finish
+        );
+        assert_eq!(
+            modifier_script_transition(Some("a"), None, false),
+            ModifierScriptTransition::NoChange
+        );
+        assert_eq!(
+            modifier_script_transition(None, None, true),
+            ModifierScriptTransition::NoChange
         );
     }
 }

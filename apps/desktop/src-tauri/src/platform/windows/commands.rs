@@ -3,8 +3,8 @@
 //! 运行在 engine worker(消费)线程,可阻塞(取选中文本要合成 Ctrl+C 并轮询剪贴板);
 //! 绝不在钩子线程执行,以免拖慢"吞不吞事件"的同步裁决。
 //!
-//! Pause / DoNothing 不在此处理:Pause 由 consumer 特判(切换引擎暂停),
-//! DoNothing 顾名思义。Script 待 M3(rquickjs)落地,这里先跳过。
+//! Pause / Script 不在此处理:consumer 分别负责暂停切换与 QuickJS 生命周期;
+//! DoNothing 顾名思义。
 
 use super::{clipboard, hook::EXTRA_INFO_TAG, input, window};
 use crate::engine::config::{Command, WindowOperation};
@@ -34,10 +34,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// 执行一条命令。`modifier` 是本次手势修饰,`ctx` 提供手势起点与目标窗口句柄。
 pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
     match cmd {
-        // 由 consumer 特判 / 无动作 / 待 M3
+        // 由 consumer 特判 / 无动作
         Command::Pause | Command::DoNothing => {}
         Command::Script { .. } => {
-            log::warn!("Script 命令将在 M3(rquickjs)落地,暂跳过");
+            log::error!("Script 命令意外到达原生命令分发器");
         }
 
         Command::HotKey { modifiers, keys } => {
@@ -164,6 +164,15 @@ fn activate_target(ctx: &GestureContext) {
     }
 }
 
+pub(crate) fn activate_target_for_script(ctx: &GestureContext) -> Result<(), String> {
+    let hwnd = hwnd_of(ctx).ok_or_else(|| "target window is unavailable".to_string())?;
+    if unsafe { SetForegroundWindow(hwnd) }.as_bool() {
+        Ok(())
+    } else {
+        Err("SetForegroundWindow was rejected".into())
+    }
+}
+
 /// 外壳窗口(桌面/任务栏等)的类名。窗口类命令一律不作用于它们。
 ///
 /// 触发角/摩擦边把命令指向**前台窗口**,而光标停在屏幕角落或边缘时,前台窗口
@@ -223,6 +232,18 @@ fn window_control(op: WindowOperation, ctx: &GestureContext) {
             WindowOperation::DockRight => dock_half(hwnd, false),
         }
     }
+}
+
+pub(crate) fn window_control_for_script(
+    op: WindowOperation,
+    ctx: &GestureContext,
+) -> Result<(), String> {
+    let hwnd = hwnd_of(ctx).ok_or_else(|| "target window is unavailable".to_string())?;
+    if is_shell_window(hwnd) {
+        return Err("window operations are blocked for shell windows".into());
+    }
+    window_control(op, ctx);
+    Ok(())
 }
 
 fn enqueue_show_window(

@@ -49,12 +49,14 @@ pub enum EngineMsg {
     },
     PathEnded {
         intent: Option<GestureIntent>,
+        trigger: TriggerButton,
         modifier: Modifier,
         context: GestureContext,
     },
     PathCancelled,
     ModifierFired {
         intent: Option<GestureIntent>,
+        trigger: TriggerButton,
         modifier: Modifier,
         context: GestureContext,
     },
@@ -72,6 +74,10 @@ pub enum EngineMsg {
     },
     /// 暂停状态由任意入口改变（设置、托盘、快捷键、和弦或命令）。
     PauseChanged(bool),
+    /// 配置替换后仍然存在的 Script 命令 key，用于裁剪惰性 Context 缓存。
+    ScriptConfigChanged {
+        live_keys: Vec<String>,
+    },
 }
 
 /// 平台服务:运行时需要但因平台而异的操作(由 platform 层注入)
@@ -197,12 +203,14 @@ impl EngineShared {
 
     /// 配置变更(设置界面保存/同步拉取后调用)
     pub fn replace_config(&self, config: ConfigDocument) {
+        let live_keys = super::script::live_script_keys(&config);
         self.tracker.lock().set_params(tracker_params_from(&config));
         self.corners_enabled
             .store(config.hot_corners.enabled, Ordering::Relaxed);
         self.edges_enabled
             .store(config.rub_edges.enabled, Ordering::Relaxed);
         self.finder.lock().replace_config(config);
+        let _ = self.tx.send(EngineMsg::ScriptConfigChanged { live_keys });
     }
 
     /// 暂停/继续快捷键 (修饰键列表, 主键)
@@ -434,6 +442,7 @@ impl EngineShared {
                         };
                         let _ = self.tx.send(EngineMsg::ModifierFired {
                             intent,
+                            trigger: s.trigger,
                             modifier: m,
                             context,
                         });
@@ -473,6 +482,7 @@ impl EngineShared {
                         };
                         let _ = self.tx.send(EngineMsg::PathEnded {
                             intent,
+                            trigger: s.trigger,
                             modifier: s.active_modifier,
                             context,
                         });

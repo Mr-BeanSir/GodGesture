@@ -8,11 +8,15 @@ use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MOUSEEVENTF_LEFTDOWN,
-    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN,
-    MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
+    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE,
+    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK,
+    MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_SWAPBUTTON, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN,
+};
 
 fn button_flags(button: MouseButton, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
     // 主/副键交换时,逻辑右键要发左键事件才能到达目标语义
@@ -61,7 +65,7 @@ fn button_flags(button: MouseButton, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
     }
 }
 
-fn send_button(button: MouseButton, down: bool, _pos: Point) {
+fn button_input(button: MouseButton, down: bool) -> INPUT {
     let (flags, xdata) = button_flags(button, down);
     let mut input = INPUT {
         r#type: INPUT_MOUSE,
@@ -72,20 +76,85 @@ fn send_button(button: MouseButton, down: bool, _pos: Point) {
     // 高位移位是 WM_XBUTTON* 消息与钩子结构的编码方式)
     input.Anonymous.mi.mouseData = xdata;
     input.Anonymous.mi.dwExtraInfo = EXTRA_INFO_TAG;
-    unsafe {
-        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-    }
+    input
+}
+
+fn send_button(button: MouseButton, down: bool, _pos: Point) -> Result<(), String> {
+    send_inputs(&[button_input(button, down)]).map_err(|error| error.to_string())
 }
 
 /// 合成一次按下(用于起始超时转普通拖拽)
 pub fn synthesize_down(button: MouseButton, pos: Point) {
-    send_button(button, true, pos);
+    if let Err(error) = send_button(button, true, pos) {
+        log::error!("合成鼠标按下失败: {error}");
+    }
 }
 
 /// 合成一次完整点击(down + up)
 pub fn synthesize_click(button: MouseButton, pos: Point) {
-    send_button(button, true, pos);
-    send_button(button, false, pos);
+    let _ = pos;
+    if let Err(error) = synthesize_click_checked(button) {
+        log::error!("合成鼠标点击失败: {error}");
+    }
+}
+
+pub fn synthesize_click_checked(button: MouseButton) -> Result<(), String> {
+    let down = button_input(button, true);
+    let up = button_input(button, false);
+    match send_inputs(&[down, up]) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if error.inserted == 1 {
+                let _ = send_inputs(&[up]);
+            }
+            Err(error.to_string())
+        }
+    }
+}
+
+/// Script host mouse button primitive. The current pointer location is used.
+pub fn synthesize_button(button: MouseButton, down: bool) -> Result<(), String> {
+    send_button(button, down, Point::default())
+}
+
+/// Move the pointer in virtual-screen physical coordinates with a tagged SendInput event.
+pub fn move_pointer(pos: Point) -> Result<(), String> {
+    let left = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let top = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    let height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    if width <= 1 || height <= 1 {
+        return Err("virtual screen bounds are unavailable".into());
+    }
+
+    let normalize = |value: i32, start: i32, length: i32| -> i32 {
+        let relative = (value as i64 - start as i64).clamp(0, length as i64 - 1);
+        (relative * 65_535 / (length as i64 - 1)) as i32
+    };
+    let mut input = INPUT {
+        r#type: INPUT_MOUSE,
+        ..Default::default()
+    };
+    input.Anonymous.mi.dx = normalize(pos.x, left, width);
+    input.Anonymous.mi.dy = normalize(pos.y, top, height);
+    input.Anonymous.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+    input.Anonymous.mi.dwExtraInfo = EXTRA_INFO_TAG;
+    send_inputs(&[input]).map_err(|error| error.to_string())
+}
+
+/// Send a signed wheel delta. One standard wheel notch is 120.
+pub fn wheel(delta: i32) -> Result<(), String> {
+    if delta == 0 || !(-12_000..=12_000).contains(&delta) {
+        return Err("wheel delta must be between -12000 and 12000 and non-zero".into());
+    }
+    let mut input = INPUT {
+        r#type: INPUT_MOUSE,
+        ..Default::default()
+    };
+    input.Anonymous.mi.mouseData = delta as u32;
+    input.Anonymous.mi.dwFlags = MOUSEEVENTF_WHEEL;
+    input.Anonymous.mi.dwExtraInfo = EXTRA_INFO_TAG;
+    send_inputs(&[input]).map_err(|error| error.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -295,13 +364,13 @@ pub fn tap_with_modifiers(mods: &[VIRTUAL_KEY], key: VIRTUAL_KEY) {
 
 /// 输入 SendKeys 序列。必须先完整解析成功才执行，避免在尾部语法错误时已经输入前缀。
 pub fn type_text_with_sleeps(text: &str) {
-    let actions = match parse_send_keys(text) {
-        Ok(actions) => actions,
-        Err(error) => {
-            log::error!("拒绝执行 SendText 命令: {error}");
-            return;
-        }
-    };
+    if let Err(error) = try_type_text_with_sleeps(text) {
+        log::error!("SendText 命令执行失败，已停止剩余序列: {error}");
+    }
+}
+
+pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
+    let actions = parse_send_keys(text)?;
     for action in actions {
         let result = match action {
             SendTextAction::Text(text) => type_text(&text),
@@ -311,11 +380,9 @@ pub fn type_text_with_sleeps(text: &str) {
                 Ok(())
             }
         };
-        if let Err(error) = result {
-            log::error!("SendText 命令执行失败，已停止剩余序列: {error}");
-            return;
-        }
+        result?;
     }
+    Ok(())
 }
 
 fn type_text(text: &str) -> Result<(), String> {

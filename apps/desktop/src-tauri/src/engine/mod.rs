@@ -6,5 +6,6 @@ pub mod corners;
 pub mod intents;
 pub mod parser;
 pub mod runtime;
+pub mod script;
 pub mod tracker;
 pub mod types;

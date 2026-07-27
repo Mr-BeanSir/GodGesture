@@ -7,6 +7,7 @@ pub mod icon;
 pub mod input;
 pub mod keys;
 pub mod overlay;
+pub mod script;
 pub mod startup;
 pub mod window;
 
