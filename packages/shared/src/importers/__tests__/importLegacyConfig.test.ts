@@ -73,6 +73,59 @@ describe("importLegacyConfig 边界", () => {
       configPlist: "<not a plist",
     });
     expect(document.preferences).toEqual(SyncedPreferences.parse({}));
-    expect(warnings.some((w) => w.includes("config.plist 解析失败"))).toBe(true);
+    expect(warnings).toContainEqual({
+      code: "plist_parse_failed",
+      source: "config.plist",
+      location: { scope: "preferences" },
+    });
+  });
+
+  it("config.plist 根节点不是字典时返回结构化诊断", () => {
+    const { document, warnings } = importLegacyConfig({
+      gesturesWg2: GESTURES_WG2,
+      configPlist: "<plist><array /></plist>",
+    });
+
+    expect(document.preferences).toEqual(SyncedPreferences.parse({}));
+    expect(warnings).toEqual([{
+      code: "plist_root_not_dictionary",
+      source: "config.plist",
+      location: { scope: "preferences" },
+    }]);
+  });
+
+  it("偏好降级携带稳定字段位置和原始数值参数", () => {
+    const { document, warnings } = importLegacyConfig({
+      gesturesWg2: GESTURES_WG2,
+      configPlist: `
+        <plist><dict>
+          <key>PathTrackerTriggerButton</key><integer>0</integer>
+          <key>PathTrackerInitialValidMove</key><integer>99</integer>
+          <key>PauseResumeHotKey</key><data>AA==</data>
+        </dict></plist>
+      `,
+    });
+
+    expect(document.preferences.pathTracker.initialValidMovePx).toBe(50);
+    expect(warnings).toEqual([
+      {
+        code: "trigger_mask_empty",
+        source: "config.plist",
+        location: { scope: "preferences", field: "PathTrackerTriggerButton" },
+        details: { value: 0 },
+      },
+      {
+        code: "preference_clamped",
+        source: "config.plist",
+        location: { scope: "preferences", field: "PathTrackerInitialValidMove" },
+        details: { value: 99, min: 1, max: 50, clamped: 50 },
+      },
+      {
+        code: "pause_hotkey_invalid",
+        source: "config.plist",
+        location: { scope: "preferences", field: "PauseResumeHotKey" },
+        details: { byteLength: 1 },
+      },
+    ]);
   });
 });

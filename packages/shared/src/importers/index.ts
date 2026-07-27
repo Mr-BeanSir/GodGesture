@@ -16,7 +16,9 @@ import { TriggerButton } from "../config/gestures.js";
 import { PlistDict, PlistValue, parsePlist } from "./plist.js";
 import { decodeHotKeyCombo } from "./vk.js";
 import { importWg2 } from "./wg2.js";
+import { LegacyImportDiagnostic } from "./diagnostics.js";
 
+export * from "./diagnostics.js";
 export * from "./vk.js";
 export * from "./plist.js";
 export * from "./wg2.js";
@@ -36,8 +38,8 @@ export interface LegacyImportResult {
    * 从 config.plist 的 AutoStart / TrayIconVisible 映射;runAsAdmin 老版无对应键,取默认。
    */
   machineLocal: MachineLocalSettings;
-  /** 降级/丢弃项的可读告警,合并 wg2 与 plist 两侧 */
-  warnings: string[];
+  /** 降级/丢弃项的结构化诊断,由调用方负责本地化展示 */
+  warnings: LegacyImportDiagnostic[];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +130,7 @@ function clamp(n: number, min: number, max: number): number {
  */
 export function importLegacyConfig(input: LegacyConfigInput): LegacyImportResult {
   const wg2 = importWg2(input.gesturesWg2);
-  const warnings: string[] = [...wg2.warnings];
+  const warnings: LegacyImportDiagnostic[] = [...wg2.warnings];
 
   // 待喂给 zod 的偏好载荷(以纯对象累积,避开 exactOptionalPropertyTypes 约束)。
   const pathTracker: Record<string, unknown> = {};
@@ -146,10 +148,18 @@ export function importLegacyConfig(input: LegacyConfigInput): LegacyImportResult
       if (isPlistDict(root)) {
         dict = root;
       } else {
-        warnings.push("config.plist 根节点不是字典,偏好整体取默认值");
+        warnings.push({
+          code: "plist_root_not_dictionary",
+          source: "config.plist",
+          location: { scope: "preferences" },
+        });
       }
-    } catch (e) {
-      warnings.push(`config.plist 解析失败,偏好整体取默认值: ${(e as Error).message}`);
+    } catch {
+      warnings.push({
+        code: "plist_parse_failed",
+        source: "config.plist",
+        location: { scope: "preferences" },
+      });
     }
 
     if (dict !== undefined) {
@@ -189,7 +199,7 @@ interface MapCtx {
   gestureView: Record<string, unknown>;
   preferences: Record<string, unknown>;
   machineLocal: Record<string, unknown>;
-  warnings: string[];
+  warnings: LegacyImportDiagnostic[];
   setHotCorners: (v: boolean) => void;
   setRubEdges: (v: boolean) => void;
 }
@@ -202,7 +212,12 @@ function mapPreferences(dict: PlistDict, ctx: MapCtx): void {
   if (triggerMask !== undefined) {
     const buttons = decodeTriggerButtons(triggerMask);
     if (buttons.length === 0) {
-      warnings.push(`${K.triggerButton}=${triggerMask} 未含任何已知触发键,触发键集合取默认值`);
+      warnings.push({
+        code: "trigger_mask_empty",
+        source: "config.plist",
+        location: { scope: "preferences", field: K.triggerButton },
+        details: { value: triggerMask },
+      });
     } else {
       pathTracker["triggerButtons"] = buttons;
     }
@@ -236,7 +251,12 @@ function mapPreferences(dict: PlistDict, ctx: MapCtx): void {
     if (combo?.key !== undefined) {
       preferences["pauseHotkey"] = { modifiers: combo.modifiers, key: combo.key };
     } else {
-      warnings.push(`${K.pauseResumeHotKey} 无法解码为有效主键,暂停热键取默认值`);
+      warnings.push({
+        code: "pause_hotkey_invalid",
+        source: "config.plist",
+        location: { scope: "preferences", field: K.pauseResumeHotKey },
+        details: { byteLength: hkData.length },
+      });
     }
   }
 
@@ -278,11 +298,18 @@ function assignClampedInt(
   field: string,
   min: number,
   max: number,
-  warnings: string[],
+  warnings: LegacyImportDiagnostic[],
 ): void {
   const v = getInt(dict, key);
   if (v === undefined) return;
   const clamped = clamp(v, min, max);
-  if (clamped !== v) warnings.push(`${key}=${v} 超出 [${min}, ${max}],已收敛为 ${clamped}`);
+  if (clamped !== v) {
+    warnings.push({
+      code: "preference_clamped",
+      source: "config.plist",
+      location: { scope: "preferences", field: key },
+      details: { value: v, min, max, clamped },
+    });
+  }
   target[field] = clamped;
 }

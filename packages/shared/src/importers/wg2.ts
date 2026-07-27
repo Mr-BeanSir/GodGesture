@@ -26,6 +26,11 @@ import {
   StrokeDirection,
   TriggerButton,
 } from "../config/gestures.js";
+import {
+  LegacyImportDiagnostic,
+  LegacyImportDiagnosticCode,
+  LegacyImportDiagnosticLocation,
+} from "./diagnostics.js";
 import { vkToKeyName } from "./vk.js";
 
 export interface Wg2ImportResult {
@@ -33,7 +38,7 @@ export interface Wg2ImportResult {
   apps: AppEntry[];
   hotCorners: HotCornersConfig;
   rubEdges: RubEdgesConfig;
-  warnings: string[];
+  warnings: LegacyImportDiagnostic[];
 }
 
 const DIRS: readonly StrokeDirection[] = [
@@ -129,10 +134,20 @@ export function deterministicUuid(seed: string): string {
 // ---------------------------------------------------------------------------
 
 class Wg2Importer {
-  readonly warnings: string[] = [];
+  readonly warnings: LegacyImportDiagnostic[] = [];
 
-  private warn(msg: string): void {
-    this.warnings.push(msg);
+  warn(
+    code: LegacyImportDiagnosticCode,
+    location?: LegacyImportDiagnosticLocation,
+    details?: Record<string, string | number | boolean>,
+  ): void {
+    const diagnostic: LegacyImportDiagnostic = {
+      code,
+      source: "gestures.wg2",
+    };
+    if (location !== undefined) diagnostic.location = location;
+    if (details !== undefined) diagnostic.details = details;
+    this.warnings.push(diagnostic);
   }
 
   /** "$type": "WGestures.Core.Commands.Impl.HotKeyCommand, WGestures.Core" → "HotKeyCommand" */
@@ -143,19 +158,32 @@ class Wg2Importer {
     return last === "" ? undefined : last;
   }
 
-  private mapVkList(list: unknown, context: string): string[] {
+  private mapVkList(
+    list: unknown,
+    location: LegacyImportDiagnosticLocation,
+    field: "Modifiers" | "Keys",
+  ): string[] {
     if (!Array.isArray(list)) return [];
     const names: string[] = [];
-    for (const item of list) {
+    for (let index = 0; index < list.length; index++) {
+      const item = list[index];
       const vk = asInt(item);
       if (vk === undefined) {
-        this.warn(`${context}: 非法 VK 值 ${String(item)},快捷键命令将禁用`);
+        this.warn(
+          "invalid_virtual_key",
+          { ...location, field },
+          { value: String(item), index },
+        );
         names.push(`invalidVk:${String(item)}`);
         continue;
       }
       const name = vkToKeyName(vk);
       if (name === undefined) {
-        this.warn(`${context}: 未知 VK 数值 ${vk},以 "vk${vk}" 占位`);
+        this.warn(
+          "unknown_virtual_key",
+          { ...location, field },
+          { value: vk, index },
+        );
         names.push(`vk${vk}`);
       } else {
         names.push(name);
@@ -164,9 +192,9 @@ class Wg2Importer {
     return names;
   }
 
-  mapCommand(raw: unknown, context: string): Command {
+  mapCommand(raw: unknown, location: LegacyImportDiagnosticLocation): Command {
     if (!isObject(raw)) {
-      this.warn(`${context}: 命令缺失或非法,替换为“什么也不做”`);
+      this.warn("invalid_command", { ...location, field: "Command" });
       return { type: "doNothing" };
     }
     const typeName = this.simpleTypeName(raw["$type"]);
@@ -177,12 +205,12 @@ class Wg2Importer {
         {
           const candidate = {
             type: "hotKey",
-            modifiers: this.mapVkList(raw["Modifiers"], `${context}(修饰键)`),
-            keys: this.mapVkList(raw["Keys"], `${context}(主键)`),
+            modifiers: this.mapVkList(raw["Modifiers"], location, "Modifiers"),
+            keys: this.mapVkList(raw["Keys"], location, "Keys"),
           };
           const parsed = HotKeyCommand.safeParse(candidate);
           if (!parsed.success) {
-            this.warn(`${context}: 快捷键含未知或错位键名,替换为“什么也不做”`);
+            this.warn("invalid_hotkey", { ...location, field: "Command" });
             return { type: "doNothing" };
           }
           return parsed.data;
@@ -199,7 +227,11 @@ class Wg2Importer {
         const op = asInt(raw["ChangeWindowStateTo"]) ?? 0;
         const operation = WINDOW_OPERATIONS[op];
         if (operation === undefined) {
-          this.warn(`${context}: 未知窗口操作枚举值 ${op},替换为“什么也不做”`);
+          this.warn(
+            "unknown_window_operation",
+            { ...location, field: "ChangeWindowStateTo" },
+            { value: op },
+          );
           return { type: "doNothing" };
         }
         return { type: "windowControl", operation };
@@ -238,42 +270,69 @@ class Wg2Importer {
         return { type: "audioVolume", delta: Math.min(20, Math.max(1, delta)) };
       }
       default: {
-        const label = typeName ?? String(raw["$type"] ?? "(缺失 $type)");
-        this.warn(`${context}: 未知命令类型 ${label},替换为“什么也不做”`);
+        const rawType = raw["$type"];
+        this.warn(
+          "unknown_command_type",
+          { ...location, field: "$type" },
+          rawType === undefined
+            ? { missing: true }
+            : { value: String(rawType) },
+        );
         return { type: "doNothing" };
       }
     }
   }
 
-  mapGesture(raw: unknown, buttonShift: number, context: string): GestureSpec {
+  mapGesture(
+    raw: unknown,
+    buttonShift: number,
+    location: LegacyImportDiagnosticLocation,
+  ): GestureSpec {
     const obj = isObject(raw) ? raw : {};
     const rawButton = (asInt(obj["GestureButton"]) ?? 1) + buttonShift;
     let trigger = TRIGGERS.get(rawButton);
     if (trigger === undefined) {
-      this.warn(`${context}: 未知触发键数值 ${rawButton},按右键处理`);
+      this.warn(
+        "unknown_trigger_button",
+        { ...location, field: "GestureButton" },
+        { value: rawButton },
+      );
       trigger = "right";
     }
 
     const strokes: StrokeDirection[] = [];
     const rawDirs = Array.isArray(obj["Dirs"]) ? obj["Dirs"] : [];
-    for (const d of rawDirs) {
+    for (let index = 0; index < rawDirs.length; index++) {
+      const d = rawDirs[index];
       const idx = asInt(d);
       const dir = idx === undefined ? undefined : DIRS[idx];
       if (dir === undefined) {
-        this.warn(`${context}: 忽略非法笔画方向 ${String(d)}`);
+        this.warn(
+          "invalid_stroke_direction",
+          { ...location, field: "Dirs" },
+          { value: String(d), index },
+        );
         continue;
       }
       strokes.push(dir);
     }
     if (strokes.length > 12) {
-      this.warn(`${context}: 笔画数 ${strokes.length} 超过上限 12,已截断`);
+      this.warn(
+        "stroke_limit_exceeded",
+        { ...location, field: "Dirs" },
+        { count: strokes.length, limit: 12 },
+      );
       strokes.length = 12;
     }
 
     const rawModifier = asInt(obj["Modifier"]) ?? 0;
     let modifier = MODIFIERS.get(rawModifier);
     if (modifier === undefined) {
-      this.warn(`${context}: 未知修饰数值 ${rawModifier},按无修饰处理`);
+      this.warn(
+        "unknown_modifier",
+        { ...location, field: "Modifier" },
+        { value: rawModifier },
+      );
       modifier = "none";
     }
 
@@ -283,13 +342,13 @@ class Wg2Importer {
   mapIntents(
     rawList: unknown,
     buttonShift: number,
-    scope: string,
-    idScope = scope,
+    location: LegacyImportDiagnosticLocation,
+    idScope: string,
     unwrapV1 = false,
   ): GestureIntent[] {
     if (rawList === undefined || rawList === null) return [];
     if (!Array.isArray(rawList)) {
-      this.warn(`${scope}: GestureIntents 不是数组,已忽略`);
+      this.warn("intents_not_array", { ...location, field: "GestureIntents" });
       return [];
     }
     const intents: GestureIntent[] = [];
@@ -298,18 +357,23 @@ class Wg2Importer {
       const raw = unwrapV1 && isObject(entry) ? entry["Value"] : entry;
       if (!isObject(raw)) {
         this.warn(
-          `${scope}: 忽略第 ${i + 1} 条非法手势意图` +
-            (unwrapV1 ? "(FileVersion 1 条目必须包含 Value)" : ""),
+          "invalid_intent",
+          { ...location, index: i, field: unwrapV1 ? "Value" : "GestureIntents" },
+          unwrapV1 ? { requiresValue: true } : undefined,
         );
         continue;
       }
       const name = asString(raw["Name"]).slice(0, 64);
-      const context = `${scope} → 意图「${name || `#${i + 1}`}」`;
+      const intentLocation: LegacyImportDiagnosticLocation = {
+        ...location,
+        intentName: name,
+        index: i,
+      };
       intents.push({
         id: deterministicUuid(`intent:${idScope}:${i}:${name}`),
         name,
-        gesture: this.mapGesture(raw["Gesture"], buttonShift, context),
-        command: this.mapCommand(raw["Command"], context),
+        gesture: this.mapGesture(raw["Gesture"], buttonShift, intentLocation),
+        command: this.mapCommand(raw["Command"], intentLocation),
         executeOnModifier: asBool(raw["ExecuteOnModifier"], false),
         order: asInt(raw["Order"]) ?? i,
       });
@@ -337,7 +401,7 @@ export function importWg2(json: string): Wg2ImportResult {
   const buttonShift = fileVersion === "1" || fileVersion === "2" ? 1 : 0;
   const unwrapV1 = fileVersion === "1";
   if (fileVersion !== "3" && buttonShift === 0) {
-    importer.warnings.push(`未知的 FileVersion "${fileVersion}",按版本 3 处理`);
+    importer.warn("unknown_file_version", undefined, { value: fileVersion });
   }
 
   // 全局应用
@@ -347,7 +411,7 @@ export function importWg2(json: string): Wg2ImportResult {
     intents: importer.mapIntents(
       rawGlobal["GestureIntents"],
       buttonShift,
-      "全局",
+      { scope: "global" },
       "global",
       unwrapV1,
     ),
@@ -357,15 +421,29 @@ export function importWg2(json: string): Wg2ImportResult {
   const apps: AppEntry[] = [];
   const rawApps = isObject(root["Apps"]) ? root["Apps"] : {};
   let appIndex = 0;
+  let sourceAppIndex = 0;
   for (const [key, rawApp] of Object.entries(rawApps)) {
     if (!isObject(rawApp)) {
-      importer.warnings.push(`忽略非法应用条目 "${key}"`);
+      importer.warn(
+        "invalid_app_entry",
+        { scope: "app", appName: key, index: sourceAppIndex },
+      );
+      sourceAppIndex++;
       continue;
     }
     const executablePath = asString(rawApp["ExecutablePath"], key);
     const exeName = (executablePath.split(/[\\/]/).pop() ?? "").toLowerCase();
     if (exeName === "") {
-      importer.warnings.push(`应用 "${key}" 的可执行文件路径为空,已跳过`);
+      importer.warn(
+        "empty_app_executable",
+        {
+          scope: "app",
+          appName: asString(rawApp["Name"], key).slice(0, 64),
+          index: sourceAppIndex,
+          field: "ExecutablePath",
+        },
+      );
+      sourceAppIndex++;
       continue;
     }
     const name = asString(rawApp["Name"], exeName).slice(0, 64);
@@ -383,7 +461,7 @@ export function importWg2(json: string): Wg2ImportResult {
         intents: importer.mapIntents(
           rawApp["GestureIntents"],
           buttonShift,
-          `应用「${name}」`,
+          { scope: "app", appName: name },
           `app:${appIndex}:${executablePath.toLowerCase()}`,
           unwrapV1,
         ),
@@ -391,6 +469,7 @@ export function importWg2(json: string): Wg2ImportResult {
       }),
     );
     appIndex++;
+    sourceAppIndex++;
   }
 
   // 触发角(槽 0-3)与摩擦边(槽 4-7)
@@ -399,21 +478,36 @@ export function importWg2(json: string): Wg2ImportResult {
   const rawHotCorners = root["HotCornerCommands"];
   if (Array.isArray(rawHotCorners)) {
     if (rawHotCorners.length > 8) {
-      importer.warnings.push(`HotCornerCommands 数量 ${rawHotCorners.length} 超过 8,多余槽位忽略`);
+      importer.warn(
+        "hot_corner_slots_exceeded",
+        { scope: "hotCorner", field: "HotCornerCommands" },
+        { count: rawHotCorners.length, limit: 8 },
+      );
     }
     for (let slot = 0; slot < Math.min(8, rawHotCorners.length); slot++) {
       const raw = rawHotCorners[slot];
       if (raw === null || raw === undefined) continue;
       if (slot < 4) {
         const corner = CORNER_SLOTS[slot]!;
-        cornerCommands[corner] = importer.mapCommand(raw, `触发角「${corner}」`);
+        cornerCommands[corner] = importer.mapCommand(raw, {
+          scope: "hotCorner",
+          index: slot,
+          field: corner,
+        });
       } else {
         const edge = EDGE_SLOTS[slot - 4]!;
-        edgeCommands[edge] = importer.mapCommand(raw, `摩擦边「${edge}」`);
+        edgeCommands[edge] = importer.mapCommand(raw, {
+          scope: "rubEdge",
+          index: slot - 4,
+          field: edge,
+        });
       }
     }
   } else if (rawHotCorners !== undefined && rawHotCorners !== null) {
-    importer.warnings.push("HotCornerCommands 不是数组,已忽略");
+    importer.warn("hot_corner_commands_not_array", {
+      scope: "hotCorner",
+      field: "HotCornerCommands",
+    });
   }
 
   return {

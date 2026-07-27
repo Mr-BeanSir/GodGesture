@@ -114,8 +114,133 @@ describe("importWg2", () => {
     }));
 
     expect(imported.global.intents[0]!.command).toEqual({ type: "doNothing" });
-    expect(imported.warnings.some((warning) => warning.includes("未知 VK 数值 7"))).toBe(true);
-    expect(imported.warnings.some((warning) => warning.includes("替换为“什么也不做”"))).toBe(true);
+    expect(imported.warnings).toContainEqual({
+      code: "unknown_virtual_key",
+      source: "gestures.wg2",
+      location: {
+        scope: "global",
+        intentName: "坏快捷键",
+        index: 0,
+        field: "Keys",
+      },
+      details: { value: 7, index: 1 },
+    });
+    expect(imported.warnings).toContainEqual({
+      code: "invalid_hotkey",
+      source: "gestures.wg2",
+      location: {
+        scope: "global",
+        intentName: "坏快捷键",
+        index: 0,
+        field: "Command",
+      },
+    });
+  });
+
+  it("以稳定代码、来源、位置和参数覆盖 gestures.wg2 的全部降级点", () => {
+    const malformed = importWg2(JSON.stringify({
+      FileVersion: "99",
+      Global: { GestureIntents: "not-an-array" },
+      Apps: {
+        broken: false,
+        empty: { Name: "空路径", ExecutablePath: "/", GestureIntents: [] },
+        valid: {
+          Name: "诊断应用",
+          ExecutablePath: "C:\\diagnostic.exe",
+          GestureIntents: [
+            null,
+            {
+              Name: "坏手势与热键",
+              Gesture: {
+                GestureButton: 99,
+                Dirs: [99, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4],
+                Modifier: 999,
+              },
+              Command: {
+                $type: "WGestures.Core.Commands.Impl.HotKeyCommand, WGestures.Core",
+                Modifiers: ["bad"],
+                Keys: [7],
+              },
+            },
+            { Name: "坏命令", Gesture: {}, Command: 42 },
+          ],
+        },
+      },
+      HotCornerCommands: [
+        42,
+        {
+          $type: "WGestures.Core.Commands.Impl.WindowControlCommand, WGestures.Core",
+          ChangeWindowStateTo: 999,
+        },
+        { $type: "MysteryCommand" },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ],
+    }));
+    const nonArrayCorners = importWg2(JSON.stringify({
+      FileVersion: "3",
+      Global: {},
+      Apps: {},
+      HotCornerCommands: {},
+    }));
+
+    const codes = new Set(
+      [...malformed.warnings, ...nonArrayCorners.warnings].map(({ code }) => code),
+    );
+    expect(codes).toEqual(new Set([
+      "invalid_virtual_key",
+      "unknown_virtual_key",
+      "invalid_command",
+      "invalid_hotkey",
+      "unknown_window_operation",
+      "unknown_command_type",
+      "unknown_trigger_button",
+      "invalid_stroke_direction",
+      "stroke_limit_exceeded",
+      "unknown_modifier",
+      "intents_not_array",
+      "invalid_intent",
+      "unknown_file_version",
+      "invalid_app_entry",
+      "empty_app_executable",
+      "hot_corner_slots_exceeded",
+      "hot_corner_commands_not_array",
+    ]));
+    expect(malformed.warnings).toContainEqual({
+      code: "invalid_virtual_key",
+      source: "gestures.wg2",
+      location: {
+        scope: "app",
+        appName: "诊断应用",
+        intentName: "坏手势与热键",
+        index: 1,
+        field: "Modifiers",
+      },
+      details: { value: "bad", index: 0 },
+    });
+    expect(malformed.warnings).toContainEqual({
+      code: "stroke_limit_exceeded",
+      source: "gestures.wg2",
+      location: {
+        scope: "app",
+        appName: "诊断应用",
+        intentName: "坏手势与热键",
+        index: 1,
+        field: "Dirs",
+      },
+      details: { count: 13, limit: 12 },
+    });
+    expect(malformed.warnings).toContainEqual({
+      code: "unknown_window_operation",
+      source: "gestures.wg2",
+      location: { scope: "hotCorner", index: 1, field: "ChangeWindowStateTo" },
+      details: { value: 999 },
+    });
+    expect(malformed.warnings.every((warning) => typeof warning !== "string")).toBe(true);
   });
 });
 
