@@ -271,6 +271,49 @@ mod tests {
     }
 
     #[test]
+    fn aumid_match_takes_priority_over_exact_path_and_exe_name() {
+        let mut doc = ConfigDocument::default();
+        doc.apps.push(AppEntry {
+            id: "path".into(),
+            name: "Path".into(),
+            windows: Some(WindowsBinding {
+                exe_name: "app.exe".into(),
+                aumid: None,
+                exact_path: Some("C:\\Apps\\app.exe".into()),
+                match_by_exact_path: true,
+            }),
+            mac: None,
+            gesturing_enabled: true,
+            inherit_global_gestures: true,
+            intents: vec![],
+            order: 0,
+        });
+        doc.apps.push(AppEntry {
+            id: "aumid".into(),
+            name: "Packaged".into(),
+            windows: Some(WindowsBinding {
+                exe_name: "app.exe".into(),
+                aumid: Some("Contoso.App_123!Main".into()),
+                exact_path: None,
+                match_by_exact_path: false,
+            }),
+            mac: None,
+            gesturing_enabled: true,
+            inherit_global_gestures: true,
+            intents: vec![],
+            order: 1,
+        });
+
+        let fg = ForegroundApp {
+            exe_name: Some("app.exe".into()),
+            aumid: Some("Contoso.App_123!Main".into()),
+            exe_path: Some("C:\\Apps\\app.exe".into()),
+            ..Default::default()
+        };
+        assert_eq!(IntentFinder::new(doc).match_app(&fg).unwrap().id, "aumid");
+    }
+
+    #[test]
     fn prefix_probe_sees_app_and_global() {
         let f = IntentFinder::new(config_with_chrome(true, true));
         let fg = chrome_fg();

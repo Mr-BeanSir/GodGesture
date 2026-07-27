@@ -374,6 +374,7 @@ fn capture_cancel(engine: tauri::State<Arc<EngineShared>>) {
 struct PickedWindow {
     exe_name: String,
     exe_path: String,
+    aumid: Option<String>,
     app_name: String,
 }
 
@@ -411,6 +412,7 @@ fn pick_window_blocking() -> Option<PickedWindow> {
                 return Some(PickedWindow {
                     exe_name: info.exe_name,
                     exe_path: info.exe_path,
+                    aumid: info.aumid,
                     app_name,
                 });
             }
@@ -715,6 +717,33 @@ mod tests {
         assert_eq!(json["trigger"], "right");
         assert_eq!(json["strokes"], serde_json::json!(["up", "rightDown"]));
         assert_eq!(json["mnemonic"], "◑↑↘");
+    }
+
+    #[test]
+    fn picked_window_matches_frontend_contract() {
+        let json = serde_json::to_value(PickedWindow {
+            exe_name: "calculatorapp.exe".into(),
+            exe_path: "C:\\Program Files\\WindowsApps\\CalculatorApp.exe".into(),
+            aumid: Some("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into()),
+            app_name: "Calculator".into(),
+        })
+        .unwrap();
+
+        assert_eq!(json["exeName"], "calculatorapp.exe");
+        assert_eq!(
+            json["aumid"],
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+        );
+        assert!(json.get("exe_name").is_none());
+
+        let without_aumid = serde_json::to_value(PickedWindow {
+            exe_name: "notepad.exe".into(),
+            exe_path: "C:\\Windows\\System32\\notepad.exe".into(),
+            aumid: None,
+            app_name: "Notepad".into(),
+        })
+        .unwrap();
+        assert!(without_aumid["aumid"].is_null());
     }
 
     #[cfg(windows)]

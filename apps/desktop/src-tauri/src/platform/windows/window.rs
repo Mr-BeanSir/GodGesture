@@ -13,22 +13,27 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
+use windows::Win32::Foundation::{
+    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HWND, POINT, RECT, WIN32_ERROR,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, HMONITOR, MONITORINFO,
     MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,
 };
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::Storage::Packaging::Appx::GetApplicationUserModelId;
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
 };
 
 /// pid → (exe_name, exe_path) 缓存(pid 复用风险低,进程退出后条目自然失效)
-static EXE_CACHE: Mutex<Option<HashMap<u32, (String, String)>>> = Mutex::new(None);
+type ExeIdentity = (String, String, Option<String>);
+
+static EXE_CACHE: Mutex<Option<HashMap<u32, ExeIdentity>>> = Mutex::new(None);
 
 /// 手势目标窗口:指针下窗口或前台窗口的根窗口
 pub fn target_root_window(pos: Point, prefer_cursor_window: bool) -> Option<HWND> {
@@ -75,7 +80,7 @@ pub fn exe_dir_of_window(hwnd: HWND) -> Option<PathBuf> {
     if pid == 0 {
         return None;
     }
-    let (_, path) = query_exe(pid)?;
+    let (_, path, _) = query_exe(pid)?;
     std::path::Path::new(&path)
         .parent()
         .map(|p| p.to_path_buf())
@@ -85,6 +90,7 @@ pub fn exe_dir_of_window(hwnd: HWND) -> Option<PathBuf> {
 pub struct WindowAppInfo {
     pub exe_name: String,
     pub exe_path: String,
+    pub aumid: Option<String>,
     pub title: String,
     pub pid: u32,
 }
@@ -100,11 +106,12 @@ pub fn window_info(hwnd: HWND) -> Option<WindowAppInfo> {
     if pid == 0 {
         return None;
     }
-    let (exe_name, exe_path) = query_exe(pid)?;
+    let (exe_name, exe_path, aumid) = query_exe(pid)?;
     let title = window_title(hwnd).unwrap_or_default();
     Some(WindowAppInfo {
         exe_name,
         exe_path,
+        aumid,
         title,
         pid,
     })
@@ -115,7 +122,7 @@ pub fn foreground_window_info() -> Option<WindowAppInfo> {
     window_info(hwnd)
 }
 
-fn query_exe(pid: u32) -> Option<(String, String)> {
+fn query_exe(pid: u32) -> Option<(String, String, Option<String>)> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 1024];
@@ -126,6 +133,7 @@ fn query_exe(pid: u32) -> Option<(String, String)> {
             PWSTR(buf.as_mut_ptr()),
             &mut len,
         );
+        let aumid = query_aumid(handle);
         let _ = CloseHandle(handle);
         ok.ok()?;
         let path = String::from_utf16_lossy(&buf[..len as usize]);
@@ -134,8 +142,45 @@ fn query_exe(pid: u32) -> Option<(String, String)> {
             .next()
             .unwrap_or_default()
             .to_lowercase();
-        Some((name, path))
+        Some((name, path, aumid))
     }
+}
+
+/// 读取进程的 Windows AppUserModelID。
+///
+/// 普通未打包进程没有 AUMID,这和 API 失败一样属于正常情况,必须 fail-open。
+fn query_aumid(handle: windows::Win32::Foundation::HANDLE) -> Option<String> {
+    query_aumid_buffer(|length, buffer| unsafe {
+        let output = buffer.map(|values| PWSTR(values.as_mut_ptr()));
+        GetApplicationUserModelId(handle, length, output)
+    })
+}
+
+/// 隔离 GetApplicationUserModelId 的两次调用协议,便于覆盖缓冲区/error 行为。
+fn query_aumid_buffer<F>(mut query: F) -> Option<String>
+where
+    F: FnMut(&mut u32, Option<&mut [u16]>) -> WIN32_ERROR,
+{
+    let mut required = 0u32;
+    if query(&mut required, None) != ERROR_INSUFFICIENT_BUFFER || required == 0 || required > 4096 {
+        return None;
+    }
+
+    let mut buffer = vec![0u16; required as usize];
+    let mut written = required;
+    if query(&mut written, Some(&mut buffer)) != ERROR_SUCCESS {
+        return None;
+    }
+
+    let used = (written as usize).min(buffer.len());
+    let end = buffer[..used]
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(used);
+    if end == 0 {
+        return None;
+    }
+    String::from_utf16(&buffer[..end]).ok()
 }
 
 /// 解析手势目标窗口对应的前台应用标识(带 pid 缓存)
@@ -167,7 +212,7 @@ pub fn resolve_foreground_app(pos: Point, prefer_cursor_window: bool) -> Foregro
     ForegroundApp {
         exe_name: Some(entry.0),
         exe_path: Some(entry.1),
-        aumid: None, // TODO(M2): 商店应用 AUMID 解析(GetApplicationUserModelId)
+        aumid: entry.2,
         bundle_id: None,
         native_window: hwnd.0 as isize as i64,
     }
@@ -263,5 +308,74 @@ pub fn is_foreground_fullscreen() -> bool {
         }
         let m = mi.rcMonitor;
         wr.left <= m.left && wr.top <= m.top && wr.right >= m.right && wr.bottom >= m.bottom
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aumid_buffer_uses_required_length_then_decodes_utf16() {
+        let mut calls = 0;
+        let aumid = query_aumid_buffer(|length, output| {
+            calls += 1;
+            match (calls, output) {
+                (1, None) => {
+                    *length = 8;
+                    ERROR_INSUFFICIENT_BUFFER
+                }
+                (2, Some(buffer)) => {
+                    assert_eq!(buffer.len(), 8);
+                    buffer[..8].copy_from_slice(&[
+                        'T' as u16, 'e' as u16, 's' as u16, 't' as u16, 0, 0, 0, 0,
+                    ]);
+                    *length = 5;
+                    ERROR_SUCCESS
+                }
+                _ => WIN32_ERROR(1),
+            }
+        });
+
+        assert_eq!(calls, 2);
+        assert_eq!(aumid.as_deref(), Some("Test"));
+    }
+
+    #[test]
+    fn aumid_buffer_fails_open_for_unpacked_or_invalid_results() {
+        assert_eq!(
+            query_aumid_buffer(|_, _| windows::Win32::Foundation::APPMODEL_ERROR_NO_PACKAGE),
+            None
+        );
+        assert_eq!(
+            query_aumid_buffer(|length, output| match output {
+                None => {
+                    *length = 2;
+                    ERROR_INSUFFICIENT_BUFFER
+                }
+                Some(_) => WIN32_ERROR(1),
+            }),
+            None
+        );
+        assert_eq!(
+            query_aumid_buffer(|length, output| match output {
+                None => {
+                    *length = 1;
+                    ERROR_INSUFFICIENT_BUFFER
+                }
+                Some(buffer) => {
+                    buffer[0] = 0;
+                    *length = 1;
+                    ERROR_SUCCESS
+                }
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn unpackaged_test_process_has_no_aumid() {
+        let handle = unsafe { windows::Win32::System::Threading::GetCurrentProcess() };
+        assert_eq!(query_aumid(handle), None);
     }
 }
