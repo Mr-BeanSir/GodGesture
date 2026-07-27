@@ -7,11 +7,26 @@
  */
 import type { z } from "zod";
 import { TokenPairResponse } from "@godgesture/shared";
+import {
+  RefreshCoordinator,
+  classifyRefreshFailure,
+  removeStorageValueIfCurrent,
+  replaceStorageValueIfCurrent,
+} from "./refresh-coordinator";
 
 /** 后端源(VITE_API_BASE_URL 留空 = 同源,走代理的 /api) */
 const API_ORIGIN = import.meta.env.VITE_API_BASE_URL ?? "";
 const API_BASE = `${API_ORIGIN}/api/v1`;
 const REFRESH_TOKEN_KEY = "godgesture.refreshToken";
+const REFRESH_LEASE_KEY = "godgesture.refreshLease";
+const REFRESH_TIMEOUT_MS = 15_000;
+
+const refreshCoordinator = new RefreshCoordinator(localStorage, {
+  lockName: "godgesture.refresh",
+  leaseKey: REFRESH_LEASE_KEY,
+  channelName: "godgesture.session",
+  watchedStorageKeys: [REFRESH_TOKEN_KEY],
+});
 
 /** 构造后端 API URL(供整页跳转的 OAuth authorize 等非 fetch 场景) */
 export function apiUrl(path: string): string {
@@ -19,20 +34,36 @@ export function apiUrl(path: string): string {
 }
 
 let accessToken: string | null = null;
+let accessTokenRefreshToken: string | null = null;
 let sessionExpiredHandler: (() => void) | null = null;
+let sessionExpiredLatched = false;
 
 export function setSessionExpiredHandler(handler: () => void): void {
   sessionExpiredHandler = handler;
+  if (sessionExpiredLatched) handler();
 }
 
 export function setTokenPair(pair: TokenPairResponse): void {
+  applyTokenPair(pair);
+}
+
+function applyTokenPair(pair: TokenPairResponse): void {
   accessToken = pair.accessToken;
+  accessTokenRefreshToken = pair.refreshToken;
   localStorage.setItem(REFRESH_TOKEN_KEY, pair.refreshToken);
+  sessionExpiredLatched = false;
 }
 
 export function clearSession(): void {
   accessToken = null;
+  accessTokenRefreshToken = null;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+function notifySessionExpired(): void {
+  if (sessionExpiredLatched) return;
+  sessionExpiredLatched = true;
+  sessionExpiredHandler?.();
 }
 
 /** 本浏览器是否持有可尝试恢复的会话(refresh token) */
@@ -59,36 +90,246 @@ function extractErrorCode(body: unknown): string | null {
   return null;
 }
 
-// --- refresh 轮换(并发去重:同一时刻只发一次 /auth/refresh) ---
+// --- refresh 轮换(单标签 Promise 去重 + 跨标签互斥) ---
 
-let refreshInFlight: Promise<boolean> | null = null;
+type RefreshResult =
+  | { kind: "success" }
+  | { kind: "invalid"; code: string }
+  | {
+      kind: "transient";
+      status: number;
+      code: string;
+      body?: unknown;
+    };
 
-function refreshSession(): Promise<boolean> {
-  refreshInFlight ??= doRefresh().finally(() => {
-    refreshInFlight = null;
-  });
+interface RefreshSuccessMessage {
+  type: "refresh-success";
+  attemptedToken: string;
+  pair: unknown;
+}
+
+interface SessionInvalidMessage {
+  type: "session-invalid";
+  attemptedToken: string;
+}
+
+let refreshInFlight: Promise<RefreshResult> | null = null;
+
+function refreshSession(
+  previousAccessToken: string | null,
+): Promise<RefreshResult> {
+  refreshInFlight ??= refreshCoordinator
+    .runExclusive(async () => {
+      // Another tab may have completed while this tab waited for the lock.
+      if (accessToken !== null && accessToken !== previousAccessToken) {
+        return { kind: "success" } as const;
+      }
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (!refreshToken) {
+        accessToken = null;
+        accessTokenRefreshToken = null;
+        return { kind: "invalid", code: "missing_refresh_token" } as const;
+      }
+      return doRefresh(refreshToken);
+    })
+    .finally(() => {
+      refreshInFlight = null;
+    });
   return refreshInFlight;
 }
 
-async function doRefresh(): Promise<boolean> {
-  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!refreshToken) return false;
+async function doRefresh(refreshToken: string): Promise<RefreshResult> {
   let res: Response;
+  const abort = new AbortController();
+  const timeout = window.setTimeout(() => abort.abort(), REFRESH_TIMEOUT_MS);
   try {
     res = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
+      signal: abort.signal,
     });
   } catch {
-    // 网络异常不作废本地会话,下次再试
+    return { kind: "transient", status: 0, code: "network" };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    return {
+      kind: "transient",
+      status: res.status,
+      code: "refresh_response_invalid",
+    };
+  }
+
+  if (res.ok) {
+    const parsed = TokenPairResponse.safeParse(body);
+    if (!parsed.success) {
+      return {
+        kind: "transient",
+        status: res.status,
+        code: "refresh_response_invalid",
+        body,
+      };
+    }
+    if (
+      !replaceStorageValueIfCurrent(
+        localStorage,
+        REFRESH_TOKEN_KEY,
+        refreshToken,
+        parsed.data.refreshToken,
+      )
+    ) {
+      // A newer winner already replaced this request's token. Never overwrite it.
+      return {
+        kind: "transient",
+        status: 409,
+        code: "refresh_rotation_race",
+      };
+    }
+    applyTokenPair(parsed.data);
+    refreshCoordinator.publish({
+      type: "refresh-success",
+      attemptedToken: refreshToken,
+      pair: parsed.data,
+    } satisfies RefreshSuccessMessage);
+    return { kind: "success" };
+  }
+
+  const code = extractErrorCode(body);
+  if (classifyRefreshFailure(res.status, code) === "invalid") {
+    if (
+      !removeStorageValueIfCurrent(
+        localStorage,
+        REFRESH_TOKEN_KEY,
+        refreshToken,
+      )
+    ) {
+      // This is a late loser response for an older token. The winner stays intact.
+      return {
+        kind: "transient",
+        status: 409,
+        code: "refresh_rotation_race",
+        body,
+      };
+    }
+    accessToken = null;
+    accessTokenRefreshToken = null;
+    refreshCoordinator.publish({
+      type: "session-invalid",
+      attemptedToken: refreshToken,
+    } satisfies SessionInvalidMessage);
+    return { kind: "invalid", code: code! };
+  }
+
+  return {
+    kind: "transient",
+    status: res.status,
+    code: code ?? "refresh_failed",
+    body,
+  };
+}
+
+refreshCoordinator.subscribe((message) => {
+  if (typeof message !== "object" || message === null || !("type" in message)) {
+    return;
+  }
+  if ((message as { type: unknown }).type === "refresh-success") {
+    const candidate = message as Partial<RefreshSuccessMessage>;
+    if (typeof candidate.attemptedToken !== "string") return;
+    const parsed = TokenPairResponse.safeParse(candidate.pair);
+    if (!parsed.success) return;
+    const current = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (
+      current !== candidate.attemptedToken &&
+      current !== parsed.data.refreshToken
+    ) {
+      return;
+    }
+    applyTokenPair(parsed.data);
+    return;
+  }
+  if ((message as { type: unknown }).type === "session-invalid") {
+    const candidate = message as Partial<SessionInvalidMessage>;
+    if (typeof candidate.attemptedToken !== "string") return;
+    const removed = removeStorageValueIfCurrent(
+      localStorage,
+      REFRESH_TOKEN_KEY,
+      candidate.attemptedToken,
+    );
+    if (
+      removed ||
+      (localStorage.getItem(REFRESH_TOKEN_KEY) === null &&
+        accessTokenRefreshToken === candidate.attemptedToken)
+    ) {
+      accessToken = null;
+      accessTokenRefreshToken = null;
+      notifySessionExpired();
+    }
+  }
+});
+
+window.addEventListener("storage", (event) => {
+  if (
+    event.key === REFRESH_TOKEN_KEY &&
+    event.newValue === null &&
+    event.oldValue !== null &&
+    event.oldValue === accessTokenRefreshToken
+  ) {
+    accessToken = null;
+    accessTokenRefreshToken = null;
+    notifySessionExpired();
+  }
+});
+
+function requireRefreshSuccess(result: RefreshResult): void {
+  if (result.kind === "success") return;
+  if (result.kind === "invalid") {
+    accessToken = null;
+    accessTokenRefreshToken = null;
+    notifySessionExpired();
+    throw new ApiError(401, "session_expired", { cause: result.code });
+  }
+  throw new ApiError(result.status, result.code, result.body);
+}
+
+async function responseError(
+  response: Response,
+): Promise<{ code: string | null; body: unknown }> {
+  let body: unknown = null;
+  try {
+    body = await response.clone().json();
+  } catch {
+    // Keep an unparseable error response available to the normal caller.
+  }
+  return { code: extractErrorCode(body), body };
+}
+
+function expireAccessSession(expectedRefreshToken: string | null): boolean {
+  if (expectedRefreshToken === null) {
+    if (hasStoredSession()) return false;
+  } else if (
+    !removeStorageValueIfCurrent(
+      localStorage,
+      REFRESH_TOKEN_KEY,
+      expectedRefreshToken,
+    )
+  ) {
     return false;
   }
-  if (!res.ok) {
-    clearSession();
-    return false;
+  accessToken = null;
+  accessTokenRefreshToken = null;
+  if (expectedRefreshToken !== null) {
+    refreshCoordinator.publish({
+      type: "session-invalid",
+      attemptedToken: expectedRefreshToken,
+    } satisfies SessionInvalidMessage);
   }
-  setTokenPair(TokenPairResponse.parse(await res.json()));
+  notifySessionExpired();
   return true;
 }
 
@@ -106,45 +347,62 @@ async function rawRequest(
   options: RequestOptions,
 ): Promise<Response> {
   const auth = options.auth ?? true;
-  const exec = (): Promise<Response> => {
+  const exec = async (): Promise<{
+    response: Response;
+    accessTokenUsed: string | null;
+    refreshTokenUsed: string | null;
+  }> => {
+    const accessTokenUsed = auth ? accessToken : null;
+    const refreshTokenUsed = auth ? accessTokenRefreshToken : null;
     const headers: Record<string, string> = {};
-    if (options.body !== undefined) headers["Content-Type"] = "application/json";
-    if (auth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
-    return fetch(`${API_BASE}${path}`, {
+    if (options.body !== undefined)
+      headers["Content-Type"] = "application/json";
+    if (accessTokenUsed) headers.Authorization = `Bearer ${accessTokenUsed}`;
+    const response = await fetch(`${API_BASE}${path}`, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
+    return { response, accessTokenUsed, refreshTokenUsed };
   };
 
   // 页面刷新后 access token 仅存内存已丢失:先用 refresh token 恢复
   if (auth && !accessToken && hasStoredSession()) {
-    await refreshSession();
+    requireRefreshSuccess(await refreshSession(null));
   }
 
-  let res: Response;
+  let executed: Awaited<ReturnType<typeof exec>>;
   try {
-    res = await exec();
+    executed = await exec();
   } catch {
     throw new ApiError(0, "network");
   }
 
-  if (res.status === 401 && auth) {
-    const refreshed = await refreshSession();
-    if (refreshed) {
-      try {
-        res = await exec();
-      } catch {
-        throw new ApiError(0, "network");
+  if (executed.response.status === 401 && auth) {
+    requireRefreshSuccess(await refreshSession(executed.accessTokenUsed));
+    try {
+      executed = await exec();
+    } catch {
+      throw new ApiError(0, "network");
+    }
+
+    if (executed.response.status === 401) {
+      const error = await responseError(executed.response);
+      if (
+        error.code === "invalid_access_token" ||
+        error.code === "missing_access_token"
+      ) {
+        if (expireAccessSession(executed.refreshTokenUsed)) {
+          throw new ApiError(401, "session_expired", error.body);
+        }
+        // The request used an older access/refresh pair and another tab has
+        // already advanced storage. Preserve the winner and retry later.
+        throw new ApiError(409, "refresh_rotation_race", error.body);
       }
     }
-    if (res.status === 401) {
-      clearSession();
-      sessionExpiredHandler?.();
-      throw new ApiError(401, "session_expired");
-    }
   }
-  return res;
+  return executed.response;
 }
 
 async function ensureOk(res: Response): Promise<void> {

@@ -8,6 +8,7 @@ const KNOWN_CODES = new Set([
   "email_taken",
   "oauth_email_conflict",
   "rate_limited",
+  "refresh_rotation_race",
   "validation_failed",
   "device_not_found",
   "snapshot_not_found",

@@ -25,8 +25,10 @@ setLocale(i18n.global.locale.value as "zh-CN" | "en");
 
 // refresh 失效(会话过期/被踢下线)→ 清理并跳登录
 setSessionExpiredHandler(() => {
-  useAuthStore(pinia).resetLocal();
-  void router.push({ name: "login" });
+  useAuthStore(pinia).markSessionExpired();
+  if (router.currentRoute.value.name !== "login") {
+    void router.replace({ name: "login" });
+  }
 });
 
 app.mount("#app");

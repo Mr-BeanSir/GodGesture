@@ -1,7 +1,11 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { TokenService, sha256Hex } from './token.service';
+import {
+  REFRESH_ROTATION_RACE_GRACE_MS,
+  TokenService,
+  sha256Hex,
+} from './token.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Env } from '../config/env';
 import { Prisma } from '@prisma/client';
@@ -9,11 +13,16 @@ import { Prisma } from '@prisma/client';
 describe('TokenService(刷新令牌轮换)', () => {
   const now = Date.now();
   let prisma: {
+    $transaction: jest.Mock;
     refreshToken: {
       create: jest.Mock;
       findUnique: jest.Mock;
       updateMany: jest.Mock;
     };
+    device: { update: jest.Mock };
+  };
+  let tx: {
+    refreshToken: { create: jest.Mock; updateMany: jest.Mock };
     device: { update: jest.Mock };
   };
   let service: TokenService;
@@ -35,7 +44,15 @@ describe('TokenService(刷新令牌轮换)', () => {
   });
 
   beforeEach(() => {
+    tx = {
+      refreshToken: {
+        create: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      device: { update: jest.fn().mockResolvedValue({}) },
+    };
     prisma = {
+      $transaction: jest.fn((operation) => operation(tx)),
       refreshToken: {
         create: jest.fn().mockResolvedValue({}),
         findUnique: jest.fn(),
@@ -71,13 +88,20 @@ describe('TokenService(刷新令牌轮换)', () => {
     const pair = await service.rotateRefreshToken(raw);
 
     // 旧令牌被原子作废
-    expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { id: 'rt-1', revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    expect(tx.device.update).toHaveBeenCalledWith({
+      where: { id: 'dev-1' },
+      data: { lastSeenAt: expect.any(Date) },
+    });
     // 新刷新令牌与旧的不同
     expect(sha256Hex(pair.refreshToken)).not.toBe(sha256Hex(raw));
-    expect(prisma.refreshToken.create).toHaveBeenCalled();
+    expect(tx.refreshToken.create).toHaveBeenCalled();
+    expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     const payload = jwt.verify<{ sub: string }>(pair.accessToken);
     expect(payload.sub).toBe('user-1');
   });
@@ -94,7 +118,7 @@ describe('TokenService(刷新令牌轮换)', () => {
     const raw = 'reused-token';
     prisma.refreshToken.findUnique.mockResolvedValue({
       ...activeRecord(raw),
-      revokedAt: new Date(now - 500),
+      revokedAt: new Date(now - REFRESH_ROTATION_RACE_GRACE_MS - 1_000),
     });
 
     await expect(service.rotateRefreshToken(raw)).rejects.toThrow(
@@ -120,23 +144,64 @@ describe('TokenService(刷新令牌轮换)', () => {
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
 
-  it('并发轮换竞争(updateMany 命中 0 行)→ 401 并撤销设备令牌', async () => {
+  it('并发轮换竞争(CAS loser)→ 409 race 且不撤销设备 token family', async () => {
     const raw = 'race-token';
-    prisma.refreshToken.findUnique.mockResolvedValue(activeRecord(raw));
-    prisma.refreshToken.updateMany
-      .mockResolvedValueOnce({ count: 0 }) // 作废旧令牌失败(已被并发轮换抢先)
-      .mockResolvedValue({ count: 1 }); // 随后的整设备撤销
+    prisma.refreshToken.findUnique
+      .mockResolvedValueOnce(activeRecord(raw))
+      .mockResolvedValueOnce({
+        deviceId: 'dev-1',
+        revokedAt: new Date(),
+      });
+    tx.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.rotateRefreshToken(raw)).rejects.toThrow(
-      UnauthorizedException,
-    );
-    expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    const error = await service
+      .rotateRefreshToken(raw)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toEqual({
+      error: 'refresh_rotation_race',
+    });
+    expect(prisma.refreshToken.findUnique).toHaveBeenNthCalledWith(2, {
+      where: { id: 'rt-1' },
+      select: { deviceId: true, revokedAt: true },
+    });
+    expect(tx.device.update).not.toHaveBeenCalled();
+    expect(tx.refreshToken.create).not.toHaveBeenCalled();
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('CAS loser 重读到 grace 外作废时间 → 401 replay 并撤销 token family', async () => {
+    const raw = 'stale-race-token';
+    prisma.refreshToken.findUnique
+      .mockResolvedValueOnce(activeRecord(raw))
+      .mockResolvedValueOnce({
+        deviceId: 'dev-1',
+        revokedAt: new Date(
+          Date.now() - REFRESH_ROTATION_RACE_GRACE_MS - 1_000,
+        ),
+      });
+    tx.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+    const error = await service
+      .rotateRefreshToken(raw)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toEqual({
+      error: 'refresh_token_reused',
+    });
+    expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: { deviceId: 'dev-1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(tx.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it('轮换期间设备被删除导致 P2025 → 401 invalid_refresh_token', async () => {
     const raw = 'deleted-device-token';
     prisma.refreshToken.findUnique.mockResolvedValue(activeRecord(raw));
-    prisma.device.update.mockRejectedValue(
+    tx.device.update.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('record not found', {
         code: 'P2025',
         clientVersion: '6.19.3',
@@ -152,6 +217,23 @@ describe('TokenService(刷新令牌轮换)', () => {
     expect((error as UnauthorizedException).getResponse()).toEqual({
       error: 'invalid_refresh_token',
     });
+    expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    expect(tx.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('successor 创建失败时整个 rotation transaction 失败,不走独立写入', async () => {
+    const raw = 'successor-create-fails';
+    const databaseError = new Error('database unavailable');
+    prisma.refreshToken.findUnique.mockResolvedValue(activeRecord(raw));
+    tx.refreshToken.create.mockRejectedValue(databaseError);
+
+    await expect(service.rotateRefreshToken(raw)).rejects.toBe(databaseError);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.device.update).toHaveBeenCalledTimes(1);
+    expect(tx.refreshToken.create).toHaveBeenCalledTimes(1);
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import {
   OAuthExchangeRequest,
   OAuthProvidersResponse,
   RateLimitedResponse,
+  RefreshRotationRaceResponse,
   RenameDeviceRequest,
 } from "../protocol.js";
 
@@ -104,6 +105,17 @@ describe("OAuth discovery and callback contract", () => {
       "oauth_access_denied",
     );
     expect(() => OAuthCallbackErrorCode.parse("provider_raw_error")).toThrow();
+  });
+});
+
+describe("RefreshRotationRaceResponse", () => {
+  it("accepts only the retryable concurrent rotation code", () => {
+    expect(
+      RefreshRotationRaceResponse.parse({ error: "refresh_rotation_race" }),
+    ).toEqual({ error: "refresh_rotation_race" });
+    expect(() =>
+      RefreshRotationRaceResponse.parse({ error: "refresh_token_reused" }),
+    ).toThrow();
   });
 });
 

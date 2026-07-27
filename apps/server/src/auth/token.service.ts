@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import type { Prisma } from '@prisma/client';
 import type { TokenPairResponse } from '@godgesture/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Env } from '../config/env';
@@ -10,6 +15,11 @@ import { isPrismaError } from '../common/prisma-exception.filter';
 export function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
+
+/** 合法并发轮换只在此极短窗口内降级为可重试冲突,窗口外仍按重放处理。 */
+export const REFRESH_ROTATION_RACE_GRACE_MS = 5_000;
+
+type RefreshTokenClient = Pick<Prisma.TransactionClient, 'refreshToken'>;
 
 /**
  * 双令牌:JWT 访问令牌(15 分钟,payload {sub, dev})+
@@ -38,12 +48,20 @@ export class TokenService {
     userId: string,
     deviceId: string,
   ): Promise<TokenPairResponse> {
+    return this.issueTokenPairWith(this.prisma, userId, deviceId);
+  }
+
+  private async issueTokenPairWith(
+    client: RefreshTokenClient,
+    userId: string,
+    deviceId: string,
+  ): Promise<TokenPairResponse> {
     const accessToken = await this.jwt.signAsync(
       { sub: userId, dev: deviceId },
       { expiresIn: this.accessTtlSec },
     );
     const refreshToken = randomBytes(32).toString('base64url');
-    await this.prisma.refreshToken.create({
+    await client.refreshToken.create({
       data: {
         deviceId,
         tokenHash: sha256Hex(refreshToken),
@@ -70,33 +88,62 @@ export class TokenService {
       throw new UnauthorizedException({ error: 'invalid_refresh_token' });
     }
     if (record.revokedAt) {
-      await this.revokeDeviceTokens(record.deviceId);
-      throw new UnauthorizedException({ error: 'refresh_token_reused' });
+      return this.handleReplay(record.deviceId, record.revokedAt);
     }
     if (record.expiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException({ error: 'refresh_token_expired' });
     }
-    // 原子作废旧令牌;并发轮换只允许一个成功
-    const revoked = await this.prisma.refreshToken.updateMany({
-      where: { id: record.id, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    if (revoked.count === 0) {
-      await this.revokeDeviceTokens(record.deviceId);
-      throw new UnauthorizedException({ error: 'refresh_token_reused' });
-    }
     try {
-      await this.prisma.device.update({
-        where: { id: record.deviceId },
-        data: { lastSeenAt: new Date() },
+      const pair = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        // PostgreSQL READ COMMITTED 下,与 winner 冲突时本语句会等待其提交,
+        // 随后返回 count=0。后续重读必须在该事务结束后从基础 client 执行。
+        const revoked = await tx.refreshToken.updateMany({
+          where: { id: record.id, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        if (revoked.count === 0) return null;
+
+        await tx.device.update({
+          where: { id: record.deviceId },
+          data: { lastSeenAt: now },
+        });
+        return this.issueTokenPairWith(
+          tx,
+          record.device.userId,
+          record.deviceId,
+        );
       });
+      if (pair) return pair;
     } catch (error) {
-      if (isPrismaError(error, 'P2025')) {
+      if (isPrismaError(error, 'P2025') || isPrismaError(error, 'P2003')) {
         throw new UnauthorizedException({ error: 'invalid_refresh_token' });
       }
       throw error;
     }
-    return this.issueTokenPair(record.device.userId, record.deviceId);
+
+    // CAS loser:winner 的提交现已对基础 client 可见。只把刚发生的作废
+    // 视为合法并发；旧重放仍撤销整个 device token family。
+    const current = await this.prisma.refreshToken.findUnique({
+      where: { id: record.id },
+      select: { deviceId: true, revokedAt: true },
+    });
+    if (!current?.revokedAt) {
+      throw new UnauthorizedException({ error: 'invalid_refresh_token' });
+    }
+    return this.handleReplay(current.deviceId, current.revokedAt);
+  }
+
+  private async handleReplay(
+    deviceId: string,
+    revokedAt: Date,
+  ): Promise<never> {
+    const ageMs = Date.now() - revokedAt.getTime();
+    if (ageMs >= 0 && ageMs <= REFRESH_ROTATION_RACE_GRACE_MS) {
+      throw new ConflictException({ error: 'refresh_rotation_race' });
+    }
+    await this.revokeDeviceTokens(deviceId);
+    throw new UnauthorizedException({ error: 'refresh_token_reused' });
   }
 
   /** 按设备撤销(登出 / Web 控制台踢下线) */

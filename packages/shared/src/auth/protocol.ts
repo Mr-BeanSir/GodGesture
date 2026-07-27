@@ -58,6 +58,14 @@ export const RefreshRequest = z.object({
 });
 export type RefreshRequest = z.infer<typeof RefreshRequest>;
 
+/** 合法并发 refresh rotation 的 loser 可安全重试，不得清理会话。 */
+export const RefreshRotationRaceResponse = z.object({
+  error: z.literal("refresh_rotation_race"),
+});
+export type RefreshRotationRaceResponse = z.infer<
+  typeof RefreshRotationRaceResponse
+>;
+
 export const DeviceInfo = z.object({
   id: z.string().uuid(),
   name: z.string(),

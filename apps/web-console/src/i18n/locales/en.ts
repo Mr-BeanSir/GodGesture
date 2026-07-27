@@ -203,6 +203,8 @@ export default {
     oauth_email_conflict:
       "This email has a password account. Sign in with email and password.",
     rate_limited: "Too many requests. Please try again later.",
+    refresh_rotation_race:
+      "Another tab is updating the session. Please try again shortly.",
     validation_failed: "Invalid input",
     device_not_found: "Device not found or already removed",
     snapshot_not_found: "Snapshot not found",

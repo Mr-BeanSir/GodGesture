@@ -7,7 +7,7 @@ import { clearSession, hasStoredSession } from "../api/client";
 export const useAuthStore = defineStore("auth", () => {
   const user = ref<MeResponse | null>(null);
 
-  /** 路由守卫用:有会话则拉取账户信息(懒加载,失败视为未登录) */
+  /** 路由守卫用:仅明确会话失效时视为未登录;瞬时错误保留会话。 */
   async function ensureUser(): Promise<boolean> {
     if (user.value) return true;
     if (!hasStoredSession()) return false;
@@ -15,7 +15,7 @@ export const useAuthStore = defineStore("auth", () => {
       user.value = await fetchMe();
       return true;
     } catch {
-      return false;
+      return hasStoredSession();
     }
   }
 
@@ -34,5 +34,17 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = null;
   }
 
-  return { user, ensureUser, refreshUser, logout, resetLocal };
+  /** client 已用 compare-and-remove 清理失效 token;这里不再二次动 storage。 */
+  function markSessionExpired(): void {
+    user.value = null;
+  }
+
+  return {
+    user,
+    ensureUser,
+    refreshUser,
+    logout,
+    resetLocal,
+    markSessionExpired,
+  };
 });
