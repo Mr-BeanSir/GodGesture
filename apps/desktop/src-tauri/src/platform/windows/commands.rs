@@ -16,6 +16,7 @@ use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
     VK_MENU, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
@@ -40,8 +41,14 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
         }
 
         Command::HotKey { modifiers, keys } => {
-            activate_target(ctx);
-            let _ = input::synthesize_key_combo(modifiers, keys);
+            if is_lock_workstation_hotkey(modifiers, keys) {
+                if let Err(error) = unsafe { LockWorkStation() } {
+                    log::error!("LockWorkStation 失败: {error}");
+                }
+            } else {
+                activate_target(ctx);
+                let _ = input::synthesize_key_combo(modifiers, keys);
+            }
         }
         Command::SendText { text } => {
             activate_target(ctx);
@@ -67,6 +74,13 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             auto_set_working_dir,
         } => run_cmd(code, *show_window, *auto_set_working_dir, ctx),
     }
+}
+
+fn is_lock_workstation_hotkey(modifiers: &[String], keys: &[String]) -> bool {
+    modifiers.len() == 1
+        && keys.len() == 1
+        && modifiers[0].eq_ignore_ascii_case("meta")
+        && keys[0].eq_ignore_ascii_case("l")
 }
 
 fn task_switcher_key_input(
@@ -769,5 +783,20 @@ mod tests {
     fn cmd_normalization_handles_mixed_newlines_and_empty_scripts() {
         assert_eq!(normalize_cmd_code("echo one\recho two\n\r\necho three"), "echo one & echo two & echo three");
         assert_eq!(normalize_cmd_code(" \r\n:: note\nrem\tcomment"), "");
+    }
+
+    #[test]
+    fn only_exact_meta_l_uses_the_lock_workstation_api() {
+        assert!(is_lock_workstation_hotkey(&["meta".into()], &["l".into()]));
+        assert!(is_lock_workstation_hotkey(&["META".into()], &["L".into()]));
+        assert!(!is_lock_workstation_hotkey(
+            &["ctrl".into(), "meta".into()],
+            &["l".into()]
+        ));
+        assert!(!is_lock_workstation_hotkey(
+            &["meta".into()],
+            &["l".into(), "x".into()]
+        ));
+        assert!(!is_lock_workstation_hotkey(&["win".into()], &["l".into()]));
     }
 }
