@@ -59,7 +59,7 @@ pub enum Action {
     /// 路径生长(渲染与识别都从这里喂)
     PathGrow(Point),
     /// 修饰触发
-    ModifierFired(Modifier),
+    ModifierFired { modifier: Modifier, pos: Point },
     /// 正常结束:交由引擎按识别结果执行/取消
     PathEnd { pos: Point },
     /// 停留超时取消(轨迹应立即消失,后续抬起会被吞)
@@ -284,7 +284,10 @@ impl PathTracker {
                 *modifier_used = true;
                 *last_activity = now;
                 held_modifier_buttons.push(btn);
-                Outcome::swallowed(vec![Action::ModifierFired(btn.as_modifier())])
+                Outcome::swallowed(vec![Action::ModifierFired {
+                    modifier: btn.as_modifier(),
+                    pos,
+                }])
             }
             // 待定期按下其它键:直接放弃捕获,透传(与"这不是手势"一致)
             State::Pending { button, origin, .. } => {
@@ -391,7 +394,7 @@ impl PathTracker {
         }
     }
 
-    fn on_wheel(&mut self, forward: bool, _pos: Point, now: Instant) -> Outcome {
+    fn on_wheel(&mut self, forward: bool, pos: Point, now: Instant) -> Outcome {
         match &mut self.state {
             State::Tracking {
                 modifier_used,
@@ -410,7 +413,7 @@ impl PathTracker {
                 } else {
                     Modifier::WheelBackward
                 };
-                Outcome::swallowed(vec![Action::ModifierFired(m)])
+                Outcome::swallowed(vec![Action::ModifierFired { modifier: m, pos }])
             }
             // 手势刚结束的滚轮吞掉,防止目标程序收到意外的 Ctrl+滚轮等
             State::Idle
@@ -605,7 +608,13 @@ mod tests {
         t.handle(Input::Move(pt(30, 0)), t0, &mut h);
 
         let o = t.handle(Input::Wheel { forward: true, pos: pt(30, 0) }, t0, &mut h);
-        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::WheelForward)]);
+        assert_eq!(
+            o.actions,
+            vec![Action::ModifierFired {
+                modifier: Modifier::WheelForward,
+                pos: pt(30, 0),
+            }]
+        );
         // 100ms 内的第二次被节流(但仍吞)
         let o = t.handle(
             Input::Wheel { forward: true, pos: pt(30, 0) },
@@ -619,7 +628,13 @@ mod tests {
             t0 + Duration::from_millis(200),
             &mut h,
         );
-        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::WheelBackward)]);
+        assert_eq!(
+            o.actions,
+            vec![Action::ModifierFired {
+                modifier: Modifier::WheelBackward,
+                pos: pt(30, 0),
+            }]
+        );
     }
 
     #[test]
@@ -629,7 +644,13 @@ mod tests {
         t.handle(Input::Move(pt(30, 0)), t0, &mut h);
 
         let o = t.handle(Input::ButtonDown(MouseButton::Left, pt(30, 0)), t0, &mut h);
-        assert_eq!(o.actions, vec![Action::ModifierFired(Modifier::LeftButtonDown)]);
+        assert_eq!(
+            o.actions,
+            vec![Action::ModifierFired {
+                modifier: Modifier::LeftButtonDown,
+                pos: pt(30, 0),
+            }]
+        );
         let o = t.handle(Input::ButtonUp(MouseButton::Left, pt(30, 0)), t0, &mut h);
         assert!(o.swallow && o.actions.is_empty());
 

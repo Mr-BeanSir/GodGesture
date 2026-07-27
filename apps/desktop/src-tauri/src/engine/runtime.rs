@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 pub struct GestureContext {
     /// 手势起点(屏幕物理像素)
     pub origin: Point,
+    /// 命令触发点/手势终点(屏幕物理像素)
+    pub endpoint: Point,
     /// 目标窗口的不透明原生句柄(Windows = HWND as i64;0 表示无)
     pub native_window: i64,
 }
@@ -409,7 +411,7 @@ impl EngineShared {
                         }
                     }
                 }
-                Action::ModifierFired(m) => {
+                Action::ModifierFired { modifier: m, pos } => {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         s.active_modifier = m;
@@ -427,6 +429,7 @@ impl EngineShared {
                         }
                         let context = GestureContext {
                             origin: s.origin,
+                            endpoint: pos,
                             native_window: s.fg.native_window,
                         };
                         let _ = self.tx.send(EngineMsg::ModifierFired {
@@ -436,7 +439,7 @@ impl EngineShared {
                         });
                     }
                 }
-                Action::PathEnd { pos: _ } => {
+                Action::PathEnd { pos } => {
                     let session = self.session.lock().take();
                     if let Some(s) = session {
                         // 录制模式:只上报捕获到的手势,不查找/不执行命令。
@@ -451,6 +454,7 @@ impl EngineShared {
                         }
                         let context = GestureContext {
                             origin: s.origin,
+                            endpoint: pos,
                             native_window: s.fg.native_window,
                         };
                         let intent = if s.executed_on_modifier {

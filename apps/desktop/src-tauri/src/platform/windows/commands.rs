@@ -15,11 +15,14 @@ use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
     VK_MENU, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{
+    ShellExecuteW, FOLDERID_Desktop, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos,
     ShowWindow,
@@ -410,10 +413,90 @@ fn looks_like_host_port(prefix: &str, remainder: &str) -> bool {
     numeric_port && (prefix.eq_ignore_ascii_case("localhost") || prefix.contains('.'))
 }
 
+fn normalize_cmd_code(code: &str) -> String {
+    code.split(['\r', '\n'])
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || is_cmd_comment(line) {
+                return None;
+            }
+            let comment = line
+                .rfind("::")
+                .filter(|index| *index > 0)
+                .or_else(|| rfind_ascii_case_insensitive(line, " rem ").filter(|index| *index > 0));
+            let command = comment.map_or(line, |index| &line[..index]).trim();
+            (!command.is_empty()).then_some(command)
+        })
+        .collect::<Vec<_>>()
+        .join(" & ")
+}
+
+fn is_cmd_comment(line: &str) -> bool {
+    if line.starts_with("::") {
+        return true;
+    }
+    let mut words = line.splitn(2, char::is_whitespace);
+    words
+        .next()
+        .is_some_and(|word| word.eq_ignore_ascii_case("rem"))
+}
+
+fn rfind_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .rposition(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+fn desktop_directory() -> Option<std::path::PathBuf> {
+    let known = unsafe { SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None) }
+        .ok()
+        .and_then(|path| {
+            let result = unsafe { path.to_string() }.ok().map(std::path::PathBuf::from);
+            unsafe { CoTaskMemFree(Some(path.0.cast())) };
+            result
+        })
+        .filter(|path| path.is_dir());
+    known.or_else(|| {
+        std::env::var_os("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .map(|profile| profile.join("Desktop"))
+            .filter(|path| path.is_dir())
+    })
+}
+
+fn cmd_working_directory(
+    auto_set: bool,
+    window_info: Option<&window::WindowAppInfo>,
+) -> Option<std::path::PathBuf> {
+    let desktop = desktop_directory();
+    if !auto_set {
+        return desktop;
+    }
+    let Some(info) = window_info else {
+        return desktop;
+    };
+    // Explorer 的 exe 目录是 Windows 目录,不是用户当前浏览的文件夹。
+    // 在没有可靠 ShellWindows 查询前明确回退 Desktop。
+    if info.exe_name.eq_ignore_ascii_case("explorer.exe") {
+        return desktop;
+    }
+    std::path::Path::new(&info.exe_path)
+        .parent()
+        .filter(|path| path.is_dir())
+        .map(std::path::Path::to_path_buf)
+        .or(desktop)
+}
+
 fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &GestureContext) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    let code = normalize_cmd_code(code);
+    if code.is_empty() {
+        log::debug!("Cmd 命令规范化后为空,跳过执行");
+        return;
+    }
     activate_target(ctx);
     // 只有脚本真的引用了 WG_SELECTED_TEXT 才去取选中文本。
     // 取选中文本要朝前台窗口合成 Ctrl+C —— 无条件做的话,在控制台
@@ -426,25 +509,37 @@ fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &Gest
     } else {
         String::new()
     };
-    let mut command = std::process::Command::new("cmd");
-    command.arg("/C").arg(code);
+    let command_interpreter = std::env::var_os("COMSPEC")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "cmd.exe".into());
+    let mut command = std::process::Command::new(command_interpreter);
+    command
+        .arg("/D")
+        .arg("/S")
+        .arg(if show_window { "/K" } else { "/C" })
+        .raw_arg(&code);
 
-    // 暴露手势上下文给脚本(对齐 WGestures 的 WG_* 约定)
+    // 保留 GodGesture 既有变量,并补齐 WGestures 的上下文变量。
     command.env("WG_MOUSE_X", ctx.origin.x.to_string());
     command.env("WG_MOUSE_Y", ctx.origin.y.to_string());
+    command.env("WG_STARTPOINT_X", ctx.origin.x.to_string());
+    command.env("WG_STARTPOINT_Y", ctx.origin.y.to_string());
+    command.env("WG_ENDPOINT_X", ctx.endpoint.x.to_string());
+    command.env("WG_ENDPOINT_Y", ctx.endpoint.y.to_string());
     command.env("WG_SELECTED_TEXT", selected_text);
-    if let Some(hwnd) = hwnd_of(ctx) {
+    let info = hwnd_of(ctx).and_then(window::window_info);
+    if hwnd_of(ctx).is_some() {
+        command.env("WG_WINID", ctx.native_window.to_string());
         command.env("WG_WINDOW_HWND", ctx.native_window.to_string());
-        if let Some(info) = window::window_info(hwnd) {
+        if let Some(info) = &info {
+            command.env("WG_PROCID", info.pid.to_string());
             command.env("WG_ACTIVE_EXE", &info.exe_name);
             command.env("WG_ACTIVE_EXE_PATH", &info.exe_path);
             command.env("WG_WINDOW_TITLE", &info.title);
-            if auto_set_working_dir {
-                if let Some(dir) = std::path::Path::new(&info.exe_path).parent() {
-                    command.current_dir(dir);
-                }
-            }
         }
+    }
+    if let Some(directory) = cmd_working_directory(auto_set_working_dir, info.as_ref()) {
+        command.current_dir(directory);
     }
     if !show_window {
         command.creation_flags(CREATE_NO_WINDOW);
@@ -636,5 +731,27 @@ mod tests {
         let quoted = format!("  \"{current_exe}\"  ");
         assert_eq!(existing_browser_path(&quoted), Some(current_exe.as_ref()));
         assert_eq!(existing_browser_path("missing-browser.exe"), None);
+    }
+
+    #[test]
+    fn cmd_normalization_removes_comments_and_preserves_shell_syntax() {
+        let code = concat!(
+            ":: description\r\n",
+            "  echo \"a b\" | findstr \"a\"  \r\n",
+            "REM full comment\n",
+            "echo second :: inline comment\n",
+            "echo third ReM trailing note\n",
+            "\n"
+        );
+        assert_eq!(
+            normalize_cmd_code(code),
+            "echo \"a b\" | findstr \"a\" & echo second & echo third"
+        );
+    }
+
+    #[test]
+    fn cmd_normalization_handles_mixed_newlines_and_empty_scripts() {
+        assert_eq!(normalize_cmd_code("echo one\recho two\n\r\necho three"), "echo one & echo two & echo three");
+        assert_eq!(normalize_cmd_code(" \r\n:: note\nrem\tcomment"), "");
     }
 }

@@ -223,6 +223,7 @@ fn spawn_engine_consumer(
                         let fg = platform::windows::window::resolve_foreground_app(origin, false);
                         let context = engine::runtime::GestureContext {
                             origin,
+                            endpoint: origin,
                             native_window: fg.native_window,
                         };
                         execute_intent(
