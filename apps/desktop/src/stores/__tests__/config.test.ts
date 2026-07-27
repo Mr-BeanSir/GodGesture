@@ -71,6 +71,13 @@ function makeBackend() {
     captureCancel: vi.fn(async () => undefined),
     onGestureCaptured: vi.fn(async () => () => undefined),
     pickWindow: vi.fn(async () => null),
+    resolveAppFile: vi.fn(async () => ({
+      exeName: "test.exe",
+      exePath: "C:\\Test\\test.exe",
+      appName: "Test",
+      aumid: null,
+    })),
+    onAppFileDrop: vi.fn(async () => () => undefined),
     appIcon: vi.fn(async () => null),
     openExternal: vi.fn(async () => undefined),
     getAppVersion: vi.fn(async () => "test"),

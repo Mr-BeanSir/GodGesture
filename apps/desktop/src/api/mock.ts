@@ -205,6 +205,23 @@ export function createMockBackend(): Backend {
       await new Promise((r) => setTimeout(r, 400));
       return samples[Math.floor(Math.random() * samples.length)];
     },
+    async resolveAppFile(path) {
+      const normalized = path.replace(/\//g, "\\");
+      const sourceName = normalized.split("\\").pop() || "application.exe";
+      const stem = sourceName.replace(/\.(exe|lnk)$/i, "");
+      const exeName = sourceName.toLowerCase().endsWith(".lnk")
+        ? `${stem.toLowerCase()}.exe`
+        : sourceName.toLowerCase();
+      return {
+        exeName,
+        exePath: normalized,
+        appName: stem,
+        aumid: null,
+      };
+    },
+    async onAppFileDrop() {
+      return () => undefined;
+    },
     async appIcon() {
       return null;
     },

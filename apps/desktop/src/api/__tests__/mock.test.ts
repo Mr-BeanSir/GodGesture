@@ -26,3 +26,24 @@ describe("mock backend legacy import", () => {
     expect(await backend.machineGet()).toEqual(beforeMachine);
   });
 });
+
+describe("mock backend application acquisition", () => {
+  it("returns a deterministic executable binding for a dropped path", async () => {
+    const backend = createMockBackend();
+
+    await expect(backend.resolveAppFile("C:/Tools/Example.exe")).resolves.toEqual({
+      exeName: "example.exe",
+      exePath: "C:\\Tools\\Example.exe",
+      appName: "Example",
+      aumid: null,
+    });
+  });
+
+  it("provides a removable no-op drop subscription", async () => {
+    const backend = createMockBackend();
+    const unlisten = await backend.onAppFileDrop(() => undefined);
+
+    expect(unlisten).toBeTypeOf("function");
+    expect(() => unlisten()).not.toThrow();
+  });
+});

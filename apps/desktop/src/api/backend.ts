@@ -14,6 +14,7 @@
  * - capture_start() / capture_cancel()
  *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, mnemonic}
  * - pick_window(): {exeName, exePath, appName, aumid} | null
+ * - resolve_app_file(path): {exeName, exePath, appName, aumid}
  * - app_icon(exeName: string): string | null    // base64 png
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
@@ -33,6 +34,11 @@ export interface PickedWindow {
   exePath: string;
   appName: string;
   aumid: string | null;
+}
+
+export interface AppFileDropEvent {
+  type: "enter" | "over" | "drop" | "leave";
+  paths: string[];
 }
 
 export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
@@ -81,6 +87,8 @@ export interface Backend {
   onGestureCaptured(handler: (gesture: CapturedGesture) => void): Promise<() => void>;
 
   pickWindow(): Promise<PickedWindow | null>;
+  resolveAppFile(path: string): Promise<PickedWindow>;
+  onAppFileDrop(handler: (event: AppFileDropEvent) => void): Promise<() => void>;
   /** base64 png,失败返回 null */
   appIcon(exeName: string): Promise<string | null>;
 
@@ -193,6 +201,24 @@ function createTauriBackend(): Backend {
     async pickWindow() {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<PickedWindow | null>("pick_window");
+    },
+    async resolveAppFile(path) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<PickedWindow>("resolve_app_file", { path });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async onAppFileDrop(handler) {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      return getCurrentWebview().onDragDropEvent((event) => {
+        const payload = event.payload;
+        handler({
+          type: payload.type,
+          paths: "paths" in payload ? payload.paths : [],
+        });
+      });
     },
     async appIcon(exeName) {
       const { invoke } = await import("@tauri-apps/api/core");
