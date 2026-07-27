@@ -199,14 +199,15 @@ export default {
         dockRight: "Dock right",
       },
     },
-    taskSwitcher: { desc: "Open the system task switcher (Windows: Win+Tab / macOS: Mission Control)." },
+    taskSwitcher: { desc: "Open the system task switcher (Windows: Alt+Tab / macOS: Mission Control)." },
     openFile: {
       path: "File or program path",
       pathPlaceholder: "e.g. C:\\Tools\\snip.exe or a document path",
     },
     sendText: {
       text: "Key sequence text",
-      hint: "Sent character by character; supports {'{'}sleep N{'}'} pause markers (ms)",
+      hint:
+        "Supports ^/%/+ modifiers, {'{'}ENTER{'}'}/{'{'}TAB{'}'}/F1-F24 named keys, and {'{'}sleep N{'}'} delays",
     },
     gotoUrl: {
       url: "URL",

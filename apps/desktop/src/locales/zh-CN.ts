@@ -199,14 +199,14 @@ export default {
         dockRight: "贴靠右侧",
       },
     },
-    taskSwitcher: { desc: "打开系统任务切换器(Windows: Win+Tab / macOS: Mission Control)。" },
+    taskSwitcher: { desc: "打开系统任务切换器(Windows: Alt+Tab / macOS: Mission Control)。" },
     openFile: {
       path: "文件或程序路径",
       pathPlaceholder: "例如 C:\\Tools\\snip.exe 或文档路径",
     },
     sendText: {
       text: "按键序列文本",
-      hint: "按字符逐个发送;支持 {'{'}sleep N{'}'} 停顿标记(毫秒)",
+      hint: "支持 ^/%/+ 修饰、{'{'}ENTER{'}'}/{'{'}TAB{'}'}/F1-F24 命名键与 {'{'}sleep N{'}'} 停顿",
     },
     gotoUrl: {
       url: "网址",
