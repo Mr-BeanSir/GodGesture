@@ -13,6 +13,7 @@
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
 use std::cell::RefCell;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::JoinHandle;
 use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
@@ -70,7 +71,10 @@ impl Drop for MouseHook {
 
 fn hook_thread_main(handler: Box<dyn HookHandler>) {
     HANDLER.with(|h| *h.borrow_mut() = Some(handler));
-    HOOK_THREAD_ID.store(unsafe { windows::Win32::System::Threading::GetCurrentThreadId() }, Ordering::SeqCst);
+    HOOK_THREAD_ID.store(
+        unsafe { windows::Win32::System::Threading::GetCurrentThreadId() },
+        Ordering::SeqCst,
+    );
 
     let hook: HHOOK = unsafe {
         match SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) {
@@ -94,6 +98,25 @@ fn hook_thread_main(handler: Box<dyn HookHandler>) {
     HANDLER.with(|h| *h.borrow_mut() = None);
     HOOK_THREAD_ID.store(0, Ordering::SeqCst);
     log::info!("鼠标钩子已卸载");
+}
+
+fn dispatch_input(input: Input) -> bool {
+    HANDLER.with(|slot| {
+        // SendInput can synchronously re-enter this hook. Move the handler out so
+        // a nested callback observes None instead of borrowing the RefCell twice.
+        let Some(mut handler) = slot.borrow_mut().take() else {
+            return false;
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| handler.on_event(input)));
+        *slot.borrow_mut() = Some(handler);
+        match result {
+            Ok(swallow) => swallow,
+            Err(_) => {
+                log::error!("鼠标钩子处理器发生 panic，已放行当前事件");
+                false
+            }
+        }
+    })
 }
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -150,15 +173,88 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
     };
 
     if let Some(input) = input {
-        let swallow = HANDLER.with(|h| {
-            h.borrow_mut()
-                .as_mut()
-                .map(|handler| handler.on_event(input))
-                .unwrap_or(false)
-        });
-        if swallow {
+        if dispatch_input(input) {
             return LRESULT(1);
         }
     }
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    fn point() -> Point {
+        Point { x: 10, y: 20 }
+    }
+
+    fn install_test_handler(handler: impl HookHandler + 'static) {
+        HANDLER.with(|slot| {
+            assert!(slot.borrow().is_none());
+            *slot.borrow_mut() = Some(Box::new(handler));
+        });
+    }
+
+    fn remove_test_handler() {
+        HANDLER.with(|slot| {
+            slot.borrow_mut().take();
+        });
+    }
+
+    struct ReentrantHandler {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl HookHandler for ReentrantHandler {
+        fn on_event(&mut self, _input: Input) -> bool {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            assert!(!dispatch_input(Input::Move(point())));
+            true
+        }
+    }
+
+    #[test]
+    fn reentrant_dispatch_passes_nested_event_and_restores_handler() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        install_test_handler(ReentrantHandler {
+            calls: Arc::clone(&calls),
+        });
+
+        assert!(dispatch_input(Input::Move(point())));
+        assert!(dispatch_input(Input::Move(point())));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+        remove_test_handler();
+    }
+
+    struct PanicOnceHandler {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl HookHandler for PanicOnceHandler {
+        fn on_event(&mut self, _input: Input) -> bool {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                panic!("test panic");
+            }
+            true
+        }
+    }
+
+    #[test]
+    fn panic_is_caught_and_handler_is_restored() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        install_test_handler(PanicOnceHandler {
+            calls: Arc::clone(&calls),
+        });
+
+        assert!(!dispatch_input(Input::Move(point())));
+        assert!(dispatch_input(Input::Move(point())));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+        remove_test_handler();
+    }
 }
