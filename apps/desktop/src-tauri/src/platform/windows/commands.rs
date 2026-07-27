@@ -49,8 +49,11 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             input::tap_with_modifiers(&[VK_MENU], VK_TAB);
         }
         Command::WindowControl { operation } => window_control(*operation, ctx),
-        Command::OpenFile { path } => shell_open(path, None),
-        Command::GotoUrl { url } => shell_open(url, None),
+        Command::OpenFile { path } => open_or_log(path, None),
+        Command::GotoUrl { url } => match normalize_goto_url(url) {
+            Ok(url) => open_or_log(&url, None),
+            Err(error) => log::error!("GotoUrl 命令被拒绝: {error}"),
+        },
         Command::WebSearch {
             engine_url, browser, ..
         } => web_search(engine_url, browser.as_deref(), ctx),
@@ -280,15 +283,131 @@ fn audio_volume(modifier: Modifier, delta: i32) {
     }
 }
 
-/// 取当前选中文本 → URL 编码填入 engine_url 的 `{0}` → 用指定/默认浏览器打开
+#[derive(Debug, PartialEq, Eq)]
+enum WebSearchPlan {
+    NoOp,
+    Open(String),
+}
+
+/// 先规划 WebSearch,确保错误配置或空选择不会触发任何外部进程。
+fn plan_web_search(engine_url: &str, selected_text: &str) -> Result<WebSearchPlan, String> {
+    let query = selected_text.trim();
+    if query.is_empty() {
+        return Ok(WebSearchPlan::NoOp);
+    }
+    if is_absolute_uri(query) {
+        return Ok(WebSearchPlan::Open(query.to_string()));
+    }
+
+    let query: String = query.chars().take(100).collect();
+    let url = engine_url.trim().replace("{0}", &url_encode(&query));
+    if !is_absolute_uri(&url) {
+        return Err("搜索引擎 URL 不是有效的绝对 URI".into());
+    }
+    Ok(WebSearchPlan::Open(url))
+}
+
+/// 取当前选中文本 → 规划 URL → 用指定/默认浏览器打开。
 fn web_search(engine_url: &str, browser: Option<&str>, ctx: &GestureContext) {
     activate_target(ctx);
-    let query = clipboard::get_selected_text().unwrap_or_default();
-    let url = engine_url.replace("{0}", &url_encode(&query));
-    match browser {
-        Some(b) if !b.is_empty() => shell_open(b, Some(&url)),
-        _ => shell_open(&url, None),
+    let query = match clipboard::get_selected_text() {
+        Some(query) => query,
+        None => return,
+    };
+    let url = match plan_web_search(engine_url, &query) {
+        Ok(WebSearchPlan::NoOp) => return,
+        Ok(WebSearchPlan::Open(url)) => url,
+        Err(error) => {
+            log::error!("WebSearch 命令被拒绝: {error}");
+            return;
+        }
+    };
+
+    if let Some(browser) = browser.and_then(existing_browser_path) {
+        let params = format!("\"{url}\"");
+        open_or_log(browser, Some(&params));
+    } else {
+        open_or_log(&url, None);
     }
+}
+
+fn existing_browser_path(browser: &str) -> Option<&str> {
+    let browser = browser.trim();
+    let browser = browser
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(browser)
+        .trim();
+    (!browser.is_empty() && std::path::Path::new(browser).is_file()).then_some(browser)
+}
+
+fn normalize_goto_url(url: &str) -> Result<String, String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("URL 为空".into());
+    }
+    if is_absolute_uri(url) {
+        Ok(url.to_string())
+    } else if has_uri_scheme_syntax(url) {
+        Err("URL scheme 或 authority 无效".into())
+    } else {
+        let normalized = format!("http://{url}");
+        if is_absolute_uri(&normalized) {
+            Ok(normalized)
+        } else {
+            Err("URL 含无效字符".into())
+        }
+    }
+}
+
+fn is_absolute_uri(value: &str) -> bool {
+    if value.is_empty()
+        || value != value.trim()
+        || value.chars().any(|ch| {
+            ch.is_control()
+                || ch.is_whitespace()
+                || matches!(ch, '"' | '<' | '>' | '\\' | '^' | '`' | '{' | '|' | '}')
+        })
+    {
+        return false;
+    }
+    let Some((scheme, remainder)) = value.split_once(':') else {
+        return false;
+    };
+    if !has_uri_scheme_syntax(value) {
+        return false;
+    }
+    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+        let Some(hierarchical) = remainder.strip_prefix("//") else {
+            return false;
+        };
+        return hierarchical
+            .split(['/', '?', '#'])
+            .next()
+            .is_some_and(|authority| !authority.is_empty());
+    }
+    true
+}
+
+fn has_uri_scheme_syntax(value: &str) -> bool {
+    let Some((scheme, remainder)) = value.split_once(':') else {
+        return false;
+    };
+    if remainder.is_empty() {
+        return false;
+    }
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|ch| ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+        && !looks_like_host_port(scheme, remainder)
+}
+
+fn looks_like_host_port(prefix: &str, remainder: &str) -> bool {
+    let numeric_port = remainder
+        .split(['/', '?', '#'])
+        .next()
+        .is_some_and(|port| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()));
+    numeric_port && (prefix.eq_ignore_ascii_case("localhost") || prefix.contains('.'))
 }
 
 fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &GestureContext) {
@@ -335,23 +454,38 @@ fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &Gest
     }
 }
 
-/// ShellExecuteW "open":打开文件/URL/应用;可带参数(浏览器场景)
-fn shell_open(file: &str, params: Option<&str>) {
+fn open_or_log(file: &str, params: Option<&str>) {
+    if let Err(error) = shell_open(file, params) {
+        log::error!("ShellExecuteW 打开 {file:?} 失败: {error}");
+    }
+}
+
+/// ShellExecuteW "open":打开文件/URL/应用;可带参数(浏览器场景)。
+fn shell_open(file: &str, params: Option<&str>) -> Result<(), String> {
+    if file.trim().is_empty() {
+        return Err("目标为空".into());
+    }
     let file_w = HSTRING::from(file);
     let params_w = params.map(HSTRING::from);
     let params_ptr = params_w
         .as_ref()
         .map(|h| PCWSTR(h.as_ptr()))
         .unwrap_or_else(PCWSTR::null);
-    unsafe {
-        let _ = ShellExecuteW(
+    let result = unsafe {
+        ShellExecuteW(
             None,
             w!("open"),
             PCWSTR(file_w.as_ptr()),
             params_ptr,
             PCWSTR::null(),
             SW_SHOWNORMAL,
-        );
+        )
+    };
+    let code = result.0 as isize;
+    if code <= 32 {
+        Err(format!("返回错误码 {code}"))
+    } else {
+        Ok(())
     }
 }
 
@@ -435,5 +569,72 @@ mod tests {
     fn url_encode_utf8_multibyte() {
         // "中" = E4 B8 AD
         assert_eq!(url_encode("中"), "%E4%B8%AD");
+    }
+
+    #[test]
+    fn web_search_trims_and_ignores_empty_selection() {
+        assert_eq!(
+            plan_web_search("https://example.com/?q={0}", " \r\n ").unwrap(),
+            WebSearchPlan::NoOp
+        );
+    }
+
+    #[test]
+    fn web_search_opens_absolute_uri_without_using_the_engine() {
+        assert_eq!(
+            plan_web_search("invalid engine", "  mailto:user@example.com  ").unwrap(),
+            WebSearchPlan::Open("mailto:user@example.com".into())
+        );
+    }
+
+    #[test]
+    fn web_search_limits_query_to_one_hundred_unicode_characters() {
+        let query = format!("{}tail", "中".repeat(100));
+        let WebSearchPlan::Open(url) =
+            plan_web_search("https://example.com/?q={0}", &query).unwrap()
+        else {
+            panic!("expected URL plan");
+        };
+        assert_eq!(url.matches("%E4%B8%AD").count(), 100);
+        assert!(!url.contains("tail"));
+    }
+
+    #[test]
+    fn web_search_rejects_invalid_engine_url() {
+        assert!(plan_web_search("example.com/?q={0}", "query").is_err());
+        assert!(plan_web_search("https://example.com/{other}", "query").is_err());
+    }
+
+    #[test]
+    fn goto_url_trims_and_adds_http_only_without_a_scheme() {
+        assert_eq!(
+            normalize_goto_url("  example.com/path  ").unwrap(),
+            "http://example.com/path"
+        );
+        assert_eq!(
+            normalize_goto_url("localhost:3000/path").unwrap(),
+            "http://localhost:3000/path"
+        );
+        assert_eq!(
+            normalize_goto_url("https://example.com").unwrap(),
+            "https://example.com"
+        );
+        assert_eq!(
+            normalize_goto_url("my-app:open/settings").unwrap(),
+            "my-app:open/settings"
+        );
+        assert!(normalize_goto_url(" \t ").is_err());
+        assert!(normalize_goto_url("bad host/path").is_err());
+        assert!(normalize_goto_url("https://").is_err());
+        assert!(normalize_goto_url("http:example.com").is_err());
+    }
+
+    #[test]
+    fn browser_path_removes_only_outer_quotes_and_must_exist() {
+        let current_exe = std::env::current_exe().unwrap();
+        let current_exe = current_exe.to_string_lossy();
+        let quoted = format!("  \"{current_exe}\"  ");
+        assert_eq!(existing_browser_path(&quoted), Some(current_exe.as_ref()));
+        assert_eq!(existing_browser_path("missing-browser.exe"), None);
     }
 }
