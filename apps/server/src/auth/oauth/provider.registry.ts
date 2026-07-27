@@ -29,18 +29,29 @@ export class OAuthProviderRegistry {
     ]);
   }
 
-  /** 解析并校验提供方:未知 → 404,未启用 → 501 */
-  resolveEnabled(name: string): OAuthProviderPlugin {
+  listEnabled(): OAuthProvider[] {
+    return [...this.providers.values()]
+      .filter((provider) => provider.isEnabled())
+      .map((provider) => provider.name);
+  }
+
+  /** 仅校验 provider 名称与注册关系；callback 用它恢复已建立会话。 */
+  resolveKnown(name: string): OAuthProviderPlugin {
     const parsed = OAuthProvider.safeParse(name);
     if (!parsed.success) {
       throw new NotFoundException({ error: 'unknown_oauth_provider' });
     }
-    const plugin = this.providers.get(parsed.data)!;
+    return this.providers.get(parsed.data)!;
+  }
+
+  /** 解析并校验提供方:未知 → 404,未启用 → 501 */
+  resolveEnabled(name: string): OAuthProviderPlugin {
+    const plugin = this.resolveKnown(name);
     if (!plugin.isEnabled()) {
       throw new NotImplementedException({
         error: 'oauth_provider_disabled',
         message:
-          `OAuth 提供方 "${parsed.data}" 未启用:请在服务端环境变量中配置 ` +
+          `OAuth 提供方 "${plugin.name}" 未启用:请在服务端环境变量中配置 ` +
           `对应的客户端凭证(微信/QQ 另需 OAUTH_*_ENABLED=true),详见 .env.example。`,
       });
     }

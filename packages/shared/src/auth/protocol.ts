@@ -8,6 +8,21 @@ export * from "./pkce.js";
 export const OAuthProvider = z.enum(["github", "google", "wechat", "qq"]);
 export type OAuthProvider = z.infer<typeof OAuthProvider>;
 
+/** GET /auth/oauth/providers:仅暴露服务端当前实际启用的 provider。 */
+export const OAuthProvidersResponse = z.object({
+  providers: z.array(OAuthProvider),
+});
+export type OAuthProvidersResponse = z.infer<typeof OAuthProvidersResponse>;
+
+/** provider callback 安全回跳客户端时允许携带的规范化错误码。 */
+export const OAuthCallbackErrorCode = z.enum([
+  "oauth_access_denied",
+  "oauth_provider_unavailable",
+  "oauth_email_conflict",
+  "oauth_callback_failed",
+]);
+export type OAuthCallbackErrorCode = z.infer<typeof OAuthCallbackErrorCode>;
+
 /** 客户端平台标识 */
 export const DevicePlatform = z.enum(["windows", "macos", "web"]);
 export type DevicePlatform = z.infer<typeof DevicePlatform>;

@@ -127,10 +127,15 @@ describe('OAuthService PKCE and loopback redirect validation', () => {
   let providerState: string;
   let plugin: {
     name: 'github';
+    isEnabled: jest.Mock;
     buildAuthorizeUrl: jest.Mock;
     fetchIdentity: jest.Mock;
   };
-  let registry: { resolveEnabled: jest.Mock };
+  let registry: {
+    resolveEnabled: jest.Mock;
+    resolveKnown: jest.Mock;
+    listEnabled: jest.Mock;
+  };
   let prisma: {
     oAuthAccount: { findUnique: jest.Mock; create: jest.Mock };
     user: { findUnique: jest.Mock; create: jest.Mock };
@@ -143,6 +148,7 @@ describe('OAuthService PKCE and loopback redirect validation', () => {
     providerState = '';
     plugin = {
       name: 'github',
+      isEnabled: jest.fn().mockReturnValue(true),
       buildAuthorizeUrl: jest.fn((_callbackUrl: string, state: string) => {
         providerState = state;
         return `https://github.example/authorize?state=${state}`;
@@ -152,7 +158,11 @@ describe('OAuthService PKCE and loopback redirect validation', () => {
         email: 'user@example.com',
       }),
     };
-    registry = { resolveEnabled: jest.fn().mockReturnValue(plugin) };
+    registry = {
+      resolveEnabled: jest.fn().mockReturnValue(plugin),
+      resolveKnown: jest.fn().mockReturnValue(plugin),
+      listEnabled: jest.fn().mockReturnValue(['github']),
+    };
     prisma = {
       oAuthAccount: {
         findUnique: jest.fn().mockResolvedValue({ userId: 'user-1' }),
@@ -219,6 +229,79 @@ describe('OAuthService PKCE and loopback redirect validation', () => {
       ),
     ).toThrow(BadRequestException);
     expect(plugin.buildAuthorizeUrl).not.toHaveBeenCalled();
+  });
+
+  it('publishes only providers reported enabled by the registry', () => {
+    expect(service.enabledProviders()).toEqual({ providers: ['github'] });
+  });
+
+  it('safely redirects provider denial after consuming trusted state', async () => {
+    begin();
+
+    const target = new URL(
+      await service.handleCallback(
+        'github',
+        undefined,
+        providerState,
+        'access_denied',
+      ),
+    );
+
+    expect(target.origin).toBe('http://127.0.0.1:49152');
+    expect(target.searchParams.get('error')).toBe('oauth_access_denied');
+    expect(target.searchParams.get('state')).toBe('client-state');
+    expect(plugin.fetchIdentity).not.toHaveBeenCalled();
+    await expect(
+      service.handleCallback(
+        'github',
+        undefined,
+        providerState,
+        'access_denied',
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('redirects a missing provider code as a normalized callback failure', async () => {
+    begin();
+
+    const target = new URL(
+      await service.handleCallback('github', undefined, providerState),
+    );
+
+    expect(target.searchParams.get('error')).toBe('oauth_callback_failed');
+    expect(target.searchParams.get('state')).toBe('client-state');
+  });
+
+  it('redirects safely if a provider is disabled after authorize', async () => {
+    begin();
+    plugin.isEnabled.mockReturnValue(false);
+
+    const target = new URL(
+      await service.handleCallback('github', 'provider-code', providerState),
+    );
+
+    expect(target.searchParams.get('error')).toBe(
+      'oauth_provider_unavailable',
+    );
+    expect(plugin.fetchIdentity).not.toHaveBeenCalled();
+  });
+
+  it('normalizes provider token or identity failures without leaking details', async () => {
+    begin();
+    plugin.fetchIdentity.mockRejectedValueOnce(
+      new Error('provider response contained sensitive detail'),
+    );
+    const logger = (
+      service as unknown as { logger: { error: (message: string) => void } }
+    ).logger;
+    jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+    const target = new URL(
+      await service.handleCallback('github', 'provider-code', providerState),
+    );
+
+    expect(target.searchParams.get('error')).toBe('oauth_callback_failed');
+    expect(target.toString()).not.toContain('sensitive');
   });
 
   it('keeps dynamic loopback ports but rejects credentials and fragments', () => {

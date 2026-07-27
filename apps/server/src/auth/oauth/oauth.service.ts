@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
@@ -11,8 +12,10 @@ import {
   OAuthCodeVerifier,
 } from '@godgesture/shared';
 import type {
+  OAuthCallbackErrorCode,
   OAuthExchangeRequest,
   OAuthProvider,
+  OAuthProvidersResponse,
   TokenPairResponse,
 } from '@godgesture/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -47,6 +50,7 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
  */
 @Injectable()
 export class OAuthService {
+  private readonly logger = new Logger(OAuthService.name);
   /** 跳转提供方前登记的会话(键即发给提供方的 state) */
   private readonly pendingStates = new OneTimeStore<PendingAuthorization>(
     STATE_TTL_MS,
@@ -68,6 +72,10 @@ export class OAuthService {
       .get('PUBLIC_BASE_URL', { infer: true })
       .replace(/\/+$/, '');
     return `${base}/api/v1/auth/oauth/${provider}/callback`;
+  }
+
+  enabledProviders(): OAuthProvidersResponse {
+    return { providers: this.registry.listEnabled() };
   }
 
   /** redirect_uri 白名单:仅回环地址(RFC 8252)或已配置的 Web 控制台源 */
@@ -129,30 +137,89 @@ export class OAuthService {
     providerName: string,
     code: string | undefined,
     state: string | undefined,
+    providerError?: string,
   ): Promise<string> {
-    const plugin = this.registry.resolveEnabled(providerName);
-    if (!code || !state) {
-      throw new BadRequestException({ error: 'missing_code_or_state' });
+    const plugin = this.registry.resolveKnown(providerName);
+    // 没有 state 就没有可信 redirect_uri，禁止猜测或回跳固定客户端。
+    if (!state) {
+      throw new BadRequestException({ error: 'invalid_or_expired_state' });
     }
     const pending = this.pendingStates.consume(state);
     if (!pending || pending.provider !== plugin.name) {
       throw new BadRequestException({ error: 'invalid_or_expired_state' });
     }
-    const identity = await plugin.fetchIdentity(
-      code,
-      this.callbackUrl(plugin.name),
-    );
-    const userId = await this.upsertOAuthUser(plugin.name, identity);
-    const authCode = this.authCodes.put({
-      userId,
-      codeChallenge: pending.codeChallenge,
-    });
+    if (providerError) {
+      return this.callbackErrorRedirect(
+        pending,
+        this.normalizeProviderError(providerError),
+      );
+    }
+    if (!code) {
+      return this.callbackErrorRedirect(pending, 'oauth_callback_failed');
+    }
+    if (!plugin.isEnabled()) {
+      return this.callbackErrorRedirect(
+        pending,
+        'oauth_provider_unavailable',
+      );
+    }
+
+    let authCode: string;
+    try {
+      const identity = await plugin.fetchIdentity(
+        code,
+        this.callbackUrl(plugin.name),
+      );
+      const userId = await this.upsertOAuthUser(plugin.name, identity);
+      authCode = this.authCodes.put({
+        userId,
+        codeChallenge: pending.codeChallenge,
+      });
+    } catch (error) {
+      const response =
+        error instanceof ConflictException ? error.getResponse() : null;
+      const isEmailConflict =
+        typeof response === 'object' &&
+        response !== null &&
+        'error' in response &&
+        response.error === 'oauth_email_conflict';
+      if (!isEmailConflict) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Provider 原始响应只写服务端日志，不透传给客户端回跳 URL。
+        this.logger.error(`OAuth callback failed for ${plugin.name}: ${message}`);
+      }
+      return this.callbackErrorRedirect(
+        pending,
+        isEmailConflict ? 'oauth_email_conflict' : 'oauth_callback_failed',
+      );
+    }
+
     const target = new URL(pending.redirectUri);
     target.searchParams.set('code', authCode);
     if (pending.clientState != null) {
       target.searchParams.set('state', pending.clientState);
     }
     return target.toString();
+  }
+
+  private callbackErrorRedirect(
+    pending: PendingAuthorization,
+    error: OAuthCallbackErrorCode,
+  ): string {
+    const target = new URL(pending.redirectUri);
+    target.searchParams.set('error', error);
+    if (pending.clientState != null) {
+      target.searchParams.set('state', pending.clientState);
+    }
+    return target.toString();
+  }
+
+  private normalizeProviderError(error: string): OAuthCallbackErrorCode {
+    if (error === 'access_denied') return 'oauth_access_denied';
+    if (error === 'temporarily_unavailable' || error === 'server_error') {
+      return 'oauth_provider_unavailable';
+    }
+    return 'oauth_callback_failed';
   }
 
   /** POST /auth/oauth/exchange → 令牌对 */

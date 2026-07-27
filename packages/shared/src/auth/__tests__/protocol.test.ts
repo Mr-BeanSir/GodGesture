@@ -4,8 +4,10 @@ import {
   OAuthCodeChallenge,
   OAuthCodeChallengeMethod,
   OAuthCodeVerifier,
+  OAuthCallbackErrorCode,
   OAuthEmailConflictResponse,
   OAuthExchangeRequest,
+  OAuthProvidersResponse,
   RateLimitedResponse,
   RenameDeviceRequest,
 } from "../protocol.js";
@@ -84,6 +86,24 @@ describe("OAuth PKCE contract", () => {
         device: { name: "Browser", platform: "web" },
       }),
     ).toThrow();
+  });
+});
+
+describe("OAuth discovery and callback contract", () => {
+  it("publishes only canonical enabled provider names", () => {
+    expect(
+      OAuthProvidersResponse.parse({ providers: ["github", "google"] }),
+    ).toEqual({ providers: ["github", "google"] });
+    expect(() =>
+      OAuthProvidersResponse.parse({ providers: ["unknown"] }),
+    ).toThrow();
+  });
+
+  it("restricts callback redirects to normalized error codes", () => {
+    expect(OAuthCallbackErrorCode.parse("oauth_access_denied")).toBe(
+      "oauth_access_denied",
+    );
+    expect(() => OAuthCallbackErrorCode.parse("provider_raw_error")).toThrow();
   });
 });
 

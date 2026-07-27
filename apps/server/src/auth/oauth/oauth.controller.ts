@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { OAuthExchangeRequest, TokenPairResponse } from '@godgesture/shared';
+import {
+  OAuthExchangeRequest,
+  OAuthProvidersResponse,
+  TokenPairResponse,
+} from '@godgesture/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { OAuthService } from './oauth.service';
 import { RateLimit } from '../../common/rate-limit.decorator';
@@ -20,6 +24,13 @@ import { RateLimit } from '../../common/rate-limit.decorator';
 @Controller('auth/oauth')
 export class OAuthController {
   constructor(private readonly oauth: OAuthService) {}
+
+  @Get('providers')
+  @RateLimit('oauth-providers', 60, 60 * 1000)
+  @ApiOperation({ summary: '列出当前已配置并启用的 OAuth 提供方' })
+  providers(): OAuthProvidersResponse {
+    return this.oauth.enabledProviders();
+  }
 
   @Get(':provider/authorize')
   @RateLimit('oauth-authorize', 10, 60 * 1000)
@@ -53,9 +64,15 @@ export class OAuthController {
     @Param('provider') provider: string,
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
+    @Query('error') providerError: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    const url = await this.oauth.handleCallback(provider, code, state);
+    const url = await this.oauth.handleCallback(
+      provider,
+      code,
+      state,
+      providerError,
+    );
     res.redirect(HttpStatus.FOUND, url);
   }
 

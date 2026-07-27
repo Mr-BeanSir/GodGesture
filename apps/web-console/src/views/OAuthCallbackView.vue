@@ -2,6 +2,10 @@
 import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import {
+  OAuthCallbackErrorCode,
+  type OAuthCallbackErrorCode as OAuthCallbackErrorCodeValue,
+} from "@godgesture/shared";
 import { exchangeOAuthCode } from "../api/auth";
 import { detectBrowserDeviceName } from "../utils/device";
 import { errorMessageKey } from "../utils/errors";
@@ -13,12 +17,27 @@ const router = useRouter();
 
 const errorKey = ref<string | null>(null);
 
+const callbackErrorKeys: Record<OAuthCallbackErrorCodeValue, string> = {
+  oauth_access_denied: "oauth.accessDenied",
+  oauth_provider_unavailable: "oauth.providerUnavailable",
+  oauth_email_conflict: "error.oauth_email_conflict",
+  oauth_callback_failed: "oauth.callbackFailed",
+};
+
 onMounted(async () => {
   const code = route.query.code;
   const state = route.query.state;
+  const callbackError = route.query.error;
   const pkce = consumeOAuthPkceSession(sessionStorage);
   if (!pkce || state !== pkce.state) {
     errorKey.value = "oauth.stateMismatch";
+    return;
+  }
+  if (typeof callbackError === "string") {
+    const parsed = OAuthCallbackErrorCode.safeParse(callbackError);
+    errorKey.value = parsed.success
+      ? callbackErrorKeys[parsed.data]
+      : "oauth.callbackFailed";
     return;
   }
   if (typeof code !== "string" || code.length === 0) {

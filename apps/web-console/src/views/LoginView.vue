@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type { OAuthProvider } from "@godgesture/shared";
-import { login, registerAccount } from "../api/auth";
+import { fetchOAuthProviders, login, registerAccount } from "../api/auth";
 import { apiUrl } from "../api/client";
 import { detectBrowserDeviceName } from "../utils/device";
 import { errorMessageKey } from "../utils/errors";
@@ -21,8 +21,22 @@ const activeTab = ref<"login" | "register">("login");
 const form = reactive({ email: "", password: "" });
 const submitting = ref(false);
 
-const enabledProviders: OAuthProvider[] = ["github", "google"];
-const comingSoonProviders: OAuthProvider[] = ["wechat", "qq"];
+const enabledProviders = ref<OAuthProvider[]>([]);
+const providersLoading = ref(true);
+const providersUnavailable = ref(false);
+
+async function loadOAuthProviders(): Promise<void> {
+  providersLoading.value = true;
+  providersUnavailable.value = false;
+  try {
+    enabledProviders.value = (await fetchOAuthProviders()).providers;
+  } catch {
+    enabledProviders.value = [];
+    providersUnavailable.value = true;
+  } finally {
+    providersLoading.value = false;
+  }
+}
 
 function redirectTarget(): string {
   const redirect = route.query.redirect;
@@ -70,6 +84,8 @@ async function startOAuth(provider: OAuthProvider): Promise<void> {
     ElMessage.error(t(errorMessageKey(err)));
   }
 }
+
+onMounted(loadOAuthProviders);
 </script>
 
 <template>
@@ -115,7 +131,7 @@ async function startOAuth(provider: OAuthProvider): Promise<void> {
         </el-button>
       </el-form>
       <el-divider>{{ t("auth.oauthDivider") }}</el-divider>
-      <div class="oauth-buttons">
+      <div v-loading="providersLoading" class="oauth-buttons">
         <el-button
           v-for="provider in enabledProviders"
           :key="provider"
@@ -123,15 +139,18 @@ async function startOAuth(provider: OAuthProvider): Promise<void> {
         >
           {{ t(`provider.${provider}`) }}
         </el-button>
-        <el-tooltip
-          v-for="provider in comingSoonProviders"
-          :key="provider"
-          :content="t('auth.oauthComingSoon')"
-        >
-          <el-button disabled>
-            {{ t(`provider.${provider}`) }}
+        <template v-if="!providersLoading && providersUnavailable">
+          <span class="oauth-status">{{ t("auth.oauthUnavailable") }}</span>
+          <el-button text type="primary" @click="loadOAuthProviders">
+            {{ t("common.retry") }}
           </el-button>
-        </el-tooltip>
+        </template>
+        <span
+          v-else-if="!providersLoading && enabledProviders.length === 0"
+          class="oauth-status"
+        >
+          {{ t("auth.oauthNoneAvailable") }}
+        </span>
       </div>
     </el-card>
   </div>
@@ -165,9 +184,15 @@ async function startOAuth(provider: OAuthProvider): Promise<void> {
   justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 32px;
 }
 
 .oauth-buttons .el-button + .el-button {
   margin-left: 0;
+}
+
+.oauth-status {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 </style>

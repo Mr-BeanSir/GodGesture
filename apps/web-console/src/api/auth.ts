@@ -2,6 +2,7 @@ import {
   LoginRequest,
   MeResponse,
   OAuthExchangeRequest,
+  OAuthProvidersResponse,
   RegisterRequest,
   TokenPairResponse,
 } from "@godgesture/shared";
@@ -33,6 +34,12 @@ export async function exchangeOAuthCode(
     auth: false,
   });
   setTokenPair(pair);
+}
+
+export function fetchOAuthProviders(): Promise<OAuthProvidersResponse> {
+  return apiRequest(OAuthProvidersResponse, "/auth/oauth/providers", {
+    auth: false,
+  });
 }
 
 export function fetchMe(): Promise<MeResponse> {
