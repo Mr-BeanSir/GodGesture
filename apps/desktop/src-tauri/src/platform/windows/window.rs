@@ -26,7 +26,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowTextW,
+    GetAncestor, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
 };
 
@@ -120,6 +120,13 @@ pub fn window_info(hwnd: HWND) -> Option<WindowAppInfo> {
 pub fn foreground_window_info() -> Option<WindowAppInfo> {
     let hwnd = unsafe { GetForegroundWindow() };
     window_info(hwnd)
+}
+
+/// Application identity for the root window under the physical cursor.
+pub fn cursor_window_info() -> Option<WindowAppInfo> {
+    let mut point = POINT::default();
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+    window_info(unsafe { WindowFromPoint(point) })
 }
 
 fn query_exe(pid: u32) -> Option<(String, String, Option<String>)> {

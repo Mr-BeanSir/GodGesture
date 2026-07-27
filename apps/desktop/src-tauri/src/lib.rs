@@ -1,3 +1,4 @@
+mod app_acquisition;
 pub mod engine;
 mod legacy_import;
 pub mod platform;
@@ -717,57 +718,26 @@ fn capture_cancel(engine: tauri::State<Arc<EngineShared>>) {
     engine.cancel_recording();
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PickedWindow {
-    exe_name: String,
-    exe_path: String,
-    aumid: Option<String>,
-    app_name: String,
-}
-
-/// 拾取窗口:轮询前台窗口至多 ~3s,取第一个非本进程的窗口。
-/// 轮询是阻塞的,放到 blocking 线程,避免冻结设置窗口。
-#[cfg(windows)]
 #[tauri::command]
-async fn pick_window() -> Option<PickedWindow> {
-    tauri::async_runtime::spawn_blocking(pick_window_blocking)
+async fn pick_window() -> Option<app_acquisition::PickedWindow> {
+    tauri::async_runtime::spawn_blocking(app_acquisition::pick_window)
         .await
         .ok()
         .flatten()
 }
 
-#[cfg(not(windows))]
 #[tauri::command]
-async fn pick_window() -> Option<PickedWindow> {
-    None
-}
-
-#[cfg(windows)]
-fn pick_window_blocking() -> Option<PickedWindow> {
-    let own_pid = std::process::id();
-    for _ in 0..30 {
-        if let Some(info) = platform::windows::window::foreground_window_info() {
-            if info.pid != own_pid {
-                let app_name = if info.title.is_empty() {
-                    info.exe_name
-                        .strip_suffix(".exe")
-                        .unwrap_or(&info.exe_name)
-                        .to_string()
-                } else {
-                    info.title
-                };
-                return Some(PickedWindow {
-                    exe_name: info.exe_name,
-                    exe_path: info.exe_path,
-                    aumid: info.aumid,
-                    app_name,
-                });
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    None
+async fn resolve_app_file(
+    path: String,
+) -> Result<app_acquisition::PickedWindow, app_acquisition::AppAcquisitionError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app_acquisition::resolve_app_file(std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|error| app_acquisition::AppAcquisitionError {
+        code: "app_file_unavailable",
+        message: format!("application file worker failed: {error}"),
+    })?
 }
 
 /// exe 名 → 图标 PNG 的 base64(裸 base64,前端自行拼 data: 前缀);
@@ -1137,6 +1107,7 @@ pub fn run() {
             capture_start,
             capture_cancel,
             pick_window,
+            resolve_app_file,
             app_icon,
         ])
         .on_window_event(|window, event| {
@@ -1181,33 +1152,6 @@ mod tests {
         assert_eq!(json["trigger"], "right");
         assert_eq!(json["strokes"], serde_json::json!(["up", "rightDown"]));
         assert_eq!(json["mnemonic"], "◑↑↘");
-    }
-
-    #[test]
-    fn picked_window_matches_frontend_contract() {
-        let json = serde_json::to_value(PickedWindow {
-            exe_name: "calculatorapp.exe".into(),
-            exe_path: "C:\\Program Files\\WindowsApps\\CalculatorApp.exe".into(),
-            aumid: Some("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into()),
-            app_name: "Calculator".into(),
-        })
-        .unwrap();
-
-        assert_eq!(json["exeName"], "calculatorapp.exe");
-        assert_eq!(
-            json["aumid"],
-            "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
-        );
-        assert!(json.get("exe_name").is_none());
-
-        let without_aumid = serde_json::to_value(PickedWindow {
-            exe_name: "notepad.exe".into(),
-            exe_path: "C:\\Windows\\System32\\notepad.exe".into(),
-            aumid: None,
-            app_name: "Notepad".into(),
-        })
-        .unwrap();
-        assert!(without_aumid["aumid"].is_null());
     }
 
     #[cfg(windows)]
