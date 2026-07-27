@@ -42,8 +42,22 @@ fn button_flags(button: MouseButton, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
             },
             0,
         ),
-        (MouseButton::X1, _) => (if down { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP }, 1),
-        (MouseButton::X2, _) => (if down { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP }, 2),
+        (MouseButton::X1, _) => (
+            if down {
+                MOUSEEVENTF_XDOWN
+            } else {
+                MOUSEEVENTF_XUP
+            },
+            1,
+        ),
+        (MouseButton::X2, _) => (
+            if down {
+                MOUSEEVENTF_XDOWN
+            } else {
+                MOUSEEVENTF_XUP
+            },
+            2,
+        ),
     }
 }
 
@@ -119,13 +133,82 @@ fn unicode_input(unit: u16, down: bool) -> INPUT {
     }
 }
 
-fn send_inputs(inputs: &[INPUT]) {
+#[derive(Debug, PartialEq, Eq)]
+struct SendInputShortWrite {
+    inserted: usize,
+    requested: usize,
+}
+
+impl std::fmt::Display for SendInputShortWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SendInput 短写: 仅插入 {}/{} 个输入事件",
+            self.inserted, self.requested
+        )
+    }
+}
+
+fn send_inputs(inputs: &[INPUT]) -> Result<(), SendInputShortWrite> {
     if inputs.is_empty() {
+        return Ok(());
+    }
+    let inserted = unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) } as usize;
+    if inserted == inputs.len() {
+        Ok(())
+    } else {
+        let error = SendInputShortWrite {
+            inserted,
+            requested: inputs.len(),
+        };
+        // SendInput 被 UIPI 拦截时不保证 GetLastError 有有效值,因此以返回条数
+        // 作为唯一可靠证据,避免在日志中附上过期的 Win32 错误。
+        log::error!("{error}");
+        Err(error)
+    }
+}
+
+type KeyTransition = (VIRTUAL_KEY, bool);
+
+/// SendInput 返回的是已插入的有序前缀长度。重放该前缀的 down/up 状态，找出
+/// 仍可能按下的所有虚拟键，而不只修饰键；恢复顺序与按下顺序相反。
+fn key_releases_after_prefix(transitions: &[KeyTransition], inserted: usize) -> Vec<VIRTUAL_KEY> {
+    let mut pressed = Vec::new();
+    for &(vk, down) in transitions.iter().take(inserted) {
+        if down {
+            pressed.push(vk);
+        } else if let Some(index) = pressed.iter().rposition(|pressed_vk| *pressed_vk == vk) {
+            pressed.remove(index);
+        }
+    }
+    pressed.reverse();
+    pressed
+}
+
+fn recover_pressed_keys(transitions: &[KeyTransition], inserted: usize) {
+    let releases = key_releases_after_prefix(transitions, inserted);
+    if releases.is_empty() {
         return;
     }
-    unsafe {
-        SendInput(inputs, std::mem::size_of::<INPUT>() as i32);
+    log::warn!(
+        "SendInput 短写后尝试逆序释放 {} 个已按下的键",
+        releases.len()
+    );
+    // 分开补发,避免恢复批次自身再次短写时,前一个失败阻断
+    // 后续按键的释放尝试。每个失败仍由 send_inputs 明确记录。
+    for vk in releases {
+        let _ = send_inputs(&[vk_input(vk, false)]);
     }
+}
+
+fn push_vk_transition(
+    inputs: &mut Vec<INPUT>,
+    transitions: &mut Vec<KeyTransition>,
+    vk: VIRTUAL_KEY,
+    down: bool,
+) {
+    inputs.push(vk_input(vk, down));
+    transitions.push((vk, down));
 }
 
 fn resolve_key_names(
@@ -161,40 +244,53 @@ pub fn synthesize_key_combo(modifiers: &[String], keys: &[String]) -> Result<(),
     }
 
     let mut inputs: Vec<INPUT> = Vec::new();
+    let mut transitions = Vec::new();
     for &m in &mod_vks {
-        inputs.push(vk_input(m, true));
+        push_vk_transition(&mut inputs, &mut transitions, m, true);
     }
     // 主键按顺序按下,再逆序抬起(支持如 Ctrl+K Ctrl+C 之外的同时组合)
     for &k in &key_vks {
-        inputs.push(vk_input(k, true));
+        push_vk_transition(&mut inputs, &mut transitions, k, true);
     }
     for &k in key_vks.iter().rev() {
-        inputs.push(vk_input(k, false));
+        push_vk_transition(&mut inputs, &mut transitions, k, false);
     }
     for &m in mod_vks.iter().rev() {
-        inputs.push(vk_input(m, false));
+        push_vk_transition(&mut inputs, &mut transitions, m, false);
     }
-    send_inputs(&inputs);
-    Ok(())
+    match send_inputs(&inputs) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            recover_pressed_keys(&transitions, error.inserted);
+            Err(error.to_string())
+        }
+    }
 }
 
 /// 敲一个虚拟键(down+up),用于音量键、任务切换等。
 pub fn tap_vk(vk: VIRTUAL_KEY) {
-    send_inputs(&[vk_input(vk, true), vk_input(vk, false)]);
+    let transitions = [(vk, true), (vk, false)];
+    let inputs = [vk_input(vk, true), vk_input(vk, false)];
+    if let Err(error) = send_inputs(&inputs) {
+        recover_pressed_keys(&transitions, error.inserted);
+    }
 }
 
 /// 按住若干修饰键并敲一个主键(如 Win+Tab)
 pub fn tap_with_modifiers(mods: &[VIRTUAL_KEY], key: VIRTUAL_KEY) {
     let mut inputs = Vec::new();
+    let mut transitions = Vec::new();
     for &m in mods {
-        inputs.push(vk_input(m, true));
+        push_vk_transition(&mut inputs, &mut transitions, m, true);
     }
-    inputs.push(vk_input(key, true));
-    inputs.push(vk_input(key, false));
+    push_vk_transition(&mut inputs, &mut transitions, key, true);
+    push_vk_transition(&mut inputs, &mut transitions, key, false);
     for &m in mods.iter().rev() {
-        inputs.push(vk_input(m, false));
+        push_vk_transition(&mut inputs, &mut transitions, m, false);
     }
-    send_inputs(&inputs);
+    if let Err(error) = send_inputs(&inputs) {
+        recover_pressed_keys(&transitions, error.inserted);
+    }
 }
 
 /// 输入一段文本(Unicode 直接注入,不受键盘布局影响)。
@@ -217,7 +313,7 @@ fn type_text(text: &str) {
             inputs.push(unicode_input(*unit, false));
         }
     }
-    send_inputs(&inputs);
+    let _ = send_inputs(&inputs);
 }
 
 enum TextSegment {
@@ -261,6 +357,76 @@ fn split_sleep_tokens(text: &str) -> Vec<TextSegment> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CTRL: VIRTUAL_KEY = VIRTUAL_KEY(1);
+    const ALT: VIRTUAL_KEY = VIRTUAL_KEY(2);
+    const META: VIRTUAL_KEY = VIRTUAL_KEY(3);
+
+    #[test]
+    fn short_write_during_key_down_releases_only_inserted_prefix() {
+        let transitions = [
+            (CTRL, true),
+            (ALT, true),
+            (META, true),
+            (VIRTUAL_KEY(4), true),
+            (VIRTUAL_KEY(4), false),
+            (META, false),
+            (ALT, false),
+            (CTRL, false),
+        ];
+
+        assert_eq!(key_releases_after_prefix(&transitions, 0), []);
+        assert_eq!(key_releases_after_prefix(&transitions, 2), [ALT, CTRL]);
+        assert_eq!(
+            key_releases_after_prefix(&transitions, 4),
+            [VIRTUAL_KEY(4), META, ALT, CTRL]
+        );
+    }
+
+    #[test]
+    fn short_write_during_main_keys_releases_every_unmatched_down() {
+        let transitions = [
+            (CTRL, true),
+            (ALT, true),
+            (VIRTUAL_KEY(4), true),
+            (VIRTUAL_KEY(5), true),
+            (VIRTUAL_KEY(5), false),
+        ];
+        assert_eq!(
+            key_releases_after_prefix(&transitions, transitions.len()),
+            [VIRTUAL_KEY(4), ALT, CTRL]
+        );
+    }
+
+    #[test]
+    fn short_write_during_modifier_up_skips_already_released_suffix() {
+        let transitions = [
+            (CTRL, true),
+            (ALT, true),
+            (META, true),
+            (VIRTUAL_KEY(4), true),
+            (VIRTUAL_KEY(4), false),
+            (META, false),
+        ];
+        assert_eq!(
+            key_releases_after_prefix(&transitions, transitions.len()),
+            [ALT, CTRL]
+        );
+    }
+
+    #[test]
+    fn complete_batch_needs_no_key_recovery() {
+        let transitions = [
+            (CTRL, true),
+            (VIRTUAL_KEY(4), true),
+            (VIRTUAL_KEY(4), false),
+            (CTRL, false),
+        ];
+        assert_eq!(
+            key_releases_after_prefix(&transitions, transitions.len()),
+            []
+        );
+    }
 
     #[test]
     fn unknown_key_rejects_the_whole_combo() {
