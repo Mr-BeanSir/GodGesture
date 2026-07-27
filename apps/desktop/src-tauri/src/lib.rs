@@ -9,6 +9,11 @@ use engine::runtime::{EngineMsg, EngineShared};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
+#[cfg(windows)]
+use platform::windows::startup::{
+    EarlyMode, MachineRuntimeStatus, StartupError, StartupPolicy, TaskSnapshot,
+};
+
 struct ConfigTransaction(parking_lot::Mutex<()>);
 
 #[cfg(windows)]
@@ -16,6 +21,9 @@ struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
 
 #[cfg(windows)]
 struct TrayVisibility(parking_lot::Mutex<bool>);
+
+#[cfg(windows)]
+struct MachineStatus(parking_lot::Mutex<MachineRuntimeStatus>);
 
 #[cfg(windows)]
 struct PauseMenuItem(tauri::menu::MenuItem<tauri::Wry>);
@@ -341,28 +349,180 @@ fn machine_get(store: tauri::State<Arc<ConfigStore>>) -> MachineLocalSettings {
     store.load_machine()
 }
 
+#[cfg(windows)]
+#[tauri::command]
+async fn machine_set(
+    settings: MachineLocalSettings,
+    app: tauri::AppHandle,
+) -> Result<(), StartupError> {
+    tauri::async_runtime::spawn_blocking(move || machine_set_blocking(settings, &app))
+        .await
+        .map_err(|err| StartupError::new(
+            "apply_failed",
+            format!("machine settings worker failed: {err}"),
+        ))?
+}
+
+#[cfg(windows)]
+fn machine_set_blocking(
+    settings: MachineLocalSettings,
+    app: &tauri::AppHandle,
+) -> Result<(), StartupError> {
+    let store = app.state::<Arc<ConfigStore>>();
+    let transaction = app.state::<ConfigTransaction>();
+    let _transaction = transaction.0.lock();
+    if settings.run_as_admin {
+        let (elevated, split_token) = platform::windows::startup::elevation_state()?;
+        if !elevated && !split_token {
+            return Err(StartupError::new(
+                "admin_account_required",
+                "run as administrator requires an administrator account with an elevatable token",
+            ));
+        }
+    }
+
+    let mut effects = DesktopMachineEffects {
+        store: store.inner(),
+        app,
+        settings: &settings,
+    };
+    let result = platform::windows::startup::apply_machine_settings(&mut effects);
+    let status = match &result {
+        Ok(()) => MachineRuntimeStatus::healthy(),
+        Err(error) if error.code == "rollback_incomplete" => MachineRuntimeStatus::failed(error),
+        Err(_) => return result,
+    };
+    *app.state::<MachineStatus>().0.lock() = status;
+    result
+}
+
+#[cfg(windows)]
+struct DesktopMachineSnapshot {
+    files: ConfigFilesSnapshot,
+    task: TaskSnapshot,
+    sid: String,
+    tray_visible: bool,
+}
+
+#[cfg(windows)]
+struct DesktopMachineEffects<'a> {
+    store: &'a ConfigStore,
+    app: &'a tauri::AppHandle,
+    settings: &'a MachineLocalSettings,
+}
+
+#[cfg(windows)]
+impl platform::windows::startup::MachineEffects for DesktopMachineEffects<'_> {
+    type Snapshot = DesktopMachineSnapshot;
+
+    fn snapshot(&mut self) -> Result<Self::Snapshot, StartupError> {
+        let files = self.store.snapshot_files().map_err(|err| {
+            StartupError::new("apply_failed", format!("snapshot machine file: {err}"))
+        })?;
+        let sid = platform::windows::startup::current_user_sid()?;
+        let task = platform::windows::startup::snapshot(&sid)?;
+        Ok(DesktopMachineSnapshot {
+            files,
+            task,
+            sid,
+            tray_visible: current_tray_visibility(self.app),
+        })
+    }
+
+    fn save_machine(&mut self) -> Result<(), StartupError> {
+        self.store.save_machine(self.settings).map_err(|err| {
+            StartupError::new("apply_failed", format!("save machine settings: {err}"))
+        })
+    }
+
+    fn reconcile_task(&mut self) -> Result<(), StartupError> {
+        platform::windows::startup::reconcile_with_elevation(
+            &StartupPolicy::from(self.settings),
+            &platform::windows::startup::current_user_sid()?,
+        )
+    }
+
+    fn apply_tray(&mut self) -> Result<(), StartupError> {
+        set_tray_visible(self.app, self.settings.tray_icon_visible).map_err(|err| {
+            StartupError::new("apply_failed", format!("set tray visibility: {err}"))
+        })
+    }
+
+    fn rollback(
+        &mut self,
+        snapshot: &Self::Snapshot,
+        progress: platform::windows::startup::MachineApplyProgress,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        if progress.tray_attempted {
+            if let Err(err) = set_tray_visible(self.app, snapshot.tray_visible) {
+                errors.push(format!("tray restore failed: {err}"));
+            }
+        }
+        if progress.task_attempted {
+            if let Err(err) = platform::windows::startup::restore_with_elevation(
+                &snapshot.task,
+                &snapshot.sid,
+            ) {
+                errors.push(format!("startup task restore failed: {}", err.message));
+            }
+        }
+        if progress.file_attempted {
+            if let Err(err) = self.store.restore_machine_snapshot(&snapshot.files) {
+                errors.push(format!("machine file restore failed: {err}"));
+            }
+        }
+        errors
+    }
+}
+
+#[cfg(windows)]
+#[tauri::command]
+async fn machine_status(app: tauri::AppHandle) -> MachineRuntimeStatus {
+    let worker_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let transaction = worker_app.state::<ConfigTransaction>();
+        let _transaction = transaction.0.lock();
+        worker_app.state::<MachineStatus>().0.lock().clone()
+    })
+    .await
+    .unwrap_or_else(|err| {
+        let error = StartupError::new(
+            "task_scheduler_failed",
+            format!("machine status worker failed: {err}"),
+        );
+        MachineRuntimeStatus::failed(&error)
+    })
+}
+
+#[cfg(not(windows))]
 #[tauri::command]
 fn machine_set(
     settings: MachineLocalSettings,
     store: tauri::State<Arc<ConfigStore>>,
     transaction: tauri::State<ConfigTransaction>,
-    app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _transaction = transaction.0.lock();
-    #[cfg(not(windows))]
-    let _ = &app;
-    #[cfg(windows)]
-    let previous_tray_visible = current_tray_visibility(&app);
-    #[cfg(windows)]
-    set_tray_visible(&app, settings.tray_icon_visible)?;
-    if let Err(err) = store.save_machine(&settings) {
-        #[cfg(windows)]
-        if let Err(rollback_err) = set_tray_visible(&app, previous_tray_visible) {
-            log::error!("本机设置保存失败后恢复托盘可见性也失败: {rollback_err}");
-        }
-        return Err(err.to_string());
+    store.save_machine(&settings).map_err(|err| err.to_string())
+}
+
+#[cfg(not(windows))]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NonWindowsMachineRuntimeStatus {
+    healthy: bool,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn machine_status() -> NonWindowsMachineRuntimeStatus {
+    NonWindowsMachineRuntimeStatus {
+        healthy: true,
+        code: None,
+        message: None,
     }
-    Ok(())
 }
 
 #[cfg(windows)]
@@ -370,6 +530,8 @@ struct DesktopLegacyImportSnapshot {
     files: ConfigFilesSnapshot,
     hotkey: Option<String>,
     tray_visible: bool,
+    startup: TaskSnapshot,
+    sid: String,
 }
 
 #[cfg(windows)]
@@ -385,10 +547,14 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
 
     fn snapshot(&mut self) -> Result<Self::Snapshot, String> {
         let files = self.store.snapshot_files().map_err(|err| err.to_string())?;
+        let sid = platform::windows::startup::current_user_sid().map_err(|err| err.message)?;
+        let startup = platform::windows::startup::snapshot(&sid).map_err(|err| err.message)?;
         Ok(DesktopLegacyImportSnapshot {
             files,
             hotkey: current_pause_hotkey(self.app),
             tray_visible: current_tray_visibility(self.app),
+            startup,
+            sid,
         })
     }
 
@@ -412,12 +578,40 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
             .map_err(|err| err.to_string())
     }
 
+    fn apply_startup(&mut self, machine: &MachineLocalSettings) -> Result<(), String> {
+        if machine.run_as_admin {
+            let (elevated, split) = platform::windows::startup::elevation_state()
+                .map_err(|err| err.message)?;
+            if !elevated && !split {
+                return Err("admin_account_required".into());
+            }
+        }
+        platform::windows::startup::reconcile_with_elevation(
+            &StartupPolicy::from(machine),
+            &platform::windows::startup::current_user_sid().map_err(|err| err.message)?,
+        )
+        .map_err(|err| format!("{}: {}", err.code, err.message))
+    }
+
     fn rollback(
         &mut self,
         snapshot: &Self::Snapshot,
         progress: legacy_import::ApplyProgress,
     ) -> Vec<String> {
         let mut errors = Vec::new();
+        if progress.tray_attempted {
+            if let Err(err) = set_tray_visible(self.app, snapshot.tray_visible) {
+                errors.push(format!("tray restore failed: {err}"));
+            }
+        }
+        if progress.startup_attempted {
+            if let Err(err) = platform::windows::startup::restore_with_elevation(
+                &snapshot.startup,
+                &snapshot.sid,
+            ) {
+                errors.push(format!("startup task restore failed: {}", err.message));
+            }
+        }
         if progress.machine_attempted {
             if let Err(err) = self.store.restore_machine_snapshot(&snapshot.files) {
                 errors.push(format!("machine file restore failed: {err}"));
@@ -426,11 +620,6 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
         if progress.config_attempted {
             if let Err(err) = self.store.restore_config_snapshot(&snapshot.files) {
                 errors.push(format!("config file restore failed: {err}"));
-            }
-        }
-        if progress.tray_attempted {
-            if let Err(err) = set_tray_visible(self.app, snapshot.tray_visible) {
-                errors.push(format!("tray restore failed: {err}"));
             }
         }
         if progress.hotkey_attempted {
@@ -448,21 +637,50 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
 
 #[cfg(windows)]
 #[tauri::command]
-fn legacy_import_apply(
+async fn legacy_import_apply(
     document: ConfigDocument,
     machine: MachineLocalSettings,
-    store: tauri::State<Arc<ConfigStore>>,
-    engine: tauri::State<Arc<EngineShared>>,
-    transaction: tauri::State<ConfigTransaction>,
     app: tauri::AppHandle,
 ) -> Result<(), legacy_import::LegacyImportError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        legacy_import_apply_blocking(document, machine, &app)
+    })
+    .await
+    .map_err(|err| legacy_import::LegacyImportError::apply_failed(format!(
+        "legacy import worker failed: {err}"
+    )))?
+}
+
+#[cfg(windows)]
+fn legacy_import_apply_blocking(
+    document: ConfigDocument,
+    machine: MachineLocalSettings,
+    app: &tauri::AppHandle,
+) -> Result<(), legacy_import::LegacyImportError> {
+    let store = app.state::<Arc<ConfigStore>>();
+    let engine = app.state::<Arc<EngineShared>>();
+    let transaction = app.state::<ConfigTransaction>();
     let _transaction = transaction.0.lock();
     let mut effects = DesktopLegacyImportEffects {
         store: store.inner(),
         engine: engine.inner(),
-        app: &app,
+        app,
     };
     let result = legacy_import::apply_legacy_import(&mut effects, document, machine);
+    match &result {
+        Ok(()) => {
+            *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::healthy();
+        }
+        Err(err) if err.code == "rollback_incomplete" => {
+            let startup_error = StartupError::rollback_incomplete(
+                err.message.clone(),
+                err.rollback_errors.clone(),
+            );
+            *app.state::<MachineStatus>().0.lock() =
+                MachineRuntimeStatus::failed(&startup_error);
+        }
+        Err(_) => {}
+    }
     if let Err(err) = &result {
         if err.code == "rollback_incomplete" {
             log::error!(
@@ -765,16 +983,68 @@ fn replace_pause_hotkey_value(app: &tauri::AppHandle, next: Option<String>) -> R
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    #[cfg(windows)]
+    let early_mode = match platform::windows::startup::parse_early_mode(std::env::args()) {
+        Ok(mode) => mode,
+        Err(err) => {
+            log::error!("拒绝无效的内部启动参数: {}", err.message);
+            return;
+        }
+    };
+
+    #[cfg(windows)]
+    if let EarlyMode::TaskHelper { enabled, highest } = early_mode {
+        let result = platform::windows::startup::run_helper(&StartupPolicy { enabled, highest });
+        if let Err(err) = &result {
+            log::error!("启动任务 helper 失败 [{}]: {}", err.code, err.message);
+        }
+        std::process::exit(platform::windows::startup::helper_exit_code(&result));
+    }
+
+    #[cfg(windows)]
+    if early_mode == EarlyMode::Interactive {
+        let config_dir = std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .map(|path| path.join("com.godgesture.app"));
+        if let Some(config_dir) = config_dir {
+            let machine = ConfigStore::new(config_dir).load_machine();
+            if machine.run_as_admin {
+                match platform::windows::startup::elevation_state() {
+                    Ok((true, _)) => {}
+                    Ok((false, true)) => {
+                        if let Err(err) = platform::windows::startup::elevate_interactive() {
+                            log::error!("管理员启动失败 [{}]: {}", err.code, err.message);
+                        }
+                        return;
+                    }
+                    Ok((false, false)) => {
+                        log::error!("管理员启动被拒绝: 当前账户没有可提升的 split token");
+                        return;
+                    }
+                    Err(err) => {
+                        log::error!("管理员启动校验失败 [{}]: {}", err.code, err.message);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    let setup_mode = early_mode;
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // 二次启动:唤起设置窗口(对齐 WGestures 的单实例行为)
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let is_autostart = args.iter().any(|arg| arg == "--autostart");
+            if !is_autostart {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
             }
         }))
-        .setup(|app| {
+        .setup(move |app| {
             let config_dir = app
                 .path()
                 .app_config_dir()
@@ -788,6 +1058,40 @@ pub fn run() {
 
             #[cfg(windows)]
             {
+                app.manage(MachineStatus(parking_lot::Mutex::new(
+                    MachineRuntimeStatus::healthy(),
+                )));
+                let startup_app = app.handle().clone();
+                let startup_failure_app = startup_app.clone();
+                let startup_policy = StartupPolicy::from(&machine);
+                if let Err(err) = std::thread::Builder::new()
+                    .name("gg-startup-reconcile".into())
+                    .spawn(move || {
+                        let transaction = startup_app.state::<ConfigTransaction>();
+                        let _transaction = transaction.0.lock();
+                        let result = platform::windows::startup::current_user_sid().and_then(|sid| {
+                            platform::windows::startup::reconcile_with_elevation(
+                                &startup_policy,
+                                &sid,
+                            )
+                        });
+                        let status = match result {
+                            Ok(()) => MachineRuntimeStatus::healthy(),
+                            Err(err) => {
+                                log::warn!("启动任务对账失败 [{}]: {}", err.code, err.message);
+                                MachineRuntimeStatus::failed(&err)
+                            }
+                        };
+                        *startup_app.state::<MachineStatus>().0.lock() = status;
+                    })
+                {
+                    let error = StartupError::new(
+                        "task_scheduler_failed",
+                        format!("cannot start startup reconciliation worker: {err}"),
+                    );
+                    *startup_failure_app.state::<MachineStatus>().0.lock() =
+                        MachineRuntimeStatus::failed(&error);
+                }
                 let platform = Arc::new(platform::windows::WindowsPlatform);
                 let (shared, rx) = EngineShared::new(config, platform);
                 let overlay = platform::windows::overlay::Overlay::spawn();
@@ -803,11 +1107,21 @@ pub fn run() {
                 let hook = platform::windows::start(Arc::clone(&shared));
                 // 钩子随应用生存期存活
                 app.manage(hook);
+                if setup_mode == EarlyMode::Interactive {
+                    if let Some(win) = app.get_webview_window("main") {
+                        win.show()?;
+                        win.set_focus()?;
+                    }
+                }
             }
             #[cfg(not(windows))]
             {
                 let _ = config;
                 log::warn!("当前平台的手势引擎尚未实现(macOS 引擎在 M4 落地)");
+                if let Some(win) = app.get_webview_window("main") {
+                    win.show()?;
+                    win.set_focus()?;
+                }
             }
             Ok(())
         })
@@ -816,6 +1130,7 @@ pub fn run() {
             config_set,
             machine_get,
             machine_set,
+            machine_status,
             legacy_import_apply,
             engine_toggle_pause,
             engine_is_paused,

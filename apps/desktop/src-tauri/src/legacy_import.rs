@@ -9,7 +9,7 @@ pub(crate) struct LegacyImportError {
 }
 
 impl LegacyImportError {
-    fn apply_failed(message: String) -> Self {
+    pub(crate) fn apply_failed(message: String) -> Self {
         Self {
             code: "apply_failed",
             message,
@@ -29,6 +29,7 @@ pub(crate) struct ApplyProgress {
     pub tray_attempted: bool,
     pub config_attempted: bool,
     pub machine_attempted: bool,
+    pub startup_attempted: bool,
 }
 
 pub(crate) trait LegacyImportEffects {
@@ -39,6 +40,7 @@ pub(crate) trait LegacyImportEffects {
     fn apply_tray_visibility(&mut self, visible: bool) -> Result<(), String>;
     fn save_config(&mut self, document: &ConfigDocument) -> Result<(), String>;
     fn save_machine(&mut self, machine: &MachineLocalSettings) -> Result<(), String>;
+    fn apply_startup(&mut self, machine: &MachineLocalSettings) -> Result<(), String>;
     fn rollback(&mut self, snapshot: &Self::Snapshot, progress: ApplyProgress) -> Vec<String>;
     fn replace_engine_config(&mut self, document: ConfigDocument);
 }
@@ -64,11 +66,6 @@ pub(crate) fn apply_legacy_import<E: LegacyImportEffects>(
         );
     }
 
-    progress.tray_attempted = true;
-    if let Err(err) = effects.apply_tray_visibility(machine.tray_icon_visible) {
-        return rollback_failure(effects, &snapshot, progress, format!("tray failed: {err}"));
-    }
-
     progress.config_attempted = true;
     if let Err(err) = effects.save_config(&document) {
         return rollback_failure(
@@ -87,6 +84,21 @@ pub(crate) fn apply_legacy_import<E: LegacyImportEffects>(
             progress,
             format!("machine save failed: {err}"),
         );
+    }
+
+    progress.startup_attempted = true;
+    if let Err(err) = effects.apply_startup(&machine) {
+        return rollback_failure(
+            effects,
+            &snapshot,
+            progress,
+            format!("startup failed: {err}"),
+        );
+    }
+
+    progress.tray_attempted = true;
+    if let Err(err) = effects.apply_tray_visibility(machine.tray_icon_visible) {
+        return rollback_failure(effects, &snapshot, progress, format!("tray failed: {err}"));
     }
 
     effects.replace_engine_config(document);
@@ -158,6 +170,10 @@ mod tests {
             self.step("machine")
         }
 
+        fn apply_startup(&mut self, _machine: &MachineLocalSettings) -> Result<(), String> {
+            self.step("startup")
+        }
+
         fn rollback(&mut self, _snapshot: &Self::Snapshot, progress: ApplyProgress) -> Vec<String> {
             self.events.push("rollback");
             self.rollback_progress = Some(progress);
@@ -184,7 +200,7 @@ mod tests {
         assert_eq!(run(&mut effects), Ok(()));
         assert_eq!(
             effects.events,
-            ["snapshot", "hotkey", "tray", "config", "machine", "engine"]
+            ["snapshot", "hotkey", "config", "machine", "startup", "tray", "engine"]
         );
         assert_eq!(effects.rollback_progress, None);
     }
@@ -202,11 +218,15 @@ mod tests {
             ),
             (
                 "tray",
-                vec!["snapshot", "hotkey", "tray", "rollback"],
+                vec![
+                    "snapshot", "hotkey", "config", "machine", "startup", "tray", "rollback",
+                ],
                 ApplyProgress {
                     hotkey_attempted: true,
+                    config_attempted: true,
+                    machine_attempted: true,
+                    startup_attempted: true,
                     tray_attempted: true,
-                    ..ApplyProgress::default()
                 },
             ),
         ] {
@@ -225,7 +245,7 @@ mod tests {
 
     #[test]
     fn file_failure_rolls_back_before_engine_update() {
-        for failure in ["config", "machine"] {
+        for failure in ["config", "machine", "startup"] {
             let mut effects = MockEffects {
                 fail_at: Some(failure),
                 ..MockEffects::default()
@@ -238,7 +258,8 @@ mod tests {
             assert!(!effects.events.contains(&"engine"));
             let progress = effects.rollback_progress.unwrap();
             assert!(progress.config_attempted);
-            assert_eq!(progress.machine_attempted, failure == "machine");
+            assert_eq!(progress.machine_attempted, failure != "config");
+            assert_eq!(progress.startup_attempted, failure == "startup");
         }
     }
 

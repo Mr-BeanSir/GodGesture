@@ -7,6 +7,7 @@ pub mod icon;
 pub mod input;
 pub mod keys;
 pub mod overlay;
+pub mod startup;
 pub mod window;
 
 use crate::engine::corners::ScreenInfo;
