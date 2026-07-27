@@ -65,6 +65,7 @@ async function pickWindow() {
     if (win) {
       exeName.value = win.exeName;
       exactPath.value = win.exePath;
+      aumid.value = win.aumid ?? undefined;
       if (!name.value.trim()) name.value = win.appName;
     }
   } finally {

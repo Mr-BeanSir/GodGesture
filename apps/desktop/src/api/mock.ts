@@ -172,9 +172,24 @@ export function createMockBackend(): Backend {
 
     async pickWindow() {
       const samples = [
-        { exeName: "notepad.exe", exePath: "C:\\Windows\\System32\\notepad.exe", appName: "记事本" },
-        { exeName: "Code.exe", exePath: "C:\\Program Files\\Microsoft VS Code\\Code.exe", appName: "Visual Studio Code" },
-        { exeName: "explorer.exe", exePath: "C:\\Windows\\explorer.exe", appName: "文件资源管理器" },
+        {
+          exeName: "notepad.exe",
+          exePath: "C:\\Windows\\System32\\notepad.exe",
+          appName: "记事本",
+          aumid: null,
+        },
+        {
+          exeName: "Code.exe",
+          exePath: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
+          appName: "Visual Studio Code",
+          aumid: null,
+        },
+        {
+          exeName: "explorer.exe",
+          exePath: "C:\\Windows\\explorer.exe",
+          appName: "文件资源管理器",
+          aumid: null,
+        },
       ];
       // 模拟准星取窗口的延迟
       await new Promise((r) => setTimeout(r, 400));

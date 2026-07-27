@@ -11,7 +11,7 @@
  *     + Tauri event "pause-changed", payload: boolean
  * - capture_start() / capture_cancel()
  *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, mnemonic}
- * - pick_window(): {exeName, exePath, appName} | null
+ * - pick_window(): {exeName, exePath, appName, aumid} | null
  * - app_icon(exeName: string): string | null    // base64 png
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
@@ -30,6 +30,7 @@ export interface PickedWindow {
   exeName: string;
   exePath: string;
   appName: string;
+  aumid: string | null;
 }
 
 export interface Backend {
