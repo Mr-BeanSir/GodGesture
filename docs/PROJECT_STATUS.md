@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-27。产品代码基线覆盖至 `c35dee5`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-27。产品代码基线覆盖至 `b1b3734`;此后的文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -40,7 +40,7 @@
 - `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
-- `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息和图标。
+- `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
 - `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动。
 
 ## Desktop Vue
@@ -66,7 +66,6 @@
 - macOS 没有 CGEventTap、原生覆盖层、Bundle ID 解析或命令平台实现。
 - 桌面账户与云同步未连接 Server;没有防抖推送、启动/定时拉取或 409 拉取重推。
 - WGestures `gestures.wg2 + config.plist` 导入器已在 shared 并有测试,但桌面没有文件选择/导入工作流。
-- AUMID 存在于 Schema 和匹配器,Windows 前台窗口解析仍返回 `None`;商店应用识别未完成。
 - 应用窗口选取目前是短时轮询前台窗口,不是完整准星体验;拖放添加应用未实现。
 - `autoStart` 和 `runAsAdmin` 可编辑并持久化,但未接任务计划/系统启动逻辑;托盘显隐已生效。
 - Updater、手势模板库、安装包验收、快速引导、Windows 提权运行和 macOS 签名公证未完成。
@@ -108,7 +107,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 69/69 + build;server 80/80 + typecheck;desktop typecheck;web-console typecheck/build;Rust 102/102。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+最近结果:shared 69/69 + build;server 80/80 + typecheck;desktop typecheck/build;web-console typecheck/build;Rust 107/107。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
