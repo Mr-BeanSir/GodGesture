@@ -7,23 +7,27 @@ import { computed, onMounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
+import { ElMessageBox } from "element-plus";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
 import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
+import { useUpdateStore } from "./stores/update";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
 import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
 import CornersEdgesView from "./views/CornersEdgesView.vue";
 import AccountView from "./views/AccountView.vue";
+import TemplatesView from "./views/TemplatesView.vue";
 import AboutView from "./views/AboutView.vue";
 
-type Section = "options" | "gestures" | "cornersEdges" | "account" | "about";
+type Section = "options" | "gestures" | "cornersEdges" | "templates" | "account" | "about";
 type LocaleSetting = "auto" | AppLocale;
 
 const { t, locale } = useI18n();
 const store = useConfigStore();
 const account = useAccountStore();
+const updates = useUpdateStore();
 
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
@@ -33,6 +37,7 @@ const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
   cornersEdges: CornersEdgesView,
+  templates: TemplatesView,
   account: AccountView,
   about: AboutView,
 } as const;
@@ -66,10 +71,35 @@ watchEffect(() => {
   if (typeof document !== "undefined") document.title = t("app.title");
 });
 
+watch(
+  () => updates.automaticPromptPending,
+  async (pending) => {
+    if (!pending || !updates.metadata) return;
+    updates.dismissAutomaticPrompt();
+    try {
+      await ElMessageBox.confirm(
+        t("about.autoPrompt.body", { version: updates.metadata.version }),
+        t("about.autoPrompt.title"),
+        {
+          confirmButtonText: t("about.autoPrompt.view"),
+          cancelButtonText: t("about.autoPrompt.later"),
+          type: "info",
+        },
+      );
+      active.value = "about";
+    } catch {
+      // The session-level prompt is intentionally non-blocking.
+    }
+  },
+);
+
 onMounted(() => {
   void (async () => {
     await store.load();
     await account.initialize();
+    updates.scheduleAutomaticCheck(
+      store.doc?.preferences.autoCheckForUpdate ?? false,
+    );
   })();
 });
 </script>
@@ -112,6 +142,7 @@ onMounted(() => {
           <el-menu-item index="options">{{ t("nav.options") }}</el-menu-item>
           <el-menu-item index="gestures">{{ t("nav.gestures") }}</el-menu-item>
           <el-menu-item index="cornersEdges">{{ t("nav.cornersEdges") }}</el-menu-item>
+          <el-menu-item index="templates">{{ t("nav.templates") }}</el-menu-item>
           <el-menu-item index="account">{{ t("nav.account") }}</el-menu-item>
           <el-menu-item index="about">{{ t("nav.about") }}</el-menu-item>
         </el-menu>

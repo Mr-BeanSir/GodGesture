@@ -28,4 +28,28 @@ describe("account locale messages", () => {
       expect(() => i18n.global.t(key)).not.toThrow();
     }
   });
+
+  it("keeps Chinese and English locale leaf keys in parity", () => {
+    expect(leafKeys(zhCN, "").sort()).toEqual(leafKeys(en, "").sort());
+  });
+
+  it.each([
+    ["zh-CN", zhCN],
+    ["en", en],
+  ] as const)("compiles every distribution message in %s", (locale, messages) => {
+    const i18n = createI18n({
+      legacy: false,
+      locale,
+      fallbackLocale: false,
+      missingWarn: false,
+      fallbackWarn: false,
+      messages: { [locale]: messages },
+    });
+
+    for (const root of ["templates", "about"] as const) {
+      for (const key of leafKeys(messages[root], root)) {
+        expect(() => i18n.global.t(key)).not.toThrow();
+      }
+    }
+  });
 });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+import { reactive } from "vue";
 import {
   ConfigDocument,
   GestureTemplateCatalog,
@@ -81,7 +82,7 @@ function fixture() {
 function makeConfig() {
   return {
     backend: { isTauri: false },
-    doc: ConfigDocument.parse({}),
+    doc: reactive(ConfigDocument.parse({})),
     applyTemplateDocument: vi.fn(async () => true),
   };
 }

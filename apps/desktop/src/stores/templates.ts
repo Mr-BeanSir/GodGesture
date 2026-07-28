@@ -114,7 +114,7 @@ export const useTemplatesStore = defineStore("templates", () => {
     }
     try {
       expectedDocument = ConfigDocument.parse(
-        structuredClone(config.doc),
+        JSON.parse(JSON.stringify(config.doc)) as unknown,
       );
       adoptionPlan.value = planGestureTemplateAdoption(
         expectedDocument,
