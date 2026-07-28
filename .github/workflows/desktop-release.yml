@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared package
+        run: pnpm --filter @godgesture/shared build
+
       - name: Test desktop frontend
         run: pnpm --filter @godgesture/desktop test
 
@@ -130,6 +133,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @godgesture/shared build
 
       - name: Require updater signing key
         shell: bash

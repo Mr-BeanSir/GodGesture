@@ -56,6 +56,18 @@ assert.match(macos, /tar -tzf.*grep -Fx/s);
 assert.match(macos, /shasum -a 256/);
 
 for (const jobName of ["windows", "macos"]) {
+  const steps = jobs[jobName].steps;
+  const sharedBuildIndex = steps.findIndex(
+    (step) => step.run === "pnpm --filter @godgesture/shared build",
+  );
+  const desktopBuildIndex = steps.findIndex((step) =>
+    step.run?.includes("@godgesture/desktop tauri build"),
+  );
+  assert.ok(sharedBuildIndex >= 0, `${jobName} must build the shared package`);
+  assert.ok(
+    sharedBuildIndex < desktopBuildIndex,
+    `${jobName} must build the shared package before the desktop bundle`,
+  );
   const serialized = JSON.stringify(jobs[jobName]);
   assert.match(serialized, /secrets\.TAURI_SIGNING_PRIVATE_KEY/);
   assert.match(serialized, /actions\/upload-artifact@v4/);
