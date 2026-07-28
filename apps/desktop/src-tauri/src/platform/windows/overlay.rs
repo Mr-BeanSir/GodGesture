@@ -69,7 +69,7 @@ pub struct Overlay {
 }
 
 impl Overlay {
-    pub fn spawn() -> Self {
+    pub fn spawn(_app: &tauri::AppHandle) -> Self {
         let (tx, rx) = unbounded();
         let thread_id = Arc::new(AtomicU32::new(0));
         let tid_slot = Arc::clone(&thread_id);

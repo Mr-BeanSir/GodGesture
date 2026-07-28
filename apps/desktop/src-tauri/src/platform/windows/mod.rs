@@ -19,6 +19,7 @@ use crate::engine::types::Point;
 use hook::{HookHandler, MouseHook};
 use std::sync::Arc;
 
+#[derive(Default)]
 pub struct WindowsPlatform;
 
 impl PlatformServices for WindowsPlatform {

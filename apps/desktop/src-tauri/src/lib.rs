@@ -4,46 +4,78 @@ mod legacy_import;
 pub mod platform;
 
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use engine::config::{ConfigFilesSnapshot, PauseHotkey};
 use engine::runtime::{EngineMsg, EngineShared};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use engine::script::{
     gesture_script_key, hot_corner_script_key, rub_edge_script_key, ScriptDefinition, ScriptEngine,
     ScriptInvocation, ScriptSlot,
 };
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
+#[cfg(target_os = "macos")]
+use platform::macos::startup::{MachineRuntimeStatus, StartupError};
 #[cfg(windows)]
 use platform::windows::startup::{
     EarlyMode, MachineRuntimeStatus, StartupError, StartupPolicy, TaskSnapshot,
 };
+#[cfg(not(any(windows, target_os = "macos")))]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineRuntimeStatus {
+    healthy: bool,
+    code: Option<String>,
+    message: Option<String>,
+}
+#[cfg(not(any(windows, target_os = "macos")))]
+impl MachineRuntimeStatus {
+    fn healthy() -> Self {
+        Self {
+            healthy: true,
+            code: None,
+            message: None,
+        }
+    }
+}
 
 struct ConfigTransaction(parking_lot::Mutex<()>);
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 struct TrayVisibility(parking_lot::Mutex<bool>);
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 struct MachineStatus(parking_lot::Mutex<MachineRuntimeStatus>);
 
-#[cfg(windows)]
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct PlatformRuntimeStatus {
+    platform: &'static str,
+    gesture_engine_running: bool,
+    accessibility: bool,
+    input_monitoring: bool,
+    event_posting: bool,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 struct PauseMenuItem(tauri::menu::MenuItem<tauri::Wry>);
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskSwitcherEvent {
     Recognition(bool),
     Finish,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskSwitcherEffect {
     None,
@@ -51,13 +83,13 @@ enum TaskSwitcherEffect {
     End,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Default)]
 struct TaskSwitcherLifecycle {
     active: bool,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl TaskSwitcherLifecycle {
     fn reduce(&mut self, event: TaskSwitcherEvent) -> TaskSwitcherEffect {
         match (self.active, event) {
@@ -83,22 +115,22 @@ impl TaskSwitcherLifecycle {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Default)]
 struct TaskSwitcherConsumer {
     lifecycle: TaskSwitcherLifecycle,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl TaskSwitcherConsumer {
     fn apply(&mut self, effect: TaskSwitcherEffect) {
         match effect {
             TaskSwitcherEffect::Begin => {
-                if !platform::windows::commands::task_switcher_begin() {
+                if !platform::current::commands::task_switcher_begin() {
                     self.lifecycle.force_inactive();
                 }
             }
-            TaskSwitcherEffect::End => platform::windows::commands::task_switcher_end(),
+            TaskSwitcherEffect::End => platform::current::commands::task_switcher_end(),
             TaskSwitcherEffect::None => {}
         }
     }
@@ -122,25 +154,25 @@ impl TaskSwitcherConsumer {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl Drop for TaskSwitcherConsumer {
     fn drop(&mut self) {
         if self.lifecycle.active {
             // Channel 关闭、consumer 提前返回或 panic unwind 都必须释放 Alt。
-            platform::windows::commands::task_switcher_end();
+            platform::current::commands::task_switcher_end();
             self.lifecycle.force_inactive();
         }
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 struct ActiveScript {
     key: String,
     definition: ScriptDefinition,
     invocation: ScriptInvocation,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModifierScriptTransition {
     NoChange,
@@ -150,7 +182,7 @@ enum ModifierScriptTransition {
     Finish,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn modifier_script_transition(
     active_key: Option<&str>,
     incoming_key: Option<&str>,
@@ -167,10 +199,10 @@ fn modifier_script_transition(
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn run_script_slot(
     engine: &mut Option<ScriptEngine>,
-    overlay: &platform::windows::overlay::Overlay,
+    overlay: &platform::current::overlay::Overlay,
     key: &str,
     definition: &ScriptDefinition,
     slot: ScriptSlot,
@@ -184,7 +216,7 @@ fn run_script_slot(
         Ok(status) => {
             if let Some(status) = status {
                 if invocation.trigger.is_some() {
-                    overlay.send(platform::windows::overlay::OverlayCmd::Recognized(Some(
+                    overlay.send(platform::current::overlay::OverlayCmd::Recognized(Some(
                         status,
                     )));
                 } else {
@@ -200,11 +232,11 @@ fn run_script_slot(
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn end_active_script(
     active_script: &mut Option<ActiveScript>,
     engine: &mut Option<ScriptEngine>,
-    overlay: &platform::windows::overlay::Overlay,
+    overlay: &platform::current::overlay::Overlay,
     invocation: Option<ScriptInvocation>,
 ) {
     let Some(mut active) = active_script.take() else {
@@ -223,11 +255,11 @@ fn end_active_script(
     );
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn start_active_script(
     active_script: &mut Option<ActiveScript>,
     engine: &mut Option<ScriptEngine>,
-    overlay: &platform::windows::overlay::Overlay,
+    overlay: &platform::current::overlay::Overlay,
     key: String,
     definition: ScriptDefinition,
     invocation: ScriptInvocation,
@@ -256,12 +288,12 @@ fn start_active_script(
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn script_key_for_intent(intent_id: &str) -> String {
     gesture_script_key(intent_id)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn script_key_for_corner_edge(hit: engine::corners::CornerEdgeHit) -> String {
     match hit {
         engine::corners::CornerEdgeHit::Corner(corner) => hot_corner_script_key(corner.key()),
@@ -269,7 +301,7 @@ fn script_key_for_corner_edge(hit: engine::corners::CornerEdgeHit) -> String {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn retain_live_script_contexts(
     engine: &mut Option<ScriptEngine>,
     live_keys: Option<&HashSet<String>>,
@@ -288,25 +320,20 @@ fn retain_live_script_contexts(
 }
 
 /// 引擎产物消费线程:驱动轨迹覆盖层;命令执行器(M2)也从这里接出去。
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn spawn_engine_consumer(
     rx: crossbeam_channel::Receiver<EngineMsg>,
     shared: Arc<EngineShared>,
-    overlay: platform::windows::overlay::Overlay,
+    overlay: platform::current::overlay::Overlay,
     app: tauri::AppHandle,
 ) {
-    use platform::windows::overlay::{OverlayCmd, TrailColors};
+    use platform::current::overlay::{OverlayCmd, TrailColors};
     std::thread::Builder::new()
         .name("gg-engine-consumer".into())
         .spawn(move || {
             let mut task_switcher = TaskSwitcherConsumer::default();
-            let clipboard_owner = app
-                .get_webview_window("main")
-                .and_then(|window| window.hwnd().ok())
-                .map(|hwnd| hwnd.0 as i64)
-                .unwrap_or_default();
-            let script_host = platform::windows::script::WindowsScriptHost::new(clipboard_owner);
-            let mut script_engine = match ScriptEngine::new(Arc::new(script_host)) {
+            let script_host = platform::current::script::create_host(&app);
+            let mut script_engine = match ScriptEngine::new(script_host) {
                 Ok(engine) => Some(engine),
                 Err(error) => {
                     log::error!("QuickJS runtime initialization failed: {error}");
@@ -486,7 +513,10 @@ fn spawn_engine_consumer(
                             Some(intent) => {
                                 log::info!(
                                     "手势完成: [{}] {} (修饰 {modifier:?}) → 命令 {:?}",
-                                    intent.gesture.trigger.mnemonic_dirs(&intent.gesture.strokes),
+                                    intent
+                                        .gesture
+                                        .trigger
+                                        .mnemonic_dirs(&intent.gesture.strokes),
                                     intent.name,
                                     intent.command
                                 );
@@ -608,14 +638,14 @@ struct CapturedGesture {
     mnemonic: String,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn execute_intent(
     key: &str,
     command: &engine::config::Command,
     invocation: ScriptInvocation,
     shared: &Arc<EngineShared>,
     script_engine: &mut Option<ScriptEngine>,
-    overlay: &platform::windows::overlay::Overlay,
+    overlay: &platform::current::overlay::Overlay,
 ) {
     if matches!(command, engine::config::Command::Pause) {
         let paused = shared.toggle_paused();
@@ -630,7 +660,7 @@ fn execute_intent(
             invocation,
         );
     } else {
-        platform::windows::commands::execute(command, invocation.modifier, &invocation.gesture);
+        platform::current::commands::execute(command, invocation.modifier, &invocation.gesture);
     }
 }
 
@@ -675,15 +705,15 @@ fn config_set(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _transaction = transaction.0.lock();
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = &app;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let previous_hotkey = current_pause_hotkey(&app);
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     replace_pause_hotkey(&app, &document.preferences.pause_hotkey)?;
 
     if let Err(err) = store.save_config(&document) {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Err(rollback_err) = replace_pause_hotkey_value(&app, previous_hotkey) {
             log::error!("配置保存失败后恢复暂停快捷键也失败: {rollback_err}");
         }
@@ -706,10 +736,12 @@ async fn machine_set(
 ) -> Result<(), StartupError> {
     tauri::async_runtime::spawn_blocking(move || machine_set_blocking(settings, &app))
         .await
-        .map_err(|err| StartupError::new(
-            "apply_failed",
-            format!("machine settings worker failed: {err}"),
-        ))?
+        .map_err(|err| {
+            StartupError::new(
+                "apply_failed",
+                format!("machine settings worker failed: {err}"),
+            )
+        })?
 }
 
 #[cfg(windows)]
@@ -792,9 +824,8 @@ impl platform::windows::startup::MachineEffects for DesktopMachineEffects<'_> {
     }
 
     fn apply_tray(&mut self) -> Result<(), StartupError> {
-        set_tray_visible(self.app, self.settings.tray_icon_visible).map_err(|err| {
-            StartupError::new("apply_failed", format!("set tray visibility: {err}"))
-        })
+        set_tray_visible(self.app, self.settings.tray_icon_visible)
+            .map_err(|err| StartupError::new("apply_failed", format!("set tray visibility: {err}")))
     }
 
     fn rollback(
@@ -809,10 +840,9 @@ impl platform::windows::startup::MachineEffects for DesktopMachineEffects<'_> {
             }
         }
         if progress.task_attempted {
-            if let Err(err) = platform::windows::startup::restore_with_elevation(
-                &snapshot.task,
-                &snapshot.sid,
-            ) {
+            if let Err(err) =
+                platform::windows::startup::restore_with_elevation(&snapshot.task, &snapshot.sid)
+            {
                 errors.push(format!("startup task restore failed: {}", err.message));
             }
         }
@@ -844,7 +874,96 @@ async fn machine_status(app: tauri::AppHandle) -> MachineRuntimeStatus {
     })
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn machine_set(
+    settings: MachineLocalSettings,
+    app: tauri::AppHandle,
+) -> Result<(), StartupError> {
+    tauri::async_runtime::spawn_blocking(move || machine_set_blocking(settings, &app))
+        .await
+        .map_err(|error| {
+            StartupError::new(
+                "apply_failed",
+                format!("machine settings worker failed: {error}"),
+            )
+        })?
+}
+
+#[cfg(target_os = "macos")]
+fn machine_set_blocking(
+    settings: MachineLocalSettings,
+    app: &tauri::AppHandle,
+) -> Result<(), StartupError> {
+    if settings.run_as_admin {
+        return Err(StartupError::new(
+            "unsupported_machine_setting",
+            "run as administrator is unsupported on macOS",
+        ));
+    }
+
+    let store = app.state::<Arc<ConfigStore>>();
+    let transaction = app.state::<ConfigTransaction>();
+    let _transaction = transaction.0.lock();
+    let previous = store.load_machine();
+    let files = store.snapshot_files().map_err(|error| {
+        StartupError::new("apply_failed", format!("snapshot machine file: {error}"))
+    })?;
+    let login_item = if previous.auto_start || settings.auto_start {
+        Some(platform::macos::startup::status()?)
+    } else {
+        None
+    };
+    let tray_visible = current_tray_visibility(app);
+
+    let result = (|| {
+        store.save_machine(&settings).map_err(|error| {
+            StartupError::new("apply_failed", format!("save machine settings: {error}"))
+        })?;
+        if previous.auto_start || settings.auto_start {
+            platform::macos::startup::reconcile(settings.auto_start)?;
+        }
+        set_tray_visible(app, settings.tray_icon_visible).map_err(|error| {
+            StartupError::new("apply_failed", format!("set tray visibility: {error}"))
+        })
+    })();
+
+    if let Err(error) = result {
+        let mut rollback_errors = Vec::new();
+        if let Err(rollback) = set_tray_visible(app, tray_visible) {
+            rollback_errors.push(format!("tray restore failed: {rollback}"));
+        }
+        if let Some(login_item) = login_item {
+            if let Err(rollback) = platform::macos::startup::restore(login_item) {
+                rollback_errors.push(format!("login item restore failed: {}", rollback.message));
+            }
+        }
+        if let Err(rollback) = store.restore_machine_snapshot(&files) {
+            rollback_errors.push(format!("machine file restore failed: {rollback}"));
+        }
+        let error = if rollback_errors.is_empty() {
+            error
+        } else {
+            StartupError::rollback_incomplete(error.message, rollback_errors)
+        };
+        if error.code == "rollback_incomplete" {
+            *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::failed(&error);
+        }
+        return Err(error);
+    }
+
+    let status = platform::macos::startup::runtime_status(settings.auto_start);
+    *app.state::<MachineStatus>().0.lock() = status;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn machine_status(app: tauri::AppHandle) -> MachineRuntimeStatus {
+    app.state::<MachineStatus>().0.lock().clone()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 #[tauri::command]
 fn machine_set(
     settings: MachineLocalSettings,
@@ -852,26 +971,15 @@ fn machine_set(
     transaction: tauri::State<ConfigTransaction>,
 ) -> Result<(), String> {
     let _transaction = transaction.0.lock();
-    store.save_machine(&settings).map_err(|err| err.to_string())
+    store
+        .save_machine(&settings)
+        .map_err(|error| error.to_string())
 }
 
-#[cfg(not(windows))]
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NonWindowsMachineRuntimeStatus {
-    healthy: bool,
-    code: Option<String>,
-    message: Option<String>,
-}
-
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 #[tauri::command]
-fn machine_status() -> NonWindowsMachineRuntimeStatus {
-    NonWindowsMachineRuntimeStatus {
-        healthy: true,
-        code: None,
-        message: None,
-    }
+fn machine_status() -> MachineRuntimeStatus {
+    MachineRuntimeStatus::healthy()
 }
 
 #[cfg(windows)]
@@ -929,8 +1037,8 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
 
     fn apply_startup(&mut self, machine: &MachineLocalSettings) -> Result<(), String> {
         if machine.run_as_admin {
-            let (elevated, split) = platform::windows::startup::elevation_state()
-                .map_err(|err| err.message)?;
+            let (elevated, split) =
+                platform::windows::startup::elevation_state().map_err(|err| err.message)?;
             if !elevated && !split {
                 return Err("admin_account_required".into());
             }
@@ -954,10 +1062,9 @@ impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
             }
         }
         if progress.startup_attempted {
-            if let Err(err) = platform::windows::startup::restore_with_elevation(
-                &snapshot.startup,
-                &snapshot.sid,
-            ) {
+            if let Err(err) =
+                platform::windows::startup::restore_with_elevation(&snapshot.startup, &snapshot.sid)
+            {
                 errors.push(format!("startup task restore failed: {}", err.message));
             }
         }
@@ -995,9 +1102,11 @@ async fn legacy_import_apply(
         legacy_import_apply_blocking(document, machine, &app)
     })
     .await
-    .map_err(|err| legacy_import::LegacyImportError::apply_failed(format!(
-        "legacy import worker failed: {err}"
-    )))?
+    .map_err(|err| {
+        legacy_import::LegacyImportError::apply_failed(format!(
+            "legacy import worker failed: {err}"
+        ))
+    })?
 }
 
 #[cfg(windows)]
@@ -1021,12 +1130,9 @@ fn legacy_import_apply_blocking(
             *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::healthy();
         }
         Err(err) if err.code == "rollback_incomplete" => {
-            let startup_error = StartupError::rollback_incomplete(
-                err.message.clone(),
-                err.rollback_errors.clone(),
-            );
-            *app.state::<MachineStatus>().0.lock() =
-                MachineRuntimeStatus::failed(&startup_error);
+            let startup_error =
+                StartupError::rollback_incomplete(err.message.clone(), err.rollback_errors.clone());
+            *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::failed(&startup_error);
         }
         Err(_) => {}
     }
@@ -1088,6 +1194,102 @@ async fn resolve_app_file(
     })?
 }
 
+#[cfg(target_os = "macos")]
+fn current_platform_status(app: &tauri::AppHandle) -> PlatformRuntimeStatus {
+    let permissions = platform::macos::permissions::status();
+    let (running, engine_error) = app.state::<platform::macos::EngineState>().status();
+    let (code, message) = if !permissions.granted() {
+        (
+            Some("permission_required".to_string()),
+            Some(
+                "Accessibility, Input Monitoring, and event-posting access are required"
+                    .to_string(),
+            ),
+        )
+    } else if !running {
+        (
+            Some("gesture_engine_unavailable".to_string()),
+            Some(engine_error.unwrap_or_else(|| "the macOS gesture engine is not running".into())),
+        )
+    } else {
+        (None, None)
+    };
+    PlatformRuntimeStatus {
+        platform: "macos",
+        gesture_engine_running: running,
+        accessibility: permissions.accessibility,
+        input_monitoring: permissions.input_monitoring,
+        event_posting: permissions.event_posting,
+        code,
+        message,
+    }
+}
+
+#[cfg(windows)]
+fn current_platform_status(_app: &tauri::AppHandle) -> PlatformRuntimeStatus {
+    PlatformRuntimeStatus {
+        platform: "windows",
+        gesture_engine_running: true,
+        accessibility: true,
+        input_monitoring: true,
+        event_posting: true,
+        code: None,
+        message: None,
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn current_platform_status(_app: &tauri::AppHandle) -> PlatformRuntimeStatus {
+    PlatformRuntimeStatus {
+        platform: "unsupported",
+        gesture_engine_running: false,
+        accessibility: false,
+        input_monitoring: false,
+        event_posting: false,
+        code: Some("unsupported_platform".into()),
+        message: Some("the gesture engine is unsupported on this platform".into()),
+    }
+}
+
+#[tauri::command]
+fn platform_status(app: tauri::AppHandle) -> PlatformRuntimeStatus {
+    current_platform_status(&app)
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn platform_request_permissions(app: tauri::AppHandle) -> PlatformRuntimeStatus {
+    let _ = platform::macos::permissions::request_trust();
+    if platform::macos::permissions::is_trusted() {
+        let shared = app.state::<Arc<EngineShared>>().inner().clone();
+        if app
+            .state::<platform::macos::EngineState>()
+            .try_start(shared)
+        {
+            log::info!("macOS CGEventTap installed after permission request");
+        }
+    }
+    current_platform_status(&app)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn platform_request_permissions(app: tauri::AppHandle) -> PlatformRuntimeStatus {
+    current_platform_status(&app)
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn platform_open_permission_settings() -> Result<(), String> {
+    platform::macos::permissions::open_settings()
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn platform_open_permission_settings() -> Result<(), String> {
+    Err("permission settings are only available on macOS".into())
+}
+
 /// exe 名 → 图标 PNG 的 base64(裸 base64,前端自行拼 data: 前缀);
 /// 解析不到路径或取不到图标时返回 null(契约允许)。
 /// 解析要枚举窗口/读注册表,和 pick_window 一样丢到 blocking 线程,别卡住设置窗口。
@@ -1110,12 +1312,8 @@ async fn app_icon(exe_name: String) -> Option<String> {
 }
 
 /// 托盘:暂停/继续 · 设置 · 退出(对齐 WGestures 托盘菜单)
-#[cfg(windows)]
-fn setup_tray(
-    app: &tauri::App,
-    shared: Arc<EngineShared>,
-    visible: bool,
-) -> tauri::Result<()> {
+#[cfg(any(windows, target_os = "macos"))]
+fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>, visible: bool) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
 
@@ -1132,7 +1330,11 @@ fn setup_tray(
 
     app.manage(PauseMenuItem(pause_item.clone()));
     let tray = TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().cloned().expect("app icon missing"))
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .expect("app icon missing"),
+        )
         .tooltip(format!("GodGesture {}", env!("CARGO_PKG_VERSION")))
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -1165,7 +1367,7 @@ fn setup_tray(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn set_tray_visible(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
     let tray = app
         .tray_by_id("main-tray")
@@ -1175,12 +1377,12 @@ fn set_tray_visible(app: &tauri::AppHandle, visible: bool) -> Result<(), String>
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn current_tray_visibility(app: &tauri::AppHandle) -> bool {
     *app.state::<TrayVisibility>().0.lock()
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn publish_pause_state(app: &tauri::AppHandle, paused: bool) {
     if let Some(item) = app.try_state::<PauseMenuItem>() {
         if let Err(err) = item.0.set_text(if paused { "继续" } else { "暂停" }) {
@@ -1193,7 +1395,7 @@ fn publish_pause_state(app: &tauri::AppHandle, paused: bool) {
 }
 
 /// 全局暂停/继续快捷键(默认 Ctrl+Shift+Alt+W,配置可改)
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
     use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -1219,7 +1421,7 @@ fn setup_pause_hotkey(app: &tauri::App, shared: Arc<EngineShared>) {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn format_pause_hotkey(modifiers: &[String], key: &str) -> Option<String> {
     if key.is_empty() {
         return None;
@@ -1227,7 +1429,13 @@ fn format_pause_hotkey(modifiers: &[String], key: &str) -> Option<String> {
     // global-hotkey 的字符串语法把跨平台 meta 称为 Super。
     let modifiers = modifiers
         .iter()
-        .map(|modifier| if modifier == "meta" { "super" } else { modifier })
+        .map(|modifier| {
+            if modifier == "meta" {
+                "super"
+            } else {
+                modifier
+            }
+        })
         .collect::<Vec<_>>()
         .join("+");
     Some(if modifiers.is_empty() {
@@ -1237,12 +1445,12 @@ fn format_pause_hotkey(modifiers: &[String], key: &str) -> Option<String> {
     })
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn replace_pause_hotkey(app: &tauri::AppHandle, hotkey: &PauseHotkey) -> Result<(), String> {
     replace_pause_hotkey_parts(app, &hotkey.modifiers, &hotkey.key)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn replace_pause_hotkey_parts(
     app: &tauri::AppHandle,
     modifiers: &[String],
@@ -1251,12 +1459,12 @@ fn replace_pause_hotkey_parts(
     replace_pause_hotkey_value(app, format_pause_hotkey(modifiers, key))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn current_pause_hotkey(app: &tauri::AppHandle) -> Option<String> {
     app.state::<PauseHotkeyRegistration>().0.lock().clone()
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn replace_pause_hotkey_value(app: &tauri::AppHandle, next: Option<String>) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -1284,9 +1492,9 @@ fn replace_pause_hotkey_value(app: &tauri::AppHandle, next: Option<String>) -> R
                 None
             };
             return Err(match rollback {
-                Some(Err(rollback_err)) => format!(
-                    "无法注册快捷键 {shortcut}: {err}; 恢复旧快捷键也失败: {rollback_err}"
-                ),
+                Some(Err(rollback_err)) => {
+                    format!("无法注册快捷键 {shortcut}: {err}; 恢复旧快捷键也失败: {rollback_err}")
+                }
                 _ => format!("无法注册快捷键 {shortcut}: {err}"),
             });
         }
@@ -1371,6 +1579,15 @@ pub fn run() {
             let config = store.load_config();
             #[cfg(windows)]
             let machine = store.load_machine();
+            #[cfg(target_os = "macos")]
+            let mut machine = store.load_machine();
+            #[cfg(target_os = "macos")]
+            if machine.run_as_admin {
+                machine.run_as_admin = false;
+                if let Err(error) = store.save_machine(&machine) {
+                    log::warn!("cannot clear unsupported macOS runAsAdmin setting: {error}");
+                }
+            }
             app.manage(store);
             app.manage(ConfigTransaction(parking_lot::Mutex::new(())));
 
@@ -1387,12 +1604,13 @@ pub fn run() {
                     .spawn(move || {
                         let transaction = startup_app.state::<ConfigTransaction>();
                         let _transaction = transaction.0.lock();
-                        let result = platform::windows::startup::current_user_sid().and_then(|sid| {
-                            platform::windows::startup::reconcile_with_elevation(
-                                &startup_policy,
-                                &sid,
-                            )
-                        });
+                        let result =
+                            platform::windows::startup::current_user_sid().and_then(|sid| {
+                                platform::windows::startup::reconcile_with_elevation(
+                                    &startup_policy,
+                                    &sid,
+                                )
+                            });
                         let status = match result {
                             Ok(()) => MachineRuntimeStatus::healthy(),
                             Err(err) => {
@@ -1410,32 +1628,76 @@ pub fn run() {
                     *startup_failure_app.state::<MachineStatus>().0.lock() =
                         MachineRuntimeStatus::failed(&error);
                 }
-                let platform = Arc::new(platform::windows::WindowsPlatform);
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                let result = if machine.auto_start {
+                    platform::macos::startup::reconcile(true)
+                } else {
+                    Ok(())
+                };
+                let status = match result {
+                    Ok(()) => platform::macos::startup::runtime_status(machine.auto_start),
+                    Err(error) => {
+                        log::warn!(
+                            "macOS login item reconciliation failed [{}]: {}",
+                            error.code,
+                            error.message
+                        );
+                        MachineRuntimeStatus::failed(&error)
+                    }
+                };
+                app.manage(MachineStatus(parking_lot::Mutex::new(status)));
+            }
+
+            #[cfg(any(windows, target_os = "macos"))]
+            {
+                let platform = Arc::new(platform::CurrentPlatform);
                 let (shared, rx) = EngineShared::new(config, platform);
-                let overlay = platform::windows::overlay::Overlay::spawn();
-                spawn_engine_consumer(
-                    rx,
-                    Arc::clone(&shared),
-                    overlay,
-                    app.handle().clone(),
-                );
+                let overlay = platform::current::overlay::Overlay::spawn(app.handle());
+                spawn_engine_consumer(rx, Arc::clone(&shared), overlay, app.handle().clone());
                 app.manage(Arc::clone(&shared));
                 setup_tray(app, Arc::clone(&shared), machine.tray_icon_visible)?;
                 setup_pause_hotkey(app, Arc::clone(&shared));
-                let hook = platform::windows::start(Arc::clone(&shared));
-                // 钩子随应用生存期存活
-                app.manage(hook);
-                if setup_mode == EarlyMode::Interactive {
+
+                #[cfg(windows)]
+                {
+                    let hook = platform::windows::start(Arc::clone(&shared));
+                    app.manage(hook);
+                    if setup_mode == EarlyMode::Interactive {
+                        if let Some(win) = app.get_webview_window("main") {
+                            win.show()?;
+                            win.set_focus()?;
+                        }
+                    }
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    shared.spawn_timer_thread();
+                    let engine_state = platform::macos::EngineState::default();
+                    if engine_state.try_start(Arc::clone(&shared)) {
+                        log::info!("macOS CGEventTap installed");
+                    } else {
+                        let (_, error) = engine_state.status();
+                        log::warn!(
+                            "macOS gesture engine unavailable: {}",
+                            error.unwrap_or_else(|| "unknown error".into())
+                        );
+                    }
+                    app.manage(engine_state);
                     if let Some(win) = app.get_webview_window("main") {
                         win.show()?;
                         win.set_focus()?;
                     }
                 }
             }
-            #[cfg(not(windows))]
+
+            #[cfg(not(any(windows, target_os = "macos")))]
             {
                 let _ = config;
-                log::warn!("当前平台的手势引擎尚未实现(macOS 引擎在 M4 落地)");
+                log::warn!("gesture engine is unsupported on this platform");
                 if let Some(win) = app.get_webview_window("main") {
                     win.show()?;
                     win.set_focus()?;
@@ -1457,9 +1719,12 @@ pub fn run() {
             pick_window,
             resolve_app_file,
             app_icon,
+            platform_status,
+            platform_request_permissions,
+            platform_open_permission_settings,
         ])
         .on_window_event(|window, event| {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             if window.label() == "main" {
                 match event {
                     tauri::WindowEvent::CloseRequested { api, .. } => {

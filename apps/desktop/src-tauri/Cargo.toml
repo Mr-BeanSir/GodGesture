@@ -57,3 +57,13 @@ windows = { version = "0.62", features = [
   "Win32_Security",
   "Win32_Security_Authorization",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+objc2 = "0.6.4"
+objc2-app-kit = "0.3.2"
+objc2-application-services = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-foundation = "0.3.2"
+objc2-quartz-core = "0.3.2"

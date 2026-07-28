@@ -9,6 +9,7 @@ pub(crate) struct PickedWindow {
     pub exe_name: String,
     pub exe_path: String,
     pub aumid: Option<String>,
+    pub bundle_id: Option<String>,
     pub app_name: String,
 }
 
@@ -100,6 +101,7 @@ mod windows_impl {
             exe_name: info.exe_name,
             exe_path: info.exe_path,
             aumid: info.aumid,
+            bundle_id: None,
             app_name,
         }
     }
@@ -269,6 +271,7 @@ mod windows_impl {
             exe_name,
             exe_path: display_path(&canonical)?,
             aumid: None,
+            bundle_id: None,
             app_name,
         })
     }
@@ -410,12 +413,141 @@ mod windows_impl {
     }
 }
 
+#[cfg(target_os = "macos")]
+mod macos_impl {
+    use super::{AppAcquisitionError, PickedWindow};
+    use crate::platform::macos::{input, window};
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
+    use objc2_foundation::{NSBundle, NSString};
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    const PICK_TIMEOUT: Duration = Duration::from_secs(15);
+    const PICK_POLL_INTERVAL: Duration = Duration::from_millis(16);
+    const ESCAPE_KEY_CODE: u16 = 53;
+
+    fn left_button_down() -> bool {
+        CGEventSource::button_state(CGEventSourceStateID::HIDSystemState, CGMouseButton::Left)
+    }
+
+    fn escape_down() -> bool {
+        CGEventSource::key_state(CGEventSourceStateID::HIDSystemState, ESCAPE_KEY_CODE)
+    }
+
+    pub(super) fn pick_window() -> Option<PickedWindow> {
+        if !left_button_down() {
+            return None;
+        }
+
+        let started = Instant::now();
+        while left_button_down() {
+            if escape_down() || started.elapsed() >= PICK_TIMEOUT {
+                return None;
+            }
+            std::thread::sleep(PICK_POLL_INTERVAL);
+        }
+        if escape_down() {
+            return None;
+        }
+
+        let (bundle_id, app_name) = window::application_at(input::current_pointer().ok()?)?;
+        Some(PickedWindow {
+            exe_name: String::new(),
+            exe_path: String::new(),
+            aumid: None,
+            bundle_id: Some(bundle_id),
+            app_name,
+        })
+    }
+
+    fn info_string(bundle: &NSBundle, key: &str) -> Option<String> {
+        let key = NSString::from_str(key);
+        let value: Retained<AnyObject> = bundle.objectForInfoDictionaryKey(&key)?;
+        value
+            .downcast::<NSString>()
+            .ok()
+            .map(|value| value.to_string())
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub(super) fn resolve_app_file(path: &Path) -> Result<PickedWindow, AppAcquisitionError> {
+        let metadata = std::fs::metadata(path).map_err(|error| {
+            AppAcquisitionError::new(
+                "app_file_unavailable",
+                format!("read dropped application bundle: {error}"),
+            )
+        })?;
+        let is_app = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"));
+        if !metadata.is_dir() || !is_app {
+            return Err(AppAcquisitionError::new(
+                "unsupported_app_file",
+                "only macOS .app bundles are supported",
+            ));
+        }
+
+        let canonical = std::fs::canonicalize(path).map_err(|error| {
+            AppAcquisitionError::new(
+                "app_file_unavailable",
+                format!("resolve application bundle path: {error}"),
+            )
+        })?;
+        let path_string = canonical.to_str().ok_or_else(|| {
+            AppAcquisitionError::new(
+                "app_file_unavailable",
+                "application bundle path is not valid Unicode",
+            )
+        })?;
+        let bundle =
+            NSBundle::bundleWithPath(&NSString::from_str(path_string)).ok_or_else(|| {
+                AppAcquisitionError::new(
+                    "unsupported_app_file",
+                    "dropped directory is not a valid application bundle",
+                )
+            })?;
+        let bundle_id = bundle
+            .bundleIdentifier()
+            .map(|value| value.to_string())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AppAcquisitionError::new(
+                    "unsupported_app_file",
+                    "application bundle has no Bundle ID",
+                )
+            })?;
+        let fallback_name = canonical
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&bundle_id)
+            .to_string();
+        let app_name = info_string(&bundle, "CFBundleDisplayName")
+            .or_else(|| info_string(&bundle, "CFBundleName"))
+            .unwrap_or(fallback_name);
+
+        Ok(PickedWindow {
+            exe_name: String::new(),
+            exe_path: String::new(),
+            aumid: None,
+            bundle_id: Some(bundle_id),
+            app_name,
+        })
+    }
+}
+
 pub(crate) fn pick_window() -> Option<PickedWindow> {
     #[cfg(windows)]
     {
         windows_impl::pick_window()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        macos_impl::pick_window()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         None
     }
@@ -426,12 +558,16 @@ pub(crate) fn resolve_app_file(path: &Path) -> Result<PickedWindow, AppAcquisiti
     {
         windows_impl::resolve_app_file(path)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        macos_impl::resolve_app_file(path)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = path;
         Err(AppAcquisitionError::new(
             "unsupported_platform",
-            "Windows application files are unsupported on this platform",
+            "application files are unsupported on this platform",
         ))
     }
 }
@@ -446,6 +582,7 @@ mod tests {
             exe_name: "calculatorapp.exe".into(),
             exe_path: "C:\\Program Files\\WindowsApps\\CalculatorApp.exe".into(),
             aumid: Some("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".into()),
+            bundle_id: None,
             app_name: "Calculator".into(),
         })
         .unwrap();
@@ -455,6 +592,7 @@ mod tests {
             json["aumid"],
             "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
         );
+        assert!(json["bundleId"].is_null());
         assert!(json.get("exe_name").is_none());
     }
 }
