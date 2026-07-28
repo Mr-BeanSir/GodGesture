@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   GestureTemplateCatalog,
+  MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
   type GestureTemplateCatalogEntry,
 } from "@godgesture/shared";
 import {
@@ -95,6 +96,45 @@ describe("gesture template source", () => {
       ),
     );
     await expectSourceCode(source.loadPackage(entry), "identity_mismatch");
+  });
+
+  it("stops reading an unbounded response body at the package byte limit", async () => {
+    const source = createRemoteGestureTemplateSource(
+      "https://example.com/catalog.json",
+      vi.fn(async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new Uint8Array(MAX_GESTURE_TEMPLATE_PACKAGE_BYTES),
+              );
+              controller.enqueue(new Uint8Array(1));
+              controller.close();
+            },
+          }),
+        ),
+      ),
+    );
+
+    await expectSourceCode(source.loadPackage(catalogEntry()), "package_too_large");
+  });
+
+  it("keeps the timeout active while reading the response body", async () => {
+    const source = createRemoteGestureTemplateSource(
+      "https://example.com/catalog.json",
+      vi.fn(async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull() {
+              return new Promise(() => undefined);
+            },
+          }),
+        ),
+      ),
+      5,
+    );
+
+    await expectSourceCode(source.loadCatalog(), "template_timeout");
   });
 });
 

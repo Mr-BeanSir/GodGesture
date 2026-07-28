@@ -82,20 +82,36 @@ async function fetchBoundedText(
   inputUrl: string,
   maximumBytes: number,
   fetchImpl: Fetch,
+  requestTimeoutMs: number,
 ): Promise<string> {
   const url = validatedHttpsUrl(inputUrl);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let response: Response;
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
-    response = await fetchImpl(url, {
+    const response = await fetchImpl(url, {
       signal: controller.signal,
       redirect: "follow",
       headers: { accept: "application/json" },
     });
+    if (!response.ok) {
+      throw new TemplateSourceError(
+        "template_http",
+        `Template request failed with status ${response.status}`,
+      );
+    }
+    validateFinalResponseUrl(response.url || url.href);
+    const contentLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+      throw tooLargeError(maximumBytes);
+    }
+    return await readBoundedResponseText(
+      response,
+      maximumBytes,
+      controller.signal,
+    );
   } catch (error) {
-    const timedOut =
-      error instanceof DOMException && error.name === "AbortError";
+    if (error instanceof TemplateSourceError) throw error;
+    const timedOut = controller.signal.aborted;
     throw new TemplateSourceError(
       timedOut ? "template_timeout" : "template_network",
       timedOut ? "Template request timed out" : "Template request failed",
@@ -104,17 +120,12 @@ async function fetchBoundedText(
   } finally {
     clearTimeout(timeout);
   }
+}
 
-  if (!response.ok) {
-    throw new TemplateSourceError(
-      "template_http",
-      `Template request failed with status ${response.status}`,
-    );
-  }
-  const finalUrl = response.url || url.href;
-  let redirectedUrl: URL;
+function validateFinalResponseUrl(value: string) {
+  let url: URL;
   try {
-    redirectedUrl = new URL(finalUrl);
+    url = new URL(value);
   } catch (error) {
     throw new TemplateSourceError(
       "template_redirect_insecure",
@@ -123,26 +134,91 @@ async function fetchBoundedText(
     );
   }
   if (
-    redirectedUrl.protocol !== "https:" ||
-    redirectedUrl.username !== "" ||
-    redirectedUrl.password !== "" ||
-    !redirectedUrl.hostname
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    !url.hostname
   ) {
     throw new TemplateSourceError(
       "template_redirect_insecure",
       "Template request redirected to an insecure URL",
     );
   }
-  const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
-    throw new TemplateSourceError(
-      maximumBytes === MAX_GESTURE_TEMPLATE_CATALOG_BYTES
-        ? "catalog_too_large"
-        : "package_too_large",
-      `Template response exceeds ${maximumBytes} bytes`,
-    );
+}
+
+function tooLargeError(maximumBytes: number) {
+  return new TemplateSourceError(
+    maximumBytes === MAX_GESTURE_TEMPLATE_CATALOG_BYTES
+      ? "catalog_too_large"
+      : "package_too_large",
+    `Template response exceeds ${maximumBytes} bytes`,
+  );
+}
+
+async function readBoundedResponseText(
+  response: Response,
+  maximumBytes: number,
+  signal: AbortSignal,
+) {
+  const { promise: aborted, dispose } = abortPromise(signal);
+  try {
+    if (!response.body) {
+      const buffer = await Promise.race([response.arrayBuffer(), aborted]);
+      if (buffer.byteLength > maximumBytes) throw tooLargeError(maximumBytes);
+      return new TextDecoder().decode(buffer);
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), aborted]);
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > maximumBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw tooLargeError(maximumBytes);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      if (signal.aborted) await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(bytes);
+  } finally {
+    dispose();
   }
-  return response.text();
+}
+
+function abortPromise(signal: AbortSignal) {
+  if (signal.aborted) {
+    return {
+      promise: Promise.reject<never>(
+        new DOMException("Template request timed out", "AbortError"),
+      ),
+      dispose: () => undefined,
+    };
+  }
+  let rejectAbort: ((reason: DOMException) => void) | null = null;
+  const promise = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const onAbort = () =>
+    rejectAbort?.(new DOMException("Template request timed out", "AbortError"));
+  signal.addEventListener("abort", onAbort, { once: true });
+  return {
+    promise,
+    dispose: () => signal.removeEventListener("abort", onAbort),
+  };
 }
 
 function normalizeProtocolError(error: unknown): never {
@@ -157,6 +233,7 @@ export function createRemoteGestureTemplateSource(
     import.meta.env.VITE_GESTURE_TEMPLATE_CATALOG_URL?.trim() ||
     DEFAULT_GESTURE_TEMPLATE_CATALOG_URL,
   fetchImpl: Fetch = fetch,
+  requestTimeoutMs = REQUEST_TIMEOUT_MS,
 ): GestureTemplateSource {
   const validatedCatalogUrl = validatedHttpsUrl(catalogUrl).href;
   return {
@@ -165,6 +242,7 @@ export function createRemoteGestureTemplateSource(
         validatedCatalogUrl,
         MAX_GESTURE_TEMPLATE_CATALOG_BYTES,
         fetchImpl,
+        requestTimeoutMs,
       );
       try {
         return parseGestureTemplateCatalog(text);
@@ -177,6 +255,7 @@ export function createRemoteGestureTemplateSource(
         entry.packageUrl,
         MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
         fetchImpl,
+        requestTimeoutMs,
       );
       try {
         return verifyGestureTemplatePackage(
