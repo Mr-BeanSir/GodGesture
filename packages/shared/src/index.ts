@@ -7,3 +7,5 @@ export * from "./sync/protocol.js";
 export * from "./auth/protocol.js";
 export * from "./api/client.js";
 export * from "./importers/index.js";
+export * from "./templates/protocol.js";
+export * from "./templates/adoption.js";
