@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-28。产品代码与发布配置基线覆盖至 `969afe1`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-29。产品代码与发布配置基线覆盖至 `8939894`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -15,7 +15,7 @@
 | M4 macOS 引擎         | 原生实现与免费 ad-hoc DMG 流水已落地;待真实 Mac 功能、安装和升级验收后正式完成 |
 | M5 后端与账户         | 已完成;外部 OAuth 凭证按设计由部署环境提供                                     |
 | M6 云同步             | 已完成;桌面账户、原生凭据边界、整库同步、冲突恢复与快照恢复均已接入 Server    |
-| M7 Web 控制台与分发   | Web 控制台主体已实现;Updater 和模板分发未实现                                 |
+| M7 Web 控制台与分发   | 已完成;Web 控制台、签名 Updater、手势模板库与双平台发布流水均已落地           |
 | M8 打磨与发布         | 未开始;安装、提权启动、引导和正式发布尚未验收                                 |
 
 M4 的已知代码、配置和配套文档实现已经结束;当前没有未记录的预定开发任务。所有需要 GitHub macOS runner 或真实 Mac 的剩余验收集中在 `docs/qa/M4_MACOS_SMOKE.md`,安装与免费 DMG 操作见 `docs/MACOS_RELEASE.md`。验收中发现的缺陷须修复并重跑受影响项;清单全部通过、证据落档并将本表更新为“已完成”后,M4 才正式结束。
@@ -26,10 +26,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 | ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `apps/desktop/src-tauri` | Tauri 生命周期、双平台手势引擎、原生平台能力和本地配置;macOS 待真实设备验收         | `src/lib.rs`, `src/engine/`, `src/platform/windows/`, `src/platform/macos/`           |
 | `apps/desktop/src`       | Vue 设置界面、Pinia、本地/Tauri IPC;账户与云同步已接真实 Server,浏览器演示使用内存后端 | `src/App.vue`, `src/views/`, `src/cloud/`, `src/stores/account.ts`, `src/api/backend.ts` |
-| `packages/shared`        | 配置、认证、同步 Zod 协议、生成式 API 客户端、容量限制、热键规范化和旧配置导入          | `src/index.ts`, `src/api/`, `src/config/`, `src/auth/`, `src/sync/`, `src/importers/` |
+| `packages/shared`        | 配置、认证、同步与手势模板 Zod 协议,生成式 API 客户端、容量限制、热键规范化和旧配置导入 | `src/index.ts`, `src/api/`, `src/config/`, `src/auth/`, `src/sync/`, `src/templates/`, `src/importers/` |
 | `apps/server`            | NestJS REST API、Prisma/PostgreSQL、认证、设备、同步、快照                           | `src/app.module.ts`, `src/auth/`, `src/devices/`, `src/sync/`, `prisma/schema.prisma` |
 | `apps/web-console`       | 浏览器账户控制台;只读配置、设备、快照、安全                                          | `src/router/index.ts`, `src/api/`, `src/views/`                                       |
 | `apps/server` 部署       | 1Panel 手动部署、PostgreSQL、Docker 构建与迁移                                       | `README-DEPLOY.md`, `Dockerfile`, `docker-compose.*.yml`, `.env.example`              |
+| `distribution/gesture-templates` | 独立手势模板仓库种子;当前含 2 个低风险模板,生产客户端不读取此目录              | `catalog.json`, `packages/`, `README.md`, `scripts/validate-template-seed.mjs`         |
+| Desktop 发布            | Windows x64 NSIS、macOS universal ad-hoc DMG/Updater、确定性 `latest.json`            | `.github/workflows/desktop-release.yml`, `scripts/desktop-release.mjs`, `docs/DESKTOP_RELEASE.md` |
 | `WGestures/`             | WGestures 1.8.5 行为参考克隆,不属于本仓库产品代码                                    | 只用于行为对照,不要修改或纳入提交                                                     |
 
 ## Desktop Rust
@@ -41,6 +43,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
+- `updater.rs`:Tauri 原生 Updater 注册、HTTPS endpoint/目标选择、单 pending update、检查/安装互斥、稳定错误和有界进度事件;WebView 不持有下载 URL、签名或原生 update handle。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
 - `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
@@ -60,7 +63,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Desktop Vue
 
-- 页面:`OptionsView`, `GesturesView`, `CornersEdgesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。
+- 页面:`OptionsView`, `GesturesView`, `CornersEdgesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。
 - `api/backend.ts` 是唯一 Tauri IPC 网关;浏览器运行时自动使用 `api/mock.ts`。
 - `stores/config.ts` 负责加载、可取消防抖、串行保存、导入/远端应用 barrier 和即时生效;同步推送前可显式 flush,远端应用期间的新本地编辑不会被覆盖;协议变更必须同步核对 Rust `engine/config.rs`。
 - 本机设置通过显式串行更新操作保存,可观察 Task Scheduler/UAC pending 与结构化错误;`rollback_incomplete` 会重读后端状态,文档保存不会清除本机错误。
@@ -72,10 +75,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
+- `templates/` 与 `stores/templates.ts` 对不可信 GitHub catalog/package 执行 HTTPS、超时、大小、重定向、Schema 和身份校验;模板详情提供冲突策略、风险确认和纯规划,再经 `stores/config.ts` 整库原子 barrier 采纳。
+- `stores/update.ts` 与 `AboutView.vue` 提供手动/偏好控制的延迟自动检查、去重、稳定错误、下载进度和安装前配置 flush;自动检查不下载或安装。
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 1`;`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 1`;手势模板是独立分发协议,采纳后才并入个人配置,不提升配置格式版本。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
@@ -89,7 +94,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令和 Bundle ID 匹配的验收证据。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
-- macOS 免费 ad-hoc universal app/DMG workflow 已配置,无需 Apple Developer 凭证;尚未在 GitHub macOS runner 和真实 Mac 取得架构、DMG、校验和、手动放行及升级权限证据。Developer ID、公证、staple 和无警告 Gatekeeper 启动按 ADR-0011 明确不在完成定义内。Updater、手势模板库、安装包完整验收和快速引导未完成。
+- 双平台发布 workflow 已配置 Windows x64 NSIS、macOS free ad-hoc universal app/DMG/Updater、minisign、SHA-256 和确定性 `latest.json`;尚未执行首个真实 tag,也未在 GitHub macOS runner/真实 Mac 取得架构、DMG、手动放行及安装后升级权限证据。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。首个正式发布、双平台旧版到新版升级 smoke、快速引导仍归 M8。
+- 独立 `godgesture/gesture-templates` 公共仓库尚未由本次无 push 工作创建;已验证的种子位于 `distribution/gesture-templates`,正式发布前须按其 README 发布。自建 Server 不得代理该内容。
 
 ## 不得破坏的语义
 
@@ -120,6 +126,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
+- M7 已在浏览器 Desktop preview 验收模板列表、About Updater 状态和模板详情/采纳对话框:覆盖中文/英文、深色/浅色、`980x700` 与最小 `800x560`;无页面横向溢出、翻译 key 泄漏、对话框越界或不可达采纳操作。该观察使用确定性 mock,不代替 M8 的真实 GitHub Release 与已安装升级 smoke。
+- M7 发布合同已静态校验 workflow 触发器、最小权限、签名 Secrets、无 Apple 凭据、平台/资产名、checksum、tag/version gate 与 release 条件;fixture 装配出的 `latest.json` 在双次独立输入间字节一致。此证据不代替 GitHub runner 的真实产物。
 
 ## 验证基线
 
@@ -140,7 +148,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 75/75 + typecheck/build;server 86/86 + typecheck/build;`pnpm check:api`;desktop 63/63 + typecheck/build;web-console typecheck/build;prod/dev Compose 结构校验;Rust 146 passed + 1 ignored。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+2026-07-29 M7 受影响域结果:shared 88/88 + build;desktop 81/81 + typecheck/build;Rust 151 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

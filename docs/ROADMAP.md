@@ -42,10 +42,12 @@
 - 客户端同步引擎:防抖自动推送、启动/定时拉取、手动同步按钮、409 冲突拉取重推
 - 服务端:整库版本 + 乐观并发 + 快照留存;桌面端账户/同步面板
 
-## M7 Web 控制台 + 分发
+## M7 Web 控制台 + 分发 ✅
 - Web 控制台(Vue):只读配置查看、设备管理、快照回滚、账户安全
 - Tauri updater 接 GitHub Releases;手势模板库(独立 GitHub 仓库)浏览与采纳
+- Windows x64 NSIS + macOS universal ad-hoc DMG/Updater 发布流水,确定性 `latest.json` 与模板仓库种子
 
 ## M8 打磨与发布
-- 双平台安装包(NSIS / DMG)、"以管理员身份运行"开关、开机自启
-- 快速入门引导、文档、首个正式版发布
+- 首个正式 tag 发布;从真实 Release 验证 Windows x64 NSIS、macOS universal DMG/Updater 与校验文件
+- 双平台已安装旧版到新版 Updater smoke,并验收 SmartScreen、macOS 手动放行/TCC 与提权启动边界
+- 快速入门引导、最终用户文档与发布验收记录
