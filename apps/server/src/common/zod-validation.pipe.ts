@@ -3,7 +3,7 @@ import { ZodSchema } from 'zod';
 
 /**
  * 用共享包(@godgesture/shared)里的 zod Schema 解析请求体。
- * zod 是协议的唯一事实来源;Swagger 文档只做宽松描述。
+ * zod 是协议的唯一事实来源;OpenAPI 文档由同一批 Schema 生成。
  */
 @Injectable()
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {

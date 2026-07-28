@@ -19,11 +19,14 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "openapi:document": "nest build && node dist/openapi/generate.js",
+    "openapi:check": "nest build && node dist/openapi/generate.js --check",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "7.3.4",
     "@godgesture/shared": "workspace:*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.0",
@@ -33,8 +36,8 @@
     "@nestjs/swagger": "^11.0.0",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^6.19.3",
-    "prisma": "^6.19.3",
     "helmet": "^8.3.0",
+    "prisma": "^6.19.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.0"

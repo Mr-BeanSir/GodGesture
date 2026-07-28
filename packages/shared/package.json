@@ -20,6 +20,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "openapi-fetch": "^0.17.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

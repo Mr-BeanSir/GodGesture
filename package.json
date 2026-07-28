@@ -20,7 +20,12 @@
     "build:desktop": "pnpm --filter @godgesture/desktop tauri build",
     "build:server": "pnpm --filter @godgesture/server build",
     "build:shared": "pnpm --filter @godgesture/shared build",
+    "generate:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:document && node scripts/generate-api.mjs && pnpm --filter @godgesture/shared build",
+    "check:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:check && node scripts/generate-api.mjs --check",
     "typecheck": "pnpm -r --parallel typecheck",
     "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
   }
 }

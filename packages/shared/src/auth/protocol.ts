@@ -103,7 +103,7 @@ export const OAuthExchangeRequest = z.object({
 });
 export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequest>;
 
-/** OAuth 邮箱撞上未验证密码账户时的 409 响应。禁止按邮箱自动关联。 */
+/** OAuth 邮箱撞上密码账户时的结构化错误载荷。禁止按邮箱自动关联。 */
 export const OAuthEmailConflictResponse = z.object({
   error: z.literal("oauth_email_conflict"),
 });

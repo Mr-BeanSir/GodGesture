@@ -92,8 +92,9 @@ pull/push, snapshot list, and snapshot restore.
 Authenticated endpoints declare the bearer scheme. Redirect endpoints describe
 their path/query parameters and `302` response. JSON endpoints identify their
 success bodies and relevant structured errors, including validation failures,
-rate limiting, refresh rotation races, OAuth email conflicts, version conflicts,
-oversized configuration documents, and missing resources. Generic framework
+rate limiting, refresh rotation races, version conflicts, oversized
+configuration documents, and missing resources. OAuth redirect endpoints
+document the callback error flow, including email conflicts. Generic framework
 failures may use a generic error schema; the design does not invent new runtime
 error behavior solely for documentation.
 

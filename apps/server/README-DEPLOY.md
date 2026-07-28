@@ -54,7 +54,12 @@ docker compose -f docker-compose.prod.yml up -d --build
 完成后对外地址:
 
 - API 根:`https://api.example.com/api/v1/`
-- Swagger 文档:`https://api.example.com/docs`(如不想公开,可在 1Panel 反代规则里屏蔽 `/docs`)
+- 生产环境不挂载 Swagger UI,避免额外暴露 API 枚举面。开发环境运行
+  `pnpm dev:server` 后可访问 `http://127.0.0.1:3000/docs`。
+
+OpenAPI 契约提交在 `apps/server/openapi.json`,类型化客户端由同一契约生成到
+`packages/shared/src/api/generated.ts`。协议变化后在仓库根目录运行
+`pnpm generate:api`;提交前运行 `pnpm check:api` 检查生成产物是否漂移。
 
 ## 五、升级
 
