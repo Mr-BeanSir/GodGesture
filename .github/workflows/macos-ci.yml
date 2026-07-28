@@ -1,0 +1,47 @@
+name: macOS CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: clippy
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate desktop frontend
+        run: |
+          pnpm --filter @godgesture/desktop test
+          pnpm --filter @godgesture/desktop typecheck
+          pnpm --filter @godgesture/desktop build
+
+      - name: Test native Rust target
+        run: |
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+          cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Check both macOS architectures
+        run: |
+          cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --target aarch64-apple-darwin
+          cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --target x86_64-apple-darwin

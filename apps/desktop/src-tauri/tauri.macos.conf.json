@@ -1,0 +1,11 @@
+{
+  "identifier": "com.godgesture.desktop",
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist"
+    }
+  }
+}
