@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { readProjectVersion, releaseArtifactNames } from "./desktop-release.mjs";
+import {
+  PRODUCTION_REPOSITORY,
+  readProjectVersion,
+  releaseArtifactNames,
+} from "./desktop-release.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = resolve(root, ".github/workflows/desktop-release.yml");
@@ -57,10 +61,16 @@ for (const jobName of ["windows", "macos"]) {
   assert.match(serialized, /actions\/upload-artifact@v4/);
 }
 assert.match(JSON.stringify(jobs.assemble), /merge-multiple/);
-assert.match(runText(jobs.assemble), /scripts\/desktop-release\.mjs/);
+const assemble = runText(jobs.assemble);
+assert.match(assemble, /scripts\/desktop-release\.mjs/);
+assert.match(assemble, /--commit "\$GITHUB_SHA"/);
 assert.match(JSON.stringify(jobs.release), /softprops\/action-gh-release@v2/);
 assert.match(JSON.stringify(jobs.release), /release-artifacts\/\*/);
 assert.match(JSON.stringify(jobs.release), /fail_on_unmatched_files/);
+assert.match(JSON.stringify(jobs.release), /contains\(github\.ref_name, '-'/);
+assert.match(JSON.stringify(jobs.release), /prerelease/);
+assert.match(JSON.stringify(jobs.release), /make_latest/);
+assert.match(JSON.stringify(jobs.release), /docs\/USER_GUIDE\.md/);
 
 for (const forbidden of [
   "APPLE_CERTIFICATE",
@@ -76,6 +86,41 @@ for (const forbidden of [
 const version = await readProjectVersion(root);
 const names = releaseArtifactNames(version);
 assert.equal(Object.keys(names).length, 8);
+
+assert.equal(PRODUCTION_REPOSITORY, "Mr-BeanSir/GodGesture");
+const productionFiles = [
+  "apps/desktop/.env.example",
+  "apps/desktop/src-tauri/src/updater.rs",
+  "apps/desktop/src/templates/source.ts",
+  "apps/desktop/src/views/AboutView.vue",
+  "apps/desktop/src/views/TemplatesView.vue",
+  "distribution/gesture-templates/README.md",
+];
+const productionSources = await Promise.all(
+  productionFiles.map((path) => readFile(resolve(root, path), "utf8")),
+);
+for (const [index, text] of productionSources.entries()) {
+  assert.ok(
+    !text.includes("https://github.com/godgesture/"),
+    `Placeholder GitHub organization remains in ${productionFiles[index]}`,
+  );
+}
+
+const tauriConfig = JSON.parse(
+  await readFile(resolve(root, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"),
+);
+assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
+  `https://github.com/${PRODUCTION_REPOSITORY}/releases/latest/download/latest.json`,
+]);
+const templateCatalog = JSON.parse(
+  await readFile(resolve(root, "distribution/gesture-templates/catalog.json"), "utf8"),
+);
+for (const entry of templateCatalog.entries) {
+  assert.match(
+    entry.packageUrl,
+    /^https:\/\/github\.com\/Mr-BeanSir\/gesture-templates\/releases\/latest\/download\//,
+  );
+}
 console.log(
   `Validated signed desktop release workflow for GodGesture ${version} (${Object.values(names).join(", ")})`,
 );

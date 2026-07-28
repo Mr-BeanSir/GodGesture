@@ -85,7 +85,7 @@ jobs:
             $stream.Dispose()
           }
           if ((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne "NotSigned") {
-            throw "M7 Windows installer must remain without Authenticode signing"
+            throw "Windows installer must remain without Authenticode signing"
           }
 
           $version = node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8')).version"
@@ -224,6 +224,7 @@ jobs:
             --input incoming \
             --output release-artifacts \
             --repository "$GITHUB_REPOSITORY" \
+            --commit "$GITHUB_SHA" \
             --ref-type "$GITHUB_REF_TYPE" \
             --ref-name "$GITHUB_REF_NAME"
 
@@ -252,10 +253,13 @@ jobs:
           files: release-artifacts/*
           fail_on_unmatched_files: true
           generate_release_notes: true
-          make_latest: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
           body: |
             Windows packages are not Authenticode signed and may show a SmartScreen warning. Native updates are verified with the committed minisign public key before installation.
 
             The macOS DMG is free, ad-hoc signed, and not notarized by Apple. First launch may require Finder > Open or System Settings > Privacy & Security > Open Anyway. Accessibility and Input Monitoring permissions are granted separately after launch.
 
             SHA-256 checksum files are attached for every installer and updater package.
+
+            Installation and first-use instructions: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/USER_GUIDE.md
