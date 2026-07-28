@@ -6,23 +6,32 @@ The bundle identifier is `com.godgesture.desktop` and the minimum supported syst
 
 ## GitHub Actions
 
-The `macOS free DMG release` workflow has two entry points:
+The shared `Signed desktop release` workflow is documented in
+`docs/DESKTOP_RELEASE.md`. Its macOS job has two entry points:
 
 - Run it manually with `workflow_dispatch` to build a downloadable Actions artifact without creating a public release.
 - Push a tag matching `v*`, such as `v0.1.0`, to build the same artifact and attach it to a GitHub Release.
 
-For a tag build, the version after `v` must exactly match both `apps/desktop/package.json` and `apps/desktop/src-tauri/tauri.conf.json`. A mismatch fails before packaging.
+For a tag build, the version after `v` must exactly match
+`apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, and
+`apps/desktop/src-tauri/Cargo.toml`. A mismatch fails before publication. Both
+manual and tag builds require the updater signing secrets described in the
+desktop release guide.
 
 The workflow:
 
-1. Runs the focused desktop frontend and Rust library tests.
-2. Builds the universal application and DMG with the free ad-hoc identity `-`.
-3. Verifies the application signature envelope with `codesign`.
-4. Verifies the `arm64` and `x86_64` executable slices with `lipo`.
-5. Verifies the DMG filesystem with `hdiutil`.
-6. Publishes the DMG with a SHA-256 checksum.
+1. Builds the universal application, updater archive, and DMG with the free ad-hoc identity `-`.
+2. Verifies the application signature envelope with `codesign`.
+3. Verifies the `arm64` and `x86_64` executable slices with `lipo`.
+4. Verifies the DMG filesystem with `hdiutil`.
+5. Verifies the updater archive and signature.
+6. Publishes the DMG and updater archive with SHA-256 checksums.
 
-Manual and tag runs always retain `GodGesture-macOS-universal-ad-hoc` as a workflow artifact. Tag runs additionally create or update the matching GitHub Release. Only the tag release job receives `contents: write`; the build job remains read-only.
+The macOS build job uploads `GodGesture-macOS-universal-ad-hoc`; the assembly
+job combines it with the Windows artifact and retains
+`GodGesture-desktop-release` for 14 days. Tag runs additionally create or update
+the matching GitHub Release. Only the tag release job receives `contents:
+write`; build and assembly jobs remain read-only.
 
 ## Local Packaging
 
@@ -30,10 +39,14 @@ On a Mac with the repository toolchain installed, run:
 
 ```bash
 pnpm install --frozen-lockfile
+# Load TAURI_SIGNING_PRIVATE_KEY and its optional password from secure storage.
 APPLE_SIGNING_IDENTITY=- pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg
 ```
 
-This produces the application and DMG below `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle`. A local build is not a substitute for the tagged workflow when producing an official project release.
+This produces the application, updater archive, and DMG below
+`apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle`. Do not put
+the private key directly in shell history. A local build is not a substitute
+for the tagged workflow when producing an official project release.
 
 ## Download Verification
 

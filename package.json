@@ -21,12 +21,14 @@
     "build:server": "pnpm --filter @godgesture/server build",
     "build:shared": "pnpm --filter @godgesture/shared build",
     "validate:templates": "pnpm --filter @godgesture/shared build && node scripts/validate-template-seed.mjs",
+    "validate:release": "node --test scripts/__tests__/desktop-release.test.mjs && node scripts/validate-desktop-release.mjs",
     "generate:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:document && node scripts/generate-api.mjs && pnpm --filter @godgesture/shared build",
     "check:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:check && node scripts/generate-api.mjs --check",
     "typecheck": "pnpm -r --parallel typecheck",
     "test": "pnpm -r test"
   },
   "devDependencies": {
-    "openapi-typescript": "^7.13.0"
+    "openapi-typescript": "^7.13.0",
+    "yaml": "2.9.0"
   }
 }

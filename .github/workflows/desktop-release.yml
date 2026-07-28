@@ -1,0 +1,249 @@
+name: Signed desktop release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 NSIS
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test desktop frontend
+        run: pnpm --filter @godgesture/desktop test
+
+      - name: Test Rust library
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+
+      - name: Require updater signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY is required"
+          }
+
+      - name: Build x64 NSIS installer and updater signature
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm --filter @godgesture/desktop tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Verify and prepare Windows release files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundleRoot = "apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $installers = @(Get-ChildItem -LiteralPath $bundleRoot -File -Filter "*.exe")
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer, found $($installers.Count)" }
+
+          $installer = $installers[0]
+          $signaturePath = "$($installer.FullName).sig"
+          if (-not (Test-Path -LiteralPath $signaturePath -PathType Leaf)) { throw "Missing NSIS updater signature" }
+          $signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+          try { $signatureBytes = [Convert]::FromBase64String($signature) } catch { throw "NSIS updater signature is not base64" }
+          if ($signatureBytes.Length -lt 100) { throw "NSIS updater signature is unexpectedly short" }
+
+          $appExe = "apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/godgesture.exe"
+          if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw "Missing x64 application executable" }
+          $headers = (& dumpbin /headers $appExe | Out-String)
+          if ($headers -notmatch "8664 machine \(x64\)") { throw "Application executable is not x64" }
+          if ((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne "NotSigned") {
+            throw "M7 Windows installer must remain without Authenticode signing"
+          }
+
+          $version = node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8')).version"
+          $releaseDir = "apps/desktop/src-tauri/target/release-artifacts/windows"
+          $releaseName = "GodGesture_${version}_x64-setup.exe"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          $destination = Join-Path $releaseDir $releaseName
+          Copy-Item -LiteralPath $installer.FullName -Destination $destination
+          Copy-Item -LiteralPath $signaturePath -Destination "$destination.sig"
+          $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            "$destination.sha256",
+            "$hash  $releaseName`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GodGesture-Windows-x64
+          path: apps/desktop/src-tauri/target/release-artifacts/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS universal ad-hoc
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${TAURI_SIGNING_PRIVATE_KEY:-}"
+
+      - name: Build ad-hoc universal app, DMG, and updater archive
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg
+
+      - name: Verify and prepare macOS release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle"
+          app_path="$bundle_root/macos/GodGesture.app"
+          executable_path="$app_path/Contents/MacOS/GodGesture"
+          dmg_count=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')
+          dmg_path=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          updater_count=$(find "$bundle_root/macos" -maxdepth 1 -type f -name '*.app.tar.gz' | wc -l | tr -d ' ')
+          updater_path=$(find "$bundle_root/macos" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)
+          version=$(node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8')).version")
+          release_dir="apps/desktop/src-tauri/target/release-artifacts/macos"
+          dmg_name="GodGesture_${version}_universal.dmg"
+          updater_name="GodGesture_${version}_universal.app.tar.gz"
+
+          test -d "$app_path"
+          test -x "$executable_path"
+          test "$dmg_count" = "1"
+          test -n "$dmg_path"
+          test "$updater_count" = "1"
+          test -n "$updater_path"
+          test -f "$updater_path.sig"
+          signature=$(tr -d '\r\n' < "$updater_path.sig")
+          test ${#signature} -ge 100
+          printf '%s' "$signature" | grep -Eq '^[A-Za-z0-9+/]+={0,2}$'
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign -dv --verbose=4 "$app_path" 2>&1 | grep -q 'Signature=adhoc'
+          architectures=$(lipo -archs "$executable_path")
+          case " $architectures " in *" arm64 "*) ;; *) echo "Missing arm64 slice" >&2; exit 1 ;; esac
+          case " $architectures " in *" x86_64 "*) ;; *) echo "Missing x86_64 slice" >&2; exit 1 ;; esac
+          hdiutil verify "$dmg_path"
+          tar -tzf "$updater_path" | grep -Fx 'GodGesture.app/Contents/MacOS/GodGesture' >/dev/null
+
+          mkdir -p "$release_dir"
+          cp "$dmg_path" "$release_dir/$dmg_name"
+          cp "$updater_path" "$release_dir/$updater_name"
+          cp "$updater_path.sig" "$release_dir/$updater_name.sig"
+          for name in "$dmg_name" "$updater_name"; do
+            hash=$(shasum -a 256 "$release_dir/$name" | awk '{print $1}')
+            printf '%s  %s\n' "$hash" "$name" > "$release_dir/$name.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GodGesture-macOS-universal-ad-hoc
+          path: apps/desktop/src-tauri/target/release-artifacts/macos/*
+          if-no-files-found: error
+          retention-days: 14
+
+  assemble:
+    name: Assemble updater manifest
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: GodGesture-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Validate assets and create latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/desktop-release.mjs \
+            --input incoming \
+            --output release-artifacts \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref-type "$GITHUB_REF_TYPE" \
+            --ref-name "$GITHUB_REF_NAME"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GodGesture-desktop-release
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: assemble
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GodGesture-desktop-release
+          path: release-artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          make_latest: true
+          body: |
+            Windows packages are not Authenticode signed and may show a SmartScreen warning. Native updates are verified with the committed minisign public key before installation.
+
+            The macOS DMG is free, ad-hoc signed, and not notarized by Apple. First launch may require Finder > Open or System Settings > Privacy & Security > Open Anyway. Accessibility and Input Monitoring permissions are granted separately after launch.
+
+            SHA-256 checksum files are attached for every installer and updater package.
