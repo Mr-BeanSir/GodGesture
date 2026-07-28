@@ -7,6 +7,7 @@ import {
   importLegacyConfig,
   type LegacyImportResult,
 } from "@godgesture/shared";
+import type { MachineRuntimeStatus } from "../../api/backend";
 
 const backendSlot = vi.hoisted(() => ({ current: null as ReturnType<typeof makeBackend> | null }));
 
@@ -59,7 +60,28 @@ function makeBackend() {
     machineSet: vi.fn(async (next: MachineLocalSettings) => {
       machine = MachineLocalSettings.parse(next);
     }),
-    machineStatus: vi.fn(async () => ({ healthy: true, code: null, message: null })),
+    machineStatus: vi.fn(
+      async (): Promise<MachineRuntimeStatus> => ({ healthy: true, code: null, message: null }),
+    ),
+    platformStatus: vi.fn(async () => ({
+      platform: "windows" as const,
+      gestureEngineRunning: true,
+      accessibility: true,
+      inputMonitoring: true,
+      eventPosting: true,
+      code: null,
+      message: null,
+    })),
+    platformRequestPermissions: vi.fn(async () => ({
+      platform: "windows" as const,
+      gestureEngineRunning: true,
+      accessibility: true,
+      inputMonitoring: true,
+      eventPosting: true,
+      code: null,
+      message: null,
+    })),
+    platformOpenPermissionSettings: vi.fn(async () => undefined),
     legacyImportApply: vi.fn(async (nextDocument: ConfigDocument, nextMachine: MachineLocalSettings) => {
       document = ConfigDocument.parse(nextDocument);
       machine = MachineLocalSettings.parse(nextMachine);
@@ -76,6 +98,7 @@ function makeBackend() {
       exePath: "C:\\Test\\test.exe",
       appName: "Test",
       aumid: null,
+      bundleId: null,
     })),
     onAppFileDrop: vi.fn(async () => () => undefined),
     appIcon: vi.fn(async () => null),
@@ -202,6 +225,25 @@ describe("config store machine updates", () => {
     await write;
     expect(store.machinePending.autoStart).toBe(0);
     expect(backend.machineSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes platform machine status after a successful write", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    backend.machineStatus.mockResolvedValue({
+      healthy: false,
+      code: "login_item_requires_approval",
+      message: "approval required",
+    });
+
+    await store.updateMachineSetting("autoStart", true);
+
+    expect(store.machineStatus).toEqual({
+      healthy: false,
+      code: "login_item_requires_approval",
+      message: "approval required",
+    });
   });
 
   it("restores the confirmed value after a complete failure", async () => {

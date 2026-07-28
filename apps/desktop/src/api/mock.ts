@@ -131,6 +131,23 @@ export function createMockBackend(): Backend {
     async machineStatus() {
       return { healthy: true, code: null, message: null };
     },
+    async platformStatus() {
+      return {
+        platform: "windows" as const,
+        gestureEngineRunning: true,
+        accessibility: true,
+        inputMonitoring: true,
+        eventPosting: true,
+        code: null,
+        message: null,
+      };
+    },
+    async platformRequestPermissions() {
+      return this.platformStatus();
+    },
+    async platformOpenPermissionSettings() {
+      return undefined;
+    },
     async legacyImportApply(document, settings) {
       // Parse both values before either assignment so validation failure is atomic.
       const nextDocument = ConfigDocument.parse(document);
@@ -187,18 +204,21 @@ export function createMockBackend(): Backend {
           exePath: "C:\\Windows\\System32\\notepad.exe",
           appName: "记事本",
           aumid: null,
+          bundleId: null,
         },
         {
           exeName: "Code.exe",
           exePath: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
           appName: "Visual Studio Code",
           aumid: null,
+          bundleId: null,
         },
         {
           exeName: "explorer.exe",
           exePath: "C:\\Windows\\explorer.exe",
           appName: "文件资源管理器",
           aumid: null,
+          bundleId: null,
         },
       ];
       // 模拟准星取窗口的延迟
@@ -217,6 +237,7 @@ export function createMockBackend(): Backend {
         exePath: normalized,
         appName: stem,
         aumid: null,
+        bundleId: null,
       };
     },
     async onAppFileDrop() {

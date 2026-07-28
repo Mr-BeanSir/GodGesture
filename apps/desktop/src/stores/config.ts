@@ -203,7 +203,7 @@ export const useConfigStore = defineStore("config", () => {
           machine.value = MachineLocalSettings.parse(requested);
         }
         machineError.value = null;
-        machineStatus.value = { healthy: true, code: null, message: null };
+        machineStatus.value = await backend.machineStatus();
         saveState.value = hasPendingChanges() ? "saving" : "saved";
       } catch (error) {
         const normalized =

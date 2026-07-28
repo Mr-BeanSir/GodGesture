@@ -36,6 +36,7 @@ describe("mock backend application acquisition", () => {
       exePath: "C:\\Tools\\Example.exe",
       appName: "Example",
       aumid: null,
+      bundleId: null,
     });
   });
 

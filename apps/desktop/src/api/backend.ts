@@ -13,8 +13,8 @@
  *     + Tauri event "pause-changed", payload: boolean
  * - capture_start() / capture_cancel()
  *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, mnemonic}
- * - pick_window(): {exeName, exePath, appName, aumid} | null
- * - resolve_app_file(path): {exeName, exePath, appName, aumid}
+ * - pick_window(): {exeName, exePath, appName, aumid, bundleId} | null
+ * - resolve_app_file(path): {exeName, exePath, appName, aumid, bundleId}
  * - app_icon(exeName: string): string | null    // base64 png
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
@@ -34,6 +34,7 @@ export interface PickedWindow {
   exePath: string;
   appName: string;
   aumid: string | null;
+  bundleId: string | null;
 }
 
 export interface AppFileDropEvent {
@@ -45,6 +46,16 @@ export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
 
 export interface MachineRuntimeStatus {
   healthy: boolean;
+  code: string | null;
+  message: string | null;
+}
+
+export interface PlatformRuntimeStatus {
+  platform: "windows" | "macos" | "unsupported";
+  gestureEngineRunning: boolean;
+  accessibility: boolean;
+  inputMonitoring: boolean;
+  eventPosting: boolean;
   code: string | null;
   message: string | null;
 }
@@ -74,6 +85,9 @@ export interface Backend {
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
   machineStatus(): Promise<MachineRuntimeStatus>;
+  platformStatus(): Promise<PlatformRuntimeStatus>;
+  platformRequestPermissions(): Promise<PlatformRuntimeStatus>;
+  platformOpenPermissionSettings(): Promise<void>;
   /** Atomically applies a legacy import, or restores the previous backend state. */
   legacyImportApply(document: ConfigDocument, machine: MachineLocalSettings): Promise<void>;
 
@@ -165,6 +179,18 @@ function createTauriBackend(): Backend {
     async machineStatus() {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<MachineRuntimeStatus>("machine_status");
+    },
+    async platformStatus() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<PlatformRuntimeStatus>("platform_status");
+    },
+    async platformRequestPermissions() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<PlatformRuntimeStatus>("platform_request_permissions");
+    },
+    async platformOpenPermissionSettings() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("platform_open_permission_settings");
     },
     async legacyImportApply(document, machine) {
       const { invoke } = await import("@tauri-apps/api/core");

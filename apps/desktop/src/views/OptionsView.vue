@@ -8,7 +8,7 @@ import { useI18n } from "vue-i18n";
 import { InfoFilled, Loading, UploadFilled } from "@element-plus/icons-vue";
 import type { HotkeyKeyName, HotkeyModifier, MachineLocalSettings } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
-import { useBackend } from "../api/backend";
+import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
 import ArgbColorPicker from "../components/ArgbColorPicker.vue";
 import LegacyImportDialog from "../components/LegacyImportDialog.vue";
@@ -24,9 +24,36 @@ const machine = computed(() => store.machine!);
 
 const version = ref("");
 const legacyImportVisible = ref(false);
+const platformStatus = ref<PlatformRuntimeStatus | null>(null);
+const permissionPending = ref(false);
+const isMacOS = computed(() => platformStatus.value?.platform === "macos");
+const permissionsGranted = computed(() =>
+  Boolean(
+    platformStatus.value?.accessibility &&
+      platformStatus.value?.inputMonitoring &&
+      platformStatus.value?.eventPosting &&
+      platformStatus.value?.gestureEngineRunning,
+  ),
+);
 onMounted(async () => {
-  version.value = await backend.getAppVersion();
+  [version.value, platformStatus.value] = await Promise.all([
+    backend.getAppVersion(),
+    backend.platformStatus(),
+  ]);
 });
+
+async function requestPermissions() {
+  permissionPending.value = true;
+  try {
+    platformStatus.value = await backend.platformRequestPermissions();
+  } finally {
+    permissionPending.value = false;
+  }
+}
+
+async function openPermissionSettings() {
+  await backend.platformOpenPermissionSettings();
+}
 
 const MACHINE_ERROR_KEYS: Record<string, string> = {
   uac_cancelled: "uacCancelled",
@@ -39,6 +66,11 @@ const MACHINE_ERROR_KEYS: Record<string, string> = {
   rollback_incomplete: "rollbackIncomplete",
   helper_failed: "helperFailed",
   elevation_failed: "elevationFailed",
+  login_item_unavailable: "loginItemUnavailable",
+  login_item_failed: "loginItemFailed",
+  login_item_requires_approval: "loginItemRequiresApproval",
+  login_item_not_registered: "loginItemNotRegistered",
+  unsupported_machine_setting: "unsupportedMachineSetting",
 };
 
 const machineErrorMessage = computed(() => {
@@ -74,6 +106,33 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.general.title") }}</h3>
       <el-alert
+        v-if="isMacOS"
+        :type="permissionsGranted ? 'success' : 'warning'"
+        :closable="false"
+        show-icon
+        :title="
+          permissionsGranted
+            ? t('options.general.permissions.ready')
+            : t('options.general.permissions.required')
+        "
+      >
+        <div class="options__permission-body">
+          <div class="options__permission-status">
+            <span>{{ t("options.general.permissions.accessibility") }}: {{ platformStatus?.accessibility ? t("options.general.permissions.granted") : t("options.general.permissions.missing") }}</span>
+            <span>{{ t("options.general.permissions.inputMonitoring") }}: {{ platformStatus?.inputMonitoring ? t("options.general.permissions.granted") : t("options.general.permissions.missing") }}</span>
+            <span>{{ t("options.general.permissions.eventPosting") }}: {{ platformStatus?.eventPosting ? t("options.general.permissions.granted") : t("options.general.permissions.missing") }}</span>
+          </div>
+          <div v-if="!permissionsGranted" class="options__permission-actions">
+            <el-button type="primary" size="small" :loading="permissionPending" @click="requestPermissions">
+              {{ t("options.general.permissions.request") }}
+            </el-button>
+            <el-button size="small" @click="openPermissionSettings">
+              {{ t("options.general.permissions.openSettings") }}
+            </el-button>
+          </div>
+        </div>
+      </el-alert>
+      <el-alert
         v-if="store.machineError || !store.machineStatus.healthy"
         type="error"
         :closable="false"
@@ -92,17 +151,17 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
       <div class="gg-switch-row">
         <el-switch
           :model-value="machine.runAsAdmin"
-          :disabled="store.machineRecovering"
+          :disabled="store.machineRecovering || isMacOS"
           @update:model-value="updateMachine('runAsAdmin', $event)"
         />
         <span>{{ t("options.general.runAsAdmin") }}</span>
-        <el-tooltip :content="t('options.general.runAsAdminHint')" placement="top">
+        <el-tooltip :content="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')" placement="top">
           <el-icon class="gg-info"><InfoFilled /></el-icon>
         </el-tooltip>
         <el-icon v-if="store.machinePending.runAsAdmin" class="options__pending"><Loading /></el-icon>
       </div>
       <el-alert
-        v-if="machine.runAsAdmin"
+        v-if="machine.runAsAdmin && !isMacOS"
         type="warning"
         :closable="false"
         show-icon
@@ -281,6 +340,22 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
   height: 16px;
   color: var(--el-color-primary);
   animation: options-spin 1s linear infinite;
+}
+.options__permission-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.options__permission-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.options__permission-actions {
+  display: flex;
+  gap: 8px;
 }
 @keyframes options-spin {
   to {

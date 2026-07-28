@@ -38,6 +38,8 @@ const isEdit = computed(() => props.app !== null);
 const picking = ref(false);
 const resolvingDrop = ref(false);
 const dropActive = ref(false);
+const platform = ref<"windows" | "macos" | "unsupported">("windows");
+const isMacOS = computed(() => platform.value === "macos");
 
 // 本地编辑态(避免直接改动配置文档)
 const name = ref("");
@@ -68,9 +70,10 @@ watch(
 const hasNoBinding = computed(() => !exeName.value.trim() && !bundleId.value.trim());
 
 function applyPickedWindow(win: PickedWindow) {
-  exeName.value = win.exeName;
-  exactPath.value = win.exePath;
-  aumid.value = win.aumid ?? undefined;
+  if (win.exeName) exeName.value = win.exeName;
+  if (win.exePath) exactPath.value = win.exePath;
+  if (win.aumid) aumid.value = win.aumid;
+  if (win.bundleId) bundleId.value = win.bundleId;
   if (!name.value.trim()) name.value = win.appName;
 }
 
@@ -138,6 +141,12 @@ let unmounted = false;
 
 onMounted(() => {
   void backend
+    .platformStatus()
+    .then((status) => {
+      if (!unmounted) platform.value = status.platform;
+    })
+    .catch(() => undefined);
+  void backend
     .onAppFileDrop(onAppFileDrop)
     .then((unlisten) => {
       if (unmounted) unlisten();
@@ -201,7 +210,7 @@ function onSave() {
         <el-input v-model="name" :placeholder="t('appDialog.namePlaceholder')" />
       </div>
 
-      <div class="app-dialog__section" :class="{ 'is-drop-active': dropActive }">
+      <div v-if="!isMacOS" class="app-dialog__section" :class="{ 'is-drop-active': dropActive }">
         <div class="app-dialog__section-heading">
           <h4 class="app-dialog__section-title">{{ t("appDialog.windowsSection") }}</h4>
           <el-tooltip :content="t('appDialog.dropFile')" placement="top">
@@ -241,11 +250,34 @@ function onSave() {
         </div>
       </div>
 
-      <div class="app-dialog__section">
-        <h4 class="app-dialog__section-title">{{ t("appDialog.macSection") }}</h4>
+      <div class="app-dialog__section" :class="{ 'is-drop-active': isMacOS && dropActive }">
+        <div class="app-dialog__section-heading">
+          <h4 class="app-dialog__section-title">{{ t("appDialog.macSection") }}</h4>
+          <el-tooltip v-if="isMacOS" :content="t('appDialog.dropMacApp')" placement="top">
+            <el-icon
+              class="app-dialog__drop-icon"
+              :class="{ 'is-active': dropActive, 'is-loading': resolvingDrop }"
+            >
+              <Loading v-if="resolvingDrop" />
+              <UploadFilled v-else />
+            </el-icon>
+          </el-tooltip>
+        </div>
         <div class="gg-field">
           <label class="gg-field-label">{{ t("appDialog.bundleId") }}</label>
-          <el-input v-model="bundleId" :placeholder="t('appDialog.bundleIdPlaceholder')" />
+          <div class="app-dialog__inline">
+            <el-input v-model="bundleId" :placeholder="t('appDialog.bundleIdPlaceholder')" />
+            <el-tooltip v-if="isMacOS" :content="t('appDialog.pickWindow')" placement="top">
+              <el-button
+                class="app-dialog__pick"
+                :class="{ 'is-picking': picking }"
+                :icon="picking ? Loading : Aim"
+                :disabled="resolvingDrop"
+                :aria-label="t('appDialog.pickWindow')"
+                @pointerdown.prevent="pickWindow"
+              />
+            </el-tooltip>
+          </div>
         </div>
       </div>
 
