@@ -376,4 +376,54 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn native_errors_map_to_stable_phase_aware_codes() {
+        let cases = [
+            (
+                NativeUpdaterError::EmptyEndpoints,
+                UpdatePhase::Check,
+                "update_configuration_invalid",
+            ),
+            (
+                NativeUpdaterError::UnsupportedArch,
+                UpdatePhase::Check,
+                "update_unsupported_platform",
+            ),
+            (
+                NativeUpdaterError::TargetNotFound("windows-x86_64".into()),
+                UpdatePhase::Check,
+                "update_manifest_platform_missing",
+            ),
+            (
+                NativeUpdaterError::ReleaseNotFound,
+                UpdatePhase::Check,
+                "update_manifest_invalid",
+            ),
+            (
+                NativeUpdaterError::Network("offline".into()),
+                UpdatePhase::Check,
+                "update_network",
+            ),
+            (
+                NativeUpdaterError::SignatureUtf8("invalid".into()),
+                UpdatePhase::Install,
+                "update_signature_invalid",
+            ),
+            (
+                NativeUpdaterError::PackageInstallFailed,
+                UpdatePhase::Check,
+                "update_check_failed",
+            ),
+            (
+                NativeUpdaterError::PackageInstallFailed,
+                UpdatePhase::Install,
+                "update_install_failed",
+            ),
+        ];
+
+        for (error, phase, expected) in cases {
+            assert_eq!(UpdaterCommandError::from_native(error, phase).code, expected);
+        }
+    }
 }
