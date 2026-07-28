@@ -25,7 +25,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 | 部件                     | 职责与当前状态                                                                       | 关键入口                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `apps/desktop/src-tauri` | Tauri 生命周期、双平台手势引擎、原生平台能力和本地配置;macOS 待真实设备验收         | `src/lib.rs`, `src/engine/`, `src/platform/windows/`, `src/platform/macos/`           |
-| `apps/desktop/src`       | Vue 设置界面、Pinia、本地/Tauri IPC;主要配置页可用,账户同步是 mock                   | `src/App.vue`, `src/views/`, `src/api/backend.ts`                                     |
+| `apps/desktop/src`       | Vue 设置界面、Pinia、本地/Tauri IPC;账户与云同步已接真实 Server,浏览器演示使用内存后端 | `src/App.vue`, `src/views/`, `src/cloud/`, `src/stores/account.ts`, `src/api/backend.ts` |
 | `packages/shared`        | 配置、认证、同步 Zod 协议、生成式 API 客户端、容量限制、热键规范化和旧配置导入          | `src/index.ts`, `src/api/`, `src/config/`, `src/auth/`, `src/sync/`, `src/importers/` |
 | `apps/server`            | NestJS REST API、Prisma/PostgreSQL、认证、设备、同步、快照                           | `src/app.module.ts`, `src/auth/`, `src/devices/`, `src/sync/`, `prisma/schema.prisma` |
 | `apps/web-console`       | 浏览器账户控制台;只读配置、设备、快照、安全                                          | `src/router/index.ts`, `src/api/`, `src/views/`                                       |

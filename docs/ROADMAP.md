@@ -38,7 +38,7 @@
 - 邮箱+密码(Argon2)+ JWT 双令牌(设备级撤销);OAuth 可插拔(GitHub/Google 先行,微信/QQ 留配置位)
 - OpenAPI → 生成 TS 客户端进 shared;Dockerfile + 生产 compose(1Panel 部署)+ dev compose(PG)
 
-## M6 云同步
+## M6 云同步 ✅
 - 客户端同步引擎:防抖自动推送、启动/定时拉取、手动同步按钮、409 冲突拉取重推
 - 服务端:整库版本 + 乐观并发 + 快照留存;桌面端账户/同步面板
 
