@@ -1,3 +1,4 @@
+mod account;
 mod app_acquisition;
 pub mod engine;
 mod legacy_import;
@@ -1590,6 +1591,7 @@ pub fn run() {
             }
             app.manage(store);
             app.manage(ConfigTransaction(parking_lot::Mutex::new(())));
+            app.manage(account::OAuthLoopbackState::default());
 
             #[cfg(windows)]
             {
@@ -1722,6 +1724,15 @@ pub fn run() {
             platform_status,
             platform_request_permissions,
             platform_open_permission_settings,
+            account::account_credential_get,
+            account::account_credential_set,
+            account::account_credential_delete,
+            account::account_device_info,
+            account::sync_metadata_get,
+            account::sync_metadata_set,
+            account::oauth_loopback_start,
+            account::oauth_loopback_finish,
+            account::oauth_loopback_cancel,
         ])
         .on_window_event(|window, event| {
             #[cfg(any(windows, target_os = "macos"))]

@@ -32,6 +32,8 @@ ab_glyph = "0.2"
 log = "0.4"
 env_logger = "0.11"
 rquickjs = "0.10"
+keyring = { version = "4.1.5", default-features = false, features = ["v1"] }
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

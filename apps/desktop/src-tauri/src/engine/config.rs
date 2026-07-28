@@ -378,6 +378,16 @@ impl Default for MachineLocalSettings {
     }
 }
 
+/// Non-secret restart baseline for whole-document cloud synchronization.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncMetadata {
+    pub account_id: String,
+    pub server_version: u64,
+    pub last_synced_document: ConfigDocument,
+    pub last_sync_at: String,
+}
+
 // ---------------------------------------------------------------------------
 // 持久化:%APPDATA%/GodGesture/{config.json, machine.json}
 // ---------------------------------------------------------------------------
@@ -470,6 +480,9 @@ impl ConfigStore {
     fn machine_path(&self) -> PathBuf {
         self.dir.join("machine.json")
     }
+    fn sync_state_path(&self) -> PathBuf {
+        self.dir.join("sync-state.json")
+    }
 
     /// 加载配置;文件不存在时写入默认手势库种子
     pub fn load_config(&self) -> ConfigDocument {
@@ -494,6 +507,26 @@ impl ConfigStore {
 
     pub fn save_machine(&self, m: &MachineLocalSettings) -> std::io::Result<()> {
         self.save(&self.machine_path(), m)
+    }
+
+    pub fn load_sync_metadata(&self) -> Option<SyncMetadata> {
+        let path = self.sync_state_path();
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
+            Err(err) => {
+                log::warn!("同步元数据读取失败: {path:?}: {err}");
+                return None;
+            }
+        };
+        serde_json::from_str(&text).map(Some).unwrap_or_else(|err| {
+            log::warn!("同步元数据损坏,忽略本地基线: {path:?}: {err}");
+            None
+        })
+    }
+
+    pub fn save_sync_metadata(&self, metadata: &SyncMetadata) -> std::io::Result<()> {
+        self.save(&self.sync_state_path(), metadata)
     }
 
     pub(crate) fn snapshot_files(&self) -> io::Result<ConfigFilesSnapshot> {
@@ -685,5 +718,41 @@ mod tests {
 
         assert_eq!(store.load_config(), original);
         assert!(!store.machine_path().exists());
+    }
+
+    #[test]
+    fn sync_metadata_roundtrips_and_replaces_atomically() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+        let first = SyncMetadata {
+            account_id: "20000000-0000-4000-8000-000000000001".into(),
+            server_version: 3,
+            last_synced_document: ConfigDocument::default(),
+            last_sync_at: "2026-07-28T10:00:00.000Z".into(),
+        };
+        let mut second = first.clone();
+        second.server_version = 4;
+        second
+            .last_synced_document
+            .preferences
+            .auto_check_for_update = false;
+
+        store.save_sync_metadata(&first).unwrap();
+        store.save_sync_metadata(&second).unwrap();
+
+        assert_eq!(store.load_sync_metadata(), Some(second));
+        assert!(!store.sync_state_path().with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn invalid_sync_metadata_is_ignored_without_touching_config() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+        let config = ConfigDocument::default();
+        store.save_config(&config).unwrap();
+        std::fs::write(store.sync_state_path(), b"not-json").unwrap();
+
+        assert_eq!(store.load_sync_metadata(), None);
+        assert_eq!(store.load_config(), config);
     }
 }
