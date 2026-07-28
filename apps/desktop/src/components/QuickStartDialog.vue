@@ -113,6 +113,7 @@ function openLegacyImport() {
     class="quick-guide"
     :title="t('quickGuide.title')"
     width="min(620px, calc(100vw - 32px))"
+    align-center
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -219,21 +220,24 @@ function openLegacyImport() {
 
     <template #footer>
       <div class="quick-guide__footer">
-        <el-button v-if="activeStep > 0" :icon="ArrowLeft" @click="activeStep -= 1">
-          {{ t("quickGuide.back") }}
-        </el-button>
-        <span />
-        <el-button
-          v-if="activeStep < 2"
-          type="primary"
-          @click="activeStep += 1"
-        >
-          {{ t("quickGuide.next") }}
-          <el-icon class="el-icon--right"><ArrowRight /></el-icon>
-        </el-button>
-        <el-button v-else type="primary" @click="close">
-          {{ t("quickGuide.finish") }}
-        </el-button>
+        <div>
+          <el-button v-if="activeStep > 0" :icon="ArrowLeft" @click="activeStep -= 1">
+            {{ t("quickGuide.back") }}
+          </el-button>
+        </div>
+        <div>
+          <el-button
+            v-if="activeStep < 2"
+            type="primary"
+            @click="activeStep += 1"
+          >
+            {{ t("quickGuide.next") }}
+            <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+          </el-button>
+          <el-button v-else type="primary" @click="close">
+            {{ t("quickGuide.finish") }}
+          </el-button>
+        </div>
       </div>
     </template>
   </el-dialog>
@@ -320,9 +324,9 @@ function openLegacyImport() {
 }
 .quick-guide__footer {
   width: 100%;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 @media (max-width: 560px) {
   .quick-guide__content {

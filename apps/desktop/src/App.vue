@@ -113,9 +113,9 @@ watchEffect(() => {
 });
 
 watch(
-  () => updates.automaticPromptPending,
-  async (pending) => {
-    if (!pending || !updates.metadata) return;
+  [() => updates.automaticPromptPending, quickStartVisible, legacyImportVisible],
+  async ([pending, guideVisible, importVisible]) => {
+    if (!pending || guideVisible || importVisible || !updates.metadata) return;
     updates.dismissAutomaticPrompt();
     try {
       await ElMessageBox.confirm(
