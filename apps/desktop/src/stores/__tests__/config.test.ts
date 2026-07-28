@@ -323,6 +323,54 @@ describe("config store cloud synchronization barriers", () => {
   });
 });
 
+describe("config store template adoption barrier", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    backendSlot.current = makeBackend();
+    setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    backendSlot.current = null;
+  });
+
+  it("applies a planned document once when the expected snapshot is current", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+
+    await expect(
+      store.applyTemplateDocument(
+        documentWithLocale("en"),
+        documentWithLocale("auto"),
+      ),
+    ).resolves.toBe(true);
+
+    expect(backend.configSet).toHaveBeenCalledTimes(1);
+    expect(store.doc!.preferences.locale).toBe("en");
+  });
+
+  it("rejects a stale plan without writing its document", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    store.doc!.preferences.locale = "zh-CN";
+    await nextTick();
+
+    await expect(
+      store.applyTemplateDocument(
+        documentWithLocale("en"),
+        documentWithLocale("auto"),
+      ),
+    ).resolves.toBe(false);
+
+    expect(backend.configSet).toHaveBeenCalledTimes(1);
+    expect(backend.configSet.mock.calls[0]![0].preferences.locale).toBe("zh-CN");
+    expect(store.doc!.preferences.locale).toBe("zh-CN");
+  });
+});
+
 describe("config store machine updates", () => {
   beforeEach(() => {
     vi.useFakeTimers();

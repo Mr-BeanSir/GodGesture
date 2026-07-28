@@ -49,7 +49,7 @@ export const useConfigStore = defineStore("config", () => {
   let saveGeneration = 0;
   let machineEditVersion = 0;
   let applyingImport = false;
-  let applyingSyncedDocument = false;
+  let applyingDocumentBarrier = false;
   let unlistenPause: (() => void) | null = null;
   let pauseEventVersion = 0;
   let disposed = false;
@@ -260,14 +260,14 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   function scheduleDocSave() {
-    if (applyingImport || applyingSyncedDocument) return;
+    if (applyingImport || applyingDocumentBarrier) return;
     if (docSaveTimer) clearTimeout(docSaveTimer);
     const generation = saveGeneration;
     docSaveTimer = setTimeout(() => {
       docSaveTimer = null;
       if (
         !applyingImport &&
-        !applyingSyncedDocument &&
+        !applyingDocumentBarrier &&
         generation === saveGeneration
       ) {
         void persistDoc().catch(() => undefined);
@@ -303,16 +303,17 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
-  async function applySyncedDocument(
+  async function applyWholeDocument(
     document: ConfigDocument,
     expectedLocalDocument: ConfigDocument,
   ): Promise<boolean> {
     if (!doc.value) throw new Error("config is not ready");
+    if (applyingDocumentBarrier) return false;
     const next = ConfigDocument.parse(document);
     const expectedSerialized = JSON.stringify(
       ConfigDocument.parse(expectedLocalDocument),
     );
-    applyingSyncedDocument = true;
+    applyingDocumentBarrier = true;
     clearSaveTimers();
     saveGeneration += 1;
     try {
@@ -328,9 +329,23 @@ export const useConfigStore = defineStore("config", () => {
       saveState.value = "saved";
       return true;
     } finally {
-      applyingSyncedDocument = false;
+      applyingDocumentBarrier = false;
       saveGeneration += 1;
     }
+  }
+
+  function applySyncedDocument(
+    document: ConfigDocument,
+    expectedLocalDocument: ConfigDocument,
+  ) {
+    return applyWholeDocument(document, expectedLocalDocument);
+  }
+
+  function applyTemplateDocument(
+    document: ConfigDocument,
+    expectedLocalDocument: ConfigDocument,
+  ) {
+    return applyWholeDocument(document, expectedLocalDocument);
   }
 
   async function applyLegacyImport(result: LegacyImportResult) {
@@ -389,8 +404,10 @@ export const useConfigStore = defineStore("config", () => {
     load,
     togglePause,
     applyLegacyImport,
+    flushPendingSaves,
     flushDocumentSaves,
     applySyncedDocument,
+    applyTemplateDocument,
     updateMachineSetting,
   };
 });
