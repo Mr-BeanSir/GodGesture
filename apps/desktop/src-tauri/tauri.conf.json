@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDQzk1QzlFODRDMUE2MzAKUldRd3BzR0VubHpKM09Mc1hHZE5aYm5HSlJDdEM2bm5hRllzdlZKKzdjN1JxR0k0eUNPMTh2bE8K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCMUU3QUE5MTUxODUyNTgKUldSWVVoZ1ZxWG9lMjdMZ1NnWXE3SXpzZzIrVHdJNHB3d2xrM0kyM0c2RHVoTEE1aC9ha0hiV2cK",
       "endpoints": [
         "https://github.com/Mr-BeanSir/GodGesture/releases/latest/download/latest.json"
       ]
