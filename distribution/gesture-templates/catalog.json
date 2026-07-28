@@ -1,0 +1,51 @@
+{
+  "formatVersion": 1,
+  "generatedAt": "2026-07-28T15:00:00Z",
+  "entries": [
+    {
+      "slug": "global-window-basics",
+      "version": "1.0.0",
+      "title": {
+        "zh-CN": "全局窗口基础手势",
+        "en": "Global window basics"
+      },
+      "summary": {
+        "zh-CN": "用三个简单手势最大化、最小化和关闭当前窗口。",
+        "en": "Maximize, minimize, and close the current window with three simple gestures."
+      },
+      "author": "GodGesture",
+      "tags": ["window", "global"],
+      "target": {
+        "scope": "global"
+      },
+      "risks": [],
+      "packageUrl": "https://github.com/godgesture/gesture-templates/releases/latest/download/global-window-basics.json"
+    },
+    {
+      "slug": "browser-window-basics",
+      "version": "1.0.0",
+      "title": {
+        "zh-CN": "Chrome 窗口基础手势",
+        "en": "Chrome window basics"
+      },
+      "summary": {
+        "zh-CN": "为 Windows 和 macOS Chrome 添加最大化、最小化和关闭窗口手势。",
+        "en": "Add maximize, minimize, and close-window gestures for Chrome on Windows and macOS."
+      },
+      "author": "GodGesture",
+      "tags": ["browser", "window"],
+      "target": {
+        "scope": "app",
+        "name": "Google Chrome",
+        "windows": {
+          "exeName": "chrome.exe"
+        },
+        "mac": {
+          "bundleId": "com.google.Chrome"
+        }
+      },
+      "risks": [],
+      "packageUrl": "https://github.com/godgesture/gesture-templates/releases/latest/download/browser-window-basics.json"
+    }
+  ]
+}

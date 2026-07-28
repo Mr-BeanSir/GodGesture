@@ -1,0 +1,49 @@
+{
+  "formatVersion": 1,
+  "slug": "global-window-basics",
+  "version": "1.0.0",
+  "target": {
+    "scope": "global",
+    "intents": [
+      {
+        "name": "最大化或还原窗口 / Maximize or restore window",
+        "gesture": {
+          "trigger": "right",
+          "strokes": ["up"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "maximizeRestore"
+        },
+        "executeOnModifier": false
+      },
+      {
+        "name": "最小化窗口 / Minimize window",
+        "gesture": {
+          "trigger": "right",
+          "strokes": ["down"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "minimize"
+        },
+        "executeOnModifier": false
+      },
+      {
+        "name": "关闭窗口 / Close window",
+        "gesture": {
+          "trigger": "right",
+          "strokes": ["rightDown"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "close"
+        },
+        "executeOnModifier": false
+      }
+    ]
+  }
+}

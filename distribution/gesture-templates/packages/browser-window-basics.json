@@ -1,0 +1,58 @@
+{
+  "formatVersion": 1,
+  "slug": "browser-window-basics",
+  "version": "1.0.0",
+  "target": {
+    "scope": "app",
+    "name": "Google Chrome",
+    "windows": {
+      "exeName": "chrome.exe"
+    },
+    "mac": {
+      "bundleId": "com.google.Chrome"
+    },
+    "gesturingEnabled": true,
+    "inheritGlobalGestures": true,
+    "intents": [
+      {
+        "name": "最大化或还原 Chrome / Maximize or restore Chrome",
+        "gesture": {
+          "trigger": "middle",
+          "strokes": ["up"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "maximizeRestore"
+        },
+        "executeOnModifier": false
+      },
+      {
+        "name": "最小化 Chrome / Minimize Chrome",
+        "gesture": {
+          "trigger": "middle",
+          "strokes": ["down"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "minimize"
+        },
+        "executeOnModifier": false
+      },
+      {
+        "name": "关闭 Chrome 窗口 / Close Chrome window",
+        "gesture": {
+          "trigger": "middle",
+          "strokes": ["rightDown"],
+          "modifier": "none"
+        },
+        "command": {
+          "type": "windowControl",
+          "operation": "close"
+        },
+        "executeOnModifier": false
+      }
+    ]
+  }
+}
