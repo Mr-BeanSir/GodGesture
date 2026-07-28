@@ -11,7 +11,10 @@ import { useConfigStore } from "../stores/config";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
 import ArgbColorPicker from "../components/ArgbColorPicker.vue";
-import LegacyImportDialog from "../components/LegacyImportDialog.vue";
+
+const emit = defineEmits<{
+  "open-legacy-import": [];
+}>();
 
 const { t } = useI18n();
 const store = useConfigStore();
@@ -23,7 +26,6 @@ const view = computed(() => store.doc!.preferences.gestureView);
 const machine = computed(() => store.machine!);
 
 const version = ref("");
-const legacyImportVisible = ref(false);
 const platformStatus = ref<PlatformRuntimeStatus | null>(null);
 const permissionPending = ref(false);
 const isMacOS = computed(() => platformStatus.value?.platform === "macos");
@@ -304,13 +306,12 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.legacyImport.sectionTitle") }}</h3>
       <div>
-        <el-button :icon="UploadFilled" @click="legacyImportVisible = true">
+        <el-button :icon="UploadFilled" @click="emit('open-legacy-import')">
           {{ t("options.legacyImport.openAction") }}
         </el-button>
       </div>
     </section>
   </div>
-  <LegacyImportDialog v-model="legacyImportVisible" />
 </template>
 
 <style scoped>

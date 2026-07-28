@@ -14,6 +14,14 @@ import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
 import { useUpdateStore } from "./stores/update";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
+import {
+  completeQuickGuide,
+  isQuickGuideForced,
+  resolveQuickGuideStorage,
+  shouldShowQuickGuide,
+} from "./onboarding/quick-guide";
+import LegacyImportDialog from "./components/LegacyImportDialog.vue";
+import QuickStartDialog from "./components/QuickStartDialog.vue";
 import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
 import CornersEdgesView from "./views/CornersEdgesView.vue";
@@ -33,6 +41,9 @@ const isDark = useDark();
 const toggleDark = useToggle(isDark);
 
 const active = ref<Section>("options");
+const quickStartVisible = ref(false);
+const legacyImportVisible = ref(false);
+const quickGuideStorage = resolveQuickGuideStorage();
 const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
@@ -42,7 +53,17 @@ const SECTION_VIEWS = {
   about: AboutView,
 } as const;
 const currentView = computed(() => SECTION_VIEWS[active.value]);
+const currentViewBindings = computed(() => {
+  if (active.value === "options") {
+    return { onOpenLegacyImport: openLegacyImport };
+  }
+  if (active.value === "about") {
+    return { onOpenQuickStart: openQuickStart };
+  }
+  return {};
+});
 const needsConfig = computed(() => active.value !== "account" && active.value !== "about");
+const quickStartIntents = computed(() => store.doc?.global.intents ?? []);
 
 const localeSetting = computed<LocaleSetting>({
   get: () => store.doc?.preferences.locale ?? "auto",
@@ -57,6 +78,26 @@ const elementLocale = computed(() => (locale.value === "zh-CN" ? zhCn : en));
 
 function onSelectSection(index: string) {
   active.value = index as Section;
+}
+
+function setQuickStartVisible(visible: boolean) {
+  if (!visible) completeQuickGuide(quickGuideStorage);
+  quickStartVisible.value = visible;
+}
+
+function openQuickStart() {
+  quickStartVisible.value = true;
+}
+
+function openGuideDestination(destination: "gestures" | "templates") {
+  active.value = destination;
+  setQuickStartVisible(false);
+}
+
+function openLegacyImport() {
+  active.value = "options";
+  setQuickStartVisible(false);
+  legacyImportVisible.value = true;
 }
 
 // 配置载入后应用已保存的语言
@@ -96,6 +137,13 @@ watch(
 onMounted(() => {
   void (async () => {
     await store.load();
+    const forced =
+      !store.backend.isTauri &&
+      typeof window !== "undefined" &&
+      isQuickGuideForced(window.location.search);
+    if (store.ready && (forced || shouldShowQuickGuide(quickGuideStorage))) {
+      quickStartVisible.value = true;
+    }
     await account.initialize();
     updates.scheduleAutomaticCheck(
       store.doc?.preferences.autoCheckForUpdate ?? false,
@@ -149,7 +197,11 @@ onMounted(() => {
       </el-aside>
 
       <el-main class="app__main">
-        <component :is="currentView" v-if="!needsConfig || store.ready" />
+        <component
+          :is="currentView"
+          v-if="!needsConfig || store.ready"
+          v-bind="currentViewBindings"
+        />
         <el-result
           v-else-if="store.loadError"
           icon="error"
@@ -174,6 +226,15 @@ onMounted(() => {
       <span v-else-if="store.saveState === 'error'" class="app__save app__save--err">{{ t("footer.saveError") }}</span>
       <el-tag v-if="!isTauri" type="info" size="small" class="app__mock">{{ t("footer.mockMode") }}</el-tag>
     </el-footer>
+
+    <QuickStartDialog
+      :model-value="quickStartVisible"
+      :intents="quickStartIntents"
+      @update:model-value="setQuickStartVisible"
+      @navigate="openGuideDestination"
+      @open-legacy-import="openLegacyImport"
+    />
+    <LegacyImportDialog v-model="legacyImportVisible" />
     </el-container>
   </el-config-provider>
 </template>

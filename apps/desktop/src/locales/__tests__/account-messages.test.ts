@@ -46,7 +46,7 @@ describe("account locale messages", () => {
       messages: { [locale]: messages },
     });
 
-    for (const root of ["templates", "about"] as const) {
+    for (const root of ["templates", "quickGuide", "about"] as const) {
       for (const key of leafKeys(messages[root], root)) {
         expect(() => i18n.global.t(key)).not.toThrow();
       }

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Download, Link, Refresh } from "@element-plus/icons-vue";
+import { Download, Guide, Link, Refresh } from "@element-plus/icons-vue";
 import { useBackend } from "../api/backend";
 import { useUpdateStore } from "../stores/update";
 
 const DEFAULT_HOMEPAGE = "https://github.com/Mr-BeanSir/GodGesture";
+
+const emit = defineEmits<{
+  "open-quick-start": [];
+}>();
 
 const { t, locale } = useI18n();
 const backend = useBackend();
@@ -44,9 +48,14 @@ function errorText(code: string) {
           <h2 class="about__name">{{ t("app.name") }}</h2>
           <p class="about__version">{{ t("about.version", { version }) }}</p>
         </div>
-        <el-button :icon="Link" @click="backend.openExternal(homepage)">
-          {{ t("about.homepage") }}
-        </el-button>
+        <div class="about__actions">
+          <el-button :icon="Guide" @click="emit('open-quick-start')">
+            {{ t("about.quickGuide") }}
+          </el-button>
+          <el-button :icon="Link" @click="backend.openExternal(homepage)">
+            {{ t("about.homepage") }}
+          </el-button>
+        </div>
       </div>
       <p class="about__desc">{{ t("about.appDesc") }}</p>
     </section>
@@ -141,6 +150,12 @@ function errorText(code: string) {
   justify-content: space-between;
   gap: 16px;
 }
+.about__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .about__name {
   margin: 0 0 4px;
   font-size: 20px;
@@ -196,6 +211,9 @@ function errorText(code: string) {
   .about__heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .about__actions {
+    justify-content: flex-start;
   }
   .about__heading > .el-button {
     align-self: flex-start;
