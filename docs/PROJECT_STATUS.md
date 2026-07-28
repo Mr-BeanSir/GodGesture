@@ -151,7 +151,7 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 
 2026-07-29 M7 最终交接复核重跑结果:shared 90/90 + build;desktop 83/83 + typecheck/build;Rust 152 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过;`git diff --check 06374ac..HEAD` 通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
 
-2026-07-29 M8 阶段验证:Desktop 88/88 + typecheck/build;发布脚本 10/10 且 prerelease/workflow 静态合同通过;2 个模板种子验证通过;Rust Updater 6/6。快速入门浏览器视觉验收、真实模板仓库、签名密钥、Actions、RC/stable Release 和安装后 Updater smoke 尚未执行,不得据此标记 M8 完成。
+2026-07-29 M8 阶段验证:Desktop 88/88 + typecheck/build;发布脚本 10/10 且 prerelease/workflow 静态合同通过;2 个模板种子验证通过;Rust Updater 6/6。快速入门已在中文/英文、明/暗主题、`980x700`/`800x560` 和全部三步组合下完成 24 组浏览器截图与 DOM 验收,About 重开、三个目的地、键盘关闭及自动更新提示延后均已观察;修复后 Rust 全库为 152 passed + 1 ignored。真实模板仓库、签名密钥、Actions、RC/stable Release 和安装后 Updater smoke 尚未执行,不得据此标记 M8 完成。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

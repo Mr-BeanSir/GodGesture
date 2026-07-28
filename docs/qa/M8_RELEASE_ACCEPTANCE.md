@@ -11,7 +11,7 @@ the M8 design; it is not a pass.
 
 | Field | Evidence |
 | --- | --- |
-| Product implementation commit | `99f5b65` (quick guide); later release commits pending |
+| Product implementation commit | `99f5b65` (quick guide), `4038551` (visual and modal acceptance fixes); later release commits pending |
 | RC tag / commit | NOT RUN |
 | Stable tag / commit | NOT RUN |
 | Manual workflow run | NOT RUN |
@@ -29,6 +29,7 @@ the M8 design; it is not a pass.
 | Release validation | `pnpm validate:release`: 10/10 plus static workflow contract on 2026-07-29 | PASS |
 | Template validation | `pnpm validate:templates`: 2 packages on 2026-07-29 | PASS |
 | Rust updater tests | `cargo test ... --lib updater::tests`: 6/6 on 2026-07-29 | PASS |
+| Product acceptance regression | Desktop 88/88 + typecheck/build; release 10/10 + workflow contract; templates 2/2; Rust library 152 passed + 1 ignored on 2026-07-29 at `4038551` | PASS |
 | Final full affected baseline | NOT RUN | NOT RUN |
 
 ## Quick Guide Visual Acceptance
@@ -37,11 +38,11 @@ Evidence directory: `%TEMP%\godgesture-m8-qa\quick-guide`.
 
 | View | Locale / theme / viewport | Evidence | Status |
 | --- | --- | --- | --- |
-| Ready | zh-CN + en, light + dark, 980x700 + 800x560 | NOT RUN | NOT RUN |
-| Try | zh-CN + en, light + dark, 980x700 + 800x560 | NOT RUN | NOT RUN |
-| Personalize | zh-CN + en, light + dark, 980x700 + 800x560 | NOT RUN | NOT RUN |
-| About reopen and all destinations | minimum viewport | NOT RUN | NOT RUN |
-| DOM overflow / overlap / translation scan | all captures | NOT RUN | NOT RUN |
+| Ready | zh-CN + en, light + dark, 980x700 + 800x560 | 8 `*-step1.png` captures; compact right-aligned Next button and runtime-ready state visually inspected | PASS |
+| Try | zh-CN + en, light + dark, 980x700 + 800x560 | 8 `*-step2.png` captures; stable dialog footprint and reachable Back/Next controls | PASS |
+| Personalize | zh-CN + en, light + dark, 980x700 + 800x560 | 8 `*-step3.png` captures; three entry points and Back/Finish controls visible | PASS |
+| About reopen and all destinations | minimum viewport | `%TEMP%\godgesture-m8-qa\quick-guide\acceptance-summary.json`: About reopen, Gestures, Templates, WGestures import, Back/Next, and Escape close observed; automatic update prompt waited for the guide/import dialog and appeared after import closed | PASS |
+| DOM overflow / overlap / translation scan | all captures | `%TEMP%\godgesture-m8-qa\quick-guide\dom-report.json`: 24/24 cases, one visible overlay, zero page overflow, zero out-of-viewport dialog descendants, and zero translation-key leaks; dialog `620x501`, positioned at `(180, 99.5)` or `(90, 29.5)` | PASS |
 
 ## Template Repository
 
