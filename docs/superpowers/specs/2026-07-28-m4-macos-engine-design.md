@@ -6,7 +6,7 @@ Date: 2026-07-28
 
 Complete the native macOS half of the desktop gesture engine without weakening the Windows behavior already accepted in M1-M3. The macOS build must capture and synchronously suppress global mouse input, feed the existing platform-neutral tracker and intent engine, render a native click-through trail and hint overlay, execute the 12 command categories and QuickJS host APIs where macOS provides an equivalent, resolve applications by Bundle ID, manage login startup, and expose Accessibility permission state clearly.
 
-M4 also supplies reproducible signing and notarization configuration. Developer identity, team ID, Apple ID, app-specific password, and keychain profile remain external inputs; no credential is committed.
+M4 also supplies a reproducible free DMG workflow. Per ADR-0011, the application uses ad-hoc signing without Apple credentials or notarization, and users explicitly follow macOS's manual approval path on first launch.
 
 ## Scope
 
@@ -20,7 +20,7 @@ M4 also supplies reproducible signing and notarization configuration. Developer 
 - macOS command, input, clipboard, window, task-switcher, and QuickJS host implementations.
 - macOS application acquisition from the pointer target and dropped `.app` bundles.
 - macOS login-item reconciliation for `autoStart`; `runAsAdmin` remains a Windows-only setting and is reported as unsupported on macOS instead of being silently applied.
-- Tauri entitlements/configuration plus a parameterized signing and notarization workflow.
+- Tauri entitlements/configuration plus a no-credential ad-hoc DMG workflow for manual artifacts and tagged GitHub Releases.
 - Focused unit tests, Windows regression tests, macOS cross-target compile checks, and a documented on-device smoke checklist.
 
 ### Excluded
@@ -99,9 +99,11 @@ The existing General section gains a compact macOS-only Accessibility alert with
 
 `autoStart` is reconciled with `SMAppService.mainApp` on supported macOS versions. When unavailable, the backend returns a stable `login_item_unavailable` error. `runAsAdmin` is disabled with a macOS-specific explanation. Tray visibility continues through Tauri's tray API.
 
-## Signing And Notarization
+## Free DMG Distribution
 
-The Tauri bundle includes a hardened-runtime entitlement file with only capabilities actually required. A macOS release workflow builds universal Apple Silicon/Intel artifacts, signs using Tauri's standard Apple environment variables, submits for notarization, staples the result, and verifies both codesign and Gatekeeper assessment. Secrets are referenced by name and documented; absent secrets cause the release job to fail clearly rather than produce an apparently final unsigned artifact.
+The Tauri bundle includes a hardened-runtime entitlement file with only capabilities actually required. A macOS release workflow builds universal Apple Silicon/Intel artifacts and applies an ad-hoc signature without a certificate. Manual runs retain workflow artifacts; `v*` tags attach the DMG and SHA-256 checksum to a GitHub Release. The workflow verifies the signature envelope, executable architecture slices and DMG filesystem, but does not notarize, staple or claim Apple trust. Users manually approve the downloaded application through Finder or Privacy & Security before granting the separate TCC permissions.
+
+Universal output remains the default while it needs no Intel-specific product code. If real macOS packaging proves Intel requires architecture-specific behavior or an independent maintenance path, the target narrows to Apple Silicon instead of expanding M4 scope.
 
 ## Error Handling
 
@@ -119,9 +121,9 @@ Automated verification covers:
 - Existing Windows Rust tests and clippy baseline.
 - macOS event mapping, marker filtering, coordinate conversion, command planning, key mapping, Bundle ID selection, registry expiry, and machine-policy tests.
 - `cargo check`/tests on a macOS target and desktop frontend tests/typecheck/build.
-- Configuration validation for entitlements and release workflow inputs.
+- Configuration validation for entitlements and the no-credential release workflow.
 
-On-device macOS acceptance must exercise permission denial/grant/recheck, right/middle/X-button capture and click passthrough, event suppression, multi-display trail placement, full-screen overlay behavior, Bundle ID matching, each supported command, QuickJS persistence/timeout recovery, login start, signed launch, notarization, and Gatekeeper assessment. M4 is not recorded as fully complete until this evidence exists; when no macOS host or Apple credentials are available, documentation must state that exact boundary instead of claiming completion.
+On-device macOS acceptance must exercise manual approval of the downloaded ad-hoc DMG, permission denial/grant/recheck, right/middle/X-button capture and click passthrough, event suppression, multi-display trail placement, full-screen overlay behavior, Bundle ID matching, each supported command, QuickJS persistence/timeout recovery, login start, upgrade permission behavior and checksum verification. M4 is not recorded as fully complete until this evidence exists; when no macOS host is available, documentation must state that exact boundary instead of claiming completion. Developer ID, notarization, stapling and warning-free Gatekeeper launch are outside the completion definition under ADR-0011.
 
 ## Decision Record
 
