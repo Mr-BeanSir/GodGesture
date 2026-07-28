@@ -33,7 +33,7 @@
 - NSWindow + CALayer 覆盖层;命令能力矩阵按平台落地(Bundle ID 绑定、Cmd 命令走 shell 等)
 - 免费 ad-hoc universal DMG 流水(无需 Apple Developer 账户;首次启动由用户手动放行)
 
-## M5 后端与账户
+## M5 后端与账户 ✅
 - Prisma Schema:用户/设备/刷新令牌/配置文档/快照
 - 邮箱+密码(Argon2)+ JWT 双令牌(设备级撤销);OAuth 可插拔(GitHub/Google 先行,微信/QQ 留配置位)
 - OpenAPI → 生成 TS 客户端进 shared;Dockerfile + 生产 compose(1Panel 部署)+ dev compose(PG)

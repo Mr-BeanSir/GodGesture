@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-28。产品代码与发布配置基线覆盖至 `9f6f0a5`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-28。产品代码与发布配置基线覆盖至 `ad215db`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -13,7 +13,7 @@
 | M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);Script 执行按 ADR-0005 归 M3                     |
 | M3 QuickJS            | 已完成;QuickJS 运行时、Windows 宿主 API 和 Monaco 编辑器已验收                |
 | M4 macOS 引擎         | 原生实现与免费 ad-hoc DMG 流水已落地;待真实 Mac 功能、安装和升级验收后正式完成 |
-| M5 后端与账户         | 服务端主体已实现;外部 OAuth 凭证仍由部署环境提供                              |
+| M5 后端与账户         | 已完成;外部 OAuth 凭证按设计由部署环境提供                                     |
 | M6 云同步             | shared 协议和服务端已实现;桌面账户/同步仍是本地 mock,未接后端                 |
 | M7 Web 控制台与分发   | Web 控制台主体已实现;Updater 和模板分发未实现                                 |
 | M8 打磨与发布         | 未开始;安装、提权启动、引导和正式发布尚未验收                                 |
@@ -26,7 +26,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 | ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `apps/desktop/src-tauri` | Tauri 生命周期、双平台手势引擎、原生平台能力和本地配置;macOS 待真实设备验收         | `src/lib.rs`, `src/engine/`, `src/platform/windows/`, `src/platform/macos/`           |
 | `apps/desktop/src`       | Vue 设置界面、Pinia、本地/Tauri IPC;主要配置页可用,账户同步是 mock                   | `src/App.vue`, `src/views/`, `src/api/backend.ts`                                     |
-| `packages/shared`        | 配置、认证、同步 Zod 协议、容量限制、热键规范化和旧配置导入                          | `src/index.ts`, `src/config/`, `src/auth/`, `src/sync/`, `src/importers/`             |
+| `packages/shared`        | 配置、认证、同步 Zod 协议、生成式 API 客户端、容量限制、热键规范化和旧配置导入          | `src/index.ts`, `src/api/`, `src/config/`, `src/auth/`, `src/sync/`, `src/importers/` |
 | `apps/server`            | NestJS REST API、Prisma/PostgreSQL、认证、设备、同步、快照                           | `src/app.module.ts`, `src/auth/`, `src/devices/`, `src/sync/`, `prisma/schema.prisma` |
 | `apps/web-console`       | 浏览器账户控制台;只读配置、设备、快照、安全                                          | `src/router/index.ts`, `src/api/`, `src/views/`                                       |
 | `apps/server` 部署       | 1Panel 手动部署、PostgreSQL、Docker 构建与迁移                                       | `README-DEPLOY.md`, `Dockerfile`, `docker-compose.*.yml`, `.env.example`              |
@@ -73,9 +73,10 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 1`。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 1`;`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
+- `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
 - OAuth 已实现 GitHub/Google 可配置提供方和 PKCE;微信/QQ 保留配置位并默认不可用。不得按邮箱把 OAuth 自动关联到未验证密码账户。
 - 同步使用整库版本、乐观并发、后写胜出和快照;恢复快照也要求版本 CAS。设备删除会撤销其访问。
 - Web Console 使用 shared Schema 校验 API 数据,支持密码/OAuth 登录、跨标签刷新协调、只读配置、设备改名/移除和快照恢复。
@@ -115,6 +116,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
 - 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。已运行的提升权限 WGestures 会先消费低完整性合成鼠标事件,因此自动化完整右键手势注入未建立;未终止用户进程,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
+- M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 
 ## 验证基线
 
@@ -123,6 +125,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 ```powershell
 pnpm --filter @godgesture/shared test
 pnpm --filter @godgesture/shared build
+pnpm check:api
 pnpm --filter @godgesture/server test --runInBand
 pnpm --filter @godgesture/server typecheck
 pnpm --filter @godgesture/desktop typecheck
@@ -134,7 +137,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-最近结果:shared 72/72 + build;server 80/80 + typecheck;desktop 21/21 + typecheck/build;web-console typecheck/build;Rust 139 passed + 1 ignored。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
+最近结果:shared 75/75 + typecheck/build;server 86/86 + typecheck/build;`pnpm check:api`;desktop 21/21 + typecheck/build;web-console typecheck/build;prod/dev Compose 结构校验;Rust 139 passed + 1 ignored。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
