@@ -1,7 +1,48 @@
-# Tauri + Vue + TypeScript
+# GodGesture Desktop
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+GodGesture Desktop 是 Tauri 2 应用：Rust 负责全局输入、手势引擎、原生覆盖层、
+命令执行、凭据和更新；Vue 3 设置界面只通过 `src/api/backend.ts` 访问原生能力。
 
-## Recommended IDE Setup
+## 开发
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+从仓库根目录安装依赖并启动：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm build:shared
+pnpm dev:desktop
+```
+
+Vite 固定监听 `127.0.0.1:14200`，HMR 使用 `14201`。启动前确认端口和已有
+GodGesture/Node/Cargo 精确进程树，不要启动第二份 Tauri 会话。
+
+只启动浏览器界面时：
+
+```powershell
+pnpm --filter @godgesture/desktop dev
+```
+
+浏览器模式使用内存后端，不会运行全局手势或写入原生配置。URL 添加
+`?guide=1` 可强制打开快速入门，供确定性视觉验收使用。
+
+## 配置
+
+复制并按需填写 `.env.example` 中的环境变量。生产账户服务必须使用部署后的
+HTTPS API 地址；Updater 和手势模板默认使用 `Mr-BeanSir` 名下的 GitHub
+仓库，只有明确迁移仓库时才覆盖这些地址。
+
+原生 Updater endpoint 可在编译时通过 `GODGESTURE_UPDATE_ENDPOINT` 覆盖，
+但仍只接受不含凭据的 HTTPS URL。
+
+## 验证
+
+```powershell
+pnpm --filter @godgesture/desktop test
+pnpm --filter @godgesture/desktop typecheck
+pnpm --filter @godgesture/desktop build
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
+```
+
+不要对全仓运行 `cargo fmt`；只格式化实际修改的 Rust 文件。发布与安装说明见
+`docs/DESKTOP_RELEASE.md`、`docs/MACOS_RELEASE.md` 和 `docs/USER_GUIDE.md`。

@@ -10,7 +10,9 @@ The shared `Signed desktop release` workflow is documented in
 `docs/DESKTOP_RELEASE.md`. Its macOS job has two entry points:
 
 - Run it manually with `workflow_dispatch` to build a downloadable Actions artifact without creating a public release.
-- Push a tag matching `v*`, such as `v0.1.0`, to build the same artifact and attach it to a GitHub Release.
+- Push a tag matching `v*`, such as `v0.1.0-rc.1` or `v0.1.0`, to build the
+  same artifact and attach it to a GitHub Release. Prerelease versions are
+  marked prerelease and do not become latest; stable versions become latest.
 
 For a tag build, the version after `v` must exactly match
 `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, and

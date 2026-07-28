@@ -41,6 +41,11 @@ replace either side as routine release housekeeping.
 - a `v*` tag builds the same files and publishes them to the matching GitHub
   Release.
 
+SemVer prerelease tags such as `v0.1.0-rc.1` create a GitHub prerelease and do
+not become latest. Stable tags such as `v0.1.0` create a normal Release and
+become latest. This allows an installed RC to exercise the real updater against
+the first stable release without publishing an artificial patch version.
+
 Before creating a tag, set the same semantic version in all three files:
 
 - `apps/desktop/src-tauri/tauri.conf.json`;
@@ -73,6 +78,7 @@ GodGesture_0.1.0_universal.app.tar.gz.sha256
 GodGesture_0.1.0_universal.dmg
 GodGesture_0.1.0_universal.dmg.sha256
 latest.json
+release-evidence.json
 ```
 
 `latest.json` maps the updater packages to `windows-x86_64` and
@@ -81,6 +87,9 @@ native updater payloads. The DMG remains the macOS manual-install package.
 
 Manual workflow runs retain the assembled `GodGesture-desktop-release` Actions
 artifact for 14 days. Tag runs attach the same contents to the public release.
+`release-evidence.json` records the repository, exact commit, version, ref,
+release mode, platform targets, asset names, and verified package hashes. It
+contains no secret or private-key material.
 
 ## Platform Boundaries
 
