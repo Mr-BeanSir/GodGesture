@@ -191,6 +191,11 @@ impl EngineShared {
         self.paused.load(Ordering::SeqCst)
     }
 
+    pub fn resolve_foreground_app(&self, pos: Point, prefer_cursor_window: bool) -> ForegroundApp {
+        self.platform
+            .resolve_foreground_app(pos, prefer_cursor_window)
+    }
+
     pub fn toggle_paused(&self) -> bool {
         let now = !self.paused.fetch_xor(true, Ordering::SeqCst);
         let _ = self.tx.send(EngineMsg::PauseChanged(now));

@@ -5,9 +5,11 @@ mod legacy_import;
 pub mod platform;
 mod updater;
 
-use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
+#[cfg(windows)]
+use engine::config::ConfigFilesSnapshot;
 #[cfg(any(windows, target_os = "macos"))]
-use engine::config::{ConfigFilesSnapshot, PauseHotkey};
+use engine::config::PauseHotkey;
+use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script::{
@@ -584,7 +586,7 @@ fn spawn_engine_consumer(
                         log::info!("{hit} 触发 → 命令 {command:?}");
                         // 目标窗口取前台窗口:此刻光标停在屏幕边角,指针下方的窗口
                         // 多半不是用户想操作的那个。
-                        let fg = platform::windows::window::resolve_foreground_app(origin, false);
+                        let fg = shared.resolve_foreground_app(origin, false);
                         let context = engine::runtime::GestureContext {
                             origin,
                             endpoint: origin,
