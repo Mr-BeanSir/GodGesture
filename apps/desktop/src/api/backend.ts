@@ -86,6 +86,21 @@ export interface OAuthLoopbackResult {
   error: string | null;
 }
 
+export interface UpdateMetadata {
+  currentVersion: string;
+  version: string;
+  notes: string | null;
+  publishedAt: string | null;
+}
+
+export type UpdateDownloadEvent =
+  | { event: "started"; data: { contentLength: number | null } }
+  | {
+      event: "progress";
+      data: { chunkLength: number; downloaded: number };
+    }
+  | { event: "finished"; data: { downloaded: number } };
+
 /** Stable error contract for callers that must distinguish an incomplete rollback. */
 export class BackendError extends Error {
   public readonly cause: unknown;
@@ -148,6 +163,12 @@ export interface Backend {
   oauthLoopbackStart(clientState: string): Promise<OAuthLoopbackStart>;
   oauthLoopbackFinish(attemptId: string): Promise<OAuthLoopbackResult>;
   oauthLoopbackCancel(attemptId: string): Promise<void>;
+
+  updateCheck(): Promise<UpdateMetadata | null>;
+  updateCancel(): Promise<void>;
+  updateInstall(
+    handler: (event: UpdateDownloadEvent) => void,
+  ): Promise<void>;
 
   /** 系统浏览器打开外部链接 */
   openExternal(url: string): Promise<void>;
@@ -366,6 +387,32 @@ function createTauriBackend(): Backend {
     async oauthLoopbackCancel(attemptId) {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("oauth_loopback_cancel", { attemptId });
+    },
+    async updateCheck() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<UpdateMetadata | null>("update_check");
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async updateCancel() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("update_cancel");
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async updateInstall(handler) {
+      const { Channel, invoke } = await import("@tauri-apps/api/core");
+      const onEvent = new Channel<UpdateDownloadEvent>();
+      onEvent.onmessage = handler;
+      try {
+        await invoke("update_install", { onEvent });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
     },
     async openExternal(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");

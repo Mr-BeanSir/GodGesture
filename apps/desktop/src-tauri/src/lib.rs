@@ -3,6 +3,7 @@ mod app_acquisition;
 pub mod engine;
 mod legacy_import;
 pub mod platform;
+mod updater;
 
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 #[cfg(any(windows, target_os = "macos"))]
@@ -1562,6 +1563,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let is_autostart = args.iter().any(|arg| arg == "--autostart");
             if !is_autostart {
@@ -1592,6 +1594,7 @@ pub fn run() {
             app.manage(store);
             app.manage(ConfigTransaction(parking_lot::Mutex::new(())));
             app.manage(account::OAuthLoopbackState::default());
+            app.manage(updater::DesktopUpdaterState::default());
 
             #[cfg(windows)]
             {
@@ -1733,6 +1736,9 @@ pub fn run() {
             account::oauth_loopback_start,
             account::oauth_loopback_finish,
             account::oauth_loopback_cancel,
+            updater::update_check,
+            updater::update_cancel,
+            updater::update_install,
         ])
         .on_window_event(|window, event| {
             #[cfg(any(windows, target_os = "macos"))]

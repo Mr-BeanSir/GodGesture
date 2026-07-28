@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,5 +35,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDQzk1QzlFODRDMUE2MzAKUldRd3BzR0VubHpKM09Mc1hHZE5aYm5HSlJDdEM2bm5hRllzdlZKKzdjN1JxR0k0eUNPMTh2bE8K",
+      "endpoints": [
+        "https://github.com/godgesture/godgesture/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

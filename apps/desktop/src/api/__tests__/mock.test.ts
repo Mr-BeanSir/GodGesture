@@ -48,3 +48,22 @@ describe("mock backend application acquisition", () => {
     expect(() => unlisten()).not.toThrow();
   });
 });
+
+describe("mock backend updater", () => {
+  it("checks one deterministic update and consumes it during installation", async () => {
+    const backend = createMockBackend();
+    const update = await backend.updateCheck();
+    const events: string[] = [];
+
+    expect(update).toMatchObject({
+      currentVersion: "0.1.0-dev",
+      version: "0.2.0",
+    });
+    await backend.updateInstall((event) => events.push(event.event));
+
+    expect(events).toEqual(["started", "progress", "finished"]);
+    await expect(
+      backend.updateInstall(() => undefined),
+    ).rejects.toThrow("update_not_pending");
+  });
+});

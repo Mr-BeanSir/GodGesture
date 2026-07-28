@@ -11,7 +11,11 @@ import {
   type StrokeDirection,
   type TriggerButton,
 } from "@godgesture/shared";
-import type { Backend, CapturedGesture } from "./backend";
+import type {
+  Backend,
+  CapturedGesture,
+  UpdateMetadata,
+} from "./backend";
 import { gestureMnemonic } from "../utils/mnemonic";
 import { newId } from "../utils/id";
 
@@ -146,6 +150,7 @@ export function createMockBackend(): Backend {
   let paused = false;
   let refreshToken: string | null = null;
   let syncMetadata: Awaited<ReturnType<Backend["syncMetadataGet"]>> = null;
+  let pendingUpdate: UpdateMetadata | null = null;
 
   const listeners = new Set<(g: CapturedGesture) => void>();
   const pauseListeners = new Set<(paused: boolean) => void>();
@@ -323,6 +328,29 @@ export function createMockBackend(): Backend {
     },
     async oauthLoopbackCancel() {
       return undefined;
+    },
+    async updateCheck() {
+      pendingUpdate = {
+        currentVersion: "0.1.0-dev",
+        version: "0.2.0",
+        notes:
+          "Template Library, signed desktop updates, and distribution reliability improvements.",
+        publishedAt: "2026-07-28T15:00:00Z",
+      };
+      return { ...pendingUpdate };
+    },
+    async updateCancel() {
+      pendingUpdate = null;
+    },
+    async updateInstall(handler) {
+      if (!pendingUpdate) throw new Error("update_not_pending");
+      handler({ event: "started", data: { contentLength: 1024 } });
+      handler({
+        event: "progress",
+        data: { chunkLength: 512, downloaded: 512 },
+      });
+      handler({ event: "finished", data: { downloaded: 1024 } });
+      pendingUpdate = null;
     },
     async openExternal(url) {
       window.open(url, "_blank", "noopener");
