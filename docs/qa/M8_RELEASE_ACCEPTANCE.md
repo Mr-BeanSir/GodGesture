@@ -17,7 +17,7 @@ the M8 design; it is not a pass.
 | Manual workflow run | NOT RUN |
 | RC workflow run / Release | NOT RUN |
 | Stable workflow run / Release | NOT RUN |
-| Template repository commit / Release | NOT RUN |
+| Template repository commit / Release | `788993230bfcb767f8a3d030bb70c3c410ff18e7`; `v1.0.0`; `https://github.com/Mr-BeanSir/gesture-templates/releases/tag/v1.0.0` |
 
 ## Local Automated Baseline
 
@@ -48,10 +48,10 @@ Evidence directory: `%TEMP%\godgesture-m8-qa\quick-guide`.
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Public `Mr-BeanSir/gesture-templates` repository | NOT RUN | NOT RUN |
-| Tagged Release with exactly three assets | NOT RUN | NOT RUN |
-| Live catalog HTTPS/schema validation | NOT RUN | NOT RUN |
-| Live package identity/risk validation | NOT RUN | NOT RUN |
+| Public `Mr-BeanSir/gesture-templates` repository | Public `main` at `788993230bfcb767f8a3d030bb70c3c410ff18e7` contains README, catalog, and both package files at repository root | PASS |
+| Tagged Release with exactly three assets | Stable/latest `v1.0.0` has the three required user-uploaded assets, plus only GitHub-generated source archives | PASS |
+| Live catalog HTTPS/schema validation | `https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/catalog.json`; HTTP 200; SHA-256 `9de42b7b40bd632392cc2972110d5cf3d784d39202297d3d5327808fabc1c783`; 2 entries parsed by shared production protocol | PASS |
+| Live package identity/risk validation | `global-window-basics.json` SHA-256 `3f3552a72cb5f5008e78694576cd26c1da4eb3ee0e595633a5e8e0cbd2fa7657`; `browser-window-basics.json` SHA-256 `3147aa3d7067fd85fcab35afe507344aee9ad6dc86b7ff3feef4320f7b63bdf5`; both byte-identical to seed and passed identity/target/risk verification. Report: `%TEMP%\godgesture-m8-qa\template-live\template-live-report.json` | PASS |
 
 ## Updater Key And Manual Rehearsal
 
