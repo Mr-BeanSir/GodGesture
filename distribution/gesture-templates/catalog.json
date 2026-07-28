@@ -19,7 +19,7 @@
         "scope": "global"
       },
       "risks": [],
-      "packageUrl": "https://github.com/godgesture/gesture-templates/releases/latest/download/global-window-basics.json"
+      "packageUrl": "https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/global-window-basics.json"
     },
     {
       "slug": "browser-window-basics",
@@ -45,7 +45,7 @@
         }
       },
       "risks": [],
-      "packageUrl": "https://github.com/godgesture/gesture-templates/releases/latest/download/browser-window-basics.json"
+      "packageUrl": "https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/browser-window-basics.json"
     }
   ]
 }

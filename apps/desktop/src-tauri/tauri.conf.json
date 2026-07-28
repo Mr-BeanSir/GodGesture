@@ -40,7 +40,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDQzk1QzlFODRDMUE2MzAKUldRd3BzR0VubHpKM09Mc1hHZE5aYm5HSlJDdEM2bm5hRllzdlZKKzdjN1JxR0k0eUNPMTh2bE8K",
       "endpoints": [
-        "https://github.com/godgesture/godgesture/releases/latest/download/latest.json"
+        "https://github.com/Mr-BeanSir/GodGesture/releases/latest/download/latest.json"
       ]
     }
   }

@@ -12,8 +12,22 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const COMMIT = /^[a-fA-F0-9]{40,64}$/;
+
+export const PRODUCTION_REPOSITORY = "Mr-BeanSir/GodGesture";
+
+export function releaseMode(refType, refName, version) {
+  const match = SEMVER.exec(version);
+  if (!match) throw new Error(`Invalid release version: ${version}`);
+  if (refType === "branch") return "manual";
+  if (refType !== "tag") throw new Error(`Unsupported Git ref type: ${refType}`);
+  if (refName !== `v${version}`) {
+    throw new Error(`Tag ${refName} does not match application version ${version}`);
+  }
+  return match[4] ? "prerelease" : "stable";
+}
 
 export function releaseArtifactNames(version) {
   if (!SEMVER.test(version)) throw new Error(`Invalid release version: ${version}`);
@@ -77,6 +91,7 @@ export async function assembleDesktopRelease({
   inputDirectory,
   outputDirectory,
   repository,
+  commit,
   version,
   refType = "branch",
   refName = "",
@@ -84,12 +99,10 @@ export async function assembleDesktopRelease({
   if (!REPOSITORY.test(repository)) {
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
-  if (refType === "tag" && refName !== `v${version}`) {
-    throw new Error(`Tag ${refName} does not match application version ${version}`);
+  if (!COMMIT.test(commit)) {
+    throw new Error(`Invalid release commit: ${commit}`);
   }
-  if (refType !== "tag" && refType !== "branch") {
-    throw new Error(`Unsupported Git ref type: ${refType}`);
-  }
+  const mode = releaseMode(refType, refName, version);
 
   const names = releaseArtifactNames(version);
   const expected = Object.values(names).sort();
@@ -105,11 +118,17 @@ export async function assembleDesktopRelease({
     }
   }
 
-  await Promise.all([
-    verifyChecksum(inputDirectory, names.windowsInstaller, names.windowsChecksum),
-    verifyChecksum(inputDirectory, names.macUpdater, names.macUpdaterChecksum),
-    verifyChecksum(inputDirectory, names.macDmg, names.macDmgChecksum),
-  ]);
+  const checksumArtifacts = [
+    [names.macDmg, names.macDmgChecksum],
+    [names.macUpdater, names.macUpdaterChecksum],
+    [names.windowsInstaller, names.windowsChecksum],
+  ].sort(([left], [right]) => left.localeCompare(right));
+  const checksumEntries = await Promise.all(
+    checksumArtifacts.map(async ([artifactName, checksumName]) => [
+      artifactName,
+      await verifyChecksum(inputDirectory, artifactName, checksumName),
+    ]),
+  );
   const [windowsSignature, macSignature] = await Promise.all([
     readUpdaterSignature(join(inputDirectory, names.windowsSignature)),
     readUpdaterSignature(join(inputDirectory, names.macSignature)),
@@ -141,11 +160,29 @@ export async function assembleDesktopRelease({
       },
     },
   };
-  await writeFile(
-    join(outputDirectory, "latest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8",
-  );
+  const evidence = {
+    formatVersion: 1,
+    repository,
+    commit: commit.toLowerCase(),
+    version,
+    ref: { type: refType, name: refName },
+    releaseMode: mode,
+    targets: Object.keys(manifest.platforms),
+    assets: expected,
+    sha256: Object.fromEntries(checksumEntries),
+  };
+  await Promise.all([
+    writeFile(
+      join(outputDirectory, "latest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    ),
+    writeFile(
+      join(outputDirectory, "release-evidence.json"),
+      `${JSON.stringify(evidence, null, 2)}\n`,
+      "utf8",
+    ),
+  ]);
   return manifest;
 }
 
@@ -167,6 +204,7 @@ async function verifyChecksum(directory, artifactName, checksumName) {
   if (match[1].toLowerCase() !== actual) {
     throw new Error(`Checksum mismatch for ${artifactName}`);
   }
+  return actual;
 }
 
 async function readUpdaterSignature(path) {
@@ -191,7 +229,14 @@ function parseArguments(values) {
     }
     result.set(key.slice(2), value);
   }
-  for (const required of ["input", "output", "repository", "ref-type", "ref-name"]) {
+  for (const required of [
+    "input",
+    "output",
+    "repository",
+    "commit",
+    "ref-type",
+    "ref-name",
+  ]) {
     if (!result.has(required)) throw new Error(`Missing --${required}`);
   }
   return result;
@@ -204,6 +249,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     inputDirectory: resolve(argumentsMap.get("input")),
     outputDirectory: resolve(argumentsMap.get("output")),
     repository: argumentsMap.get("repository"),
+    commit: argumentsMap.get("commit"),
     version,
     refType: argumentsMap.get("ref-type"),
     refName: argumentsMap.get("ref-name"),

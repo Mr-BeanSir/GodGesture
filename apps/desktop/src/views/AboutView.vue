@@ -5,7 +5,7 @@ import { Download, Link, Refresh } from "@element-plus/icons-vue";
 import { useBackend } from "../api/backend";
 import { useUpdateStore } from "../stores/update";
 
-const DEFAULT_HOMEPAGE = "https://github.com/godgesture/godgesture";
+const DEFAULT_HOMEPAGE = "https://github.com/Mr-BeanSir/GodGesture";
 
 const { t, locale } = useI18n();
 const backend = useBackend();

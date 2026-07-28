@@ -12,7 +12,7 @@ import { useTemplatesStore } from "../stores/templates";
 import { gestureMnemonic } from "../utils/mnemonic";
 
 const DEFAULT_TEMPLATE_REPOSITORY_URL =
-  "https://github.com/godgesture/gesture-templates";
+  "https://github.com/Mr-BeanSir/gesture-templates";
 
 const { t, locale } = useI18n();
 const backend = useBackend();

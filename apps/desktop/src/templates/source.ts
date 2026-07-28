@@ -14,7 +14,7 @@ import browserFixture from "../../../../distribution/gesture-templates/packages/
 import globalFixture from "../../../../distribution/gesture-templates/packages/global-window-basics.json";
 
 export const DEFAULT_GESTURE_TEMPLATE_CATALOG_URL =
-  "https://github.com/godgesture/gesture-templates/releases/latest/download/catalog.json";
+  "https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/catalog.json";
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export type TemplateSourceErrorCode =

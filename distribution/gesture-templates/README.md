@@ -1,7 +1,7 @@
 # GodGesture Gesture Templates
 
 This directory is the source seed for the standalone public repository at
-`https://github.com/godgesture/gesture-templates`. It is kept in the application
+`https://github.com/Mr-BeanSir/gesture-templates`. It is kept in the application
 repository until that repository is created; it is not a runtime asset and must
 not be served by the GodGesture account Server.
 
@@ -18,7 +18,7 @@ browser-window-basics.json
 The Desktop reads the latest release catalog from:
 
 ```text
-https://github.com/godgesture/gesture-templates/releases/latest/download/catalog.json
+https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/catalog.json
 ```
 
 Every `packageUrl` in `catalog.json` points to another asset in the same latest

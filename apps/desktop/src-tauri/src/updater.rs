@@ -6,7 +6,7 @@ use tauri_plugin_updater::{Error as NativeUpdaterError, Update, UpdaterExt};
 use url::Url;
 
 const DEFAULT_UPDATE_ENDPOINT: &str =
-    "https://github.com/godgesture/godgesture/releases/latest/download/latest.json";
+    "https://github.com/Mr-BeanSir/GodGesture/releases/latest/download/latest.json";
 const MACOS_UNIVERSAL_TARGET: &str = "darwin-universal";
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RELEASE_NOTES_CHARS: usize = 16 * 1024;
