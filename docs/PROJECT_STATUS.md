@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-29。产品代码与发布配置基线覆盖至 `42d4fd2`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-29。产品代码、测试与发布配置基线覆盖至 `aaf3e42`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -148,7 +148,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 ```
 
-2026-07-29 M7 受影响域结果:shared 90/90 + build;desktop 83/83 + typecheck/build;Rust 151 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
+2026-07-29 M7 受影响域结果:shared 90/90 + build;desktop 83/83 + typecheck/build;Rust 152 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
