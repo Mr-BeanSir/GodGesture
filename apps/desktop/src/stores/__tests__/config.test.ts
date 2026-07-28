@@ -9,7 +9,9 @@ import {
 } from "@godgesture/shared";
 import type { MachineRuntimeStatus } from "../../api/backend";
 
-const backendSlot = vi.hoisted(() => ({ current: null as ReturnType<typeof makeBackend> | null }));
+const backendSlot = vi.hoisted(() => ({
+  current: null as ReturnType<typeof makeBackend> | null,
+}));
 
 vi.mock("../../api/backend", () => {
   class BackendError extends Error {
@@ -24,7 +26,8 @@ vi.mock("../../api/backend", () => {
   return {
     BackendError,
     useBackend: () => {
-      if (!backendSlot.current) throw new Error("mock backend is not configured");
+      if (!backendSlot.current)
+        throw new Error("mock backend is not configured");
       return backendSlot.current;
     },
   };
@@ -60,9 +63,11 @@ function makeBackend() {
     machineSet: vi.fn(async (next: MachineLocalSettings) => {
       machine = MachineLocalSettings.parse(next);
     }),
-    machineStatus: vi.fn(
-      async (): Promise<MachineRuntimeStatus> => ({ healthy: true, code: null, message: null }),
-    ),
+    machineStatus: vi.fn(async (): Promise<MachineRuntimeStatus> => ({
+      healthy: true,
+      code: null,
+      message: null,
+    })),
     platformStatus: vi.fn(async () => ({
       platform: "windows" as const,
       gestureEngineRunning: true,
@@ -82,10 +87,15 @@ function makeBackend() {
       message: null,
     })),
     platformOpenPermissionSettings: vi.fn(async () => undefined),
-    legacyImportApply: vi.fn(async (nextDocument: ConfigDocument, nextMachine: MachineLocalSettings) => {
-      document = ConfigDocument.parse(nextDocument);
-      machine = MachineLocalSettings.parse(nextMachine);
-    }),
+    legacyImportApply: vi.fn(
+      async (
+        nextDocument: ConfigDocument,
+        nextMachine: MachineLocalSettings,
+      ) => {
+        document = ConfigDocument.parse(nextDocument);
+        machine = MachineLocalSettings.parse(nextMachine);
+      },
+    ),
     engineIsPaused: vi.fn(async () => false),
     engineTogglePause: vi.fn(async () => false),
     onPauseChanged: vi.fn(async () => () => undefined),
@@ -104,14 +114,19 @@ function makeBackend() {
     appIcon: vi.fn(async () => null),
     openExternal: vi.fn(async () => undefined),
     getAppVersion: vi.fn(async () => "test"),
-    setDiskState(nextDocument: ConfigDocument, nextMachine: MachineLocalSettings) {
+    setDiskState(
+      nextDocument: ConfigDocument,
+      nextMachine: MachineLocalSettings,
+    ) {
       document = ConfigDocument.parse(nextDocument);
       machine = MachineLocalSettings.parse(nextMachine);
     },
   };
 }
 
-function importResult(locale: "auto" | "zh-CN" | "en" = "en"): LegacyImportResult {
+function importResult(
+  locale: "auto" | "zh-CN" | "en" = "en",
+): LegacyImportResult {
   const result = importLegacyConfig({ gesturesWg2: EMPTY_WG2 });
   return {
     ...result,
@@ -157,11 +172,15 @@ describe("config store legacy import", () => {
 
   it("does not publish imported values when the backend rolls back normally", async () => {
     const backend = backendSlot.current!;
-    backend.legacyImportApply.mockRejectedValueOnce(new BackendError("apply_failed", "failed"));
+    backend.legacyImportApply.mockRejectedValueOnce(
+      new BackendError("apply_failed", "failed"),
+    );
     const store = useConfigStore();
     await store.load();
 
-    await expect(store.applyLegacyImport(importResult("en"))).rejects.toMatchObject({
+    await expect(
+      store.applyLegacyImport(importResult("en")),
+    ).rejects.toMatchObject({
       code: "apply_failed",
     });
     expect(store.doc!.preferences.locale).toBe("auto");
@@ -183,7 +202,9 @@ describe("config store legacy import", () => {
     const store = useConfigStore();
     await store.load();
 
-    await expect(store.applyLegacyImport(importResult("en"))).rejects.toMatchObject({
+    await expect(
+      store.applyLegacyImport(importResult("en")),
+    ).rejects.toMatchObject({
       code: "rollback_incomplete",
     });
     expect(backend.configGet).toHaveBeenCalledTimes(2);
@@ -193,6 +214,112 @@ describe("config store legacy import", () => {
       runAsAdmin: false,
       trayIconVisible: false,
     });
+  });
+});
+
+describe("config store cloud synchronization barriers", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    backendSlot.current = makeBackend();
+    setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    backendSlot.current = null;
+  });
+
+  it("flushes the latest document and cancels its stale debounce timer", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    store.doc!.preferences.locale = "en";
+    await nextTick();
+
+    const snapshot = await store.flushDocumentSaves();
+
+    expect(snapshot.preferences.locale).toBe("en");
+    expect(backend.configSet).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(backend.configSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists pending local work before atomically applying a synced document", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    store.doc!.preferences.locale = "zh-CN";
+    await nextTick();
+
+    await store.applySyncedDocument(
+      documentWithLocale("en"),
+      documentWithLocale("zh-CN"),
+    );
+
+    expect(
+      backend.configSet.mock.calls.map(
+        ([document]) => document.preferences.locale,
+      ),
+    ).toEqual(["zh-CN", "en"]);
+    expect(store.doc!.preferences.locale).toBe("en");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(backend.configSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the locally persisted document observable when remote apply fails", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    store.doc!.preferences.locale = "zh-CN";
+    await nextTick();
+    backend.configSet.mockImplementationOnce(async (next: ConfigDocument) => {
+      backend.setDiskState(next, await backend.machineGet());
+    });
+    backend.configSet.mockRejectedValueOnce(new Error("remote apply failed"));
+
+    await expect(
+      store.applySyncedDocument(
+        documentWithLocale("en"),
+        documentWithLocale("zh-CN"),
+      ),
+    ).rejects.toThrow("remote apply failed");
+    expect(store.doc!.preferences.locale).toBe("zh-CN");
+  });
+
+  it("preserves and re-persists an edit made while a remote apply is in flight", async () => {
+    const backend = backendSlot.current!;
+    const store = useConfigStore();
+    await store.load();
+    store.doc!.preferences.locale = "zh-CN";
+    await nextTick();
+
+    let releaseRemoteWrite!: () => void;
+    const remoteWrite = new Promise<void>((resolve) => {
+      releaseRemoteWrite = resolve;
+    });
+    backend.configSet.mockImplementation(async (next: ConfigDocument) => {
+      if (next.preferences.locale === "en") await remoteWrite;
+      backend.setDiskState(next, await backend.machineGet());
+    });
+
+    const applying = store.applySyncedDocument(
+      documentWithLocale("en"),
+      documentWithLocale("zh-CN"),
+    );
+    await vi.waitFor(() => {
+      expect(
+        backend.configSet.mock.calls.some(
+          ([next]) => next.preferences.locale === "en",
+        ),
+      ).toBe(true);
+    });
+    store.doc!.preferences.locale = "auto";
+    await nextTick();
+    releaseRemoteWrite();
+
+    await expect(applying).resolves.toBe(false);
+    expect(store.doc!.preferences.locale).toBe("auto");
+    expect((await backend.configGet()).preferences.locale).toBe("auto");
   });
 });
 
@@ -210,7 +337,9 @@ describe("config store machine updates", () => {
 
   it("serializes explicit writes and exposes pending state", async () => {
     let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const backend = backendSlot.current!;
     backend.machineSet.mockImplementationOnce(async () => pending);
     const store = useConfigStore();
@@ -248,11 +377,15 @@ describe("config store machine updates", () => {
 
   it("restores the confirmed value after a complete failure", async () => {
     const backend = backendSlot.current!;
-    backend.machineSet.mockRejectedValueOnce(new BackendError("uac_cancelled", "cancelled"));
+    backend.machineSet.mockRejectedValueOnce(
+      new BackendError("uac_cancelled", "cancelled"),
+    );
     const store = useConfigStore();
     await store.load();
 
-    await expect(store.updateMachineSetting("autoStart", true)).rejects.toMatchObject({
+    await expect(
+      store.updateMachineSetting("autoStart", true),
+    ).rejects.toMatchObject({
       code: "uac_cancelled",
     });
     expect(store.machine!.autoStart).toBe(false);
@@ -261,7 +394,9 @@ describe("config store machine updates", () => {
 
   it("does not let an older failed request overwrite a newer edit", async () => {
     let rejectFirst!: (error: Error) => void;
-    const firstCall = new Promise<void>((_, reject) => { rejectFirst = reject; });
+    const firstCall = new Promise<void>((_, reject) => {
+      rejectFirst = reject;
+    });
     const backend = backendSlot.current!;
     backend.machineSet.mockImplementationOnce(async () => firstCall);
     const store = useConfigStore();
@@ -280,7 +415,9 @@ describe("config store machine updates", () => {
 
   it("keeps a newer whole-document request consistent across different fields", async () => {
     let rejectFirst!: (error: Error) => void;
-    const firstCall = new Promise<void>((_, reject) => { rejectFirst = reject; });
+    const firstCall = new Promise<void>((_, reject) => {
+      rejectFirst = reject;
+    });
     const backend = backendSlot.current!;
     backend.machineSet.mockImplementationOnce(async () => firstCall);
     const store = useConfigStore();
@@ -292,13 +429,19 @@ describe("config store machine updates", () => {
     rejectFirst(new BackendError("apply_failed", "failed"));
 
     await expect(first).rejects.toMatchObject({ code: "apply_failed" });
-    expect(store.machine).toMatchObject({ autoStart: true, trayIconVisible: false });
+    expect(store.machine).toMatchObject({
+      autoStart: true,
+      trayIconVisible: false,
+    });
     await second;
     expect(backend.machineSet.mock.calls[1][0]).toMatchObject({
       autoStart: true,
       trayIconVisible: false,
     });
-    expect(store.machine).toMatchObject({ autoStart: true, trayIconVisible: false });
+    expect(store.machine).toMatchObject({
+      autoStart: true,
+      trayIconVisible: false,
+    });
   });
 
   it("reloads machine state after an incomplete rollback", async () => {
@@ -306,14 +449,20 @@ describe("config store machine updates", () => {
     backend.machineSet.mockImplementationOnce(async () => {
       backend.setDiskState(
         documentWithLocale("auto"),
-        MachineLocalSettings.parse({ autoStart: true, runAsAdmin: false, trayIconVisible: false }),
+        MachineLocalSettings.parse({
+          autoStart: true,
+          runAsAdmin: false,
+          trayIconVisible: false,
+        }),
       );
       throw new BackendError("rollback_incomplete", "incomplete");
     });
     const store = useConfigStore();
     await store.load();
 
-    await expect(store.updateMachineSetting("trayIconVisible", false)).rejects.toMatchObject({
+    await expect(
+      store.updateMachineSetting("trayIconVisible", false),
+    ).rejects.toMatchObject({
       code: "rollback_incomplete",
     });
     expect(backend.machineGet).toHaveBeenCalledTimes(2);
@@ -326,10 +475,14 @@ describe("config store machine updates", () => {
 
   it("keeps machine errors independent from later document saves", async () => {
     const backend = backendSlot.current!;
-    backend.machineSet.mockRejectedValueOnce(new BackendError("apply_failed", "failed"));
+    backend.machineSet.mockRejectedValueOnce(
+      new BackendError("apply_failed", "failed"),
+    );
     const store = useConfigStore();
     await store.load();
-    await expect(store.updateMachineSetting("autoStart", true)).rejects.toBeInstanceOf(BackendError);
+    await expect(
+      store.updateMachineSetting("autoStart", true),
+    ).rejects.toBeInstanceOf(BackendError);
 
     store.doc!.preferences.locale = "en";
     await nextTick();

@@ -19,7 +19,11 @@
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
  */
-import type { ConfigDocument, MachineLocalSettings } from "@godgesture/shared";
+import type {
+  ConfigDocument,
+  DevicePlatform,
+  MachineLocalSettings,
+} from "@godgesture/shared";
 import { createMockBackend } from "./mock";
 
 /** 录制中/录制完成推送的手势载荷 */
@@ -60,6 +64,28 @@ export interface PlatformRuntimeStatus {
   message: string | null;
 }
 
+export interface SyncMetadata {
+  accountId: string;
+  serverVersion: number;
+  lastSyncedDocument: ConfigDocument;
+  lastSyncAt: string;
+}
+
+export interface DesktopDeviceInfo {
+  name: string;
+  platform: DevicePlatform | "unsupported";
+}
+
+export interface OAuthLoopbackStart {
+  attemptId: string;
+  redirectUri: string;
+}
+
+export interface OAuthLoopbackResult {
+  code: string | null;
+  error: string | null;
+}
+
 /** Stable error contract for callers that must distinguish an incomplete rollback. */
 export class BackendError extends Error {
   public readonly cause: unknown;
@@ -89,7 +115,10 @@ export interface Backend {
   platformRequestPermissions(): Promise<PlatformRuntimeStatus>;
   platformOpenPermissionSettings(): Promise<void>;
   /** Atomically applies a legacy import, or restores the previous backend state. */
-  legacyImportApply(document: ConfigDocument, machine: MachineLocalSettings): Promise<void>;
+  legacyImportApply(
+    document: ConfigDocument,
+    machine: MachineLocalSettings,
+  ): Promise<void>;
 
   engineIsPaused(): Promise<boolean>;
   engineTogglePause(): Promise<boolean>;
@@ -98,13 +127,27 @@ export interface Backend {
   captureStart(): Promise<void>;
   captureCancel(): Promise<void>;
   /** 订阅 "gesture-captured" 事件;返回退订函数 */
-  onGestureCaptured(handler: (gesture: CapturedGesture) => void): Promise<() => void>;
+  onGestureCaptured(
+    handler: (gesture: CapturedGesture) => void,
+  ): Promise<() => void>;
 
   pickWindow(): Promise<PickedWindow | null>;
   resolveAppFile(path: string): Promise<PickedWindow>;
-  onAppFileDrop(handler: (event: AppFileDropEvent) => void): Promise<() => void>;
+  onAppFileDrop(
+    handler: (event: AppFileDropEvent) => void,
+  ): Promise<() => void>;
   /** base64 png,失败返回 null */
   appIcon(exeName: string): Promise<string | null>;
+
+  accountCredentialGet(apiOrigin: string): Promise<string | null>;
+  accountCredentialSet(apiOrigin: string, refreshToken: string): Promise<void>;
+  accountCredentialDelete(apiOrigin: string): Promise<void>;
+  accountDeviceInfo(): Promise<DesktopDeviceInfo>;
+  syncMetadataGet(): Promise<SyncMetadata | null>;
+  syncMetadataSet(metadata: SyncMetadata): Promise<void>;
+  oauthLoopbackStart(clientState: string): Promise<OAuthLoopbackStart>;
+  oauthLoopbackFinish(attemptId: string): Promise<OAuthLoopbackResult>;
+  oauthLoopbackCancel(attemptId: string): Promise<void>;
 
   /** 系统浏览器打开外部链接 */
   openExternal(url: string): Promise<void>;
@@ -210,7 +253,9 @@ function createTauriBackend(): Backend {
     },
     async onPauseChanged(handler) {
       const { listen } = await import("@tauri-apps/api/event");
-      return listen<boolean>("pause-changed", (event) => handler(event.payload));
+      return listen<boolean>("pause-changed", (event) =>
+        handler(event.payload),
+      );
     },
     async captureStart() {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -222,7 +267,9 @@ function createTauriBackend(): Backend {
     },
     async onGestureCaptured(handler) {
       const { listen } = await import("@tauri-apps/api/event");
-      return listen<CapturedGesture>("gesture-captured", (event) => handler(event.payload));
+      return listen<CapturedGesture>("gesture-captured", (event) =>
+        handler(event.payload),
+      );
     },
     async pickWindow() {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -249,6 +296,76 @@ function createTauriBackend(): Backend {
     async appIcon(exeName) {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<string | null>("app_icon", { exeName });
+    },
+    async accountCredentialGet(apiOrigin) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<string | null>("account_credential_get", {
+          apiOrigin,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async accountCredentialSet(apiOrigin, refreshToken) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("account_credential_set", { apiOrigin, refreshToken });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async accountCredentialDelete(apiOrigin) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("account_credential_delete", { apiOrigin });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async accountDeviceInfo() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<DesktopDeviceInfo>("account_device_info");
+    },
+    async syncMetadataGet() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<SyncMetadata | null>("sync_metadata_get");
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async syncMetadataSet(metadata) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("sync_metadata_set", { metadata });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async oauthLoopbackStart(clientState) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<OAuthLoopbackStart>("oauth_loopback_start", {
+          clientState,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async oauthLoopbackFinish(attemptId) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<OAuthLoopbackResult>("oauth_loopback_finish", {
+          attemptId,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async oauthLoopbackCancel(attemptId) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("oauth_loopback_cancel", { attemptId });
     },
     async openExternal(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");

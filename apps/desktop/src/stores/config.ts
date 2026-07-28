@@ -27,7 +27,11 @@ export const useConfigStore = defineStore("config", () => {
   const loadError = ref<string | null>(null);
   const saveState = ref<SaveState>("idle");
   const machineError = ref<BackendError | null>(null);
-  const machineStatus = ref<MachineRuntimeStatus>({ healthy: true, code: null, message: null });
+  const machineStatus = ref<MachineRuntimeStatus>({
+    healthy: true,
+    code: null,
+    message: null,
+  });
   const machineRecovering = ref(false);
   const machinePending = ref<Record<keyof MachineLocalSettings, number>>({
     autoStart: 0,
@@ -45,6 +49,7 @@ export const useConfigStore = defineStore("config", () => {
   let saveGeneration = 0;
   let machineEditVersion = 0;
   let applyingImport = false;
+  let applyingSyncedDocument = false;
   let unlistenPause: (() => void) | null = null;
   let pauseEventVersion = 0;
   let disposed = false;
@@ -180,11 +185,17 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   function persistMachine() {
-    machineSaveQueue = machineSaveQueue.then(persistMachineNow, persistMachineNow);
+    machineSaveQueue = machineSaveQueue.then(
+      persistMachineNow,
+      persistMachineNow,
+    );
     return machineSaveQueue;
   }
 
-  async function updateMachineSetting<K extends keyof MachineLocalSettings>(key: K, value: MachineLocalSettings[K]) {
+  async function updateMachineSetting<K extends keyof MachineLocalSettings>(
+    key: K,
+    value: MachineLocalSettings[K],
+  ) {
     if (!machine.value || machineRecovering.value) return;
     const version = ++machineEditVersion;
     machine.value[key] = value;
@@ -209,7 +220,11 @@ export const useConfigStore = defineStore("config", () => {
         const normalized =
           error instanceof BackendError
             ? error
-            : new BackendError("unknown", error instanceof Error ? error.message : String(error), error);
+            : new BackendError(
+                "unknown",
+                error instanceof Error ? error.message : String(error),
+                error,
+              );
         machineError.value = normalized;
         saveState.value = "error";
         if (normalized.code === "rollback_incomplete") {
@@ -245,12 +260,16 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   function scheduleDocSave() {
-    if (applyingImport) return;
+    if (applyingImport || applyingSyncedDocument) return;
     if (docSaveTimer) clearTimeout(docSaveTimer);
     const generation = saveGeneration;
     docSaveTimer = setTimeout(() => {
       docSaveTimer = null;
-      if (!applyingImport && generation === saveGeneration) {
+      if (
+        !applyingImport &&
+        !applyingSyncedDocument &&
+        generation === saveGeneration
+      ) {
         void persistDoc().catch(() => undefined);
       }
     }, 500);
@@ -269,6 +288,49 @@ export const useConfigStore = defineStore("config", () => {
     clearSaveTimers();
     saveGeneration += 1;
     await Promise.all([persistDoc(), persistMachine()]);
+  }
+
+  async function flushDocumentSaves(): Promise<ConfigDocument> {
+    if (!doc.value) throw new Error("config is not ready");
+    for (;;) {
+      clearSaveTimers();
+      saveGeneration += 1;
+      await persistDoc();
+      const serialized = serializedDoc();
+      if (serialized !== null && serialized === lastPersistedDoc) {
+        return ConfigDocument.parse(JSON.parse(serialized));
+      }
+    }
+  }
+
+  async function applySyncedDocument(
+    document: ConfigDocument,
+    expectedLocalDocument: ConfigDocument,
+  ): Promise<boolean> {
+    if (!doc.value) throw new Error("config is not ready");
+    const next = ConfigDocument.parse(document);
+    const expectedSerialized = JSON.stringify(
+      ConfigDocument.parse(expectedLocalDocument),
+    );
+    applyingSyncedDocument = true;
+    clearSaveTimers();
+    saveGeneration += 1;
+    try {
+      const flushed = await flushDocumentSaves();
+      if (JSON.stringify(flushed) !== expectedSerialized) return false;
+      await backend.configSet(next);
+      lastPersistedDoc = JSON.stringify(next);
+      if (serializedDoc() !== expectedSerialized) {
+        await flushDocumentSaves();
+        return false;
+      }
+      doc.value = next;
+      saveState.value = "saved";
+      return true;
+    } finally {
+      applyingSyncedDocument = false;
+      saveGeneration += 1;
+    }
   }
 
   async function applyLegacyImport(result: LegacyImportResult) {
@@ -327,6 +389,8 @@ export const useConfigStore = defineStore("config", () => {
     load,
     togglePause,
     applyLegacyImport,
+    flushDocumentSaves,
+    applySyncedDocument,
     updateMachineSetting,
   };
 });

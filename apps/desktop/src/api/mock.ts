@@ -38,10 +38,34 @@ function seedDocument(): ConfigDocument {
     global: {
       gesturingEnabled: true,
       intents: [
-        intent("关闭窗口", "right", ["down", "right"], { type: "windowControl", operation: "close" }, 0),
-        intent("最大化 / 还原", "right", ["up"], { type: "windowControl", operation: "maximizeRestore" }, 1),
-        intent("最小化", "right", ["down"], { type: "windowControl", operation: "minimize" }, 2),
-        intent("任务切换", "right", ["left", "right"], { type: "taskSwitcher" }, 3),
+        intent(
+          "关闭窗口",
+          "right",
+          ["down", "right"],
+          { type: "windowControl", operation: "close" },
+          0,
+        ),
+        intent(
+          "最大化 / 还原",
+          "right",
+          ["up"],
+          { type: "windowControl", operation: "maximizeRestore" },
+          1,
+        ),
+        intent(
+          "最小化",
+          "right",
+          ["down"],
+          { type: "windowControl", operation: "minimize" },
+          2,
+        ),
+        intent(
+          "任务切换",
+          "right",
+          ["left", "right"],
+          { type: "taskSwitcher" },
+          3,
+        ),
         intent(
           "Web 搜索",
           "right",
@@ -54,7 +78,13 @@ function seedDocument(): ConfigDocument {
           },
           4,
         ),
-        intent("复制", "middle", ["down"], { type: "hotKey", modifiers: ["ctrl"], keys: ["c"] }, 5),
+        intent(
+          "复制",
+          "middle",
+          ["down"],
+          { type: "hotKey", modifiers: ["ctrl"], keys: ["c"] },
+          5,
+        ),
         intent("暂停手势", "right", ["leftUp"], { type: "pause" }, 6),
       ],
     },
@@ -67,8 +97,20 @@ function seedDocument(): ConfigDocument {
         gesturingEnabled: true,
         inheritGlobalGestures: true,
         intents: [
-          intent("关闭标签页", "right", ["down", "right"], { type: "hotKey", modifiers: ["ctrl"], keys: ["w"] }, 0),
-          intent("恢复标签页", "right", ["up", "left"], { type: "hotKey", modifiers: ["ctrl", "shift"], keys: ["t"] }, 1),
+          intent(
+            "关闭标签页",
+            "right",
+            ["down", "right"],
+            { type: "hotKey", modifiers: ["ctrl"], keys: ["w"] },
+            0,
+          ),
+          intent(
+            "恢复标签页",
+            "right",
+            ["up", "left"],
+            { type: "hotKey", modifiers: ["ctrl", "shift"], keys: ["t"] },
+            1,
+          ),
         ],
         order: 0,
       },
@@ -86,7 +128,10 @@ function seedDocument(): ConfigDocument {
   });
 }
 
-const CAPTURE_POOL: Array<{ trigger: TriggerButton; strokes: StrokeDirection[] }> = [
+const CAPTURE_POOL: Array<{
+  trigger: TriggerButton;
+  strokes: StrokeDirection[];
+}> = [
   { trigger: "right", strokes: ["up", "right"] },
   { trigger: "right", strokes: ["down", "left", "up"] },
   { trigger: "middle", strokes: ["right"] },
@@ -99,6 +144,8 @@ export function createMockBackend(): Backend {
   let doc = seedDocument();
   let machine = MachineLocalSettings.parse({});
   let paused = false;
+  let refreshToken: string | null = null;
+  let syncMetadata: Awaited<ReturnType<Backend["syncMetadataGet"]>> = null;
 
   const listeners = new Set<(g: CapturedGesture) => void>();
   const pauseListeners = new Set<(paused: boolean) => void>();
@@ -170,7 +217,8 @@ export function createMockBackend(): Backend {
 
     async captureStart() {
       stopCapture();
-      const pick = CAPTURE_POOL[Math.floor(Math.random() * CAPTURE_POOL.length)];
+      const pick =
+        CAPTURE_POOL[Math.floor(Math.random() * CAPTURE_POOL.length)];
       // 模拟"实时助记符":逐笔推送
       for (let i = 1; i <= pick.strokes.length; i++) {
         const partial: GestureSpec = {
@@ -245,6 +293,36 @@ export function createMockBackend(): Backend {
     },
     async appIcon() {
       return null;
+    },
+    async accountCredentialGet() {
+      return refreshToken;
+    },
+    async accountCredentialSet(_apiOrigin, nextRefreshToken) {
+      refreshToken = nextRefreshToken;
+    },
+    async accountCredentialDelete() {
+      refreshToken = null;
+    },
+    async accountDeviceInfo() {
+      return {
+        name: "GodGesture Browser Preview",
+        platform: "windows" as const,
+      };
+    },
+    async syncMetadataGet() {
+      return syncMetadata ? structuredClone(syncMetadata) : null;
+    },
+    async syncMetadataSet(metadata) {
+      syncMetadata = structuredClone(metadata);
+    },
+    async oauthLoopbackStart() {
+      throw new Error("OAuth loopback is unavailable in browser preview");
+    },
+    async oauthLoopbackFinish() {
+      throw new Error("OAuth loopback is unavailable in browser preview");
+    },
+    async oauthLoopbackCancel() {
+      return undefined;
     },
     async openExternal(url) {
       window.open(url, "_blank", "noopener");

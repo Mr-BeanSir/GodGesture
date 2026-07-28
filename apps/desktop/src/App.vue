@@ -10,6 +10,7 @@ import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
 import { useConfigStore } from "./stores/config";
+import { useAccountStore } from "./stores/account";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
 import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
@@ -22,6 +23,7 @@ type LocaleSetting = "auto" | AppLocale;
 
 const { t, locale } = useI18n();
 const store = useConfigStore();
+const account = useAccountStore();
 
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
@@ -64,7 +66,12 @@ watchEffect(() => {
   if (typeof document !== "undefined") document.title = t("app.title");
 });
 
-onMounted(() => void store.load());
+onMounted(() => {
+  void (async () => {
+    await store.load();
+    await account.initialize();
+  })();
+});
 </script>
 
 <template>

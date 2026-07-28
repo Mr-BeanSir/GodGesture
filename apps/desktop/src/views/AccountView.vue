@@ -1,156 +1,530 @@
 <script setup lang="ts">
-/**
- * 「账户与同步」区(骨架):M6 前为演示逻辑(account store,不连后端)。
- * OAuth 凭证仅留占位;微信 / QQ 标注即将开放。
- */
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
-import { Refresh } from "@element-plus/icons-vue";
-import { useAccountStore, type OAuthProvider } from "../stores/account";
+import { useMediaQuery } from "@vueuse/core";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Refresh, RefreshLeft, SwitchButton } from "@element-plus/icons-vue";
+import type { OAuthProvider } from "@godgesture/shared";
+import { useAccountStore } from "../stores/account";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const account = useAccountStore();
 
+const authMode = ref<"login" | "register">("login");
 const email = ref("");
 const password = ref("");
-
+const narrowLayout = useMediaQuery("(max-width: 640px)");
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function onLogin() {
+const authModeOptions = computed(() => [
+  { label: t("account.login"), value: "login" },
+  { label: t("account.register"), value: "register" },
+]);
+
+const syncTagType = computed(() => {
+  switch (account.syncStatus.phase) {
+    case "current":
+      return "success";
+    case "pending":
+    case "syncing":
+      return "warning";
+    case "error":
+      return "danger";
+    default:
+      return "info";
+  }
+});
+
+const syncStatusText = computed(() =>
+  t(`account.syncStates.${account.syncStatus.phase}`),
+);
+
+const lastSyncText = computed(() => {
+  if (!account.syncStatus.lastSyncAt) return t("account.lastSyncNever");
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(account.syncStatus.lastSyncAt));
+});
+
+function errorText(code: string | null): string {
+  if (!code) return t("account.errors.generic");
+  const key = `account.errors.${code}`;
+  const translated = t(key);
+  return translated === key ? t("account.errors.generic") : translated;
+}
+
+function validateCredentials(): boolean {
   if (!EMAIL_RE.test(email.value)) {
     ElMessage.warning(t("account.emailInvalid"));
-    return;
+    return false;
   }
   if (!password.value) {
     ElMessage.warning(t("account.passwordRequired"));
+    return false;
+  }
+  if (authMode.value === "register" && password.value.length < 8) {
+    ElMessage.warning(t("account.passwordTooShort"));
+    return false;
+  }
+  return true;
+}
+
+async function onSubmit(): Promise<void> {
+  if (!validateCredentials()) return;
+  try {
+    if (authMode.value === "login") {
+      await account.loginWithPassword(email.value, password.value);
+    } else {
+      await account.registerWithPassword(email.value, password.value);
+    }
+    password.value = "";
+    ElMessage.success(t("account.loginSuccess"));
+  } catch {
+    ElMessage.error(errorText(account.authErrorCode));
+  }
+}
+
+async function onOAuth(provider: OAuthProvider): Promise<void> {
+  try {
+    await account.loginWithOAuth(provider);
+    ElMessage.success(t("account.loginSuccess"));
+  } catch {
+    ElMessage.error(errorText(account.authErrorCode));
+  }
+}
+
+async function onSync(): Promise<void> {
+  try {
+    await account.syncNow();
+    ElMessage.success(t("account.syncDone"));
+  } catch {
+    ElMessage.error(errorText(account.syncStatus.errorCode));
+  }
+}
+
+async function onLogout(): Promise<void> {
+  try {
+    const outcome = await account.logout();
+    ElMessage.success(
+      t(
+        outcome === "revoked"
+          ? "account.logoutDone"
+          : "account.logoutLocalOnly",
+      ),
+    );
+  } catch {
+    ElMessage.error(errorText(account.authErrorCode));
+  }
+}
+
+async function onRestore(version: number): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      t("account.snapshots.restoreConfirm", { version }),
+      t("account.snapshots.restoreTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("account.snapshots.restore"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
+  } catch {
     return;
   }
-  await account.loginWithPassword(email.value, password.value);
-  ElMessage.success(t("account.loginSuccess"));
+  try {
+    await account.restoreSnapshot(version);
+    ElMessage.success(t("account.snapshots.restoreDone"));
+  } catch {
+    ElMessage.error(errorText(account.syncStatus.errorCode));
+  }
 }
 
-async function onOAuth(provider: OAuthProvider) {
-  await account.loginWithOAuth(provider);
-  ElMessage.success(t("account.loginSuccess"));
+function formatSnapshotTime(value: string): string {
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
-async function onSync() {
-  await account.syncNow();
-  ElMessage.success(t("account.syncDone"));
+function formatBytes(value: number): string {
+  if (value < 1024) return t("account.snapshots.bytes", { value });
+  return t("account.snapshots.kib", {
+    value: new Intl.NumberFormat(locale.value, {
+      maximumFractionDigits: 1,
+    }).format(value / 1024),
+  });
 }
 
-const lastSyncText = computed(() =>
-  account.lastSyncAt ? account.lastSyncAt.toLocaleString() : t("account.lastSyncNever"),
-);
+function providerLabel(provider: OAuthProvider): string {
+  return t(`account.oauth.${provider}`);
+}
 </script>
 
 <template>
   <div class="account">
-    <!-- 未登录 -->
-    <section v-if="!account.user" class="gg-section account__login">
-      <h3 class="gg-section-title">{{ t("account.loginTitle") }}</h3>
-      <p class="gg-hint">{{ t("account.loginSubtitle") }}</p>
-
-      <div class="gg-field">
-        <label class="gg-field-label">{{ t("account.email") }}</label>
-        <el-input v-model="email" :placeholder="t('account.emailPlaceholder')" />
-      </div>
-      <div class="gg-field">
-        <label class="gg-field-label">{{ t("account.password") }}</label>
-        <el-input
-          v-model="password"
-          type="password"
-          show-password
-          :placeholder="t('account.passwordPlaceholder')"
-          @keyup.enter="onLogin"
-        />
-      </div>
-      <div class="account__actions">
-        <el-button type="primary" :loading="account.loggingIn" @click="onLogin">
-          {{ t("account.login") }}
-        </el-button>
-        <el-button :disabled="account.loggingIn" @click="onLogin">
-          {{ t("account.register") }}
-        </el-button>
-      </div>
-
-      <el-divider>{{ t("account.or") }}</el-divider>
-      <div class="account__oauth">
-        <el-button :loading="account.loggingIn" @click="onOAuth('github')">
-          {{ t("account.oauthGithub") }}
-        </el-button>
-        <el-button :loading="account.loggingIn" @click="onOAuth('google')">
-          {{ t("account.oauthGoogle") }}
-        </el-button>
-        <el-tooltip :content="t('account.comingSoon')" placement="top">
-          <span><el-button disabled>{{ t("account.oauthWechat") }}</el-button></span>
-        </el-tooltip>
-        <el-tooltip :content="t('account.comingSoon')" placement="top">
-          <span><el-button disabled>{{ t("account.oauthQq") }}</el-button></span>
-        </el-tooltip>
-      </div>
-
-      <el-alert type="info" :closable="false" show-icon :title="t('account.mockNotice')" />
-    </section>
-
-    <!-- 已登录 -->
-    <section v-else class="gg-section account__profile">
+    <section
+      v-if="account.phase === 'initializing'"
+      class="gg-section account__loading"
+    >
       <h3 class="gg-section-title">{{ t("account.title") }}</h3>
-      <div class="account__row">
-        <span class="account__label">{{ t("account.loggedInAs") }}</span>
-        <span>{{ account.user.email }}</span>
-      </div>
-      <div class="account__row">
-        <span class="account__label">{{ t("account.device") }}</span>
-        <span>{{ account.deviceName }}</span>
-      </div>
-      <div class="account__row">
-        <span class="account__label">{{ t("account.syncStatus") }}</span>
-        <el-tag :type="account.syncing ? 'warning' : 'success'" size="small">
-          {{ account.syncing ? t("account.syncStatusSyncing") : t("account.syncStatusIdle") }}
-        </el-tag>
-      </div>
-      <div class="account__row">
-        <span class="account__label">{{ t("account.lastSync") }}</span>
-        <span>{{ lastSyncText }}</span>
-      </div>
-      <div class="account__actions">
-        <el-button type="primary" :icon="Refresh" :loading="account.syncing" @click="onSync">
-          {{ t("account.syncNow") }}
-        </el-button>
-        <el-button @click="account.logout">{{ t("account.logout") }}</el-button>
-      </div>
-      <el-alert type="info" :closable="false" show-icon :title="t('account.mockNotice')" />
+      <el-skeleton :rows="5" animated />
     </section>
+
+    <section v-else-if="account.phase === 'sessionError'" class="gg-section">
+      <el-result
+        icon="error"
+        :title="t('account.sessionErrorTitle')"
+        :sub-title="errorText(account.authErrorCode)"
+      >
+        <template #extra>
+          <div class="account__actions account__actions--center">
+            <el-button
+              type="primary"
+              :icon="Refresh"
+              @click="account.initialize()"
+            >
+              {{ t("common.retry") }}
+            </el-button>
+            <el-button
+              v-if="account.cloudConfigured"
+              :icon="SwitchButton"
+              @click="account.discardStoredSession()"
+            >
+              {{ t("account.clearSession") }}
+            </el-button>
+          </div>
+        </template>
+      </el-result>
+    </section>
+
+    <section
+      v-else-if="account.phase === 'signedOut'"
+      class="gg-section account__login"
+    >
+      <div>
+        <h3 class="gg-section-title">{{ t("account.loginTitle") }}</h3>
+        <p class="gg-hint account__subtitle">
+          {{ t("account.loginSubtitle") }}
+        </p>
+      </div>
+
+      <el-segmented
+        v-model="authMode"
+        :options="authModeOptions"
+        class="account__mode"
+      />
+
+      <div class="account__form">
+        <div class="gg-field">
+          <label class="gg-field-label" for="account-email">{{
+            t("account.email")
+          }}</label>
+          <el-input
+            id="account-email"
+            v-model="email"
+            autocomplete="email"
+            :placeholder="t('account.emailPlaceholder')"
+          />
+        </div>
+        <div class="gg-field">
+          <label class="gg-field-label" for="account-password">{{
+            t("account.password")
+          }}</label>
+          <el-input
+            id="account-password"
+            v-model="password"
+            type="password"
+            show-password
+            :autocomplete="
+              authMode === 'login' ? 'current-password' : 'new-password'
+            "
+            :placeholder="t('account.passwordPlaceholder')"
+            @keyup.enter="onSubmit"
+          />
+          <p v-if="authMode === 'register'" class="gg-hint">
+            {{ t("account.passwordRequirement") }}
+          </p>
+        </div>
+        <el-button type="primary" :loading="account.authBusy" @click="onSubmit">
+          {{ t(authMode === "login" ? "account.login" : "account.register") }}
+        </el-button>
+      </div>
+
+      <el-alert
+        v-if="account.authErrorCode"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="errorText(account.authErrorCode)"
+      />
+
+      <template
+        v-if="
+          account.providersLoading ||
+          account.providers.length ||
+          account.providersError
+        "
+      >
+        <el-divider>{{ t("account.or") }}</el-divider>
+        <el-skeleton v-if="account.providersLoading" :rows="1" animated />
+        <div v-else-if="account.providers.length" class="account__oauth">
+          <el-button
+            v-for="provider in account.providers"
+            :key="provider"
+            :loading="account.authBusy"
+            @click="onOAuth(provider)"
+          >
+            {{ providerLabel(provider) }}
+          </el-button>
+        </div>
+        <el-alert
+          v-else
+          type="info"
+          :closable="false"
+          show-icon
+          :title="t('account.providersUnavailable')"
+        >
+          <template #default>
+            <el-button link type="primary" @click="account.loadProviders()">
+              {{ t("common.retry") }}
+            </el-button>
+          </template>
+        </el-alert>
+      </template>
+    </section>
+
+    <template v-else>
+      <section class="gg-section account__profile">
+        <div class="account__section-head">
+          <h3 class="gg-section-title">{{ t("account.title") }}</h3>
+          <el-tag :type="syncTagType" size="small">{{ syncStatusText }}</el-tag>
+        </div>
+
+        <dl class="account__properties">
+          <div class="account__row">
+            <dt>{{ t("account.loggedInAs") }}</dt>
+            <dd>{{ account.user?.email || t("account.providerAccount") }}</dd>
+          </div>
+          <div class="account__row">
+            <dt>{{ t("account.device") }}</dt>
+            <dd>{{ account.device?.name }}</dd>
+          </div>
+          <div class="account__row">
+            <dt>{{ t("account.lastSync") }}</dt>
+            <dd>{{ lastSyncText }}</dd>
+          </div>
+          <div class="account__row">
+            <dt>{{ t("account.serverVersion") }}</dt>
+            <dd>
+              {{
+                account.syncStatus.serverVersion ?? t("account.notAvailable")
+              }}
+            </dd>
+          </div>
+        </dl>
+
+        <el-alert
+          v-if="account.syncStatus.errorCode"
+          :type="account.syncStatus.phase === 'offline' ? 'info' : 'error'"
+          :closable="false"
+          show-icon
+          :title="errorText(account.syncStatus.errorCode)"
+        />
+
+        <div class="account__actions">
+          <el-button
+            type="primary"
+            :icon="Refresh"
+            :loading="account.syncStatus.phase === 'syncing'"
+            @click="onSync"
+          >
+            {{ t("account.syncNow") }}
+          </el-button>
+          <el-button
+            :icon="SwitchButton"
+            :loading="account.authBusy"
+            @click="onLogout"
+          >
+            {{ t("account.logout") }}
+          </el-button>
+        </div>
+      </section>
+
+      <section class="gg-section account__snapshots">
+        <div class="account__section-head">
+          <div>
+            <h3 class="gg-section-title">{{ t("account.snapshots.title") }}</h3>
+            <p class="gg-hint account__subtitle">
+              {{ t("account.snapshots.subtitle") }}
+            </p>
+          </div>
+          <el-tooltip :content="t('account.snapshots.refresh')" placement="top">
+            <el-button
+              circle
+              :icon="Refresh"
+              :loading="account.snapshotsLoading"
+              @click="account.loadSnapshots()"
+            />
+          </el-tooltip>
+        </div>
+
+        <el-alert
+          v-if="account.snapshotsErrorCode"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="errorText(account.snapshotsErrorCode)"
+        />
+
+        <el-table
+          :data="account.snapshots"
+          :empty-text="t('account.snapshots.empty')"
+          max-height="300"
+          size="small"
+          v-loading="account.snapshotsLoading"
+        >
+          <el-table-column
+            prop="version"
+            :label="t('account.snapshots.version')"
+            :width="narrowLayout ? 64 : 86"
+          />
+          <el-table-column
+            :label="t('account.snapshots.time')"
+            :min-width="narrowLayout ? 180 : 170"
+          >
+            <template #default="scope">
+              <div>{{ formatSnapshotTime(scope.row.createdAt) }}</div>
+              <div v-if="narrowLayout" class="account__snapshot-meta">
+                {{
+                  scope.row.deviceName || t("account.snapshots.unknownDevice")
+                }}
+                /
+                {{ formatBytes(scope.row.sizeBytes) }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="!narrowLayout"
+            :label="t('account.snapshots.device')"
+            min-width="145"
+          >
+            <template #default="scope">
+              {{ scope.row.deviceName || t("account.snapshots.unknownDevice") }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="!narrowLayout"
+            :label="t('account.snapshots.size')"
+            width="90"
+          >
+            <template #default="scope">{{
+              formatBytes(scope.row.sizeBytes)
+            }}</template>
+          </el-table-column>
+          <el-table-column
+            :label="t('account.snapshots.actions')"
+            :width="narrowLayout ? 64 : 76"
+            align="right"
+          >
+            <template #default="scope">
+              <el-tooltip
+                :content="t('account.snapshots.restore')"
+                placement="left"
+              >
+                <el-button
+                  circle
+                  text
+                  :icon="RefreshLeft"
+                  :disabled="account.syncStatus.phase === 'syncing'"
+                  @click="onRestore(scope.row.version)"
+                />
+              </el-tooltip>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .account {
-  max-width: 460px;
-}
-.account__login,
-.account__profile {
+  width: min(100%, 760px);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
-.account__actions {
-  display: flex;
-  gap: 10px;
+.account__loading {
+  min-height: 280px;
 }
-.account__oauth {
+.account__login {
+  max-width: 520px;
+}
+.account__subtitle {
+  margin-top: 5px;
+}
+.account__mode {
+  width: 100%;
+}
+.account__form {
+  display: grid;
+  gap: 14px;
+}
+.account__oauth,
+.account__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
-.account__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.account__actions--center {
+  justify-content: center;
 }
-.account__label {
-  width: 84px;
+.account__section-head {
+  min-height: 32px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.account__properties {
+  margin: 0;
+}
+.account__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  min-height: 34px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+.account__row:last-child {
+  border-bottom: 0;
+}
+.account__row dt {
   color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.account__row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
+}
+.account__snapshots :deep(.el-table) {
+  width: 100%;
+}
+.account__snapshot-meta {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .account__row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 0;
+  }
 }
 </style>
