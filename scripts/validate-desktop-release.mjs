@@ -33,7 +33,8 @@ assert.match(windows, /x86_64-pc-windows-msvc/);
 assert.match(windows, /--bundles nsis/);
 assert.match(windows, /TAURI_SIGNING_PRIVATE_KEY is required/);
 assert.match(windows, /FromBase64String/);
-assert.match(windows, /dumpbin \/headers/);
+assert.match(windows, /BinaryReader/);
+assert.match(windows, /0x8664/);
 assert.match(windows, /Get-AuthenticodeSignature/);
 assert.match(windows, /Get-FileHash.*SHA256/s);
 

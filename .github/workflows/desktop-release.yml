@@ -70,8 +70,20 @@ jobs:
 
           $appExe = "apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/godgesture.exe"
           if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw "Missing x64 application executable" }
-          $headers = (& dumpbin /headers $appExe | Out-String)
-          if ($headers -notmatch "8664 machine \(x64\)") { throw "Application executable is not x64" }
+          $stream = [IO.File]::OpenRead($appExe)
+          $reader = [IO.BinaryReader]::new($stream)
+          try {
+            if ($reader.ReadUInt16() -ne 0x5A4D) { throw "Application executable has no DOS header" }
+            $stream.Position = 0x3C
+            $peOffset = $reader.ReadUInt32()
+            if ($peOffset -gt ($stream.Length - 6)) { throw "Application executable has an invalid PE offset" }
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) { throw "Application executable has no PE header" }
+            if ($reader.ReadUInt16() -ne 0x8664) { throw "Application executable is not x64" }
+          } finally {
+            $reader.Dispose()
+            $stream.Dispose()
+          }
           if ((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne "NotSigned") {
             throw "M7 Windows installer must remain without Authenticode signing"
           }
