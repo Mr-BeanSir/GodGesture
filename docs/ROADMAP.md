@@ -1,6 +1,6 @@
 # GodGesture 路线图
 
-依据:`CONTEXT.md`(术语表)与 `docs/adr/0001~0010`(架构决策)。功能对齐基准 = WGestures 1.8.5 出厂行为(盘点报告见 git 历史与 ADR)。每个里程碑的完成定义:双平台验收通过,或显式标注单平台能力。
+依据:`CONTEXT.md`(术语表)与 `docs/adr/0001~0011`(架构决策)。功能对齐基准 = WGestures 1.8.5 出厂行为(盘点报告见 git 历史与 ADR)。每个里程碑的完成定义:双平台验收通过,或显式标注单平台能力。
 
 ## M0 仓库奠基 ✅
 - pnpm monorepo:`apps/desktop`(Tauri 2 + Vue 3 TS)、`apps/server`(NestJS)、`packages/shared`(zod 协议)
@@ -31,7 +31,7 @@
 ## M4 macOS 引擎
 - CGEventTap 捕获 + 事件吞噬、辅助功能权限引导
 - NSWindow + CALayer 覆盖层;命令能力矩阵按平台落地(Bundle ID 绑定、Cmd 命令走 shell 等)
-- 签名 + 公证流水(Apple Developer 参数留配置位)
+- 免费 ad-hoc universal DMG 流水(无需 Apple Developer 账户;首次启动由用户手动放行)
 
 ## M5 后端与账户
 - Prisma Schema:用户/设备/刷新令牌/配置文档/快照

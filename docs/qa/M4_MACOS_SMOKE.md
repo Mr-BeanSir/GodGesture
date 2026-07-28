@@ -1,6 +1,6 @@
 # M4 macOS On-Device Smoke Checklist
 
-Use a physical Mac running macOS 13 or newer. Record the macOS version, CPU architecture, display layout, application commit, signing identity, and workflow run URL with the results. A checked item requires observed behavior; configuration or compilation alone is not evidence.
+Use a physical Mac running macOS 13 or newer. Record the macOS version, CPU architecture, display layout, application commit, ad-hoc signature status, and workflow run URL with the results. A checked item requires observed behavior; configuration or compilation alone is not evidence.
 
 ## Permission Lifecycle
 
@@ -41,6 +41,9 @@ Use a physical Mac running macOS 13 or newer. Record the macOS version, CPU arch
 
 - [ ] Start at login registers through `SMAppService`, survives logout/login, and unregisters when disabled. A requires-approval state is shown clearly.
 - [ ] Run as administrator is disabled and explained on macOS. Tray visibility applies and persists.
-- [ ] The GitHub workflow produces a universal application and DMG signed by the expected Developer ID identity.
-- [ ] `codesign --verify`, `xcrun stapler validate`, and both Gatekeeper assessments pass for downloaded workflow artifacts.
-- [ ] A clean Mac launches the downloaded DMG application without a Gatekeeper bypass.
+- [ ] A manual GitHub workflow run produces the ad-hoc universal DMG and adjacent SHA-256 checksum as `GodGesture-macOS-universal-ad-hoc`.
+- [ ] `codesign --verify` accepts the application envelope, `codesign -dv` reports `Signature=adhoc`, `lipo -archs` reports both `arm64` and `x86_64`, and `hdiutil verify` accepts the DMG. If the approved Apple Silicon-only fallback is exercised, the release documents and check expect only `arm64`.
+- [ ] A `v*` tag matching the application version creates a GitHub Release containing the same DMG and checksum; a mismatched tag fails without publishing.
+- [ ] `shasum -a 256 -c` verifies the downloaded DMG against the published checksum.
+- [ ] With download quarantine intact, the first normal launch is blocked as expected and the documented Finder Open or Privacy & Security > Open Anyway flow permits launch. No quarantine removal or Gatekeeper disable command is used.
+- [ ] After manual launch approval, Accessibility, Input Monitoring, and event-posting are granted separately and the engine runs. An upgrade records whether launch approval or TCC consent must be confirmed again.

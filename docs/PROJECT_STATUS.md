@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-28。产品代码与发布配置基线覆盖至 `90db572`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-28。产品代码与发布配置基线覆盖至 `9f6f0a5`;此后的状态文档提交不改变产品行为。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -12,11 +12,11 @@
 | M1 Windows 手势引擎   | Windows 主体已实现并通过运行时 smoke;macOS 尚待真实设备验收,未满足双平台正式完成定义 |
 | M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);Script 执行按 ADR-0005 归 M3                     |
 | M3 QuickJS            | 已完成;QuickJS 运行时、Windows 宿主 API 和 Monaco 编辑器已验收                |
-| M4 macOS 引擎         | 原生实现与发布流水已落地;待真实 Mac TCC/多屏/登录项及签名公证验收后正式完成    |
+| M4 macOS 引擎         | 原生实现与免费 ad-hoc DMG 流水已落地;待真实 Mac 功能、安装和升级验收后正式完成 |
 | M5 后端与账户         | 服务端主体已实现;外部 OAuth 凭证仍由部署环境提供                              |
 | M6 云同步             | shared 协议和服务端已实现;桌面账户/同步仍是本地 mock,未接后端                 |
 | M7 Web 控制台与分发   | Web 控制台主体已实现;Updater 和模板分发未实现                                 |
-| M8 打磨与发布         | 未开始;安装、提权启动、公证、引导和正式发布尚未验收                           |
+| M8 打磨与发布         | 未开始;安装、提权启动、引导和正式发布尚未验收                                 |
 
 ## 部件地图
 
@@ -84,7 +84,7 @@
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令和 Bundle ID 匹配的验收证据。
 - 桌面账户与云同步未连接 Server;没有防抖推送、启动/定时拉取或 409 拉取重推。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
-- macOS universal app/DMG 签名与公证 workflow 已配置,但尚未用真实 Apple Developer 凭证运行并取得 codesign、stapler 和 Gatekeeper 证据。Updater、手势模板库、安装包完整验收和快速引导未完成。
+- macOS 免费 ad-hoc universal app/DMG workflow 已配置,无需 Apple Developer 凭证;尚未在 GitHub macOS runner 和真实 Mac 取得架构、DMG、校验和、手动放行及升级权限证据。Developer ID、公证、staple 和无警告 Gatekeeper 启动按 ADR-0011 明确不在完成定义内。Updater、手势模板库、安装包完整验收和快速引导未完成。
 
 ## 不得破坏的语义
 
@@ -112,7 +112,7 @@
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
 - 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。已运行的提升权限 WGestures 会先消费低完整性合成鼠标事件,因此自动化完整右键手势注入未建立;未终止用户进程,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
-- M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过,workflow YAML、macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
+- M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 
 ## 验证基线
 

@@ -21,6 +21,6 @@
 - 与用户用中文交流;commit message 用英文。
 - pnpm monorepo;协议改动必须同时更新 `packages/shared` 并保证两端编译通过。
 - 界面文案走 vue-i18n(zh-CN + en),禁止硬编码中文串到组件里。
-- Apple Developer / OAuth(GitHub/Google/微信/QQ)等外部凭证一律留配置位(.env.example 注明),不写死。
+- OAuth(GitHub/Google/微信/QQ)等外部凭证一律留配置位(.env.example 注明),不写死;macOS 免费分发按 ADR-0011,不得重新引入 Apple 付费凭证或公证要求。
 - 功能状态、关键入口、已知问题或验证基线发生变化时,在同一文档提交中更新 `docs/PROJECT_STATUS.md`。
 - 按受影响领域分别验证、显式暂存并单独提交;禁止 `git add -A`,不自动 push。
