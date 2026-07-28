@@ -170,6 +170,66 @@ describe("gesture template adoption", () => {
     );
   });
 
+  it("uses an explicit AUMID to distinguish Apps with the same executable", () => {
+    const targetId = "20000000-0000-4000-8000-000000000002";
+    const document = ConfigDocument.parse({
+      apps: [
+        {
+          id: "20000000-0000-4000-8000-000000000001",
+          name: "Store One",
+          windows: { exeName: "application-frame-host.exe", aumid: "Store.One" },
+        },
+        {
+          id: targetId,
+          name: "Store Two",
+          windows: { exeName: "application-frame-host.exe", aumid: "Store.Two" },
+        },
+      ],
+    });
+
+    const plan = planGestureTemplateAdoption(
+      document,
+      appPackage(
+        "Store Two",
+        "application-frame-host.exe",
+        "com.example.unused",
+        "store.two",
+      ),
+      options("keepExisting"),
+    );
+
+    expect(plan.createdApp).toBe(false);
+    expect(plan.targetAppId).toBe(targetId);
+  });
+
+  it("rejects different explicit AUMIDs when the macOS binding matches", () => {
+    const document = ConfigDocument.parse({
+      apps: [
+        {
+          id: "20000000-0000-4000-8000-000000000001",
+          name: "Store One",
+          windows: { exeName: "application-frame-host.exe", aumid: "Store.One" },
+          mac: { bundleId: "com.example.store" },
+        },
+      ],
+    });
+
+    expectAdoptionCode(
+      () =>
+        planGestureTemplateAdoption(
+          document,
+          appPackage(
+            "Store Two",
+            "application-frame-host.exe",
+            "com.example.store",
+            "Store.Two",
+          ),
+          options("keepExisting"),
+        ),
+      "app_binding_conflict",
+    );
+  });
+
   it("rejects duplicate or malformed generated IDs", () => {
     const document = ConfigDocument.parse({});
     const template = globalPackage([
@@ -269,7 +329,12 @@ function globalPackage(intents: ReturnType<typeof templateIntent>[]) {
   });
 }
 
-function appPackage(name: string, exeName: string, bundleId: string) {
+function appPackage(
+  name: string,
+  exeName: string,
+  bundleId: string,
+  aumid?: string,
+) {
   return GestureTemplatePackage.parse({
     formatVersion: 1,
     slug: "browser-navigation",
@@ -277,7 +342,7 @@ function appPackage(name: string, exeName: string, bundleId: string) {
     target: {
       scope: "app",
       name,
-      windows: { exeName },
+      windows: { exeName, ...(aumid ? { aumid } : {}) },
       mac: { bundleId },
       intents: [templateIntent("Back", ["left"])],
     },

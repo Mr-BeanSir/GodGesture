@@ -72,15 +72,26 @@ function normalized(value: string): string {
 }
 
 function windowsBindingsMatch(
+  target: z.infer<typeof WindowsBinding>,
+  candidate: z.infer<typeof WindowsBinding>,
+): boolean {
+  if (target.aumid) {
+    return Boolean(
+      candidate.aumid &&
+        normalized(target.aumid) === normalized(candidate.aumid),
+    );
+  }
+  return normalized(target.exeName) === normalized(candidate.exeName);
+}
+
+function windowsBindingsCompatible(
   left: z.infer<typeof WindowsBinding>,
   right: z.infer<typeof WindowsBinding>,
 ): boolean {
-  if (normalized(left.exeName) === normalized(right.exeName)) return true;
-  return Boolean(
-    left.aumid &&
-      right.aumid &&
-      normalized(left.aumid) === normalized(right.aumid),
-  );
+  if (left.aumid && right.aumid) {
+    return normalized(left.aumid) === normalized(right.aumid);
+  }
+  return normalized(left.exeName) === normalized(right.exeName);
 }
 
 function macBindingsMatch(
@@ -121,7 +132,7 @@ function resolveTargetApp(
   if (
     target.windows &&
     app.windows &&
-    !windowsBindingsMatch(target.windows, app.windows)
+    !windowsBindingsCompatible(target.windows, app.windows)
   ) {
     throw new TemplateAdoptionError(
       "app_binding_conflict",
