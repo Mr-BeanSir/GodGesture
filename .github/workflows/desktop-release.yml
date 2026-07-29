@@ -185,7 +185,10 @@ jobs:
           case " $architectures " in *" arm64 "*) ;; *) echo "Missing arm64 slice" >&2; exit 1 ;; esac
           case " $architectures " in *" x86_64 "*) ;; *) echo "Missing x86_64 slice" >&2; exit 1 ;; esac
           hdiutil verify "$dmg_path"
-          tar -tzf "$updater_path" | grep -Fx 'GodGesture.app/Contents/MacOS/GodGesture' >/dev/null
+          updater_extract_dir=$(mktemp -d)
+          trap 'rm -rf "$updater_extract_dir"' EXIT
+          tar -xzf "$updater_path" -C "$updater_extract_dir"
+          test -x "$updater_extract_dir/GodGesture.app/Contents/MacOS/GodGesture"
 
           mkdir -p "$release_dir"
           cp "$dmg_path" "$release_dir/$dmg_name"

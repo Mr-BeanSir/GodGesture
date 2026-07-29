@@ -52,7 +52,13 @@ assert.match(macos, /arm64/);
 assert.match(macos, /x86_64/);
 assert.match(macos, /hdiutil verify/);
 assert.match(macos, /\.app\.tar\.gz/);
-assert.match(macos, /tar -tzf.*grep -Fx/s);
+assert.match(macos, /updater_extract_dir=\$\(mktemp -d\)/);
+assert.match(macos, /tar -xzf.*-C "\$updater_extract_dir"/);
+assert.match(
+  macos,
+  /test -x "\$updater_extract_dir\/GodGesture\.app\/Contents\/MacOS\/GodGesture"/,
+);
+assert.doesNotMatch(macos, /tar -tzf.*grep/s);
 assert.match(macos, /shasum -a 256/);
 
 for (const jobName of ["windows", "macos"]) {
