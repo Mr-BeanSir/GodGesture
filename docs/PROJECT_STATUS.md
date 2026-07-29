@@ -46,13 +46,17 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
 - `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;普通点击在当前钩子回调返回后经有界消息队列重放。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
-- `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
+- `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;每次唤醒按 64 条命令帧预算
+  消费并在队列未清空时先提交脏帧,避免连续鼠标移动造成渲染饥饿;不得改成 WebView
+  覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
 - `platform/windows/script.rs`:QuickJS 的 Windows 输入、鼠标、窗口和剪贴板宿主实现;脚本不获得原生句柄。
 - `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
 - `platform/macos/hook.rs`:CGEventTap 全局鼠标捕获、同步吞噬、模拟事件标记、超时重启和 FFI panic fail-open。
-- `platform/macos/overlay.rs`:主线程 `NSWindow` + `CALayer` 原生覆盖层,tiny-skia 绘制、点击穿透、全 Spaces/全屏辅助和渐隐。
+- `platform/macos/overlay.rs`:主线程 `NSWindow` + `CALayer` 原生覆盖层,tiny-skia 绘制、
+  点击穿透、全 Spaces/全屏辅助和渐隐;高频命令进入 FIFO pending 队列,同一时刻至多
+  一个主线程 drain,每批只栅格化一次。
 - `platform/macos/input.rs`, `keys.rs`, `clipboard.rs`:键鼠/Unicode/SendKeys/滚轮/热键合成,以及保留 NSPasteboard 的选中文本获取。
 - `platform/macos/window.rs` 与 `commands.rs`:CoreGraphics z-order + Bundle ID、带 TTL 的有界窗口 token、AX 窗口操作、Mission Control、文件/URL/Web 搜索、音量和 zsh/Terminal 命令;topmost 显式不支持。
 - `platform/macos/script.rs`:QuickJS 的 macOS 输入、窗口、剪贴板和状态宿主实现。
@@ -124,6 +128,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
 - 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
 - 2026-07-29 Windows 右键点击恢复修复:未形成手势时不再于低级钩子回调内嵌套 `SendInput`,而是在回调返回后由钩子线程消息泵重放完整点击;维护者在真实桌面确认右键抬起后已无明显感知延迟。已有 Vite-only 会话占用 `14200/14201` 时,真实 Tauri 开发会话自动使用 `14202/14203` 并连接成功。重复运行同一 debug 构建时第二进程以 0 退出,前后均仅一个 `godgesture.exe`,既有窗口已唤起;双语 toast 事件由 Desktop 测试覆盖,受本机窗口捕获接口限制未取得实机视觉证据。
+- 2026-07-29 原生轨迹调度修复:Windows 覆盖层不再清空无界 channel 后才绘制,
+  单次唤醒最多消费 64 条命令,有剩余工作时重新唤醒;macOS 使用 FIFO pending 队列、
+  单 scheduled drain 和每批一次 render。Windows 全库测试 158 passed + 1 ignored,
+  clippy `-D warnings` 通过。维护者的右键/中键/X1/X2 连续移动跟手实机验收仍待执行;
+  Windows 上的 Apple target 交叉检查因 `ring`/`rquickjs-sys` 找不到 Apple C 编译器
+  `cc` 而在依赖构建阶段停止,macOS 源码编译和真机轨迹仍需 CI/设备证据。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -154,6 +164,11 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 2026-07-29 M8 最终验证:shared 90/90 + build;Desktop 88/88 + typecheck/build;发布脚本 10/10 且 workflow 静态合同通过;2 个模板种子验证通过;Rust 全库 152 passed + 1 ignored;clippy 仅既有 `overlay.rs:202 while_let_loop`。快速入门已在中文/英文、明/暗主题、`980x700`/`800x560` 和全部三步组合下完成 24 组浏览器截图与 DOM 验收。模板仓库 `v1.0.0` 的三个 production URL 已通过实时内容和协议验证。RC.2 run `30435122047` 和 stable run `30437621772` 均成功;stable 的 Windows/macOS Rust cache 均 exact hit,总时长由 RC.2 冷构建 14m17s 降至 6m53s。公开 stable 10 个用户资产已独立下载并通过 checksum、minisign、PE/Mach-O、app/DMG 与 evidence 校验;Windows RC.2→stable 原生 Updater 已保留配置 hash、9 条手势、本机设置、托盘设置和快速入门 dismissal。完整证据见 `docs/qa/M8_RELEASE_ACCEPTANCE.md`。
 
 2026-07-29 Windows 输入与启动可靠性验证:动态端口启动器 4/4;Desktop 89/89 + typecheck/build;Rust 全库 155 passed + 1 ignored,Windows hook 队列定向 5/5;clippy 仅既有 `overlay.rs:202 while_let_loop`。真实运行验证结果见上方本地开发与运行时 QA 条目。
+
+2026-07-29 原生轨迹调度定向验证:Windows overlay 新增 3 个批次预算/FIFO/断连测试;
+Rust 全库 158 passed + 1 ignored;`cargo clippy --lib -- -D warnings` 通过。macOS target
+交叉检查在第三方 C 依赖构建阶段因本机缺少 Apple `cc` 工具链停止,不计作 macOS
+编译通过。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

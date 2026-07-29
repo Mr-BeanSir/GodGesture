@@ -13,11 +13,10 @@ use crate::engine::types::Point;
 use crossbeam_channel::{unbounded, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tiny_skia::{
-    LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform,
-};
+use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
+use windows::Win32::Graphics::Gdi::BLENDFUNCTION;
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EndPaint,
     GetMonitorInfoW, MonitorFromPoint, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
@@ -26,14 +25,14 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer, PostThreadMessageW,
-    RegisterClassExW, SetTimer, SetWindowPos, ShowWindow, TranslateMessage,
-    UpdateLayeredWindow, HWND_TOPMOST, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE,
-    ULW_ALPHA, WM_APP, WM_PAINT, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    RegisterClassExW, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, UpdateLayeredWindow,
+    HWND_TOPMOST, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_APP, WM_PAINT,
+    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
-use windows::Win32::Graphics::Gdi::BLENDFUNCTION;
 
 const WM_APP_WAKE: u32 = WM_APP + 1;
+const MAX_COMMANDS_PER_FRAME: usize = 64;
 const FADE_TIMER_ID: usize = 1;
 const FADE_STEP: u16 = 48;
 const FADE_INTERVAL_MS: u32 = 30;
@@ -181,7 +180,14 @@ fn overlay_thread_main(rx: Receiver<OverlayCmd>, tid_slot: Arc<AtomicU32>) {
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             match msg.message {
                 WM_APP_WAKE => {
-                    drain_commands(&rx, &mut state);
+                    if drain_commands(&rx, &mut state) {
+                        let _ = PostThreadMessageW(
+                            windows::Win32::System::Threading::GetCurrentThreadId(),
+                            WM_APP_WAKE,
+                            WPARAM(0),
+                            LPARAM(0),
+                        );
+                    }
                 }
                 WM_TIMER if msg.wParam.0 == FADE_TIMER_ID => {
                     fade_step(&mut state);
@@ -197,69 +203,88 @@ fn overlay_thread_main(rx: Receiver<OverlayCmd>, tid_slot: Arc<AtomicU32>) {
     }
 }
 
-fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
-    let mut dirty = false;
-    loop {
+struct CommandBatch {
+    commands: Vec<OverlayCmd>,
+    has_more: bool,
+}
+
+fn take_command_batch(rx: &Receiver<OverlayCmd>, limit: usize) -> CommandBatch {
+    let mut commands = Vec::with_capacity(limit);
+    while commands.len() < limit {
         match rx.try_recv() {
-            Ok(cmd) => match cmd {
-                OverlayCmd::Begin {
-                    origin,
-                    colors,
-                    show_path,
-                    show_label,
-                    fade_out,
-                } => {
-                    stop_fade(state);
-                    state.points.clear();
-                    state.points.push(origin);
-                    state.colors = colors;
-                    state.recognized = false;
-                    state.label = None;
-                    state.show_path = show_path;
-                    state.show_label = show_label;
-                    state.fade_out = fade_out;
-                    state.alpha = 255;
-                    ensure_surface_for(state, origin);
+            Ok(command) => commands.push(command),
+            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+        }
+    }
+    CommandBatch {
+        commands,
+        has_more: !rx.is_empty(),
+    }
+}
+
+/// Applies at most one frame's worth of commands and reports whether another wake is required.
+/// Rendering before returning prevents a continuously growing queue from starving the overlay.
+fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) -> bool {
+    let batch = take_command_batch(rx, MAX_COMMANDS_PER_FRAME);
+    let mut dirty = false;
+    for cmd in batch.commands {
+        match cmd {
+            OverlayCmd::Begin {
+                origin,
+                colors,
+                show_path,
+                show_label,
+                fade_out,
+            } => {
+                stop_fade(state);
+                state.points.clear();
+                state.points.push(origin);
+                state.colors = colors;
+                state.recognized = false;
+                state.label = None;
+                state.show_path = show_path;
+                state.show_label = show_label;
+                state.fade_out = fade_out;
+                state.alpha = 255;
+                ensure_surface_for(state, origin);
+                dirty = true;
+            }
+            OverlayCmd::Grow(p) => {
+                // 距上个渲染点至少 3px 才记点(StepSize,降密)
+                let step_ok = state
+                    .points
+                    .last()
+                    .map(|last| last.dist_sq(p) >= 9)
+                    .unwrap_or(true);
+                if step_ok {
+                    state.points.push(p);
                     dirty = true;
                 }
-                OverlayCmd::Grow(p) => {
-                    // 距上个渲染点至少 3px 才记点(StepSize,降密)
-                    let step_ok = state
-                        .points
-                        .last()
-                        .map(|last| last.dist_sq(p) >= 9)
-                        .unwrap_or(true);
-                    if step_ok {
-                        state.points.push(p);
-                        dirty = true;
+            }
+            OverlayCmd::Recognized(name) => {
+                let recognized = name.is_some();
+                if state.recognized != recognized || state.label != name {
+                    state.recognized = recognized;
+                    state.label = name;
+                    dirty = true;
+                }
+            }
+            OverlayCmd::End => {
+                if state.visible {
+                    if state.fade_out {
+                        start_fade(state);
+                    } else {
+                        hide(state);
                     }
                 }
-                OverlayCmd::Recognized(name) => {
-                    let recognized = name.is_some();
-                    if state.recognized != recognized || state.label != name {
-                        state.recognized = recognized;
-                        state.label = name;
-                        dirty = true;
-                    }
-                }
-                OverlayCmd::End => {
-                    if state.visible {
-                        if state.fade_out {
-                            start_fade(state);
-                        } else {
-                            hide(state);
-                        }
-                    }
-                    dirty = false;
-                    state.points.clear();
-                }
-                OverlayCmd::Cancel => {
-                    hide(state);
-                    dirty = false;
-                    state.points.clear();
-                }
-            },
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+                dirty = false;
+                state.points.clear();
+            }
+            OverlayCmd::Cancel => {
+                hide(state);
+                dirty = false;
+                state.points.clear();
+            }
         }
     }
     let has_trail = state.show_path && state.points.len() >= 2;
@@ -267,6 +292,7 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) {
     if dirty && (has_trail || has_label) {
         render(state);
     }
+    batch.has_more
 }
 
 /// 加载标签字体:微软雅黑(TTC 首字体),备选黑体/宋体
@@ -439,7 +465,13 @@ fn render(state: &mut OverlayState) {
             let mut main_paint = Paint::default();
             main_paint.set_color(skia_color(color));
             main_paint.anti_alias = true;
-            pixmap.stroke_path(&path, &main_paint, &stroke(main_width), Transform::identity(), None);
+            pixmap.stroke_path(
+                &path,
+                &main_paint,
+                &stroke(main_width),
+                Transform::identity(),
+                None,
+            );
         }
     }
 
@@ -452,10 +484,8 @@ fn render(state: &mut OverlayState) {
     // premultiplied RGBA → BGRA 拷入 DIB
     unsafe {
         let src = pixmap.data();
-        let dst = std::slice::from_raw_parts_mut(
-            state.bits,
-            (state.width * state.height * 4) as usize,
-        );
+        let dst =
+            std::slice::from_raw_parts_mut(state.bits, (state.width * state.height * 4) as usize);
         for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
             d[0] = s[2]; // B
             d[1] = s[1]; // G
@@ -626,5 +656,57 @@ unsafe extern "system" fn wnd_proc(
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn point(value: i32) -> Point {
+        Point { x: value, y: value }
+    }
+
+    #[test]
+    fn command_batch_is_bounded_and_reports_remaining_work() {
+        let (tx, rx) = unbounded();
+        for value in 0..5 {
+            tx.send(OverlayCmd::Grow(point(value))).unwrap();
+        }
+
+        let first = take_command_batch(&rx, 2);
+        assert_eq!(first.commands.len(), 2);
+        assert!(first.has_more);
+
+        let second = take_command_batch(&rx, 8);
+        assert_eq!(second.commands.len(), 3);
+        assert!(!second.has_more);
+    }
+
+    #[test]
+    fn command_batch_preserves_control_command_order() {
+        let (tx, rx) = unbounded();
+        tx.send(OverlayCmd::Grow(point(1))).unwrap();
+        tx.send(OverlayCmd::Recognized(Some("match".into())))
+            .unwrap();
+        tx.send(OverlayCmd::End).unwrap();
+
+        let batch = take_command_batch(&rx, MAX_COMMANDS_PER_FRAME);
+        assert!(matches!(batch.commands[0], OverlayCmd::Grow(_)));
+        assert!(matches!(
+            &batch.commands[1],
+            OverlayCmd::Recognized(Some(label)) if label == "match"
+        ));
+        assert!(matches!(batch.commands[2], OverlayCmd::End));
+    }
+
+    #[test]
+    fn command_batch_handles_empty_and_disconnected_receivers() {
+        let (tx, rx) = unbounded::<OverlayCmd>();
+        drop(tx);
+
+        let batch = take_command_batch(&rx, MAX_COMMANDS_PER_FRAME);
+        assert!(batch.commands.is_empty());
+        assert!(!batch.has_more);
     }
 }

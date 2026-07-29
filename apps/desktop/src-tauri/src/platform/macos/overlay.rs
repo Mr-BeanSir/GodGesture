@@ -14,8 +14,10 @@ use objc2_core_graphics::{
     CGMainDisplayID,
 };
 use objc2_quartz_core::{CALayer, CATransaction};
+use parking_lot::Mutex;
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
@@ -44,7 +46,17 @@ pub enum OverlayCmd {
 pub struct Overlay {
     app: tauri::AppHandle,
     generation: Arc<AtomicU64>,
+    pending: Arc<Mutex<VecDeque<QueuedCommand>>>,
+    drain_scheduled: Arc<AtomicBool>,
 }
+
+#[derive(Debug)]
+struct QueuedCommand {
+    command: OverlayCmd,
+    generation: u64,
+}
+
+const MAX_COMMANDS_PER_DRAIN: usize = 256;
 
 thread_local! {
     static STATE: RefCell<Option<OverlayState>> = const { RefCell::new(None) };
@@ -55,6 +67,8 @@ impl Overlay {
         Self {
             app: app.clone(),
             generation: Arc::new(AtomicU64::new(0)),
+            pending: Arc::new(Mutex::new(VecDeque::new())),
+            drain_scheduled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -65,20 +79,79 @@ impl Overlay {
             }
             _ => self.generation.load(Ordering::Acquire),
         };
-        let app = self.app.clone();
-        let fade_generation = Arc::clone(&self.generation);
-        if let Err(error) = self.app.run_on_main_thread(move || {
-            let should_fade = STATE.with(|slot| {
-                let mut slot = slot.borrow_mut();
-                let state = slot.get_or_insert_with(OverlayState::default);
-                state.apply(command)
-            });
-            if should_fade {
-                spawn_fade(app, fade_generation, generation);
+        self.pending.lock().push_back(QueuedCommand {
+            command,
+            generation,
+        });
+        schedule_drain(
+            self.app.clone(),
+            Arc::clone(&self.generation),
+            Arc::clone(&self.pending),
+            Arc::clone(&self.drain_scheduled),
+        );
+    }
+}
+
+fn take_pending_batch(
+    pending: &Mutex<VecDeque<QueuedCommand>>,
+    limit: usize,
+) -> (Vec<QueuedCommand>, bool) {
+    let mut pending = pending.lock();
+    let count = pending.len().min(limit);
+    let commands = pending.drain(..count).collect();
+    (commands, !pending.is_empty())
+}
+
+fn schedule_drain(
+    app: tauri::AppHandle,
+    generation: Arc<AtomicU64>,
+    pending: Arc<Mutex<VecDeque<QueuedCommand>>>,
+    scheduled: Arc<AtomicBool>,
+) {
+    if scheduled.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let callback_app = app.clone();
+    let callback_generation = Arc::clone(&generation);
+    let callback_pending = Arc::clone(&pending);
+    let callback_scheduled = Arc::clone(&scheduled);
+    if let Err(error) = app.run_on_main_thread(move || {
+        let (batch, has_more) = take_pending_batch(&callback_pending, MAX_COMMANDS_PER_DRAIN);
+        let mut fade_requests = Vec::new();
+        STATE.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let state = slot.get_or_insert_with(OverlayState::default);
+            let mut dirty = false;
+            for queued in batch {
+                let effect = state.apply(queued.command);
+                dirty = (dirty || effect.dirty) && !effect.suppress_render;
+                if effect.fade {
+                    fade_requests.push(queued.generation);
+                }
             }
-        }) {
-            log::error!("schedule macOS overlay command failed: {error}");
+            if dirty {
+                state.render();
+            }
+        });
+        callback_scheduled.store(false, Ordering::Release);
+        for expected in fade_requests {
+            spawn_fade(
+                callback_app.clone(),
+                Arc::clone(&callback_generation),
+                expected,
+            );
         }
+        if has_more || !callback_pending.lock().is_empty() {
+            schedule_drain(
+                callback_app,
+                callback_generation,
+                callback_pending,
+                callback_scheduled,
+            );
+        }
+    }) {
+        scheduled.store(false, Ordering::Release);
+        log::error!("schedule macOS overlay command failed: {error}");
     }
 }
 
@@ -128,6 +201,7 @@ struct OverlayState {
     show_path: bool,
     show_label: bool,
     fade_out: bool,
+    active: bool,
     font: Option<ab_glyph::FontVec>,
 }
 
@@ -150,13 +224,14 @@ impl Default for OverlayState {
             show_path: true,
             show_label: true,
             fade_out: true,
+            active: false,
             font: load_label_font(),
         }
     }
 }
 
 impl OverlayState {
-    fn apply(&mut self, command: OverlayCmd) -> bool {
+    fn apply(&mut self, command: OverlayCmd) -> ApplyEffect {
         match command {
             OverlayCmd::Begin {
                 origin,
@@ -167,7 +242,7 @@ impl OverlayState {
             } => {
                 if let Err(error) = self.ensure_surface(origin) {
                     log::error!("create macOS overlay surface failed: {error}");
-                    return false;
+                    return ApplyEffect::default();
                 }
                 self.points.clear();
                 self.points.push(origin);
@@ -177,32 +252,67 @@ impl OverlayState {
                 self.show_path = show_path;
                 self.show_label = show_label;
                 self.fade_out = fade_out;
+                self.active = true;
                 self.set_alpha(1.0);
-                self.render();
-                false
+                ApplyEffect::dirty()
             }
             OverlayCmd::Grow(point) => {
-                self.points.push(point);
-                self.render();
-                false
+                if !self.active {
+                    return ApplyEffect::default();
+                }
+                let changed = self
+                    .points
+                    .last()
+                    .map(|last| last.dist_sq(point) >= 9)
+                    .unwrap_or(true);
+                if changed {
+                    self.points.push(point);
+                }
+                ApplyEffect {
+                    dirty: changed,
+                    fade: false,
+                    suppress_render: false,
+                }
             }
             OverlayCmd::Recognized(label) => {
-                self.recognized = label.is_some();
+                if !self.active {
+                    return ApplyEffect::default();
+                }
+                let recognized = label.is_some();
+                let changed = self.recognized != recognized || self.label != label;
+                self.recognized = recognized;
                 self.label = label;
-                self.render();
-                false
+                ApplyEffect {
+                    dirty: changed,
+                    fade: false,
+                    suppress_render: false,
+                }
             }
             OverlayCmd::End => {
+                self.active = false;
                 if self.fade_out {
-                    true
+                    ApplyEffect {
+                        dirty: false,
+                        fade: true,
+                        suppress_render: false,
+                    }
                 } else {
                     self.hide();
-                    false
+                    ApplyEffect {
+                        dirty: false,
+                        fade: false,
+                        suppress_render: true,
+                    }
                 }
             }
             OverlayCmd::Cancel => {
+                self.active = false;
                 self.hide();
-                false
+                ApplyEffect {
+                    dirty: false,
+                    fade: false,
+                    suppress_render: true,
+                }
             }
         }
     }
@@ -360,6 +470,23 @@ impl OverlayState {
     }
 }
 
+#[derive(Default)]
+struct ApplyEffect {
+    dirty: bool,
+    fade: bool,
+    suppress_render: bool,
+}
+
+impl ApplyEffect {
+    fn dirty() -> Self {
+        Self {
+            dirty: true,
+            fade: false,
+            suppress_render: false,
+        }
+    }
+}
+
 fn create_window(
     origin: Point,
     width: i32,
@@ -490,5 +617,37 @@ fn draw_label(state: &OverlayState, pixmap: &mut Pixmap, text: &str) {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn queued(value: i32) -> QueuedCommand {
+        QueuedCommand {
+            command: OverlayCmd::Grow(Point { x: value, y: value }),
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn pending_batch_is_bounded_and_fifo() {
+        let pending = Mutex::new(VecDeque::from([queued(1), queued(2), queued(3)]));
+        let (batch, has_more) = take_pending_batch(&pending, 2);
+        assert_eq!(batch.len(), 2);
+        assert!(matches!(
+            batch[0].command,
+            OverlayCmd::Grow(Point { x: 1, .. })
+        ));
+        assert!(matches!(
+            batch[1].command,
+            OverlayCmd::Grow(Point { x: 2, .. })
+        ));
+        assert!(has_more);
+
+        let (rest, has_more) = take_pending_batch(&pending, 2);
+        assert_eq!(rest.len(), 1);
+        assert!(!has_more);
     }
 }
