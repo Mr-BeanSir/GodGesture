@@ -54,8 +54,8 @@ pnpm build:shared
 pnpm dev:desktop
 ```
 
-Desktop 开发端口固定为 `127.0.0.1:14200`，HMR 使用 `14201`。更多入口和
-验证命令见 [Desktop 开发说明](apps/desktop/README.md) 与
+Desktop 开发首选 `127.0.0.1:14200`，HMR 首选 `14201`；端口被占用时启动器会
+自动选择下一组连续端口。更多入口和验证命令见 [Desktop 开发说明](apps/desktop/README.md) 与
 [当前项目状态](docs/PROJECT_STATUS.md)。
 
 ## 仓库结构

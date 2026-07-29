@@ -14,8 +14,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_SWAPBUTTON, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN,
+    GetSystemMetrics, SetCursorPos, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_SWAPBUTTON,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
 fn button_flags(button: MouseButton, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
@@ -92,7 +92,9 @@ pub fn synthesize_down(button: MouseButton, pos: Point) {
 
 /// 合成一次完整点击(down + up)
 pub fn synthesize_click(button: MouseButton, pos: Point) {
-    let _ = pos;
+    if let Err(error) = unsafe { SetCursorPos(pos.x, pos.y) } {
+        log::warn!("无法在点击重放前恢复光标位置: {error}");
+    }
     if let Err(error) = synthesize_click_checked(button) {
         log::error!("合成鼠标点击失败: {error}");
     }

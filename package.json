@@ -15,7 +15,7 @@
     ]
   },
   "scripts": {
-    "dev:desktop": "pnpm --filter @godgesture/desktop tauri dev",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:server": "pnpm --filter @godgesture/server start:dev",
     "build:desktop": "pnpm --filter @godgesture/desktop tauri build",
     "build:server": "pnpm --filter @godgesture/server build",

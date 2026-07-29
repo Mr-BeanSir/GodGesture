@@ -13,8 +13,10 @@ pnpm build:shared
 pnpm dev:desktop
 ```
 
-Vite 固定监听 `127.0.0.1:14200`，HMR 使用 `14201`。启动前确认端口和已有
-GodGesture/Node/Cargo 精确进程树，不要启动第二份 Tauri 会话。
+Vite/HMR 首选 `127.0.0.1:14200/14201`。`pnpm dev:desktop` 会在任一端口被占用
+时自动选择下一组连续端口,并将同一地址传给 Tauri `devUrl`;它不会终止现有
+Node/Cargo 或其他占用进程。完整 GodGesture 实例已存在时,新实例会退出并唤起
+既有设置窗口。
 
 只启动浏览器界面时：
 

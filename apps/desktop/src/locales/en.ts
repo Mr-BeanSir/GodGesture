@@ -2,6 +2,7 @@ export default {
   app: {
     title: "GodGesture Settings",
     name: "GodGesture",
+    alreadyRunning: "GodGesture is already running. The settings window is now open.",
   },
   nav: {
     options: "Options",

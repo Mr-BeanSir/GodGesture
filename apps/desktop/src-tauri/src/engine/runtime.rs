@@ -5,8 +5,8 @@
 //! - 定时线程:驱动追踪器的超时(起始超时/停留超时),30ms 粒度仅在捕获期间轮询;
 //! - 执行线程(engine worker):命令执行与覆盖层消息等重活,经 channel 接收。
 //!
-//! 输入合成(SynthesizeClick/Down)在钩子线程内直接调用 —— 必须与吞事件的
-//! 裁决保持同一时序,否则真实事件与合成事件可能乱序。
+//! 平台层负责保持输入恢复时序。Windows 普通点击在当前低级钩子回调返回后由
+//! 钩子消息泵重放;起始超时的 SynthesizeDown 仍同步执行以衔接后续真实抬起。
 
 use super::config::{Command, ConfigDocument, GestureIntent};
 use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};

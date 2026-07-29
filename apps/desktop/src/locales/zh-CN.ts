@@ -2,6 +2,7 @@ export default {
   app: {
     title: "GodGesture 设置",
     name: "GodGesture",
+    alreadyRunning: "GodGesture 已在运行，已为你打开设置窗口",
   },
   nav: {
     options: "选项",

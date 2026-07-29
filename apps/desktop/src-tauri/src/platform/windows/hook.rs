@@ -13,9 +13,12 @@
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Instant;
 use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, PostThreadMessageW,
@@ -37,6 +40,75 @@ thread_local! {
 }
 
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+const WM_REPLAY_CLICK: u32 = 0x8000 + 0x47;
+const MAX_PENDING_CLICKS: usize = 32;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClickReplay {
+    pub button: MouseButton,
+    pub pos: Point,
+    pub queued_at: Instant,
+}
+
+#[derive(Default)]
+pub struct ClickReplayQueue {
+    pending: Mutex<VecDeque<ClickReplay>>,
+    hook_thread_id: AtomicU32,
+}
+
+impl ClickReplayQueue {
+    pub fn enqueue(&self, replay: ClickReplay) -> Result<(), String> {
+        let thread_id = self.hook_thread_id.load(Ordering::SeqCst);
+        if thread_id == 0 {
+            return Err("mouse hook thread is unavailable".into());
+        }
+        self.enqueue_with(replay, || unsafe {
+            PostThreadMessageW(thread_id, WM_REPLAY_CLICK, WPARAM(0), LPARAM(0))
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn enqueue_with(
+        &self,
+        replay: ClickReplay,
+        wake: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if pending.len() >= MAX_PENDING_CLICKS {
+            return Err(format!(
+                "mouse click replay queue is full ({MAX_PENDING_CLICKS})"
+            ));
+        }
+        pending.push_back(replay);
+        if let Err(error) = wake() {
+            pending.pop_back();
+            return Err(format!("cannot wake mouse hook thread: {error}"));
+        }
+        Ok(())
+    }
+
+    fn take(&self) -> Option<ClickReplay> {
+        self.pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pop_front()
+    }
+
+    fn attach(&self, thread_id: u32) {
+        self.hook_thread_id.store(thread_id, Ordering::SeqCst);
+    }
+
+    fn detach(&self) {
+        self.hook_thread_id.store(0, Ordering::SeqCst);
+        self.pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
+}
 
 pub struct MouseHook {
     thread: Option<JoinHandle<()>>,
@@ -44,10 +116,14 @@ pub struct MouseHook {
 
 impl MouseHook {
     /// 安装钩子。`handler` 在钩子线程上被调用,必须快且不可 panic。
-    pub fn install(handler: Box<dyn HookHandler>) -> Self {
+    pub fn install(
+        handler: Box<dyn HookHandler>,
+        replay_queue: Arc<ClickReplayQueue>,
+        replay_click: impl Fn(ClickReplay) + Send + 'static,
+    ) -> Self {
         let thread = std::thread::Builder::new()
             .name("gg-mouse-hook".into())
-            .spawn(move || hook_thread_main(handler))
+            .spawn(move || hook_thread_main(handler, replay_queue, Box::new(replay_click)))
             .expect("failed to spawn hook thread");
         Self {
             thread: Some(thread),
@@ -69,12 +145,13 @@ impl Drop for MouseHook {
     }
 }
 
-fn hook_thread_main(handler: Box<dyn HookHandler>) {
+fn hook_thread_main(
+    handler: Box<dyn HookHandler>,
+    replay_queue: Arc<ClickReplayQueue>,
+    replay_click: Box<dyn Fn(ClickReplay) + Send>,
+) {
     HANDLER.with(|h| *h.borrow_mut() = Some(handler));
-    HOOK_THREAD_ID.store(
-        unsafe { windows::Win32::System::Threading::GetCurrentThreadId() },
-        Ordering::SeqCst,
-    );
+    let thread_id = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
 
     let hook: HHOOK = unsafe {
         match SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) {
@@ -85,17 +162,30 @@ fn hook_thread_main(handler: Box<dyn HookHandler>) {
             }
         }
     };
+    HOOK_THREAD_ID.store(thread_id, Ordering::SeqCst);
+    replay_queue.attach(thread_id);
     log::info!("鼠标钩子已安装");
 
     unsafe {
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            if msg.message == WM_REPLAY_CLICK {
+                if let Some(replay) = replay_queue.take() {
+                    log::debug!(
+                        "鼠标点击重放调度耗时: {} us",
+                        replay.queued_at.elapsed().as_micros()
+                    );
+                    replay_click(replay);
+                }
+                continue;
+            }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
         let _ = UnhookWindowsHookEx(hook);
     }
     HANDLER.with(|h| *h.borrow_mut() = None);
+    replay_queue.detach();
     HOOK_THREAD_ID.store(0, Ordering::SeqCst);
     log::info!("鼠标钩子已卸载");
 }
@@ -256,5 +346,79 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 2);
 
         remove_test_handler();
+    }
+
+    #[test]
+    fn click_replay_queue_is_fifo() {
+        let queue = ClickReplayQueue::default();
+        let first = ClickReplay {
+            button: MouseButton::Right,
+            pos: Point { x: 10, y: 20 },
+            queued_at: Instant::now(),
+        };
+        let second = ClickReplay {
+            button: MouseButton::Middle,
+            pos: Point { x: 30, y: 40 },
+            queued_at: Instant::now(),
+        };
+
+        queue.enqueue_with(first, || Ok(())).unwrap();
+        queue.enqueue_with(second, || Ok(())).unwrap();
+
+        let replay = queue.take().unwrap();
+        assert_eq!((replay.button, replay.pos), (first.button, first.pos));
+        let replay = queue.take().unwrap();
+        assert_eq!((replay.button, replay.pos), (second.button, second.pos));
+        assert!(queue.take().is_none());
+    }
+
+    #[test]
+    fn failed_wake_rolls_back_replay() {
+        let queue = ClickReplayQueue::default();
+        let error = queue
+            .enqueue_with(
+                ClickReplay {
+                    button: MouseButton::Right,
+                    pos: point(),
+                    queued_at: Instant::now(),
+                },
+                || Err("post failed".into()),
+            )
+            .unwrap_err();
+
+        assert!(error.contains("post failed"));
+        assert!(queue.take().is_none());
+    }
+
+    #[test]
+    fn replay_queue_is_bounded() {
+        let queue = ClickReplayQueue::default();
+        for index in 0..MAX_PENDING_CLICKS {
+            queue
+                .enqueue_with(
+                    ClickReplay {
+                        button: MouseButton::Right,
+                        pos: Point {
+                            x: index as i32,
+                            y: 0,
+                        },
+                        queued_at: Instant::now(),
+                    },
+                    || Ok(()),
+                )
+                .unwrap();
+        }
+
+        let error = queue
+            .enqueue_with(
+                ClickReplay {
+                    button: MouseButton::Right,
+                    pos: point(),
+                    queued_at: Instant::now(),
+                },
+                || Ok(()),
+            )
+            .unwrap_err();
+        assert!(error.contains("queue is full"));
     }
 }

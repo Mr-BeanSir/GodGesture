@@ -3,6 +3,10 @@ import vue from "@vitejs/plugin-vue";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process is a nodejs global
+const devPort = Number(process.env.GODGESTURE_DEV_PORT || "14200");
+// @ts-expect-error process is a nodejs global
+const hmrPort = Number(process.env.GODGESTURE_HMR_PORT || "14201");
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -14,16 +18,14 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 14200,
+    port: devPort,
     strictPort: true,
     host: host || "127.0.0.1",
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 14201,
-        }
-      : undefined,
+    hmr: {
+      protocol: "ws",
+      host: host || "127.0.0.1",
+      port: hmrPort,
+    },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

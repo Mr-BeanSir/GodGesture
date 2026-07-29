@@ -16,11 +16,14 @@ use crate::engine::intents::ForegroundApp;
 use crate::engine::runtime::{EngineShared, PlatformServices};
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
-use hook::{HookHandler, MouseHook};
+use hook::{ClickReplay, ClickReplayQueue, HookHandler, MouseHook};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Default)]
-pub struct WindowsPlatform;
+pub struct WindowsPlatform {
+    click_replays: Arc<ClickReplayQueue>,
+}
 
 impl PlatformServices for WindowsPlatform {
     fn resolve_foreground_app(&self, pos: Point, prefer_cursor_window: bool) -> ForegroundApp {
@@ -32,7 +35,13 @@ impl PlatformServices for WindowsPlatform {
     }
 
     fn synthesize_click(&self, button: MouseButton, pos: Point) {
-        input::synthesize_click(button, pos);
+        if let Err(error) = self.click_replays.enqueue(ClickReplay {
+            button,
+            pos,
+            queued_at: Instant::now(),
+        }) {
+            log::error!("无法投递鼠标点击重放: {error}");
+        }
     }
 
     fn synthesize_down(&self, button: MouseButton, pos: Point) {
@@ -55,7 +64,7 @@ impl HookHandler for EngineHookHandler {
 }
 
 /// 安装钩子并启动定时线程;返回值须持有(Drop 即卸载钩子)
-pub fn start(shared: Arc<EngineShared>) -> MouseHook {
+pub fn start(shared: Arc<EngineShared>, platform: Arc<WindowsPlatform>) -> MouseHook {
     shared.spawn_timer_thread();
     // 有效点距 = 主屏宽 * 0.025(WGestures 行为)
     let width = unsafe {
@@ -66,5 +75,9 @@ pub fn start(shared: Arc<EngineShared>) -> MouseHook {
     if width > 0 {
         shared.set_effective_move_px(width as f64 * 0.025);
     }
-    MouseHook::install(Box::new(EngineHookHandler { shared }))
+    MouseHook::install(
+        Box::new(EngineHookHandler { shared }),
+        Arc::clone(&platform.click_replays),
+        |replay| input::synthesize_click(replay.button, replay.pos),
+    )
 }

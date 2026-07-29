@@ -44,7 +44,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
 - `updater.rs`:Tauri 原生 Updater 注册、HTTPS endpoint/目标选择、单 pending update、检查/安装互斥、稳定错误和有界进度事件;WebView 不持有下载 URL、签名或原生 update handle。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
-- `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界。
+- `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;普通点击在当前钩子回调返回后经有界消息队列重放。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;不得改成 WebView 覆盖层。
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
@@ -58,7 +58,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `platform/macos/script.rs`:QuickJS 的 macOS 输入、窗口、剪贴板和状态宿主实现。
 - `platform/macos/permissions.rs` 与 `startup.rs`:Accessibility/Input Monitoring/event-posting 状态、权限请求/设置入口,以及 macOS 13+ `SMAppService` 登录项。
 - `app_acquisition.rs`:除 Windows 准星/拖放外,在 macOS 解析准星目标和 `.app` Bundle ID/display name。
-- `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动。
+- `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动;重复普通启动会唤起既有窗口并发送双语提示事件,重复 `--autostart` 静默退出。
 
 ## Desktop Vue
 
@@ -116,13 +116,14 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 ## 本地开发与运行时 QA
 
 - Node >= 22,pnpm 10,Rust stable;Windows 还需 WebView2。
-- 桌面开发固定为 Vite `127.0.0.1:14200`、HMR `14201`、Tauri devUrl `http://127.0.0.1:14200`。旧端口 1420/1421 位于本机排除范围,不得改回。
-- 启动 `pnpm dev:desktop` 前先检查 14200 监听者和 GodGesture/Node/Cargo 精确进程树。不要启动第二份会话,不要批量终止 Node/Cargo。
+- 桌面开发首选 Vite `127.0.0.1:14200`、HMR `14201`;`pnpm dev:desktop` 会按连续端口对自动选择两个都可用的组合,并用同一次结果覆盖 Tauri devUrl。Vite 保持 `strictPort`,预检后的竞争占用会明确失败。旧端口 1420/1421 位于本机排除范围,不得改回。
+- 启动器不终止端口占用者。完整 GodGesture 实例已存在时,Tauri 单实例裁决会停止新实例并唤起既有窗口;不要批量终止 Node/Cargo。
 - 开发日志约定:`%TEMP%\godgesture-dev\stdout.log` 和 `%TEMP%\godgesture-dev\stderr.log`。
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
 - 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
+- 2026-07-29 Windows 右键点击恢复修复:未形成手势时不再于低级钩子回调内嵌套 `SendInput`,而是在回调返回后由钩子线程消息泵重放完整点击;维护者在真实桌面确认右键抬起后已无明显感知延迟。已有 Vite-only 会话占用 `14200/14201` 时,真实 Tauri 开发会话自动使用 `14202/14203` 并连接成功。重复运行同一 debug 构建时第二进程以 0 退出,前后均仅一个 `godgesture.exe`,既有窗口已唤起;双语 toast 事件由 Desktop 测试覆盖,受本机窗口捕获接口限制未取得实机视觉证据。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -151,6 +152,8 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 2026-07-29 M7 最终交接复核重跑结果:shared 90/90 + build;desktop 83/83 + typecheck/build;Rust 152 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过;`git diff --check 06374ac..HEAD` 通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
 
 2026-07-29 M8 最终验证:shared 90/90 + build;Desktop 88/88 + typecheck/build;发布脚本 10/10 且 workflow 静态合同通过;2 个模板种子验证通过;Rust 全库 152 passed + 1 ignored;clippy 仅既有 `overlay.rs:202 while_let_loop`。快速入门已在中文/英文、明/暗主题、`980x700`/`800x560` 和全部三步组合下完成 24 组浏览器截图与 DOM 验收。模板仓库 `v1.0.0` 的三个 production URL 已通过实时内容和协议验证。RC.2 run `30435122047` 和 stable run `30437621772` 均成功;stable 的 Windows/macOS Rust cache 均 exact hit,总时长由 RC.2 冷构建 14m17s 降至 6m53s。公开 stable 10 个用户资产已独立下载并通过 checksum、minisign、PE/Mach-O、app/DMG 与 evidence 校验;Windows RC.2→stable 原生 Updater 已保留配置 hash、9 条手势、本机设置、托盘设置和快速入门 dismissal。完整证据见 `docs/qa/M8_RELEASE_ACCEPTANCE.md`。
+
+2026-07-29 Windows 输入与启动可靠性验证:动态端口启动器 4/4;Desktop 89/89 + typecheck/build;Rust 全库 155 passed + 1 ignored,Windows hook 队列定向 5/5;clippy 仅既有 `overlay.rs:202 while_let_loop`。真实运行验证结果见上方本地开发与运行时 QA 条目。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

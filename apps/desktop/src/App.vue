@@ -3,17 +3,18 @@
  * 设置窗口外壳:顶栏(暂停开关 / 深浅主题 / 语言)、左侧导航、内容区、底部保存状态。
  * 深浅主题为本机偏好(localStorage,不入同步载荷);语言写 preferences.locale(同步)。
  */
-import { computed, onMounted, ref, watch, watchEffect } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
 import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
 import { useUpdateStore } from "./stores/update";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
+import { listenForSingleInstance } from "./single-instance";
 import {
   completeQuickGuide,
   isQuickGuideForced,
@@ -44,6 +45,7 @@ const active = ref<Section>("options");
 const quickStartVisible = ref(false);
 const legacyImportVisible = ref(false);
 const quickGuideStorage = resolveQuickGuideStorage();
+let unlistenSingleInstance: (() => void) | undefined;
 const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
@@ -136,6 +138,11 @@ watch(
 
 onMounted(() => {
   void (async () => {
+    if (store.backend.isTauri) {
+      unlistenSingleInstance = await listenForSingleInstance(() => {
+        ElMessage.info(t("app.alreadyRunning"));
+      });
+    }
     await store.load();
     const forced =
       !store.backend.isTauri &&
@@ -150,6 +157,8 @@ onMounted(() => {
     );
   })();
 });
+
+onUnmounted(() => unlistenSingleInstance?.());
 </script>
 
 <template>

@@ -1568,11 +1568,21 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let is_autostart = args.iter().any(|arg| arg == "--autostart");
-            if !is_autostart {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
+            if is_autostart {
+                log::info!("忽略重复的开机启动实例");
+                return;
+            }
+            log::info!("检测到重复启动,正在唤起现有实例");
+            if let Some(win) = app.get_webview_window("main") {
+                if let Err(error) = win.show() {
+                    log::warn!("重复启动时无法显示设置窗口: {error}");
                 }
+                if let Err(error) = win.set_focus() {
+                    log::warn!("重复启动时无法聚焦设置窗口: {error}");
+                }
+            }
+            if let Err(error) = app.emit("single-instance-attempted", ()) {
+                log::warn!("无法发送重复启动提示事件: {error}");
             }
         }))
         .setup(move |app| {
@@ -1660,8 +1670,11 @@ pub fn run() {
 
             #[cfg(any(windows, target_os = "macos"))]
             {
-                let platform = Arc::new(platform::CurrentPlatform);
-                let (shared, rx) = EngineShared::new(config, platform);
+                #[cfg(windows)]
+                let platform = Arc::new(platform::windows::WindowsPlatform::default());
+                #[cfg(target_os = "macos")]
+                let platform = Arc::new(platform::macos::MacPlatform);
+                let (shared, rx) = EngineShared::new(config, platform.clone());
                 let overlay = platform::current::overlay::Overlay::spawn(app.handle());
                 spawn_engine_consumer(rx, Arc::clone(&shared), overlay, app.handle().clone());
                 app.manage(Arc::clone(&shared));
@@ -1670,7 +1683,7 @@ pub fn run() {
 
                 #[cfg(windows)]
                 {
-                    let hook = platform::windows::start(Arc::clone(&shared));
+                    let hook = platform::windows::start(Arc::clone(&shared), platform);
                     app.manage(hook);
                     if setup_mode == EarlyMode::Interactive {
                         if let Some(win) = app.get_webview_window("main") {
