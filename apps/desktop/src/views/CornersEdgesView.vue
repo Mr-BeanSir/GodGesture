@@ -68,7 +68,12 @@ const selZoneLabel = computed(() => {
 </script>
 
 <template>
-  <div class="corners">
+  <div class="gg-page corners-page">
+    <header class="gg-page__header">
+      <h2>{{ t("nav.cornersEdges") }}</h2>
+    </header>
+    <div class="gg-page__scroll">
+      <div class="corners gg-page__stack">
     <div class="corners__panels">
       <!-- 触发角 -->
       <section class="gg-section">
@@ -135,20 +140,19 @@ const selZoneLabel = computed(() => {
         <el-button type="primary" @click="configureZone">{{ t("corners.setCommand") }}</el-button>
       </template>
     </section>
-    <p v-else class="gg-hint">{{ t("corners.screenPreview") }}</p>
+        <p v-else class="gg-hint">{{ t("corners.screenPreview") }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .corners {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 720px;
+  width: min(100%, 920px);
 }
 .corners__panels {
   display: flex;
-  gap: 20px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .corners__panels .gg-section {
@@ -164,7 +168,7 @@ const selZoneLabel = computed(() => {
   position: relative;
   aspect-ratio: 16 / 10;
   border: 2px solid var(--el-border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--el-fill-color-lighter);
   margin-top: 10px;
 }

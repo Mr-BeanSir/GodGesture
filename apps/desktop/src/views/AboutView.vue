@@ -41,7 +41,12 @@ function errorText(code: string) {
 </script>
 
 <template>
-  <div class="about">
+  <div class="gg-page about-page">
+    <header class="gg-page__header">
+      <h2>{{ t("nav.about") }}</h2>
+    </header>
+    <div class="gg-page__scroll">
+      <div class="about gg-page__stack">
     <section class="gg-section about__product">
       <div class="about__heading">
         <div>
@@ -132,16 +137,15 @@ function errorText(code: string) {
       <el-empty v-else :image-size="54" :description="t('about.update.idle')" />
     </section>
 
-    <p class="about__credits">{{ t("about.credits") }}</p>
+        <p class="about__credits">{{ t("about.credits") }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .about {
-  width: min(100%, 680px);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  width: min(100%, 760px);
 }
 .about__heading,
 .about__release-head {

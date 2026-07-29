@@ -162,7 +162,12 @@ function providerLabel(provider: OAuthProvider): string {
 </script>
 
 <template>
-  <div class="account">
+  <div class="gg-page account-page">
+    <header class="gg-page__header">
+      <h2>{{ t("nav.account") }}</h2>
+    </header>
+    <div class="gg-page__scroll">
+      <div class="account gg-page__stack">
     <section
       v-if="account.phase === 'initializing'"
       class="gg-section account__loading"
@@ -380,7 +385,6 @@ function providerLabel(provider: OAuthProvider): string {
         <el-table
           :data="account.snapshots"
           :empty-text="t('account.snapshots.empty')"
-          max-height="300"
           size="small"
           v-loading="account.snapshotsLoading"
         >
@@ -444,16 +448,15 @@ function providerLabel(provider: OAuthProvider): string {
           </el-table-column>
         </el-table>
       </section>
-    </template>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .account {
-  width: min(100%, 760px);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  width: min(100%, 840px);
 }
 .account__loading {
   min-height: 280px;

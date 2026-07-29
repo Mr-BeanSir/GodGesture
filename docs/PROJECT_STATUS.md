@@ -55,7 +55,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
 - `platform/windows/script.rs`:QuickJS 的 Windows 输入、鼠标、窗口和剪贴板宿主实现;脚本不获得原生句柄。
 - `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
-- `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和图标。
+- `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和按 exe 名提取 PNG 图标。
 - `platform/macos/hook.rs`:CGEventTap 全局鼠标捕获、同步吞噬、模拟事件标记、超时重启和 FFI panic fail-open。
 - `platform/macos/overlay.rs`:主线程 `NSWindow` + `CALayer` 原生覆盖层,tiny-skia 绘制、
   点击穿透、全 Spaces/全屏辅助和渐隐;高频命令进入 FIFO pending 队列,同一时刻至多
@@ -64,12 +64,17 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `platform/macos/window.rs` 与 `commands.rs`:CoreGraphics z-order + Bundle ID、带 TTL 的有界窗口 token、AX 窗口操作、Mission Control、文件/URL/Web 搜索、音量和 zsh/Terminal 命令;topmost 显式不支持。
 - `platform/macos/script.rs`:QuickJS 的 macOS 输入、窗口、剪贴板和状态宿主实现。
 - `platform/macos/permissions.rs` 与 `startup.rs`:Accessibility/Input Monitoring/event-posting 状态、权限请求/设置入口,以及 macOS 13+ `SMAppService` 登录项。
+- `platform/macos/icon.rs`:通过 Bundle ID 使用 `NSWorkspace` 定位 `.app`,将 `NSImage`
+  转换为 PNG base64;图标只作为本机派生展示数据,不写入配置或同步。
 - `app_acquisition.rs`:除 Windows 准星/拖放外,在 macOS 解析准星目标和 `.app` Bundle ID/display name。
 - `lib.rs`:Tauri IPC、托盘、暂停快捷键、单实例、窗口隐藏和引擎启动;重复普通启动会唤起既有窗口并发送双语提示事件,重复 `--autostart` 静默退出。
 
 ## Desktop Vue
 
 - 页面:`OptionsView`, `GesturesView`, `CornersEdgesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。
+- `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、触发角与摩擦边、手势模板、
+  账户与同步、设置、关于;默认页仍为设置。主区不承担页面滚动,六页各自声明唯一
+  主滚动区或明确的分区滚动责任。
 - `QuickStartDialog.vue` 与 `onboarding/quick-guide.ts` 提供版本化的本机首次引导、平台就绪检查、默认手势试用和既有配置入口;About 可重开,浏览器 `?guide=1` 可强制展示。
 - `api/backend.ts` 是唯一 Tauri IPC 网关;浏览器运行时自动使用 `api/mock.ts`。
 - `stores/config.ts` 负责加载、可取消防抖、串行保存、导入/远端应用 barrier 和即时生效;同步推送前可显式 flush,远端应用期间的新本地编辑不会被覆盖;协议变更必须同步核对 Rust `engine/config.rs`。
@@ -79,6 +84,11 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
 - 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。
 - `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Windows 验证/规范化 `.exe` 并解析 `.lnk`,macOS 在 Bundle ID 分组提供准星和 `.app` 拖放且隐藏 Windows 字段。
+- `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
+  GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
+  去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
+- `GesturesView.vue` 使用固定应用列表 + 手势表格 + 意图编辑器工作台;三个区域分别
+  持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列和行操作保持可见。
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
@@ -101,7 +111,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 ## 已知未完成边界
 
 - WGestures 导入的 `language = lua` 脚本只保留原文并可编辑,不会执行或自动转换为 JavaScript。
-- macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令和 Bundle ID 匹配的验收证据。
+- macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
 - stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
@@ -144,6 +154,15 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   `download_template_text` 原生 IPC 使用 reqwest/rustls 读取。真实联网 smoke 在
   4.56 秒内通过 GitHub Release production catalog 和两个 package 的受限重定向、JSON
   与 slug/version 身份核对,请求未打开浏览器或系统下载器。
+- 2026-07-29 应用图标与工作台刷新:真实 Tauri 开发会话自动选择 `14204/14205`,
+  debug 二进制已重新编译启动。Windows 本机定向 smoke 确认 `explorer.exe` 与
+  `chrome.exe` 都返回 PNG base64;全局图标和问号回退由前端实现与测试覆盖。浏览器
+  preview 对六页分别以 `800x560` 英文深色和 `980x700` 中文浅色完成 DOM 溢出检查,
+  并对手势、模板、触发角等代表页截图;另以 `800x560` 中文浅色复核手势三分区。
+  主区和侧栏均无横向溢出、翻译 key 泄漏或滚动争用。Windows Graphics Capture 的
+  `SetIsBorderRequired` 在本机不受支持,因此未取得真实 Tauri 窗口自动截图;不影响
+  原生 IPC smoke。Apple target 检查仍在 `ring`/`rquickjs-sys` 缺少 Apple `cc` 的
+  第三方构建阶段停止,macOS 图标源码需 CI 或真实 Mac 编译与运行验收。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -184,6 +203,14 @@ Rust 全库 158 passed + 1 ignored;`cargo clippy --lib -- -D warnings` 通过。
 smoke 已单独以 `--ignored --exact` 运行并通过;clippy `-D warnings` 通过。shared 90/90
 + build;Desktop 92/92 + typecheck/build。Desktop build 仍只有既有 VueUse PURE 注释和
 大 chunk 警告。
+
+2026-07-29 应用图标与工作台刷新验证:Desktop 95/95 + typecheck/build;Rust 全库
+162 passed + 2 ignored;`cargo clippy --lib -- -D warnings` 通过。Windows 本机通过
+一次性定向 smoke 确认 Explorer 与 Chrome 图标均为 PNG base64。六页以
+`800x560` 英文深色、`980x700` 中文浅色两组代表性组合完成 DOM 溢出矩阵,
+并对关键页面截图;手势页另在 `800x560` 中文浅色复核三分区布局。
+Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。macOS target 检查因本机
+缺少 Apple `cc` 在第三方 C 依赖阶段停止,不计作 macOS 编译通过。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

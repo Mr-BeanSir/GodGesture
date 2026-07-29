@@ -1295,12 +1295,22 @@ fn platform_open_permission_settings() -> Result<(), String> {
     Err("permission settings are only available on macOS".into())
 }
 
-/// exe 名 → 图标 PNG 的 base64(裸 base64,前端自行拼 data: 前缀);
-/// 解析不到路径或取不到图标时返回 null(契约允许)。
-/// 解析要枚举窗口/读注册表,和 pick_window 一样丢到 blocking 线程,别卡住设置窗口。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppIconRequest {
+    windows_exe_name: Option<String>,
+    mac_bundle_id: Option<String>,
+}
+
+/// Returns a bare base64 PNG for platform-local application identity, or null on lookup failure.
 #[cfg(windows)]
 #[tauri::command]
-async fn app_icon(exe_name: String) -> Option<String> {
+async fn app_icon(request: AppIconRequest) -> Option<String> {
+    let AppIconRequest {
+        windows_exe_name,
+        mac_bundle_id: _mac_bundle_id,
+    } = request;
+    let exe_name = windows_exe_name?;
     tauri::async_runtime::spawn_blocking(move || {
         platform::windows::icon::app_icon_base64(&exe_name)
     })
@@ -1309,10 +1319,24 @@ async fn app_icon(exe_name: String) -> Option<String> {
     .flatten()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 #[tauri::command]
-async fn app_icon(exe_name: String) -> Option<String> {
-    let _ = exe_name;
+async fn app_icon(request: AppIconRequest) -> Option<String> {
+    let AppIconRequest {
+        windows_exe_name: _windows_exe_name,
+        mac_bundle_id,
+    } = request;
+    let bundle_id = mac_bundle_id?;
+    tauri::async_runtime::spawn_blocking(move || platform::macos::icon::app_icon_base64(&bundle_id))
+        .await
+        .ok()
+        .flatten()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+#[tauri::command]
+async fn app_icon(request: AppIconRequest) -> Option<String> {
+    let _ = request;
     None
 }
 

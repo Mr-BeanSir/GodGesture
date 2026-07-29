@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod commands;
 pub mod hook;
 pub mod input;
+pub mod icon;
 pub mod keys;
 pub mod overlay;
 pub mod permissions;

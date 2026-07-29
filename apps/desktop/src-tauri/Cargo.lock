@@ -1609,6 +1609,7 @@ name = "godgesture"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "base64 0.22.1",
  "crossbeam-channel",
  "env_logger",
  "futures-util",

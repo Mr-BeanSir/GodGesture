@@ -5,7 +5,7 @@ export default {
     alreadyRunning: "GodGesture 已在运行，已为你打开设置窗口",
   },
   nav: {
-    options: "选项",
+    options: "设置",
     gestures: "手势",
     cornersEdges: "触发角与摩擦边",
     templates: "手势模板",
@@ -200,6 +200,8 @@ export default {
     x2Down: "X2 侧键",
   },
   gestures: {
+    appIcon: "{name} 的应用图标",
+    appIconUnavailable: "无法获取 {name} 的应用图标",
     globalApp: "(全局)",
     appListTitle: "应用",
     addApp: "添加应用",
@@ -568,7 +570,7 @@ export default {
       permissionsRequired: "需要完成 macOS 权限授权",
       engineUnavailable: "手势引擎当前未运行",
       unsupported: "当前平台不支持全局手势",
-      unavailable: "无法读取运行状态，请稍后在“选项”中重试",
+      unavailable: "无法读取运行状态，请稍后在“设置”中重试",
     },
     try: {
       title: "试用已有手势",

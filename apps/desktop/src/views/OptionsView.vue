@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 「选项」区:通用(本机专属 + 更新)/ 参数(路径追踪)/ 显示(轨迹与提示)。
+ * 「设置」区:通用(本机专属 + 更新)/ 参数(路径追踪)/ 显示(轨迹与提示)。
  * 本机专属设置写 machine(不同步);其余写 preferences(同步)。
  */
 import { computed, onMounted, ref } from "vue";
@@ -103,7 +103,12 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
 </script>
 
 <template>
-  <div class="options">
+  <div class="gg-page options-page">
+    <header class="gg-page__header">
+      <h2>{{ t("nav.options") }}</h2>
+    </header>
+    <div class="gg-page__scroll">
+      <div class="options gg-page__stack">
     <!-- 通用 -->
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.general.title") }}</h3>
@@ -310,16 +315,15 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
           {{ t("options.legacyImport.openAction") }}
         </el-button>
       </div>
-    </section>
+      </section>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .options {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 640px;
+  width: min(100%, 760px);
 }
 .options__inline {
   display: flex;

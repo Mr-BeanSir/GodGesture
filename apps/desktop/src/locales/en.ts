@@ -5,7 +5,7 @@ export default {
     alreadyRunning: "GodGesture is already running. The settings window is now open.",
   },
   nav: {
-    options: "Options",
+    options: "Settings",
     gestures: "Gestures",
     cornersEdges: "Hot Corners & Rub Edges",
     templates: "Gesture Templates",
@@ -200,6 +200,8 @@ export default {
     x2Down: "X2 button",
   },
   gestures: {
+    appIcon: "Application icon for {name}",
+    appIconUnavailable: "Application icon unavailable for {name}",
     globalApp: "(Global)",
     appListTitle: "Apps",
     addApp: "Add app",
@@ -570,7 +572,7 @@ export default {
       permissionsRequired: "Complete the macOS permission setup",
       engineUnavailable: "The gesture engine is not running",
       unsupported: "Global gestures are unsupported on this platform",
-      unavailable: "Runtime status is unavailable. Retry from Options later.",
+      unavailable: "Runtime status is unavailable. Retry from Settings later.",
     },
     try: {
       title: "Try an existing gesture",

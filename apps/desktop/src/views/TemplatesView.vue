@@ -339,10 +339,14 @@ async function confirmAdoption() {
 
 <style scoped>
 .templates-view {
-  width: min(100%, 840px);
-  display: flex;
-  flex-direction: column;
+  width: min(100%, 920px);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 14px;
+  overflow: hidden;
 }
 .templates-view__header,
 .template-detail__section-head {
@@ -367,7 +371,10 @@ async function confirmAdoption() {
   align-items: center;
 }
 .templates-view__list {
-  min-height: 180px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .templates-view__row {

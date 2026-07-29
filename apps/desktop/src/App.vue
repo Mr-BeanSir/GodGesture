@@ -6,7 +6,18 @@
 import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
-import { Moon, Sunny, VideoPlay, VideoPause } from "@element-plus/icons-vue";
+import {
+  Aim,
+  Connection,
+  InfoFilled,
+  MagicStick,
+  Moon,
+  Setting,
+  Sunny,
+  User,
+  VideoPause,
+  VideoPlay,
+} from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
@@ -54,6 +65,14 @@ const SECTION_VIEWS = {
   account: AccountView,
   about: AboutView,
 } as const;
+const NAV_ITEMS = [
+  { id: "gestures", icon: MagicStick },
+  { id: "cornersEdges", icon: Aim },
+  { id: "templates", icon: Connection },
+  { id: "account", icon: User },
+  { id: "options", icon: Setting },
+  { id: "about", icon: InfoFilled },
+] as const satisfies ReadonlyArray<{ id: Section; icon: typeof MagicStick }>;
 const currentView = computed(() => SECTION_VIEWS[active.value]);
 const currentViewBindings = computed(() => {
   if (active.value === "options") {
@@ -165,13 +184,15 @@ onUnmounted(() => unlistenSingleInstance?.());
   <el-config-provider :locale="elementLocale">
     <el-container class="app">
     <el-header class="app__header">
-      <div class="app__brand">{{ t("app.title") }}</div>
+      <div class="app__brand">
+        <img src="../src-tauri/icons/32x32.png" alt="" />
+        <span>{{ t("app.title") }}</span>
+      </div>
       <div class="app__actions">
         <el-tooltip :content="t('header.pauseTooltip')" placement="bottom">
           <el-button
             :type="store.paused ? 'warning' : 'success'"
             :icon="store.paused ? VideoPlay : VideoPause"
-            round
             size="small"
             @click="store.togglePause()"
           >
@@ -194,14 +215,18 @@ onUnmounted(() => unlistenSingleInstance?.());
     </el-header>
 
     <el-container class="app__body">
-      <el-aside width="180px" class="app__aside">
+      <el-aside width="168px" class="app__aside">
         <el-menu :default-active="active" class="app__menu" @select="onSelectSection">
-          <el-menu-item index="options">{{ t("nav.options") }}</el-menu-item>
-          <el-menu-item index="gestures">{{ t("nav.gestures") }}</el-menu-item>
-          <el-menu-item index="cornersEdges">{{ t("nav.cornersEdges") }}</el-menu-item>
-          <el-menu-item index="templates">{{ t("nav.templates") }}</el-menu-item>
-          <el-menu-item index="account">{{ t("nav.account") }}</el-menu-item>
-          <el-menu-item index="about">{{ t("nav.about") }}</el-menu-item>
+          <el-menu-item v-for="item in NAV_ITEMS" :key="item.id" :index="item.id">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <el-tooltip
+              :content="t(`nav.${item.id}`)"
+              placement="right"
+              :show-after="450"
+            >
+              <span class="app__nav-label">{{ t(`nav.${item.id}`) }}</span>
+            </el-tooltip>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -251,17 +276,31 @@ onUnmounted(() => unlistenSingleInstance?.());
 <style scoped>
 .app {
   height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  color: var(--el-text-color-primary);
+  background: var(--gg-canvas);
 }
 .app__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  height: 52px;
+  flex: 0 0 48px;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--gg-border);
+  background: var(--gg-surface);
 }
 .app__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 15px;
+}
+.app__brand img {
+  width: 22px;
+  height: 22px;
 }
 .app__actions {
   display: flex;
@@ -272,25 +311,55 @@ onUnmounted(() => unlistenSingleInstance?.());
   width: 116px;
 }
 .app__body {
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 .app__aside {
-  border-right: 1px solid var(--el-border-color-lighter);
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--gg-border);
+  background: var(--gg-sidebar);
 }
 .app__menu {
   border-right: none;
   height: 100%;
+  padding: 8px;
+  background: transparent;
+}
+.app__menu :deep(.el-menu-item) {
+  height: 38px;
+  margin-bottom: 2px;
+  padding: 0 10px !important;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.app__menu :deep(.el-menu-item .el-icon) {
+  width: 18px;
+  margin-right: 8px;
+}
+.app__nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app__main {
-  overflow-y: auto;
-  background: var(--el-fill-color-blank);
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow: hidden;
+  background: var(--gg-canvas);
 }
 .app__footer {
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 40px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  flex: 0 0 30px;
+  height: 30px;
+  padding: 0 16px;
+  border-top: 1px solid var(--gg-border);
+  background: var(--gg-surface);
   font-size: 12px;
 }
 .app__spacer {
@@ -318,11 +387,62 @@ body,
 #app {
   font-family: "Segoe UI", "Microsoft YaHei", Inter, system-ui, sans-serif;
 }
+:root {
+  --gg-canvas: #f5f6f7;
+  --gg-surface: #ffffff;
+  --gg-sidebar: #fafafa;
+  --gg-border: #dfe2e6;
+  --gg-panel-muted: #f8f9fa;
+}
+html.dark {
+  --gg-canvas: #17191c;
+  --gg-surface: #202328;
+  --gg-sidebar: #1c1f23;
+  --gg-border: #34383f;
+  --gg-panel-muted: #25292e;
+}
+.gg-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.gg-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.gg-page__header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+.gg-page__scroll {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.gg-page__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-right: 4px;
+}
 .gg-section {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 16px 18px;
+  background: var(--gg-surface);
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -360,5 +480,10 @@ body,
 .gg-info {
   color: var(--el-text-color-secondary);
   cursor: help;
+}
+@media (max-width: 860px) {
+  .app__main {
+    padding: 12px;
+  }
 }
 </style>

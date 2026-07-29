@@ -15,6 +15,7 @@ import MnemonicText from "../components/MnemonicText.vue";
 import IntentEditor from "../components/IntentEditor.vue";
 import CaptureDialog from "../components/CaptureDialog.vue";
 import AppDialog from "../components/AppDialog.vue";
+import AppIcon from "../components/AppIcon.vue";
 
 const GLOBAL = "__global__";
 
@@ -201,7 +202,10 @@ onMounted(() => selectApp(GLOBAL));
           :class="{ 'is-active': currentIsGlobal }"
           @click="selectApp(GLOBAL)"
         >
-          <span class="gestures__app-name">{{ t("gestures.globalApp") }}</span>
+          <span class="gestures__app-identity">
+            <AppIcon :label="t('gestures.globalApp')" global />
+            <span class="gestures__app-name">{{ t("gestures.globalApp") }}</span>
+          </span>
         </li>
         <li
           v-for="app in sortedApps"
@@ -210,7 +214,14 @@ onMounted(() => selectApp(GLOBAL));
           :class="{ 'is-active': app.id === selectedAppId }"
           @click="selectApp(app.id)"
         >
-          <span class="gestures__app-name">{{ app.name }}</span>
+          <span class="gestures__app-identity">
+            <AppIcon
+              :label="app.name"
+              :windows-exe-name="app.windows?.exeName"
+              :mac-bundle-id="app.mac?.bundleId"
+            />
+            <span class="gestures__app-name">{{ app.name }}</span>
+          </span>
           <span class="gestures__app-actions">
             <el-button link size="small" :icon="Edit" @click.stop="openEditApp(app)" />
             <el-button link size="small" :icon="Delete" @click.stop="deleteApp(app)" />
@@ -242,49 +253,65 @@ onMounted(() => selectApp(GLOBAL));
         <el-tag v-if="!currentApp.mac" type="info" size="small">{{ t("gestures.dormantMac") }}</el-tag>
       </div>
 
-      <div class="gestures__toolbar">
-        <el-button type="primary" :icon="VideoCamera" @click="openRecordNew">
-          {{ t("gestures.addIntent") }}
-        </el-button>
+      <div class="gestures__workspace">
+        <section class="gestures__table-pane">
+          <div class="gestures__toolbar">
+            <span class="gestures__count">{{ sortedIntents.length }}</span>
+            <el-button type="primary" size="small" :icon="VideoCamera" @click="openRecordNew">
+              {{ t("gestures.addIntent") }}
+            </el-button>
+          </div>
+          <div class="gestures__table-body">
+            <el-table
+              v-if="sortedIntents.length"
+              :data="sortedIntents"
+              :row-class-name="rowClass"
+              height="100%"
+              size="small"
+              class="gestures__table"
+              @row-click="(row: GestureIntent) => selectIntent(row.id)"
+            >
+              <el-table-column
+                :label="t('gestures.colName')"
+                prop="name"
+                min-width="100"
+                show-overflow-tooltip
+              />
+              <el-table-column :label="t('gestures.colMnemonic')" min-width="88">
+                <template #default="{ row }">
+                  <MnemonicText :gesture="row.gesture" />
+                </template>
+              </el-table-column>
+              <el-table-column
+                :label="t('gestures.colCommand')"
+                min-width="96"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ t(`command.types.${row.command.type}`) }}
+                </template>
+              </el-table-column>
+              <el-table-column width="72" align="right">
+                <template #default="{ row }">
+                  <el-button link size="small" :icon="VideoCamera" @click.stop="reRecordRow(row.id)" />
+                  <el-button link size="small" :icon="Delete" @click.stop="deleteIntent(row)" />
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else :description="t('gestures.emptyIntents')" :image-size="64" />
+          </div>
+        </section>
+
+        <section class="gestures__editor-pane">
+          <IntentEditor
+            v-if="selectedIntent"
+            :key="selectedIntent.id"
+            :intent="selectedIntent"
+            @re-record="openReRecord"
+          />
+          <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
+        </section>
       </div>
-
-      <el-table
-        v-if="sortedIntents.length"
-        :data="sortedIntents"
-        :row-class-name="rowClass"
-        size="small"
-        class="gestures__table"
-        @row-click="(row: GestureIntent) => selectIntent(row.id)"
-      >
-        <el-table-column :label="t('gestures.colName')" prop="name" min-width="140" />
-        <el-table-column :label="t('gestures.colMnemonic')" min-width="120">
-          <template #default="{ row }">
-            <MnemonicText :gesture="row.gesture" />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('gestures.colCommand')" min-width="120">
-          <template #default="{ row }">
-            {{ t(`command.types.${row.command.type}`) }}
-          </template>
-        </el-table-column>
-        <el-table-column width="110" align="right">
-          <template #default="{ row }">
-            <el-button link size="small" :icon="VideoCamera" @click.stop="reRecordRow(row.id)" />
-            <el-button link size="small" :icon="Delete" @click.stop="deleteIntent(row)" />
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else :description="t('gestures.emptyIntents')" :image-size="80" />
-
-      <el-divider />
-
-      <IntentEditor
-        v-if="selectedIntent"
-        :key="selectedIntent.id"
-        :intent="selectedIntent"
-        @re-record="openReRecord"
-      />
-      <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
     </section>
 
     <CaptureDialog
@@ -299,40 +326,55 @@ onMounted(() => selectApp(GLOBAL));
 
 <style scoped>
 .gestures {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: clamp(184px, 22vw, 224px) minmax(0, 1fr);
+  gap: 14px;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 .gestures__apps {
-  width: 200px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--el-border-color-lighter);
-  padding-right: 12px;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .gestures__apps-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  min-height: 42px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .gestures__app-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 6px;
+  min-height: 0;
   overflow-y: auto;
 }
 .gestures__app-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px;
+  min-height: 34px;
+  padding: 4px 7px;
   border-radius: var(--el-border-radius-base);
   cursor: pointer;
   font-size: 14px;
+}
+.gestures__app-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
 }
 .gestures__app-item:hover {
   background: var(--el-fill-color-light);
@@ -355,10 +397,10 @@ onMounted(() => selectApp(GLOBAL));
   display: inline-flex;
 }
 .gestures__main {
-  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 .gestures__main-head {
   display: flex;
@@ -369,6 +411,8 @@ onMounted(() => selectApp(GLOBAL));
 }
 .gestures__title {
   margin: 0;
+  font-size: 16px;
+  line-height: 28px;
 }
 .gestures__toggles {
   display: flex;
@@ -380,13 +424,65 @@ onMounted(() => selectApp(GLOBAL));
   gap: 8px;
   margin-top: 8px;
 }
+.gestures__workspace {
+  display: grid;
+  grid-template-rows: minmax(150px, 1.1fr) minmax(190px, 0.9fr);
+  min-height: 0;
+  margin-top: 10px;
+  gap: 10px;
+}
+.gestures__table-pane,
+.gestures__editor-pane {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+  overflow: hidden;
+}
+.gestures__table-pane {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr);
+}
 .gestures__toolbar {
-  margin: 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.gestures__count {
+  min-width: 24px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gestures__table-body {
+  min-height: 0;
+}
+.gestures__table {
+  width: 100%;
 }
 .gestures__table :deep(.is-selected) {
   background: var(--el-color-primary-light-9);
 }
 .gestures__table :deep(tr) {
   cursor: pointer;
+}
+.gestures__editor-pane {
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+@media (max-width: 860px) {
+  .gestures {
+    grid-template-columns: 184px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .gestures__main-head {
+    gap: 8px;
+  }
+  .gestures__toggles {
+    font-size: 12px;
+  }
 }
 </style>
