@@ -1,6 +1,8 @@
-# GodGesture 路线图
+# GodGesture v0.1.0 历史路线图
 
-依据:`CONTEXT.md`(术语表)与 `docs/adr/0001~0011`(架构决策)。功能对齐基准 = WGestures 1.8.5 出厂行为(盘点报告见 git 历史与 ADR)。每个里程碑的完成定义:双平台验收通过,或显式标注单平台能力。
+本文记录首个正式版本的既有里程碑,用于理解代码形成过程,不定义后续版本需求。
+GodGesture 从 stable `v0.1.0` 起独立演进,后续功能由维护者提出。当前实现状态以
+`docs/PROJECT_STATUS.md` 为准,架构决策按 `docs/adr/README.md` 选择性读取。
 
 ## M0 仓库奠基 ✅
 - pnpm monorepo:`apps/desktop`(Tauri 2 + Vue 3 TS)、`apps/server`(NestJS)、`packages/shared`(zod 协议)

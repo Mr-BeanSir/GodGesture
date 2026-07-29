@@ -119,5 +119,5 @@ run; Windows improved from 13m46s to 6m09s and macOS from 10m12s to 4m25s.
 | --- | --- | --- |
 | Temporary installers/config/tasks cleaned or retained explicitly | Evidence remains under `%TEMP%\godgesture-m8-qa` and the browser default download directory. The QA installation uninstaller exited 0; its install directory, process, HKCU uninstall entry, and GodGesture scheduled-task count are all zero. Machine settings were reset before uninstall | PASS |
 | User-owned `接手提示词.md` untouched | Final status audit shows it as the only pre-existing untracked file; it was never read, modified, staged, or committed | PASS |
-| `docs/PROJECT_STATUS.md`, `ROADMAP.md`, `HANDOFF.md` finalized | Final M8 documentation commit updates all four status/acceptance documents together | PASS |
+| Release status documentation finalized | Final M8 documentation commit updated the status, roadmap, acceptance, and release handoff documents together; the milestone handoff was later retired after the project returned to normal development | PASS |
 | Requirement-by-requirement completion audit | Every M8 plan section has repository, test, workflow, Release, asset, or runtime evidence. All non-physical-Mac rows pass; the three physical-Mac rows remain explicitly `DEFERRED (owner-approved)` and do not claim a pass | PASS |

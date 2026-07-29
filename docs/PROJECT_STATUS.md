@@ -1,8 +1,8 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-29。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;最终验收与交接文档提交不改变产品行为。当前交接摘要见 `docs/HANDOFF.md`。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-29。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
-本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
+本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
 ## 当前结论
 
@@ -32,7 +32,6 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 | `apps/server` 部署       | 1Panel 手动部署、PostgreSQL、Docker 构建与迁移                                       | `README-DEPLOY.md`, `Dockerfile`, `docker-compose.*.yml`, `.env.example`              |
 | `distribution/gesture-templates` | 独立手势模板仓库种子;当前含 2 个低风险模板,生产客户端不读取此目录              | `catalog.json`, `packages/`, `README.md`, `scripts/validate-template-seed.mjs`         |
 | Desktop 发布            | Windows x64 NSIS、macOS universal ad-hoc DMG/Updater、确定性 `latest.json`            | `.github/workflows/desktop-release.yml`, `scripts/desktop-release.mjs`, `docs/DESKTOP_RELEASE.md` |
-| `WGestures/`             | WGestures 1.8.5 行为参考克隆,不属于本仓库产品代码                                    | 只用于行为对照,不要修改或纳入提交                                                     |
 
 ## Desktop Rust
 
@@ -104,7 +103,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 录制持续到前端显式 `capture_cancel`,不是捕获一次自动停止。
 - 保留 `corners.rs` 文件头记录的状态机常量、多显示器语义和有意偏差。
 - 鼠标键按下时仍喂角/边状态机,只抑制命令分发。
-- 不复现 WGestures Bottom 边绝对/局部坐标 bug。
+- Bottom 摩擦边保持当前全局坐标语义,不得混用局部坐标。
 - 外壳窗口不得执行窗口控制命令。
 - Windows `SendInput` 可能同步重入鼠标钩子;当前 TLS handler 临时取出、嵌套事件 fail-open 和 FFI panic 防护不得回退。
 - QuickJS 必须保持单 Runtime、按逻辑命令惰性隔离 Context;定义改变只重建对应 Context,删除配置时裁剪缓存。内存 64 MiB、栈 256 KiB、单槽 200 ms 上限及锁定宿主对象不得放宽。
@@ -123,7 +122,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
-- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。已运行的提升权限 WGestures 会先消费低完整性合成鼠标事件,因此自动化完整右键手势注入未建立;未终止用户进程,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
+- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -157,8 +156,8 @@ Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint
 
 ## 新任务接手流程
 
-1. 依次读 `CLAUDE.md`、`CONTEXT.md`、本文、相关 ADR 和 `ROADMAP.md`,再检查 Git 状态与近期提交。
-2. 先判断任务影响 Desktop Rust、Desktop Vue、shared、Server、Web Console 或部署中的哪些领域。协议改动必须更新 shared 和所有消费者。
+1. 从 `AGENTS.md` 进入,完整读取 `CONTEXT.md` 和本文,再检查 Git 状态与近期提交。
+2. 先判断任务影响 Desktop Rust、Desktop Vue、shared、Server、Web Console、部署或发布中的哪些领域,再通过 `docs/adr/README.md` 和部件地图选择相关文档。协议改动必须更新 shared 和所有消费者。
 3. Bug 先从现有日志和稳定复现开始;不要仅凭一次观察修改代码。新行为不得与 ADR 或上面的锁定语义静默冲突。
 4. 检查是否已有桌面开发会话,保护用户改动,实施最小范围修改,按风险补测试并运行对应验证。
 5. 每个领域选择性 `git add <明确路径>` 并独立提交;commit message 用英文。绝不使用 `git add -A`,绝不自动 push。

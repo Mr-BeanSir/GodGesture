@@ -1,9 +1,8 @@
 # GodGesture
 
-GodGesture 是 Windows 与 macOS 全局鼠标手势工具，也是
-[WGestures](https://github.com/yingDev/WGestures) 的精神续作。它保留按应用手势、
-触发角、摩擦边、脚本和窗口命令，并加入可选账户、多设备同步、配置快照、
-手势模板与原生更新。
+GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它提供按应用
+手势、触发角、摩擦边、脚本和窗口命令,并支持可选账户、多设备同步、配置
+快照、手势模板与原生更新。
 
 ## 下载
 
@@ -77,4 +76,4 @@ docs/adr                      架构决策记录
 
 领域术语以 [CONTEXT.md](CONTEXT.md) 为准，实际实现状态以
 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) 为准，架构边界见
-[docs/adr](docs/adr)。
+[ADR 索引](docs/adr/README.md)。

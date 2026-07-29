@@ -1,6 +1,8 @@
 # GodGesture
 
-跨平台(Windows + macOS)全局鼠标手势工具,继承 WGestures 1.8.5 全部功能,新增账户体系与多设备云同步;由 Tauri 桌面端与 Node.js + PostgreSQL 后端组成。
+独立演进的跨平台(Windows + macOS)全局鼠标手势工具,由 Tauri 桌面端与
+Node.js + PostgreSQL 后端组成,支持可选账户与多设备云同步。WGestures 配置
+导入仅是兼容迁移能力,不构成后续产品行为或需求基准。
 
 ## 语言
 
