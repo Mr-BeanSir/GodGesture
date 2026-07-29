@@ -2,7 +2,7 @@
   "name": "godgesture",
   "private": true,
   "version": "0.1.0",
-  "description": "GodGesture — cross-platform mouse gesture tool (Tauri) with cloud sync, successor to WGestures",
+  "description": "GodGesture — independent cross-platform mouse gesture tool (Tauri) with cloud sync",
   "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=22"
