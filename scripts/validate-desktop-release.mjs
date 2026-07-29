@@ -54,10 +54,12 @@ assert.match(macos, /hdiutil verify/);
 assert.match(macos, /\.app\.tar\.gz/);
 assert.match(macos, /updater_extract_dir=\$\(mktemp -d\)/);
 assert.match(macos, /tar -xzf.*-C "\$updater_extract_dir"/);
+assert.match(macos, /executable_path="\$app_path\/Contents\/MacOS\/godgesture"/);
 assert.match(
   macos,
-  /test -x "\$updater_extract_dir\/GodGesture\.app\/Contents\/MacOS\/GodGesture"/,
+  /test -x "\$updater_extract_dir\/GodGesture\.app\/Contents\/MacOS\/godgesture"/,
 );
+assert.doesNotMatch(macos, /Contents\/MacOS\/GodGesture/);
 assert.doesNotMatch(macos, /tar -tzf.*grep/s);
 assert.match(macos, /shasum -a 256/);
 

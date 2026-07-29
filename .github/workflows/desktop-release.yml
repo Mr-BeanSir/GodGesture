@@ -158,7 +158,7 @@ jobs:
           set -euo pipefail
           bundle_root="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle"
           app_path="$bundle_root/macos/GodGesture.app"
-          executable_path="$app_path/Contents/MacOS/GodGesture"
+          executable_path="$app_path/Contents/MacOS/godgesture"
           dmg_count=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')
           dmg_path=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)
           updater_count=$(find "$bundle_root/macos" -maxdepth 1 -type f -name '*.app.tar.gz' | wc -l | tr -d ' ')
@@ -188,7 +188,7 @@ jobs:
           updater_extract_dir=$(mktemp -d)
           trap 'rm -rf "$updater_extract_dir"' EXIT
           tar -xzf "$updater_path" -C "$updater_extract_dir"
-          test -x "$updater_extract_dir/GodGesture.app/Contents/MacOS/GodGesture"
+          test -x "$updater_extract_dir/GodGesture.app/Contents/MacOS/godgesture"
 
           mkdir -p "$release_dir"
           cp "$dmg_path" "$release_dir/$dmg_name"
