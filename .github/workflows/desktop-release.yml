@@ -29,6 +29,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release-windows-x64
+          workspaces: apps/desktop/src-tauri -> target
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -130,6 +135,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release-macos-universal
+          workspaces: apps/desktop/src-tauri -> target
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

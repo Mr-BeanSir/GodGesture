@@ -65,6 +65,12 @@ assert.match(macos, /shasum -a 256/);
 
 for (const jobName of ["windows", "macos"]) {
   const steps = jobs[jobName].steps;
+  const toolchainIndex = steps.findIndex((step) =>
+    step.uses?.startsWith("dtolnay/rust-toolchain@"),
+  );
+  const rustCacheIndex = steps.findIndex(
+    (step) => step.uses === "Swatinem/rust-cache@v2",
+  );
   const sharedBuildIndex = steps.findIndex(
     (step) => step.run === "pnpm --filter @godgesture/shared build",
   );
@@ -72,6 +78,20 @@ for (const jobName of ["windows", "macos"]) {
     step.run?.includes("@godgesture/desktop tauri build"),
   );
   assert.ok(sharedBuildIndex >= 0, `${jobName} must build the shared package`);
+  assert.ok(toolchainIndex >= 0, `${jobName} must install the Rust toolchain`);
+  assert.ok(rustCacheIndex > toolchainIndex, `${jobName} must cache Rust after toolchain setup`);
+  assert.equal(
+    steps[rustCacheIndex].with?.workspaces,
+    "apps/desktop/src-tauri -> target",
+  );
+  assert.match(
+    steps[rustCacheIndex].with?.key,
+    jobName === "windows" ? /windows-x64/ : /macos-universal/,
+  );
+  assert.ok(
+    rustCacheIndex < desktopBuildIndex,
+    `${jobName} must restore Rust cache before the desktop bundle`,
+  );
   assert.ok(
     sharedBuildIndex < desktopBuildIndex,
     `${jobName} must build the shared package before the desktop bundle`,
