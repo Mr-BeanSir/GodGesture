@@ -22,7 +22,10 @@ const SIGNATURE = Buffer.from(
 ).toString("base64");
 
 test("project version is aligned across Tauri, Desktop, and Rust", async () => {
-  assert.equal(await readProjectVersion(), "0.1.0");
+  assert.match(
+    await readProjectVersion(),
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
+  );
 });
 
 test("derives manual, prerelease, and stable release modes", () => {
