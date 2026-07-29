@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-29。M7 最终交接审计基于 `ba92709`;产品代码、测试与发布配置基线覆盖至 `aaf3e42`,此后的状态文档提交不改变产品行为。当前交接摘要见 `docs/HANDOFF.md`。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
+最后核对:2026-07-29。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;最终验收与交接文档提交不改变产品行为。当前交接摘要见 `docs/HANDOFF.md`。接手时仍须执行 `git status --porcelain=v1` 和 `git log --oneline -12`,不要假定 HEAD 或工作区状态。
 
 本文是“当前实际实现”的权威入口。术语以 `CONTEXT.md` 为准,架构理由以相关 ADR 为准,未来范围以 `docs/ROADMAP.md` 为准。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -16,7 +16,7 @@
 | M5 后端与账户         | 已完成;外部 OAuth 凭证按设计由部署环境提供                                     |
 | M6 云同步             | 已完成;桌面账户、原生凭据边界、整库同步、冲突恢复与快照恢复均已接入 Server    |
 | M7 Web 控制台与分发   | 已完成;Web 控制台、签名 Updater、手势模板库与双平台发布流水均已落地           |
-| M8 打磨与发布         | 进行中;生产仓库坐标、prerelease 发布合同、快速入门与公开模板仓库已实现,桌面真实发布和安装验收待执行 |
+| M8 打磨与发布         | 已完成;stable `v0.1.0`、双平台 Release、Windows RC→stable 原生 Updater、快速入门、模板仓库和最终文档均已验收 |
 
 M4 的已知代码、配置和配套文档实现已经结束;当前没有未记录的预定开发任务。所有需要 GitHub macOS runner 或真实 Mac 的剩余验收集中在 `docs/qa/M4_MACOS_SMOKE.md`,安装与免费 DMG 操作见 `docs/MACOS_RELEASE.md`。验收中发现的缺陷须修复并重跑受影响项;清单全部通过、证据落档并将本表更新为“已完成”后,M4 才正式结束。
 
@@ -95,7 +95,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令和 Bundle ID 匹配的验收证据。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
-- 双平台发布 workflow 已配置 Windows x64 NSIS、macOS free ad-hoc universal app/DMG/Updater、minisign、SHA-256 和确定性 `latest.json`;尚未执行首个真实 tag,也未在 GitHub macOS runner/真实 Mac 取得架构、DMG、手动放行及安装后升级权限证据。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。首个正式发布、双平台旧版到新版升级 smoke、快速引导仍归 M8。
+- stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
 - 独立 `Mr-BeanSir/gesture-templates` 公共仓库已发布 `v1.0.0`;catalog 与两个 package 的 production URL、SHA-256、Schema、身份、目标和风险已实时验证。种子仍位于 `distribution/gesture-templates`,自建 Server 不得代理该内容。
 
 ## 不得破坏的语义
@@ -151,7 +151,7 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 
 2026-07-29 M7 最终交接复核重跑结果:shared 90/90 + build;desktop 83/83 + typecheck/build;Rust 152 passed + 1 ignored;2 个模板种子验证通过;发布脚本 8/8 且 workflow 静态合同通过;`git diff --check 06374ac..HEAD` 通过。未受 M7 影响的最近基线保持为 server 86/86 + typecheck/build、`pnpm check:api`、web-console typecheck/build 和 prod/dev Compose 结构校验。Windows Task Scheduler COM 已用唯一测试任务通过 least-privilege 创建/读取/删除 smoke,清理后无测试任务遗留;highest/UAC 仍需人工交互验收。Windows 应用获取已在真实 Tauri 会话验收 Win32 准星选择、自身窗口/Escape 取消、Explorer `.exe`/`.lnk` 拖放和 Shell Link 目标解析;验收后应用保持响应且钩子仍已安装。clippy 唯一允许的既有警告是 `apps/desktop/src-tauri/src/platform/windows/overlay.rs:202 while_let_loop`;Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。
 
-2026-07-29 M8 阶段验证:Desktop 88/88 + typecheck/build;发布脚本 10/10 且 prerelease/workflow 静态合同通过;2 个模板种子验证通过;Rust Updater 6/6。快速入门已在中文/英文、明/暗主题、`980x700`/`800x560` 和全部三步组合下完成 24 组浏览器截图与 DOM 验收,About 重开、三个目的地、键盘关闭及自动更新提示延后均已观察;修复后 Rust 全库为 152 passed + 1 ignored。模板仓库 `v1.0.0` 的三个 production URL 已通过实时内容和协议验证。签名密钥、Actions、RC/stable 桌面 Release 和安装后 Updater smoke 尚未执行,不得据此标记 M8 完成。
+2026-07-29 M8 最终验证:shared 90/90 + build;Desktop 88/88 + typecheck/build;发布脚本 10/10 且 workflow 静态合同通过;2 个模板种子验证通过;Rust 全库 152 passed + 1 ignored;clippy 仅既有 `overlay.rs:202 while_let_loop`。快速入门已在中文/英文、明/暗主题、`980x700`/`800x560` 和全部三步组合下完成 24 组浏览器截图与 DOM 验收。模板仓库 `v1.0.0` 的三个 production URL 已通过实时内容和协议验证。RC.2 run `30435122047` 和 stable run `30437621772` 均成功;stable 的 Windows/macOS Rust cache 均 exact hit,总时长由 RC.2 冷构建 14m17s 降至 6m53s。公开 stable 10 个用户资产已独立下载并通过 checksum、minisign、PE/Mach-O、app/DMG 与 evidence 校验;Windows RC.2→stable 原生 Updater 已保留配置 hash、9 条手势、本机设置、托盘设置和快速入门 dismissal。完整证据见 `docs/qa/M8_RELEASE_ACCEPTANCE.md`。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

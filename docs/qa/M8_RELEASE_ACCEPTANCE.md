@@ -12,11 +12,11 @@ the M8 design; it is not a pass.
 | Field | Evidence |
 | --- | --- |
 | Product implementation commit | `99f5b65` (quick guide), `4038551` (visual and modal acceptance fixes), `cc2fcb6` (cross-platform corner command dispatch), `ac31e42` / `c849d10` (macOS updater verification and executable casing) |
-| RC tag / commit | Annotated `v0.1.0-rc.1` -> `880f1178e44410aaa59acadf6454da82eca93417` |
-| Stable tag / commit | NOT RUN |
+| RC tag / commit | Annotated `v0.1.0-rc.1` -> `880f1178e44410aaa59acadf6454da82eca93417`; key-rotation validation RC `v0.1.0-rc.2` -> `ff50456360790f531bd31a0e0c318aa6e17c669b` |
+| Stable tag / commit | Annotated `v0.1.0` -> `5b812458cea69c2d6cf6a2da111647fb5dac6b31`; local `HEAD`, `origin/main`, peeled tag, Release evidence, and public asset URLs agree |
 | Manual workflow run | `30423484884` at `ac31e422b6620cd07890390f981db4d6f9338ab9`; workflow dispatch; success; `https://github.com/Mr-BeanSir/GodGesture/actions/runs/30423484884` |
-| RC workflow run / Release | `30425222307` at `880f1178e44410aaa59acadf6454da82eca93417`; success in 23m12s; `https://github.com/Mr-BeanSir/GodGesture/releases/tag/v0.1.0-rc.1` |
-| Stable workflow run / Release | NOT RUN |
+| RC workflow run / Release | RC.1 `30425222307` at `880f117`; RC.2 `30435122047` at `ff50456`, success in 14m17s; `https://github.com/Mr-BeanSir/GodGesture/releases/tag/v0.1.0-rc.2` is prerelease and not latest |
+| Stable workflow run / Release | `30437621772` at `5b81245`; success in 6m53s; Windows `90528991282` 6m09s, macOS `90528991414` 4m25s, assembly `90530450101` 17s, publish `90530525543` 17s; `https://github.com/Mr-BeanSir/GodGesture/releases/tag/v0.1.0` |
 | Template repository commit / Release | `788993230bfcb767f8a3d030bb70c3c410ff18e7`; `v1.0.0`; `https://github.com/Mr-BeanSir/gesture-templates/releases/tag/v1.0.0` |
 
 ## Local Automated Baseline
@@ -30,7 +30,7 @@ the M8 design; it is not a pass.
 | Template validation | `pnpm validate:templates`: 2 packages on 2026-07-29 | PASS |
 | Rust updater tests | `cargo test ... --lib updater::tests`: 6/6 on 2026-07-29 | PASS |
 | Product acceptance regression | Desktop 88/88 + typecheck/build; release 10/10 + workflow contract; templates 2/2; Rust library 152 passed + 1 ignored on 2026-07-29 at `4038551` | PASS |
-| Final full affected baseline | NOT RUN | NOT RUN |
+| Final full affected baseline | 2026-07-29 at `5b81245`: shared 90/90 + build; Desktop 88/88 + typecheck/build; templates 2/2; release 10/10 + workflow contract; Rust 152 passed + 1 ignored; clippy only the documented `overlay.rs:202 while_let_loop` warning | PASS |
 
 ## Quick Guide Visual Acceptance
 
@@ -57,9 +57,9 @@ Evidence directory: `%TEMP%\godgesture-m8-qa\quick-guide`.
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| New public key committed before any public release | `82fa6198e3625dbcd4c50d6813c55c10d33a50f5`; predates the RC tag; only the public key changed | PASS |
-| Private key and password installed as GitHub Secrets | Authenticated repository settings show `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; successful signed manual/RC artifacts prove the configured key matches the committed public key. Values were never read or recorded | PASS |
-| Encrypted recoverable backup confirmed outside worktree | Owner confirmation still required; never record a sensitive path or value | NOT RUN |
+| Production key rotation | The unrecoverable pre-release key was replaced at `ff50456` before RC.2/stable. RC.2 and stable were both signed with the replacement key; the committed public-key SHA-256 is `450FA06E125EC1955F65AA98192FD4DFFE40E4F420FDE5D8CA219F56601AB616` | PASS |
+| Private key and password installed as GitHub Secrets | Authenticated repository settings show `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; successful signed RC.2/stable artifacts prove the replacement Secret matches the committed public key. Values were never read or recorded | PASS |
+| Encrypted recoverable backup confirmed outside worktree | Two byte-identical external copies were created with current-user/SYSTEM-only ACLs. The password-protected private key and AES-256/header-encrypted 7-Zip archive were tested through full decryption; archive SHA-256 `70E8F999C4FEF809E518824B9D86733617C394BAE128373F9E732D4E77791875`. No private value was read into the record | PASS |
 | Manual workflow all build/assembly jobs | Run `30423484884`: Windows job `90484839768` 19m40s, macOS job `90484839856` 7m28s, assembly `90487725375` 18s all succeeded; publish `90487791841` skipped by the manual-run contract | PASS |
 | Downloaded combined artifact independently verified | GitHub artifact `GodGesture-desktop-release` digest `sha256:1c676d0a14d386159a85a525f05a4c6db857ff9e0523102a30f3ec58b08ce578`; `%TEMP%\godgesture-m8-qa\release-run-30423484884` contains the independently extracted 10-file contract, matching hashes/manifest/evidence, verified updater signatures, x64 installed executable, and universal Mach-O slices | PASS |
 
@@ -68,6 +68,12 @@ missing shared build, `30386079135` exposed Windows-only command dispatch on
 macOS, and `30387500137` exposed hard-coded macOS executable casing. Their
 fixes are the release commits named above; run `30423484884` is the successful
 manual rehearsal.
+
+`Swatinem/rust-cache@v2` is active for both release jobs. RC.2 populated the
+default-branch caches, and stable restored exact matches: Windows about 951 MB
+in 34s and macOS about 667 MB in 13s, both logging `Cache hit` and `full match:
+true`. The cached stable run completed in 6m53s versus 14m17s for the RC.2 cold
+run; Windows improved from 13m46s to 6m09s and macOS from 10m12s to 4m25s.
 
 ## RC Release And Windows Installation
 
@@ -80,16 +86,19 @@ manual rehearsal.
 | Installed version and launch | Public, signature-verified installer installed with exit code 0 into `%TEMP%\godgesture-m8-qa\installed-rc`; HKCU uninstall metadata and executable FileVersion/ProductVersion are `0.1.0-rc.1`; PID `34288` launched and responded normally | PASS |
 | Quick guide, default gestures, config persistence, tray | Real installed WebView showed all three quick-guide steps; screenshots `installed-quick-guide-step1.png` through `step3.png`; Finish stored `godgesture.quickGuide.completed=1`; About reopened the guide. Nine global default gestures were present. Config SHA-256 stayed `24038F06DE27BCAC8945B6476E9779DFD2F56A796128B70BFB6B6BDE449CC024`. Closing hid the window while PID `34288` remained; relaunch reused the same process and restored the window | PASS |
 | Windows administrator-start boundary | Normal process was medium integrity with an elevatable split token. With `autoStart=false`, enabling `runAsAdmin` persisted the setting and displayed the writable-location warning without creating a task. Relaunch produced a real Windows UAC prompt; approval started elevated PID `34224`. The exact process was stopped, `runAsAdmin=false` restored, normal PID `33940` relaunched, config hash remained unchanged, and GodGesture scheduled-task count returned to zero | PASS |
+| RC.2 replacement-key release | Run `30435122047` succeeded; public Release is prerelease/non-latest with 10 user assets plus two source archives. Windows installer SHA-256 `91e72f1dd3aee685ef9db3c60923eebdfd76bccc9330ef683e717ba76f0fadfa`, macOS updater `be00908822d019ee4c753f2c6a73c7d2458edd2a19b93c306c48fa2082aabfbb`, and DMG `baf5984637e349831c32d9cb24cb283f661ea8c2f0be92bb39c5003dd75879a5`; both updater payloads passed independent verification with the replacement public key | PASS |
+| RC.1-to-RC.2 installation continuity | RC.2 installed over the RC.1 QA location. File/uninstall version became `0.1.0-rc.2`; config SHA-256 remained `24038F06DE27BCAC8945B6476E9779DFD2F56A796128B70BFB6B6BDE449CC024`, nine gestures and machine settings were preserved, quick-guide dismissal remained `1`, and no GodGesture task remained | PASS |
 
 ## Stable Release And Windows Updater
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| `v0.1.0` is stable and latest | NOT RUN | NOT RUN |
-| Exact assets, checksums, signatures, manifest, evidence JSON | NOT RUN | NOT RUN |
-| Installed RC discovers stable `0.1.0` | NOT RUN | NOT RUN |
-| In-app download, signature verification, install, restart | NOT RUN | NOT RUN |
-| Version, config, tray, quick-guide state, gestures preserved | NOT RUN | NOT RUN |
+| `v0.1.0` is stable and latest | Public Release is published, non-draft, non-prerelease, carries the Latest badge, and resolves to tag/commit `v0.1.0` / `5b81245`; public latest endpoint returns manifest version `0.1.0` | PASS |
+| Exact assets, checksums, signatures, manifest, evidence JSON | Browser-downloaded 10 user assets in `%TEMP%\godgesture-m8-qa\stable-v0.1.0`; Release also has two GitHub source archives. Payload checksums match adjacent files and evidence: Windows `b0a14b544101ba8ee9b668f0fa18a05de7b30814f4da772502dfec0e3b312da3`, macOS updater `0f951abac77b545bac1cd73872faf7b45a4ed1a715bca3632799ecedafa1b05f`, DMG `dc7a6ade30e4784cad30f2d53ef2372a27bd2fe989689a82386b70bce6b15467`. `latest.json` SHA-256 is `876e5af579ff0e335e825433db5d1c6763d6b2551b328e6688354ea4c496f6fe`; evidence SHA-256 is `4aa7a863d92c8a6b4ee638f895690c00aee8aec2a9642c65db900488bb60e056`. Both updater payloads passed independent Tauri-compatible minisign verification | PASS |
+| Installed RC discovers stable `0.1.0` | The installed RC.2 native `update_check` returned current `0.1.0-rc.2`, available `0.1.0`, release notes, and the About UI displayed `GodGesture 0.1.0` plus the signed-update action. An earlier `update_manifest_invalid` during Release propagation disappeared without client or manifest changes and was not reproducible after latest endpoint propagation | PASS |
+| In-app download, signature verification, install, restart | About `下载并安装` invoked the native pending update; the updater downloaded the stable NSIS payload, accepted its minisign signature, installed over the RC path, and restarted from PID `25112` to PID `40776` in about ten seconds. Signature failure would have aborted before installation | PASS |
+| Version, config, tray, quick-guide state, gestures preserved | Restarted executable and HKCU uninstall metadata are `0.1.0`; process responded from the same install path. Config SHA-256 remains `24038F06DE27BCAC8945B6476E9779DFD2F56A796128B70BFB6B6BDE449CC024`; nine global gestures, `autoStart=false`, `runAsAdmin=false`, `trayIconVisible=true`, zero GodGesture tasks, and LevelDB `godgesture.quickGuide.completed=1` were preserved | PASS |
+| Stable Windows package structure | Downloaded NSIS outer stub is PE `0x014C` and Authenticode `NotSigned`; 7-Zip extraction contains `godgesture.exe` PE `0x8664`, FileVersion/ProductVersion `0.1.0`, also `NotSigned` | PASS |
 
 ## macOS Release Evidence
 
@@ -99,7 +108,7 @@ manual rehearsal.
 | RC strict ad-hoc `codesign` verification | RC macOS job `90490122202` passed recursive strict verification in 6m43s | PASS |
 | RC DMG `hdiutil verify` and app layout | RC macOS job `90490122202` passed DMG verification and extracted-app layout checks | PASS |
 | RC updater archive, minisign, SHA-256, manifest mapping | Public updater SHA-256 `7a72c9d21839b71e8b714337f64639d820487f837292c17a8e04e2cde184ce54`; public DMG SHA-256 `6d8afef5f66480b422ae08bd0e724f73debedac5b56a2ce651ee18c5de420487`; both checksum files match. The decoded Tauri signature passed independent minisign verification and `latest.json` maps the archive to `darwin-universal` | PASS |
-| Stable runner-verifiable macOS release evidence | NOT RUN | NOT RUN |
+| Stable runner-verifiable macOS release evidence | Job `90528991414` succeeded. Its native runner log shows strict/deep `codesign` success, `Signature=adhoc`, required `arm64` and `x86_64` lipo checks, executable app layout, and `hdiutil verify` VALID. Independent download inspection found fat Mach-O slices `0x01000007` and `0x0100000C`, version `0.1.0`, Bundle ID `com.godgesture.desktop`, correct executable layout, DMG app, and `/Applications` symlink | PASS |
 | Physical-Mac Gatekeeper manual approval | No physical Mac in this run; see `docs/qa/M4_MACOS_SMOKE.md` | DEFERRED (owner-approved) |
 | Physical-Mac TCC and gesture runtime | No physical Mac in this run; see `docs/qa/M4_MACOS_SMOKE.md` | DEFERRED (owner-approved) |
 | Installed macOS RC-to-stable updater | No physical Mac in this run | DEFERRED (owner-approved) |
@@ -108,7 +117,7 @@ manual rehearsal.
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Temporary installers/config/tasks cleaned or retained explicitly | NOT RUN | NOT RUN |
-| User-owned `接手提示词.md` untouched | Worktree audit required at completion | NOT RUN |
-| `docs/PROJECT_STATUS.md`, `ROADMAP.md`, `HANDOFF.md` finalized | NOT RUN | NOT RUN |
-| Requirement-by-requirement completion audit | NOT RUN | NOT RUN |
+| Temporary installers/config/tasks cleaned or retained explicitly | Evidence remains under `%TEMP%\godgesture-m8-qa` and the browser default download directory. The QA installation uninstaller exited 0; its install directory, process, HKCU uninstall entry, and GodGesture scheduled-task count are all zero. Machine settings were reset before uninstall | PASS |
+| User-owned `接手提示词.md` untouched | Final status audit shows it as the only pre-existing untracked file; it was never read, modified, staged, or committed | PASS |
+| `docs/PROJECT_STATUS.md`, `ROADMAP.md`, `HANDOFF.md` finalized | Final M8 documentation commit updates all four status/acceptance documents together | PASS |
+| Requirement-by-requirement completion audit | Every M8 plan section has repository, test, workflow, Release, asset, or runtime evidence. All non-physical-Mac rows pass; the three physical-Mac rows remain explicitly `DEFERRED (owner-approved)` and do not claim a pass | PASS |

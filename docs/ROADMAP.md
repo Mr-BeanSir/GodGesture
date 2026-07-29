@@ -47,7 +47,9 @@
 - Tauri updater 接 GitHub Releases;手势模板库(独立 GitHub 仓库)浏览与采纳
 - Windows x64 NSIS + macOS universal ad-hoc DMG/Updater 发布流水,确定性 `latest.json` 与模板仓库种子
 
-## M8 打磨与发布
+## M8 打磨与发布 ✅
 - 首个正式 tag 发布;从真实 Release 验证 Windows x64 NSIS、macOS universal DMG/Updater 与校验文件
 - 双平台已安装旧版到新版 Updater smoke,并验收 SmartScreen、macOS 手动放行/TCC 与提权启动边界
 - 快速入门引导、最终用户文档与发布验收记录
+
+完成说明:stable `v0.1.0` 与双平台公开资产、Windows RC→stable 原生 Updater、SmartScreen/UAC、快速入门、用户文档和发布证据均已验收。无真实 Mac 环境的 Gatekeeper/TCC/手势运行时与已安装升级按维护者授权保留为 `DEFERRED (owner-approved)`,继续由 M4 设备清单跟踪,不伪装成通过。
