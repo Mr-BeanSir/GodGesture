@@ -11,11 +11,11 @@ the M8 design; it is not a pass.
 
 | Field | Evidence |
 | --- | --- |
-| Product implementation commit | `99f5b65` (quick guide), `4038551` (visual and modal acceptance fixes); later release commits pending |
-| RC tag / commit | NOT RUN |
+| Product implementation commit | `99f5b65` (quick guide), `4038551` (visual and modal acceptance fixes), `cc2fcb6` (cross-platform corner command dispatch), `ac31e42` / `c849d10` (macOS updater verification and executable casing) |
+| RC tag / commit | Annotated `v0.1.0-rc.1` -> `880f1178e44410aaa59acadf6454da82eca93417` |
 | Stable tag / commit | NOT RUN |
-| Manual workflow run | NOT RUN |
-| RC workflow run / Release | NOT RUN |
+| Manual workflow run | `30423484884` at `ac31e422b6620cd07890390f981db4d6f9338ab9`; workflow dispatch; success; `https://github.com/Mr-BeanSir/GodGesture/actions/runs/30423484884` |
+| RC workflow run / Release | `30425222307` at `880f1178e44410aaa59acadf6454da82eca93417`; success in 23m12s; `https://github.com/Mr-BeanSir/GodGesture/releases/tag/v0.1.0-rc.1` |
 | Stable workflow run / Release | NOT RUN |
 | Template repository commit / Release | `788993230bfcb767f8a3d030bb70c3c410ff18e7`; `v1.0.0`; `https://github.com/Mr-BeanSir/gesture-templates/releases/tag/v1.0.0` |
 
@@ -57,23 +57,29 @@ Evidence directory: `%TEMP%\godgesture-m8-qa\quick-guide`.
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| New public key committed before any public release | NOT RUN | NOT RUN |
-| Private key and password installed as GitHub Secrets | NOT RUN; never record values | NOT RUN |
-| Encrypted recoverable backup confirmed outside worktree | NOT RUN; never record sensitive path or value | NOT RUN |
-| Manual workflow all build/assembly jobs | NOT RUN | NOT RUN |
-| Downloaded combined artifact independently verified | NOT RUN | NOT RUN |
+| New public key committed before any public release | `82fa6198e3625dbcd4c50d6813c55c10d33a50f5`; predates the RC tag; only the public key changed | PASS |
+| Private key and password installed as GitHub Secrets | Authenticated repository settings show `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; successful signed manual/RC artifacts prove the configured key matches the committed public key. Values were never read or recorded | PASS |
+| Encrypted recoverable backup confirmed outside worktree | Owner confirmation still required; never record a sensitive path or value | NOT RUN |
+| Manual workflow all build/assembly jobs | Run `30423484884`: Windows job `90484839768` 19m40s, macOS job `90484839856` 7m28s, assembly `90487725375` 18s all succeeded; publish `90487791841` skipped by the manual-run contract | PASS |
+| Downloaded combined artifact independently verified | GitHub artifact `GodGesture-desktop-release` digest `sha256:1c676d0a14d386159a85a525f05a4c6db857ff9e0523102a30f3ec58b08ce578`; `%TEMP%\godgesture-m8-qa\release-run-30423484884` contains the independently extracted 10-file contract, matching hashes/manifest/evidence, verified updater signatures, x64 installed executable, and universal Mach-O slices | PASS |
+
+Failed rehearsal runs were retained rather than hidden: `30385641064` exposed the
+missing shared build, `30386079135` exposed Windows-only command dispatch on
+macOS, and `30387500137` exposed hard-coded macOS executable casing. Their
+fixes are the release commits named above; run `30423484884` is the successful
+manual rehearsal.
 
 ## RC Release And Windows Installation
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| `v0.1.0-rc.1` is prerelease and not latest | NOT RUN | NOT RUN |
-| Exact assets, checksums, signatures, manifest, evidence JSON | NOT RUN | NOT RUN |
-| Windows x64 PE and NSIS SHA-256 | NOT RUN | NOT RUN |
-| SmartScreen observation | NOT RUN | NOT RUN |
-| Installed version and launch | NOT RUN | NOT RUN |
-| Quick guide, default gestures, config persistence, tray | NOT RUN | NOT RUN |
-| Windows administrator-start boundary | NOT RUN | NOT RUN |
+| `v0.1.0-rc.1` is prerelease and not latest | GitHub Release `361531707` is published, non-draft, `prerelease=true`; the release page has the Pre-release badge and no Latest badge; public `releases/latest` returned HTTP 404 while only the RC existed | PASS |
+| Exact assets, checksums, signatures, manifest, evidence JSON | 10 user-uploaded assets plus GitHub's two source archives. Public downloads under `%TEMP%\godgesture-m8-qa\rc-v0.1.0-rc.1` match GitHub asset digests and all three payload checksum files. `latest.json` maps `darwin-universal` and `windows-x86_64`; `release-evidence.json` records version `0.1.0-rc.1`, prerelease mode, exact tag, commit, two targets, and eight platform files | PASS |
+| Windows x64 PE and NSIS SHA-256 | Installer SHA-256 `ff4b2b4e2a47851c9fb64a534c64977eb2a6b83d6386b2a62783b2ae9732d0fd`; Authenticode `NotSigned`; the NSIS outer stub is PE `0x014C`, while installed `godgesture.exe` is the required x64 PE `0x8664` | PASS |
+| SmartScreen observation | Chrome required the explicit unverified-download choice; interactive installer launch showed `smartscreen.exe`; the public installer remained byte-identical and `NotSigned` | PASS |
+| Installed version and launch | Public, signature-verified installer installed with exit code 0 into `%TEMP%\godgesture-m8-qa\installed-rc`; HKCU uninstall metadata and executable FileVersion/ProductVersion are `0.1.0-rc.1`; PID `34288` launched and responded normally | PASS |
+| Quick guide, default gestures, config persistence, tray | Real installed WebView showed all three quick-guide steps; screenshots `installed-quick-guide-step1.png` through `step3.png`; Finish stored `godgesture.quickGuide.completed=1`; About reopened the guide. Nine global default gestures were present. Config SHA-256 stayed `24038F06DE27BCAC8945B6476E9779DFD2F56A796128B70BFB6B6BDE449CC024`. Closing hid the window while PID `34288` remained; relaunch reused the same process and restored the window | PASS |
+| Windows administrator-start boundary | Normal process was medium integrity with an elevatable split token. With `autoStart=false`, enabling `runAsAdmin` persisted the setting and displayed the writable-location warning without creating a task. Relaunch produced a real Windows UAC prompt; approval started elevated PID `34224`. The exact process was stopped, `runAsAdmin=false` restored, normal PID `33940` relaunched, config hash remained unchanged, and GodGesture scheduled-task count returned to zero | PASS |
 
 ## Stable Release And Windows Updater
 
@@ -89,10 +95,11 @@ Evidence directory: `%TEMP%\godgesture-m8-qa\quick-guide`.
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| RC/stable universal `arm64` + `x86_64` slices | NOT RUN | NOT RUN |
-| Strict ad-hoc `codesign` verification | NOT RUN | NOT RUN |
-| DMG `hdiutil verify` and app layout | NOT RUN | NOT RUN |
-| Updater archive, minisign, SHA-256, manifest mapping | NOT RUN | NOT RUN |
+| RC universal `arm64` + `x86_64` slices | Public RC updater archive extracted on Windows: fat Mach-O magic `0xCAFEBABE`, 2 slices, CPU types `0x01000007` (`x86_64`) and `0x0100000C` (`arm64`) | PASS |
+| RC strict ad-hoc `codesign` verification | RC macOS job `90490122202` passed recursive strict verification in 6m43s | PASS |
+| RC DMG `hdiutil verify` and app layout | RC macOS job `90490122202` passed DMG verification and extracted-app layout checks | PASS |
+| RC updater archive, minisign, SHA-256, manifest mapping | Public updater SHA-256 `7a72c9d21839b71e8b714337f64639d820487f837292c17a8e04e2cde184ce54`; public DMG SHA-256 `6d8afef5f66480b422ae08bd0e724f73debedac5b56a2ce651ee18c5de420487`; both checksum files match. The decoded Tauri signature passed independent minisign verification and `latest.json` maps the archive to `darwin-universal` | PASS |
+| Stable runner-verifiable macOS release evidence | NOT RUN | NOT RUN |
 | Physical-Mac Gatekeeper manual approval | No physical Mac in this run; see `docs/qa/M4_MACOS_SMOKE.md` | DEFERRED (owner-approved) |
 | Physical-Mac TCC and gesture runtime | No physical Mac in this run; see `docs/qa/M4_MACOS_SMOKE.md` | DEFERRED (owner-approved) |
 | Installed macOS RC-to-stable updater | No physical Mac in this run | DEFERRED (owner-approved) |
