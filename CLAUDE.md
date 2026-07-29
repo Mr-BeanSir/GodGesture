@@ -4,8 +4,9 @@
 
 1. `CONTEXT.md` — 领域术语表。所有命名(代码/UI/文档)必须与之一致,新术语敲定后先更新它。
 2. `docs/PROJECT_STATUS.md` — 当前实现状态、部件入口、未完成边界、验证基线与接手流程。
-3. `docs/adr/` — 架构决策记录。改动方向与 ADR 冲突时,先提出并新增/修订 ADR,不要静默偏离。
-4. `docs/ROADMAP.md` — 里程碑目标;实际落地状态以 `docs/PROJECT_STATUS.md` 为准。
+3. `docs/HANDOFF.md` — 日常新增功能/修复 Bug 的文档导航、任务路由与当前交接边界。
+4. `docs/adr/` — 架构决策记录。改动方向与 ADR 冲突时,先提出并新增/修订 ADR,不要静默偏离。
+5. `docs/ROADMAP.md` — 里程碑目标;实际落地状态以 `docs/PROJECT_STATUS.md` 为准。
 
 ## 硬约束(来自 ADR,勿"优化"掉)
 
