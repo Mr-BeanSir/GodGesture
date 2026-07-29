@@ -3,6 +3,7 @@ mod app_acquisition;
 pub mod engine;
 mod legacy_import;
 pub mod platform;
+mod template_download;
 mod updater;
 
 #[cfg(windows)]
@@ -1742,6 +1743,7 @@ pub fn run() {
             platform_status,
             platform_request_permissions,
             platform_open_permission_settings,
+            template_download::download_template_text,
             account::account_credential_get,
             account::account_credential_set,
             account::account_credential_delete,

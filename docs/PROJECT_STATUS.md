@@ -43,6 +43,9 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
 - `updater.rs`:Tauri 原生 Updater 注册、HTTPS endpoint/目标选择、单 pending update、检查/安装互斥、稳定错误和有界进度事件;WebView 不持有下载 URL、签名或原生 update handle。
+- `template_download.rs`:GitHub 模板 catalog/package 的原生 HTTPS 文本传输;逐跳验证最多
+  5 次重定向、15 秒总超时、固定大小上限、流式超限中止、UTF-8 与稳定错误码,响应
+  不落入系统下载目录。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
 - `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;普通点击在当前钩子回调返回后经有界消息队列重放。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
@@ -79,7 +82,10 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
-- `templates/` 与 `stores/templates.ts` 对不可信 GitHub catalog/package 执行 HTTPS、超时、大小、重定向、Schema 和身份校验;模板详情提供冲突策略、风险确认和纯规划,再经 `stores/config.ts` 整库原子 barrier 采纳。
+- `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
+  GitHub catalog/package 执行 shared Schema、身份、目标和风险校验;浏览器 preview 继续
+  使用 fixture。模板详情提供冲突策略、风险确认和纯规划,再经 `stores/config.ts` 整库
+  原子 barrier 采纳。
 - `stores/update.ts` 与 `AboutView.vue` 提供手动/偏好控制的延迟自动检查、去重、稳定错误、下载进度和安装前配置 flush;自动检查不下载或安装。
 
 ## Shared、Server 与 Web
@@ -134,6 +140,10 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   clippy `-D warnings` 通过。维护者的右键/中键/X1/X2 连续移动跟手实机验收仍待执行;
   Windows 上的 Apple target 交叉检查因 `ring`/`rquickjs-sys` 找不到 Apple C 编译器
   `cc` 而在依赖构建阶段停止,macOS 源码编译和真机轨迹仍需 CI/设备证据。
+- 2026-07-29 模板网络路径修复:生产 catalog/package 不再由 WebView `fetch`,而是经
+  `download_template_text` 原生 IPC 使用 reqwest/rustls 读取。真实联网 smoke 在
+  4.56 秒内通过 GitHub Release production catalog 和两个 package 的受限重定向、JSON
+  与 slug/version 身份核对,请求未打开浏览器或系统下载器。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -169,6 +179,11 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
 Rust 全库 158 passed + 1 ignored;`cargo clippy --lib -- -D warnings` 通过。macOS target
 交叉检查在第三方 C 依赖构建阶段因本机缺少 Apple `cc` 工具链停止,不计作 macOS
 编译通过。
+
+2026-07-29 原生模板下载验证:Rust 全库 162 passed + 2 ignored,其中 production GitHub
+smoke 已单独以 `--ignored --exact` 运行并通过;clippy `-D warnings` 通过。shared 90/90
++ build;Desktop 92/92 + typecheck/build。Desktop build 仍只有既有 VueUse PURE 注释和
+大 chunk 警告。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

@@ -299,6 +299,9 @@ export function createMockBackend(): Backend {
     async appIcon() {
       return null;
     },
+    async downloadTemplateText() {
+      throw new Error("Template downloads are unavailable in browser preview");
+    },
     async accountCredentialGet() {
       return refreshToken;
     },

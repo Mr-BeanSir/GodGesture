@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   GestureTemplateCatalog,
-  MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
   type GestureTemplateCatalogEntry,
 } from "@godgesture/shared";
+import { BackendError } from "../../api/backend";
 import {
   TemplateSourceError,
   createFixtureGestureTemplateSource,
   createRemoteGestureTemplateSource,
+  type TemplateTextTransport,
 } from "../source";
 
 describe("gesture template source", () => {
@@ -29,112 +30,85 @@ describe("gesture template source", () => {
     });
   });
 
-  it("rejects invalid configured URLs before making a request", () => {
+  it("rejects invalid configured URLs before calling native transport", () => {
+    const transport = vi.fn<TemplateTextTransport>();
     expect(() =>
-      createRemoteGestureTemplateSource("http://example.com/catalog.json"),
+      createRemoteGestureTemplateSource(
+        "http://example.com/catalog.json",
+        transport,
+      ),
     ).toThrowError(expect.objectContaining({ code: "template_url_invalid" }));
+    expect(transport).not.toHaveBeenCalled();
   });
 
-  it("maps HTTP and malformed catalog responses to stable codes", async () => {
-    const httpSource = createRemoteGestureTemplateSource(
-      "https://example.com/catalog.json",
-      vi.fn(async () => new Response("missing", { status: 404 })),
-    );
-    await expectSourceCode(httpSource.loadCatalog(), "template_http");
-
-    const invalidSource = createRemoteGestureTemplateSource(
-      "https://example.com/catalog.json",
-      vi.fn(async () => new Response("{}", { status: 200 })),
-    );
-    await expectSourceCode(invalidSource.loadCatalog(), "invalid_catalog");
-  });
-
-  it("rejects redirects that leave HTTPS with a dedicated error", async () => {
+  it("passes closed catalog and package resource kinds to native transport", async () => {
+    const entry = catalogEntry();
+    const transport = vi.fn<TemplateTextTransport>(async (_url, kind) => {
+      if (kind === "catalog") return JSON.stringify(catalogWithEntry(entry));
+      return JSON.stringify(packageFor(entry));
+    });
     const source = createRemoteGestureTemplateSource(
       "https://example.com/catalog.json",
-      vi.fn(async () =>
-        ({
-          ok: true,
-          status: 200,
-          url: "http://downloads.example.com/catalog.json",
-          headers: new Headers(),
-          text: async () => "{}",
-        }) as Response,
-      ),
+      transport,
     );
 
-    await expectSourceCode(source.loadCatalog(), "template_redirect_insecure");
+    await source.loadCatalog();
+    await source.loadPackage(entry);
+
+    expect(transport).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/catalog.json",
+      "catalog",
+    );
+    expect(transport).toHaveBeenNthCalledWith(
+      2,
+      entry.packageUrl,
+      "package",
+    );
+  });
+
+  it.each([
+    "template_http",
+    "template_redirect_insecure",
+    "template_timeout",
+    "catalog_too_large",
+  ] as const)("preserves native %s errors", async (code) => {
+    const source = createRemoteGestureTemplateSource(
+      "https://example.com/catalog.json",
+      vi.fn(async () => {
+        throw new BackendError(code, `native ${code}`);
+      }),
+    );
+    await expectSourceCode(source.loadCatalog(), code);
+  });
+
+  it("maps unknown transport failures to template_network", async () => {
+    const source = createRemoteGestureTemplateSource(
+      "https://example.com/catalog.json",
+      vi.fn(async () => {
+        throw new Error("transport unavailable");
+      }),
+    );
+    await expectSourceCode(source.loadCatalog(), "template_network");
+  });
+
+  it("maps malformed catalog responses to protocol errors", async () => {
+    const source = createRemoteGestureTemplateSource(
+      "https://example.com/catalog.json",
+      vi.fn(async () => "{}"),
+    );
+    await expectSourceCode(source.loadCatalog(), "invalid_catalog");
   });
 
   it("cross-checks downloaded package identity against the catalog", async () => {
     const entry = catalogEntry();
+    const mismatched = packageFor(entry);
+    mismatched.slug = "different-package";
     const source = createRemoteGestureTemplateSource(
       "https://example.com/catalog.json",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            formatVersion: 1,
-            slug: "different-package",
-            version: "1.0.0",
-            target: {
-              scope: "global",
-              intents: [
-                {
-                  name: "One",
-                  gesture: {
-                    trigger: "right",
-                    strokes: ["up"],
-                    modifier: "none",
-                  },
-                  command: { type: "doNothing" },
-                },
-              ],
-            },
-          }),
-          { status: 200 },
-        ),
-      ),
+      vi.fn(async () => JSON.stringify(mismatched)),
     );
     await expectSourceCode(source.loadPackage(entry), "identity_mismatch");
-  });
-
-  it("stops reading an unbounded response body at the package byte limit", async () => {
-    const source = createRemoteGestureTemplateSource(
-      "https://example.com/catalog.json",
-      vi.fn(async () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(
-                new Uint8Array(MAX_GESTURE_TEMPLATE_PACKAGE_BYTES),
-              );
-              controller.enqueue(new Uint8Array(1));
-              controller.close();
-            },
-          }),
-        ),
-      ),
-    );
-
-    await expectSourceCode(source.loadPackage(catalogEntry()), "package_too_large");
-  });
-
-  it("keeps the timeout active while reading the response body", async () => {
-    const source = createRemoteGestureTemplateSource(
-      "https://example.com/catalog.json",
-      vi.fn(async () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            pull() {
-              return new Promise(() => undefined);
-            },
-          }),
-        ),
-      ),
-      5,
-    );
-
-    await expectSourceCode(source.loadCatalog(), "template_timeout");
   });
 });
 
@@ -156,6 +130,36 @@ function catalogEntry(): GestureTemplateCatalogEntry {
       },
     ],
   }).entries[0]!;
+}
+
+function catalogWithEntry(entry: GestureTemplateCatalogEntry) {
+  return {
+    formatVersion: 1,
+    generatedAt: "2026-07-28T15:00:00Z",
+    entries: [entry],
+  };
+}
+
+function packageFor(entry: GestureTemplateCatalogEntry) {
+  return {
+    formatVersion: 1 as const,
+    slug: entry.slug,
+    version: entry.version,
+    target: {
+      scope: "global" as const,
+      intents: [
+        {
+          name: "One",
+          gesture: {
+            trigger: "right",
+            strokes: ["up"],
+            modifier: "none",
+          },
+          command: { type: "doNothing" },
+        },
+      ],
+    },
+  };
 }
 
 async function expectSourceCode(promise: Promise<unknown>, code: string) {

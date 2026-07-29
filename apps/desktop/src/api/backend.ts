@@ -16,6 +16,7 @@
  * - pick_window(): {exeName, exePath, appName, aumid, bundleId} | null
  * - resolve_app_file(path): {exeName, exePath, appName, aumid, bundleId}
  * - app_icon(exeName: string): string | null    // base64 png
+ * - download_template_text(url, resourceKind): string
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
  */
@@ -45,6 +46,8 @@ export interface AppFileDropEvent {
   type: "enter" | "over" | "drop" | "leave";
   paths: string[];
 }
+
+export type TemplateResourceKind = "catalog" | "package";
 
 export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
 
@@ -153,6 +156,10 @@ export interface Backend {
   ): Promise<() => void>;
   /** base64 png,失败返回 null */
   appIcon(exeName: string): Promise<string | null>;
+  downloadTemplateText(
+    url: string,
+    resourceKind: TemplateResourceKind,
+  ): Promise<string>;
 
   accountCredentialGet(apiOrigin: string): Promise<string | null>;
   accountCredentialSet(apiOrigin: string, refreshToken: string): Promise<void>;
@@ -317,6 +324,17 @@ function createTauriBackend(): Backend {
     async appIcon(exeName) {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<string | null>("app_icon", { exeName });
+    },
+    async downloadTemplateText(url, resourceKind) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<string>("download_template_text", {
+          url,
+          resourceKind,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
     },
     async accountCredentialGet(apiOrigin) {
       const { invoke } = await import("@tauri-apps/api/core");
