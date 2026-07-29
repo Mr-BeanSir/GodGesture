@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-29。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-07-30。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -147,9 +147,18 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 2026-07-29 原生轨迹调度修复:Windows 覆盖层不再清空无界 channel 后才绘制,
   单次唤醒最多消费 64 条命令,有剩余工作时重新唤醒;macOS 使用 FIFO pending 队列、
   单 scheduled drain 和每批一次 render。Windows 全库测试 158 passed + 1 ignored,
-  clippy `-D warnings` 通过。维护者的右键/中键/X1/X2 连续移动跟手实机验收仍待执行;
+  clippy `-D warnings` 通过。该提交只解决连续输入下的渲染饥饿,后续连续路径、覆盖层
+  Z-order 和跨屏语义由 2026-07-30 的后续修复完成;
   Windows 上的 Apple target 交叉检查因 `ring`/`rquickjs-sys` 找不到 Apple C 编译器
   `cc` 而在依赖构建阶段停止,macOS 源码编译和真机轨迹仍需 CI/设备证据。
+- 2026-07-30 原生轨迹与多屏覆盖修复:Windows 复用长期 DIB、局部 scratch 和完整 path
+  重绘,单 wake pending、FIFO 及每批 4096 条命令避免 wake storm 和分节圆帽;可视点上限
+  取 `512 × DPI` 与虚拟桌面可遍历距离两者较大值。Windows 使用完整虚拟桌面共享 DIB,
+  每台显示器由两个非全屏 `WS_EX_TOPMOST` 分层窗口切片显示,轨迹可跨任意显示器并覆盖
+  任务栏,同时不触发 Explorer 的全屏任务栏 Z-order 调整;命令提示仍锚定手势起点屏幕。
+  维护者已在真实双屏桌面确认轨迹跟手且连续、任务栏保持压住普通应用、轨迹位于任务栏
+  之上,并确认 A→B 与 B→A 跨屏轨迹连续。macOS 同步改为活动显示器联合边界并保留
+  全局坐标,但本机无法编译 Apple target,仍需真实 Mac 对混合 DPI 多屏完成验收。
 - 2026-07-29 模板网络路径修复:生产 catalog/package 不再由 WebView `fetch`,而是经
   `download_template_text` 原生 IPC 使用 reqwest/rustls 读取。真实联网 smoke 在
   4.56 秒内通过 GitHub Release production catalog 和两个 package 的受限重定向、JSON
@@ -211,6 +220,13 @@ smoke 已单独以 `--ignored --exact` 运行并通过;clippy `-D warnings` 通�
 并对关键页面截图;手势页另在 `800x560` 中文浅色复核三分区布局。
 Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。macOS target 检查因本机
 缺少 Apple `cc` 在第三方 C 依赖阶段停止,不计作 macOS 编译通过。
+
+2026-07-30 原生轨迹与多屏覆盖验证:Windows Rust library `176 passed, 2 ignored`;
+`cargo clippy --lib --no-default-features -- -D warnings`、定向 rustfmt 和
+`git diff --check` 通过。自动测试覆盖完整 path 的逐点像素等价、自交、脏区域、FIFO、
+可视点上限、上下堆叠与左右错位显示器、窗口切片接缝及任务栏带状区域。Windows 实机
+验收覆盖连续轨迹、任务栏层级、任务栏上方轨迹以及双向跨屏。macOS 仅完成源码同步和
+联合显示器边界测试代码,Windows 未执行该平台测试,不提供 Apple 编译或真机证据。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

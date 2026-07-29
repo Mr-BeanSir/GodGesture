@@ -9,7 +9,8 @@ use objc2_app_kit::{
 };
 use objc2_core_foundation::{CFData, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
-    CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGDisplayBounds, CGImage,
+    CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGDirectDisplayID,
+    CGDisplayBounds, CGDisplayPixelsWide, CGError, CGGetActiveDisplayList, CGImage,
     CGImageAlphaInfo, CGImageByteOrderInfo, CGImageComponentInfo, CGImagePixelFormatInfo,
     CGMainDisplayID,
 };
@@ -19,12 +20,20 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
+use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapMut, Stroke, Transform};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TrailColors {
     pub main: u32,
     pub unrecognized: u32,
+}
+
+#[derive(Clone, Copy)]
+struct TrailRenderStyle {
+    screen_origin: Point,
+    scale: f32,
+    recognized: bool,
+    colors: TrailColors,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +65,8 @@ struct QueuedCommand {
     generation: u64,
 }
 
-const MAX_COMMANDS_PER_DRAIN: usize = 256;
+const MAX_COMMANDS_PER_DRAIN: usize = 4096;
+const MAX_TRAIL_POINTS_BASE: usize = 512;
 
 thread_local! {
     static STATE: RefCell<Option<OverlayState>> = const { RefCell::new(None) };
@@ -191,10 +201,15 @@ struct OverlayState {
     window: Option<Retained<NSWindow>>,
     layer: Option<Retained<CALayer>>,
     screen_origin: Point,
+    label_bounds: PixelRect,
     width_points: i32,
     height_points: i32,
     scale: f32,
+    pixmap: Option<Pixmap>,
+    scratch: Vec<u8>,
     points: Vec<Point>,
+    rendered_points: usize,
+    needs_full_redraw: bool,
     colors: TrailColors,
     recognized: bool,
     label: Option<String>,
@@ -205,16 +220,126 @@ struct OverlayState {
     font: Option<ab_glyph::FontVec>,
 }
 
+fn union_display_bounds(displays: &[CGRect]) -> Option<CGRect> {
+    let first = *displays.first()?;
+    let mut left = first.origin.x;
+    let mut top = first.origin.y;
+    let mut right = first.origin.x + first.size.width;
+    let mut bottom = first.origin.y + first.size.height;
+    for display in &displays[1..] {
+        left = left.min(display.origin.x);
+        top = top.min(display.origin.y);
+        right = right.max(display.origin.x + display.size.width);
+        bottom = bottom.max(display.origin.y + display.size.height);
+    }
+    Some(CGRect::new(
+        CGPoint::new(left, top),
+        CGSize::new(right - left, bottom - top),
+    ))
+}
+
+fn active_display_bounds() -> Option<(CGRect, f32)> {
+    let mut count = 0u32;
+    let error = unsafe { CGGetActiveDisplayList(0, std::ptr::null_mut(), &mut count) };
+    if error != CGError::Success || count == 0 {
+        return None;
+    }
+    let mut displays = vec![CGDirectDisplayID::default(); count as usize];
+    let error = unsafe { CGGetActiveDisplayList(count, displays.as_mut_ptr(), &mut count) };
+    if error != CGError::Success {
+        return None;
+    }
+    displays.truncate(count as usize);
+    let bounds = displays
+        .iter()
+        .map(|display| CGDisplayBounds(*display))
+        .collect::<Vec<_>>();
+    let union = union_display_bounds(&bounds)?;
+    let scale = displays
+        .iter()
+        .zip(bounds.iter())
+        .map(|(display, bounds)| {
+            CGDisplayPixelsWide(*display) as f32 / bounds.size.width.max(1.0) as f32
+        })
+        .fold(1.0, f32::max);
+    Some((union, scale))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PixelRect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+impl PixelRect {
+    fn clamp(self, width: i32, height: i32) -> Option<Self> {
+        let rect = Self {
+            left: self.left.clamp(0, width),
+            top: self.top.clamp(0, height),
+            right: self.right.clamp(0, width),
+            bottom: self.bottom.clamp(0, height),
+        };
+        (rect.left < rect.right && rect.top < rect.bottom).then_some(rect)
+    }
+
+    fn intersects(self, other: Self) -> bool {
+        self.left < other.right
+            && self.right > other.left
+            && self.top < other.bottom
+            && self.bottom > other.top
+    }
+}
+
+fn max_trail_points(scale: f32) -> usize {
+    let scale = if scale.is_finite() {
+        scale.max(1.0)
+    } else {
+        1.0
+    };
+    (MAX_TRAIL_POINTS_BASE as f32 * scale).round() as usize
+}
+
+fn visual_point_limit(width: i32, height: i32, scale: f32) -> usize {
+    let traversal_points = (width.max(0) as usize + height.max(0) as usize).div_ceil(3) + 1;
+    max_trail_points(scale).max(traversal_points)
+}
+
+fn append_visual_point(points: &mut Vec<Point>, point: Point, limit: usize) -> bool {
+    if points.len() >= limit {
+        return false;
+    }
+    let step_ok = points
+        .last()
+        .map(|last| last.dist_sq(point) >= 9)
+        .unwrap_or(true);
+    if step_ok {
+        points.push(point);
+    }
+    step_ok
+}
+
 impl Default for OverlayState {
     fn default() -> Self {
         Self {
             window: None,
             layer: None,
             screen_origin: Point::default(),
+            label_bounds: PixelRect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             width_points: 0,
             height_points: 0,
             scale: 1.0,
+            pixmap: None,
+            scratch: Vec::new(),
             points: Vec::new(),
+            rendered_points: 0,
+            needs_full_redraw: true,
             colors: TrailColors {
                 main: 0xff27e518,
                 unrecognized: 0xffff2424,
@@ -246,6 +371,8 @@ impl OverlayState {
                 }
                 self.points.clear();
                 self.points.push(origin);
+                self.rendered_points = 0;
+                self.needs_full_redraw = true;
                 self.colors = colors;
                 self.recognized = false;
                 self.label = None;
@@ -260,16 +387,10 @@ impl OverlayState {
                 if !self.active {
                     return ApplyEffect::default();
                 }
-                let changed = self
-                    .points
-                    .last()
-                    .map(|last| last.dist_sq(point) >= 9)
-                    .unwrap_or(true);
-                if changed {
-                    self.points.push(point);
-                }
+                let limit = visual_point_limit(self.width_points, self.height_points, self.scale);
+                let changed = append_visual_point(&mut self.points, point, limit);
                 ApplyEffect {
-                    dirty: changed,
+                    dirty: changed && self.show_path,
                     fade: false,
                     suppress_render: false,
                 }
@@ -282,6 +403,7 @@ impl OverlayState {
                 let changed = self.recognized != recognized || self.label != label;
                 self.recognized = recognized;
                 self.label = label;
+                self.needs_full_redraw |= changed;
                 ApplyEffect {
                     dirty: changed,
                     fade: false,
@@ -320,13 +442,21 @@ impl OverlayState {
     fn ensure_surface(&mut self, origin: Point) -> Result<(), String> {
         let screen = super::window::screen_at(origin)
             .ok_or_else(|| "gesture display is unavailable".to_string())?;
-        let width_points = screen.bounds.width();
-        let height_points = screen.bounds.height();
+        let (desktop_bounds, desktop_scale) = active_display_bounds()
+            .ok_or_else(|| "active display bounds are unavailable".to_string())?;
+        let width_points = desktop_bounds.size.width.round() as i32;
+        let height_points = desktop_bounds.size.height.round() as i32;
         let screen_origin = Point {
-            x: screen.bounds.left,
-            y: screen.bounds.top,
+            x: desktop_bounds.origin.x.round() as i32,
+            y: desktop_bounds.origin.y.round() as i32,
         };
-        let scale = screen.dpi_scale.max(1.0) as f32;
+        let scale = desktop_scale.max(screen.dpi_scale as f32).max(1.0);
+        let next_label_bounds = PixelRect {
+            left: ((screen.bounds.left - screen_origin.x) as f32 * scale).round() as i32,
+            top: ((screen.bounds.top - screen_origin.y) as f32 * scale).round() as i32,
+            right: ((screen.bounds.right - screen_origin.x) as f32 * scale).round() as i32,
+            bottom: ((screen.bounds.bottom - screen_origin.y) as f32 * scale).round() as i32,
+        };
         let changed = self.window.is_none()
             || self.screen_origin != screen_origin
             || self.width_points != width_points
@@ -343,6 +473,15 @@ impl OverlayState {
             self.width_points = width_points;
             self.height_points = height_points;
             self.scale = scale;
+            self.label_bounds = next_label_bounds;
+            let width = (width_points as f32 * scale).round().max(1.0) as u32;
+            let height = (height_points as f32 * scale).round().max(1.0) as u32;
+            self.pixmap = Pixmap::new(width, height);
+            self.rendered_points = 0;
+            self.needs_full_redraw = true;
+        } else if self.label_bounds != next_label_bounds {
+            self.label_bounds = next_label_bounds;
+            self.needs_full_redraw = true;
         }
         if let Some(window) = &self.window {
             window.orderFrontRegardless();
@@ -351,76 +490,76 @@ impl OverlayState {
     }
 
     fn render(&mut self) {
-        let width = (self.width_points as f32 * self.scale).round().max(1.0) as u32;
-        let height = (self.height_points as f32 * self.scale).round().max(1.0) as u32;
-        let Some(mut pixmap) = Pixmap::new(width, height) else {
+        let Some((surface_width, surface_height)) = self
+            .pixmap
+            .as_ref()
+            .map(|pixmap| (pixmap.width() as i32, pixmap.height() as i32))
+        else {
             return;
         };
-
-        if self.show_path && self.points.len() >= 2 {
-            let mut builder = PathBuilder::new();
-            let local = |point: Point| {
-                (
-                    (point.x - self.screen_origin.x) as f32 * self.scale,
-                    (point.y - self.screen_origin.y) as f32 * self.scale,
-                )
+        let first_unrendered = self.rendered_points.min(self.points.len());
+        let incremental_start = first_unrendered.saturating_sub(1);
+        let label_rect = self
+            .label
+            .as_deref()
+            .filter(|_| self.show_label)
+            .and_then(|label| measure_label_rect(self, label));
+        let trail_rect = pixel_rect_for_points(
+            &self.points[incremental_start..],
+            self.screen_origin,
+            self.scale,
+            (2.0 * self.scale).ceil() as i32 + 2,
+        )
+        .and_then(|rect| rect.clamp(surface_width, surface_height));
+        let full_redraw = self.needs_full_redraw
+            || trail_rect
+                .zip(label_rect)
+                .is_some_and(|(trail, label)| trail.intersects(label));
+        let trail_style = TrailRenderStyle {
+            screen_origin: self.screen_origin,
+            scale: self.scale,
+            recognized: self.recognized,
+            colors: self.colors,
+        };
+        let Some(pixmap) = self.pixmap.as_mut() else {
+            return;
+        };
+        if full_redraw {
+            pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
+            if self.show_path {
+                draw_trail(&mut pixmap.as_mut(), &self.points, trail_style, (0.0, 0.0));
+            }
+            if self.show_label {
+                if let (Some(label), Some(font)) = (self.label.as_deref(), self.font.as_ref()) {
+                    draw_label(pixmap, font, self.scale, self.label_bounds, label);
+                }
+            }
+        } else if self.show_path {
+            let Some(dirty) = trail_rect else {
+                return;
             };
-            let (x, y) = local(self.points[0]);
-            builder.move_to(x, y);
-            for point in &self.points[1..] {
-                let (x, y) = local(*point);
-                builder.line_to(x, y);
-            }
-            if let Some(path) = builder.finish() {
-                let stroke = |width| Stroke {
-                    width,
-                    line_cap: LineCap::Round,
-                    line_join: LineJoin::Round,
-                    ..Default::default()
-                };
-                let mut border = Paint::default();
-                border.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
-                border.anti_alias = true;
-                pixmap.stroke_path(
-                    &path,
-                    &border,
-                    &stroke(4.0 * self.scale),
-                    Transform::identity(),
-                    None,
-                );
-                let mut main = Paint::default();
-                main.set_color(skia_color(if self.recognized {
-                    self.colors.main
-                } else {
-                    self.colors.unrecognized
-                }));
-                main.anti_alias = true;
-                pixmap.stroke_path(
-                    &path,
-                    &main,
-                    &stroke(2.0 * self.scale),
-                    Transform::identity(),
-                    None,
-                );
+            if !redraw_trail_region(pixmap, &mut self.scratch, dirty, &self.points, trail_style) {
+                self.needs_full_redraw = true;
+                return;
             }
         }
-
-        if self.show_label {
-            if let Some(label) = self.label.clone() {
-                draw_label(self, &mut pixmap, &label);
-            }
-        }
-        if let Err(error) = self.present(pixmap) {
+        self.rendered_points = self.points.len();
+        self.needs_full_redraw = false;
+        if let Err(error) = self.present() {
             log::error!("present macOS overlay frame failed: {error}");
             self.hide();
         }
     }
 
-    fn present(&self, pixmap: Pixmap) -> Result<(), String> {
+    fn present(&self) -> Result<(), String> {
         let layer = self
             .layer
             .as_ref()
             .ok_or_else(|| "overlay layer is unavailable".to_string())?;
+        let pixmap = self
+            .pixmap
+            .as_ref()
+            .ok_or_else(|| "overlay pixmap is unavailable".to_string())?;
         let data = CFData::from_bytes(pixmap.data());
         let provider = CGDataProvider::with_cf_data(Some(&data))
             .ok_or_else(|| "create overlay data provider".to_string())?;
@@ -466,6 +605,8 @@ impl OverlayState {
             window.orderOut(None);
         }
         self.points.clear();
+        self.rendered_points = 0;
+        self.needs_full_redraw = true;
         self.label = None;
     }
 }
@@ -549,6 +690,129 @@ fn skia_color(argb: u32) -> tiny_skia::Color {
     )
 }
 
+fn pixel_rect_for_points(
+    points: &[Point],
+    screen_origin: Point,
+    scale: f32,
+    padding: i32,
+) -> Option<PixelRect> {
+    let local = |point: Point| {
+        (
+            ((point.x - screen_origin.x) as f32 * scale).round() as i32,
+            ((point.y - screen_origin.y) as f32 * scale).round() as i32,
+        )
+    };
+    let (mut left, mut top) = local(*points.first()?);
+    let mut right = left;
+    let mut bottom = top;
+    for point in &points[1..] {
+        let (x, y) = local(*point);
+        left = left.min(x);
+        right = right.max(x);
+        top = top.min(y);
+        bottom = bottom.max(y);
+    }
+    Some(PixelRect {
+        left: left - padding,
+        top: top - padding,
+        right: right + padding + 1,
+        bottom: bottom + padding + 1,
+    })
+}
+
+fn draw_trail(
+    pixmap: &mut PixmapMut<'_>,
+    points: &[Point],
+    style: TrailRenderStyle,
+    raster_offset: (f32, f32),
+) {
+    if points.len() < 2 {
+        return;
+    }
+    let local = |point: Point| {
+        (
+            (point.x - style.screen_origin.x) as f32 * style.scale - raster_offset.0,
+            (point.y - style.screen_origin.y) as f32 * style.scale - raster_offset.1,
+        )
+    };
+    let mut builder = PathBuilder::new();
+    let (x, y) = local(points[0]);
+    builder.move_to(x, y);
+    for point in &points[1..] {
+        let (x, y) = local(*point);
+        builder.line_to(x, y);
+    }
+    let Some(path) = builder.finish() else {
+        return;
+    };
+    let stroke = |width| Stroke {
+        width,
+        line_cap: LineCap::Round,
+        line_join: LineJoin::Round,
+        ..Default::default()
+    };
+    let mut border = Paint::default();
+    border.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    border.anti_alias = true;
+    pixmap.stroke_path(
+        &path,
+        &border,
+        &stroke(4.0 * style.scale),
+        Transform::identity(),
+        None,
+    );
+    let mut main = Paint::default();
+    main.set_color(skia_color(if style.recognized {
+        style.colors.main
+    } else {
+        style.colors.unrecognized
+    }));
+    main.anti_alias = true;
+    pixmap.stroke_path(
+        &path,
+        &main,
+        &stroke(2.0 * style.scale),
+        Transform::identity(),
+        None,
+    );
+}
+
+fn redraw_trail_region(
+    pixmap: &mut Pixmap,
+    scratch: &mut Vec<u8>,
+    dirty: PixelRect,
+    points: &[Point],
+    style: TrailRenderStyle,
+) -> bool {
+    let dirty_width = (dirty.right - dirty.left) as u32;
+    let dirty_height = (dirty.bottom - dirty.top) as u32;
+    let byte_len = dirty_width as usize * dirty_height as usize * 4;
+    scratch.resize(byte_len, 0);
+    scratch.fill(0);
+    let Some(mut dirty_pixmap) = PixmapMut::from_bytes(scratch, dirty_width, dirty_height) else {
+        return false;
+    };
+    draw_trail(
+        &mut dirty_pixmap,
+        points,
+        style,
+        (dirty.left as f32, dirty.top as f32),
+    );
+
+    let destination_width = pixmap.width() as usize;
+    let source_width = dirty_width as usize;
+    let destination = pixmap.data_mut();
+    let source = dirty_pixmap.data_mut();
+    for row in 0..dirty_height as usize {
+        let destination_start =
+            ((dirty.top as usize + row) * destination_width + dirty.left as usize) * 4;
+        let source_start = row * source_width * 4;
+        destination[destination_start..destination_start + source_width * 4]
+            .copy_from_slice(&source[source_start..source_start + source_width * 4]);
+    }
+    true
+}
+
 fn load_label_font() -> Option<ab_glyph::FontVec> {
     for path in [
         "/System/Library/Fonts/SFNS.ttf",
@@ -565,12 +829,41 @@ fn load_label_font() -> Option<ab_glyph::FontVec> {
     None
 }
 
-fn draw_label(state: &OverlayState, pixmap: &mut Pixmap, text: &str) {
+fn measure_label_rect(state: &OverlayState, text: &str) -> Option<PixelRect> {
     use ab_glyph::{Font, ScaleFont};
-    let Some(font) = &state.font else {
-        return;
-    };
+    let font = state.font.as_ref()?;
     let px = 32.0 * state.scale;
+    let scaled = font.as_scaled(ab_glyph::PxScale::from(px));
+    let text_width = text
+        .chars()
+        .map(|character| scaled.h_advance(scaled.glyph_id(character)))
+        .sum::<f32>();
+    let text_height = scaled.ascent() - scaled.descent();
+    let padding_x = 24.0 * state.scale;
+    let padding_y = 10.0 * state.scale;
+    let width = (state.label_bounds.right - state.label_bounds.left) as f32;
+    let height = (state.label_bounds.bottom - state.label_bounds.top) as f32;
+    let box_width = text_width + padding_x * 2.0;
+    let box_height = text_height + padding_y * 2.0;
+    let box_x = state.label_bounds.left as f32 + (width - box_width) / 2.0;
+    let box_y = state.label_bounds.top as f32 + height / 2.0 + width / 8.0 - box_height / 2.0;
+    Some(PixelRect {
+        left: box_x.floor() as i32 - 1,
+        top: box_y.floor() as i32 - 1,
+        right: (box_x + box_width).ceil() as i32 + 1,
+        bottom: (box_y + box_height).ceil() as i32 + 1,
+    })
+}
+
+fn draw_label(
+    pixmap: &mut Pixmap,
+    font: &ab_glyph::FontVec,
+    scale: f32,
+    label_bounds: PixelRect,
+    text: &str,
+) {
+    use ab_glyph::{Font, ScaleFont};
+    let px = 32.0 * scale;
     let scaled = font.as_scaled(ab_glyph::PxScale::from(px));
     let mut glyphs = Vec::new();
     let mut cursor = 0.0_f32;
@@ -581,12 +874,15 @@ fn draw_label(state: &OverlayState, pixmap: &mut Pixmap, text: &str) {
     }
     let ascent = scaled.ascent();
     let text_height = ascent - scaled.descent();
-    let padding_x = 24.0 * state.scale;
-    let padding_y = 10.0 * state.scale;
+    let padding_x = 24.0 * scale;
+    let padding_y = 10.0 * scale;
     let box_width = cursor + padding_x * 2.0;
     let box_height = text_height + padding_y * 2.0;
-    let box_x = (pixmap.width() as f32 - box_width) / 2.0;
-    let box_y = pixmap.height() as f32 / 2.0 + pixmap.width() as f32 / 8.0 - box_height / 2.0;
+    let display_width = (label_bounds.right - label_bounds.left) as f32;
+    let display_height = (label_bounds.bottom - label_bounds.top) as f32;
+    let box_x = label_bounds.left as f32 + (display_width - box_width) / 2.0;
+    let box_y =
+        label_bounds.top as f32 + display_height / 2.0 + display_width / 8.0 - box_height / 2.0;
     if let Some(rect) = tiny_skia::Rect::from_xywh(box_x, box_y, box_width, box_height) {
         let mut background = Paint::default();
         background.set_color(tiny_skia::Color::from_rgba8(0, 0, 0, 140));
@@ -624,6 +920,21 @@ fn draw_label(state: &OverlayState, pixmap: &mut Pixmap, text: &str) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn active_display_union_keeps_negative_and_offset_screen_origins() {
+        let union = union_display_bounds(&[
+            CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(2560.0, 1080.0)),
+            CGRect::new(CGPoint::new(0.0, 1080.0), CGSize::new(2560.0, 1440.0)),
+            CGRect::new(CGPoint::new(-1920.0, 240.0), CGSize::new(1920.0, 1080.0)),
+        ])
+        .unwrap();
+
+        assert_eq!(union.origin.x, -1920.0);
+        assert_eq!(union.origin.y, 0.0);
+        assert_eq!(union.size.width, 4480.0);
+        assert_eq!(union.size.height, 2520.0);
+    }
+
     fn queued(value: i32) -> QueuedCommand {
         QueuedCommand {
             command: OverlayCmd::Grow(Point { x: value, y: value }),
@@ -649,5 +960,104 @@ mod tests {
         let (rest, has_more) = take_pending_batch(&pending, 2);
         assert_eq!(rest.len(), 1);
         assert!(!has_more);
+    }
+
+    #[test]
+    fn mouse_rate_backlog_is_consumed_in_one_latest_frame() {
+        let pending = Mutex::new((0..1000).map(queued).collect::<VecDeque<_>>());
+        let (batch, has_more) = take_pending_batch(&pending, MAX_COMMANDS_PER_DRAIN);
+
+        assert_eq!(batch.len(), 1000);
+        assert!(!has_more);
+        assert!(matches!(
+            batch.last().map(|queued| &queued.command),
+            Some(OverlayCmd::Grow(Point { x: 999, y: 999 }))
+        ));
+    }
+
+    #[test]
+    fn incremental_trail_bounds_include_stroke_padding() {
+        let bounds = pixel_rect_for_points(
+            &[Point { x: 10, y: 20 }, Point { x: 30, y: 40 }],
+            Point { x: 5, y: 10 },
+            2.0,
+            6,
+        )
+        .unwrap();
+
+        assert_eq!(bounds.left, 4);
+        assert_eq!(bounds.top, 14);
+        assert_eq!(bounds.right, 57);
+        assert_eq!(bounds.bottom, 67);
+    }
+
+    #[test]
+    fn visual_point_limit_scales_with_dpi_and_stops_only_visual_growth() {
+        assert_eq!(max_trail_points(1.0), 512);
+        assert_eq!(max_trail_points(1.25), 640);
+        assert_eq!(max_trail_points(2.0), 1024);
+        assert_eq!(visual_point_limit(4480, 1440, 1.0), 1975);
+
+        let mut state = OverlayState {
+            active: true,
+            show_path: false,
+            show_label: false,
+            points: vec![Point { x: 0, y: 0 }],
+            ..OverlayState::default()
+        };
+        for value in 1..700 {
+            state.apply(OverlayCmd::Grow(Point { x: value * 3, y: 0 }));
+        }
+        assert_eq!(state.points.len(), 512);
+
+        state.apply(OverlayCmd::Recognized(Some("match".into())));
+        let end = state.apply(OverlayCmd::End);
+        assert!(state.recognized);
+        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(!state.active);
+        assert!(end.fade);
+    }
+
+    #[test]
+    fn point_by_point_dirty_redraw_matches_one_full_continuous_path() {
+        let points = [
+            Point { x: 16, y: 48 },
+            Point { x: 96, y: 48 },
+            Point { x: 96, y: 96 },
+            Point { x: 48, y: 96 },
+            Point { x: 48, y: 16 },
+            Point { x: 80, y: 16 },
+        ];
+        let colors = TrailColors {
+            main: 0xff27e518,
+            unrecognized: 0xffff2424,
+        };
+        let style = TrailRenderStyle {
+            screen_origin: Point { x: 0, y: 0 },
+            scale: 1.0,
+            recognized: true,
+            colors,
+        };
+        let mut expected = Pixmap::new(128, 128).unwrap();
+        draw_trail(&mut expected.as_mut(), &points, style, (0.0, 0.0));
+
+        let mut actual = Pixmap::new(128, 128).unwrap();
+        let mut scratch = Vec::new();
+        draw_trail(&mut actual.as_mut(), &points[..2], style, (0.0, 0.0));
+        for end in 3..=points.len() {
+            let dirty = pixel_rect_for_points(&points[end - 2..end], Point { x: 0, y: 0 }, 1.0, 4)
+                .and_then(|rect| rect.clamp(128, 128))
+                .unwrap();
+            assert!(redraw_trail_region(
+                &mut actual,
+                &mut scratch,
+                dirty,
+                &points[..end],
+                style,
+            ));
+        }
+
+        assert_eq!(actual.data(), expected.data());
+        assert!(!scratch.is_empty());
     }
 }
