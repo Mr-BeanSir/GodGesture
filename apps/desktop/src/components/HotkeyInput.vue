@@ -10,10 +10,17 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import {
   HOTKEY_MODIFIERS,
-  HotkeyKeyName,
-  hotkeyKeyNameFromKeyboardCode,
+  type HotkeyKeyName,
   type HotkeyModifier,
 } from "@godgesture/shared";
+import {
+  createHotkeyRecording,
+  hotkeyRecordingDraft,
+  recordHotkeyKeydown,
+  recordHotkeyKeyup,
+  type HotkeyChord,
+  type HotkeyRecording,
+} from "./hotkey-recorder";
 
 const props = withDefaults(
   defineProps<{
@@ -31,61 +38,53 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const recording = ref(false);
 const boxRef = ref<HTMLElement | null>(null);
+const draft = ref<HotkeyChord | null>(null);
+let recordingState: HotkeyRecording | null = null;
 
 const MOD_LABELS: Record<string, string> = {
   ctrl: "Ctrl",
   shift: "Shift",
   alt: "Alt",
-  meta: "Win/Cmd",
+  meta: typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "Cmd" : "Win",
 };
 
-const MODIFIER_CODES = new Set([
-  "ControlLeft",
-  "ControlRight",
-  "ShiftLeft",
-  "ShiftRight",
-  "AltLeft",
-  "AltRight",
-  "MetaLeft",
-  "MetaRight",
-]);
-
-function eventModifiers(e: KeyboardEvent): HotkeyModifier[] {
-  const mods: HotkeyModifier[] = [];
-  if (e.ctrlKey) mods.push("ctrl");
-  if (e.shiftKey) mods.push("shift");
-  if (e.altKey) mods.push("alt");
-  if (e.metaKey) mods.push("meta");
-  return mods;
-}
-
 function onKeydown(e: KeyboardEvent) {
-  if (!recording.value) return;
+  if (!recording.value || !recordingState) return;
   e.preventDefault();
   e.stopPropagation();
-  if (MODIFIER_CODES.has(e.code)) return; // 仅按下修饰键时等待主键
-  const key = hotkeyKeyNameFromKeyboardCode(e.code);
-  if (!key) {
+  if (e.code === "Escape") {
+    stopRecording();
+    return;
+  }
+  if (recordHotkeyKeydown(recordingState, e) === "unsupported") {
     ElMessage.warning(t("hotkey.unsupportedKey"));
     return;
   }
-  const mods = eventModifiers(e);
-  if (props.multiKeys) {
-    // 序列模式:首个键确定修饰,后续键仅追加主键
-    if (props.keys.length === 0) emit("update:modifiers", mods);
-    emit("update:keys", [...props.keys.map((name) => HotkeyKeyName.parse(name)), key]);
-  } else {
-    emit("update:modifiers", mods);
-    emit("update:keys", [key]);
+  draft.value = hotkeyRecordingDraft(recordingState);
+}
+
+function onKeyup(e: KeyboardEvent) {
+  if (!recording.value || !recordingState) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const completed = recordHotkeyKeyup(recordingState, e);
+  if (completed) {
+    emit("update:modifiers", completed.modifiers);
+    emit("update:keys", props.multiKeys ? completed.keys : completed.keys.slice(0, 1));
     stopRecording();
   }
 }
 
 function startRecording() {
+  if (recording.value) return;
+  recordingState = createHotkeyRecording();
+  draft.value = { modifiers: [], keys: [] };
   recording.value = true;
 }
 function stopRecording() {
   recording.value = false;
+  recordingState = null;
+  draft.value = null;
   boxRef.value?.blur();
 }
 
@@ -95,10 +94,13 @@ function clearAll() {
 }
 
 const display = computed(() => {
-  const mods = HOTKEY_MODIFIERS.filter((m) => props.modifiers.includes(m)).map(
+  const value = recording.value && draft.value
+    ? draft.value
+    : { modifiers: props.modifiers, keys: props.keys };
+  const mods = HOTKEY_MODIFIERS.filter((m) => value.modifiers.includes(m)).map(
     (m) => MOD_LABELS[m],
   );
-  const keys = props.keys.map((k) => (k.length === 1 ? k.toUpperCase() : k));
+  const keys = value.keys.map((k) => (k.length === 1 ? k.toUpperCase() : k));
   return [...mods, ...keys].join(" + ");
 });
 </script>
@@ -114,9 +116,10 @@ const display = computed(() => {
       @focus="startRecording"
       @blur="stopRecording"
       @keydown="onKeydown"
+      @keyup="onKeyup"
     >
-      <span v-if="recording" class="hotkey-input__hint">{{ t("hotkey.recording") }}</span>
-      <span v-else-if="display" class="hotkey-input__value">{{ display }}</span>
+      <span v-if="display" class="hotkey-input__value">{{ display }}</span>
+      <span v-else-if="recording" class="hotkey-input__hint">{{ t("hotkey.recording") }}</span>
       <span v-else class="hotkey-input__hint">{{ t("hotkey.placeholder") }}</span>
     </div>
     <el-button link size="small" @click="clearAll">{{ t("hotkey.clear") }}</el-button>
