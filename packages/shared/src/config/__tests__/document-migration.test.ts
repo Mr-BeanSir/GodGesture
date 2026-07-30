@@ -15,6 +15,7 @@ describe("configuration v2 migration", () => {
     expect(document.formatVersion).toBe(2);
     expect(document.hotCorners).toEqual({ enabled: false, commands: {} });
     expect(document.rubEdges).toEqual({ enabled: true, commands: {} });
+    expect(document.boundaryIntents.every((intent) => intent.enabled)).toBe(true);
     expect(document.boundaryIntents).toEqual([
       expect.objectContaining({
         id: "10000000-0000-4000-8000-000000000001",

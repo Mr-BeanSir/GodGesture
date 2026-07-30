@@ -372,6 +372,7 @@ class Wg2Importer {
       intents.push({
         id: deterministicUuid(`intent:${idScope}:${i}:${name}`),
         name,
+        enabled: true,
         gesture: this.mapGesture(raw["Gesture"], buttonShift, intentLocation),
         command: this.mapCommand(raw["Command"], intentLocation),
         executeOnModifier: asBool(raw["ExecuteOnModifier"], false),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, MagicStick, Position } from "@element-plus/icons-vue";
+import { Delete, MagicStick, Position, Rank } from "@element-plus/icons-vue";
 import {
   MAX_BOUNDARY_SEQUENCE_TOKENS,
   type BoundaryIntent,
@@ -12,7 +12,7 @@ import {
   type ScreenEdge,
   type StrokeDirection,
 } from "@godgesture/shared";
-import { cloneBoundarySequence } from "../utils/boundary-actions";
+import { cloneBoundarySequence, reorderBoundarySequence } from "../utils/boundary-actions";
 
 type ActionChoice = "gesture" | "boundary";
 type TokenKind = BoundaryToken["type"];
@@ -42,6 +42,8 @@ const tokenKind = ref<TokenKind>("wheel");
 const wheel = ref<"forward" | "backward">("forward");
 const button = ref<BoundaryMouseButton>("right");
 const stroke = ref<StrokeDirection>("right");
+const draggingIndex = ref<number | null>(null);
+const dragOverIndex = ref<number | null>(null);
 
 const corners: ScreenCorner[] = ["leftTop", "rightTop", "leftBottom", "rightBottom"];
 const edges: ScreenEdge[] = ["top", "right", "bottom", "left"];
@@ -89,6 +91,31 @@ function addToken() {
   } else {
     sequence.value.push({ type: "stroke", direction: stroke.value });
   }
+}
+
+function onDragStart(event: DragEvent, index: number) {
+  draggingIndex.value = index;
+  dragOverIndex.value = index;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  }
+}
+function onDragOver(event: DragEvent, index: number) {
+  event.preventDefault();
+  dragOverIndex.value = index;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+function onDrop(event: DragEvent, index: number) {
+  event.preventDefault();
+  if (draggingIndex.value !== null) {
+    sequence.value = reorderBoundarySequence(sequence.value, draggingIndex.value, index);
+  }
+  onDragEnd();
+}
+function onDragEnd() {
+  draggingIndex.value = null;
+  dragOverIndex.value = null;
 }
 
 function confirm() {
@@ -162,8 +189,21 @@ function tokenLabel(token: BoundaryToken): string {
           <span class="gg-hint">{{ sequence.length }} / {{ MAX_BOUNDARY_SEQUENCE_TOKENS }}</span>
         </div>
         <div v-if="sequence.length" class="boundary-builder__tokens">
-          <div v-for="(token, index) in sequence" :key="index" class="boundary-builder__token">
-            <span>{{ index + 1 }}. {{ tokenLabel(token) }}</span>
+          <div
+            v-for="(token, index) in sequence"
+            :key="index"
+            class="boundary-builder__token"
+            :class="{ 'is-dragging': draggingIndex === index, 'is-drag-over': dragOverIndex === index && draggingIndex !== index }"
+            draggable="true"
+            @dragstart="onDragStart($event, index)"
+            @dragover="onDragOver($event, index)"
+            @drop="onDrop($event, index)"
+            @dragend="onDragEnd"
+          >
+            <span class="boundary-builder__token-main">
+              <el-icon class="boundary-builder__drag-handle" :aria-label="t('actions.dragSequence')"><Rank /></el-icon>
+              <span>{{ index + 1 }}. {{ tokenLabel(token) }}</span>
+            </span>
             <el-button link type="danger" :icon="Delete" :aria-label="t('common.delete')" @click="sequence.splice(index, 1)" />
           </div>
         </div>
@@ -218,6 +258,11 @@ function tokenLabel(token: BoundaryToken): string {
 .boundary-builder__sequence-head p { margin-top: 4px; }
 .boundary-builder__tokens { display: flex; flex-direction: column; gap: 5px; max-height: 156px; overflow-y: auto; }
 .boundary-builder__token { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 0 6px 0 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; font-size: 12px; }
+.boundary-builder__token.is-dragging { opacity: .45; }
+.boundary-builder__token.is-drag-over { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.boundary-builder__token-main { display: inline-flex; align-items: center; min-width: 0; gap: 7px; }
+.boundary-builder__drag-handle { color: var(--el-text-color-placeholder); cursor: grab; }
+.boundary-builder__drag-handle:active { cursor: grabbing; }
 .boundary-builder__immediate { padding: 12px; border: 1px dashed var(--el-border-color); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
 .boundary-builder__add { display: grid; grid-template-columns: 94px minmax(110px, 1fr) auto; gap: 6px; margin-top: 10px; }
 @media (max-width: 680px) { .action-choice, .boundary-builder { grid-template-columns: 1fr; } .boundary-builder__screen { max-width: 260px; } }

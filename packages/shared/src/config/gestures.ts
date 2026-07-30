@@ -184,6 +184,8 @@ export type Command = z.infer<typeof Command>;
 export const GestureIntent = z.object({
   id: z.string().uuid(),
   name: z.string().max(64),
+  /** 单条动作开关;旧配置缺失时保持启用 */
+  enabled: z.boolean().default(true),
   gesture: GestureSpec,
   command: Command,
   /** 带修饰的手势:修饰触发时立即执行 */
@@ -283,6 +285,8 @@ export type BoundaryToken = z.infer<typeof BoundaryToken>;
 export const BoundaryIntent = z.object({
   id: z.string().uuid(),
   name: z.string().max(64),
+  /** 单条动作开关;旧配置缺失时保持启用 */
+  enabled: z.boolean().default(true),
   origin: BoundaryOrigin,
   sequence: z.array(BoundaryToken).max(MAX_BOUNDARY_SEQUENCE_TOKENS).default([]),
   command: Command,

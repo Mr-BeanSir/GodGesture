@@ -328,6 +328,13 @@ impl EngineShared {
     }
 
     fn handle_boundary_input(&self, input: &Input, now: Instant) -> bool {
+        let timeout_result = self.boundary.lock().tick(now);
+        self.apply_boundary_result(timeout_result);
+        if !self.boundary.lock().is_active() {
+            if let Input::Wheel { pos, .. } = input {
+                self.arm_edge_sequence_at(*pos, now);
+            }
+        }
         if !self.boundary.lock().is_active() {
             return false;
         }
@@ -410,6 +417,61 @@ impl EngineShared {
         }
     }
 
+    /// 滚轮本身不会产生 Move 事件。光标长时间停在边缘导致先前等待超时后,
+    /// 在滚轮到达时按当前位置重新武装,保证边缘序列不依赖用户滚动前再抖一下鼠标。
+    fn arm_edge_sequence_at(&self, pos: Point, now: Instant) {
+        if self.is_paused() || self.is_recording() || self.tracker.lock().is_capturing() {
+            return;
+        }
+        let disable_in_fullscreen = self
+            .finder
+            .lock()
+            .config()
+            .preferences
+            .path_tracker
+            .disable_in_fullscreen;
+        if disable_in_fullscreen && self.platform.is_fullscreen() {
+            return;
+        }
+        let Some(edge) = self
+            .corner_edge
+            .lock()
+            .edge_at(pos, now, || self.platform.screen_at(pos))
+        else {
+            return;
+        };
+        let result = {
+            let finder = self.finder.lock();
+            let config = finder.config();
+            if !config.rub_edges.enabled
+                || !config.boundary_intents.iter().any(|intent| {
+                    intent.enabled
+                        && !intent.sequence.is_empty()
+                        && intent.origin.matches("rubEdge", edge.key())
+                })
+            {
+                return;
+            }
+            self.boundary.lock().activate(
+                config,
+                CornerEdgeHit::Edge(edge),
+                pos,
+                now,
+            )
+        };
+        if matches!(result, BoundaryResult::Pending) {
+            let (effective, enable_8) = {
+                let finder = self.finder.lock();
+                (
+                    *self.effective_move_px.lock(),
+                    finder.config().preferences.path_tracker.enable_8_directions,
+                )
+            };
+            *self.boundary_parser.lock() = Some(StrokeParser::new(pos, effective, enable_8));
+        }
+        self.apply_boundary_result(result);
+    }
+
     fn apply_boundary_result(&self, result: BoundaryResult) {
         match result {
             BoundaryResult::Idle | BoundaryResult::Pending => {}
@@ -478,9 +540,28 @@ impl EngineShared {
             .corner_edge
             .lock()
             .on_move(pos, now, || self.platform.screen_at(pos));
-        let Some(hit) = hit else {
-            return;
-        };
+        let hit = hit.or_else(|| {
+            if self.boundary.lock().is_active() {
+                return None;
+            }
+            let edge = self
+                .corner_edge
+                .lock()
+                .edge_at(pos, now, || self.platform.screen_at(pos))?;
+            let has_sequence = self
+                .finder
+                .lock()
+                .config()
+                .boundary_intents
+                .iter()
+                .any(|intent| {
+                    intent.enabled
+                        && !intent.sequence.is_empty()
+                        && intent.origin.matches("rubEdge", edge.key())
+                });
+            has_sequence.then_some(CornerEdgeHit::Edge(edge))
+        });
+        let Some(hit) = hit else { return };
 
         // 鼠标键按下时**照样喂状态机**,只是不执行命令 —— 参考实现的按键判定在分发处
         // (OnHotCorner / OnRubEdge),不在检测处,于是命中会"烧掉"这一次武装。
@@ -773,6 +854,7 @@ fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::corners::ScreenEdge;
     use crate::engine::config::{BoundaryIntent, BoundaryOrigin};
     use crate::engine::corners::{ScreenCorner, ScreenRect};
 
@@ -859,6 +941,7 @@ mod tests {
         config.boundary_intents.push(BoundaryIntent {
             id: "20000000-0000-4000-8000-000000000001".into(),
             name: "Boundary test".into(),
+            enabled: true,
             origin: BoundaryOrigin::HotCorner {
                 corner: "leftTop".into(),
             },
@@ -867,6 +950,55 @@ mod tests {
             order: 0,
         });
         config
+    }
+
+    #[test]
+    fn rub_edge_sequence_arms_on_entering_the_edge_band() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = boundary_config(vec![BoundaryToken::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        }]);
+        config.boundary_intents[0].origin = BoundaryOrigin::RubEdge {
+            edge: "bottom".into(),
+        };
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 960, y: 1079 })));
+        assert!(shared.on_hook_event(Input::Wheel {
+            forward: true,
+            pos: Point { x: 960, y: 1079 },
+        }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            EngineMsg::CornerEdgeFired {
+                hit: CornerEdgeHit::Edge(ScreenEdge::Bottom),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rub_edge_wheel_rearms_from_the_current_pointer_position() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = boundary_config(vec![BoundaryToken::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        }]);
+        config.boundary_intents[0].origin = BoundaryOrigin::RubEdge {
+            edge: "bottom".into(),
+        };
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(shared.on_hook_event(Input::Wheel {
+            forward: true,
+            pos: Point { x: 960, y: 1079 },
+        }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            EngineMsg::CornerEdgeFired {
+                hit: CornerEdgeHit::Edge(ScreenEdge::Bottom),
+                ..
+            }
+        ));
     }
 
     #[test]

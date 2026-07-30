@@ -4,6 +4,20 @@ export function cloneBoundarySequence(sequence: readonly BoundaryToken[]): Bound
   return sequence.map((token) => ({ ...token }));
 }
 
+export function reorderBoundarySequence(
+  sequence: readonly BoundaryToken[],
+  from: number,
+  to: number,
+): BoundaryToken[] {
+  if (from === to || from < 0 || to < 0 || from >= sequence.length || to >= sequence.length) {
+    return cloneBoundarySequence(sequence);
+  }
+  const reordered = cloneBoundarySequence(sequence);
+  const [moved] = reordered.splice(from, 1);
+  reordered.splice(to, 0, moved!);
+  return reordered;
+}
+
 function sameOrigin(a: BoundaryOrigin, b: BoundaryOrigin): boolean {
   if (a.kind !== b.kind) return false;
   return a.kind === "hotCorner"

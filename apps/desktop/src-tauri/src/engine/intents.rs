@@ -102,7 +102,10 @@ impl IntentFinder {
         fg: &ForegroundApp,
     ) -> Option<&GestureIntent> {
         let matches = |i: &&GestureIntent| {
-            i.gesture.trigger == trigger && i.gesture.strokes == strokes && i.gesture.modifier == modifier
+            i.enabled
+                && i.gesture.trigger == trigger
+                && i.gesture.strokes == strokes
+                && i.gesture.modifier == modifier
         };
         if let Some(app) = self.match_app(fg) {
             if let Some(intent) = app.intents.iter().find(matches) {
@@ -117,7 +120,9 @@ impl IntentFinder {
 
     /// 该 (触发键, 前缀笔画) 下是否存在任何以此为前缀的意图 —— 供增量识别提示
     pub fn any_with_prefix(&self, trigger: TriggerButton, prefix: &[Direction], fg: &ForegroundApp) -> bool {
-        let starts = |i: &GestureIntent| i.gesture.trigger == trigger && i.gesture.strokes.starts_with(prefix);
+        let starts = |i: &GestureIntent| {
+            i.enabled && i.gesture.trigger == trigger && i.gesture.strokes.starts_with(prefix)
+        };
         let in_global = || self.config.global.intents.iter().any(starts);
         match self.match_app(fg) {
             Some(app) => app.intents.iter().any(starts) || (app.inherit_global_gestures && in_global()),
@@ -134,7 +139,7 @@ pub fn hot_corner_command<'c>(config: &'c ConfigDocument, corner: &str) -> Optio
     config
         .boundary_intents
         .iter()
-        .find(|intent| intent.sequence.is_empty() && intent.origin.matches("hotCorner", corner))
+        .find(|intent| intent.enabled && intent.sequence.is_empty() && intent.origin.matches("hotCorner", corner))
         .map(|intent| &intent.command)
         .or_else(|| config.hot_corners.commands.get(corner))
 }
@@ -146,7 +151,7 @@ pub fn rub_edge_command<'c>(config: &'c ConfigDocument, edge: &str) -> Option<&'
     config
         .boundary_intents
         .iter()
-        .find(|intent| intent.sequence.is_empty() && intent.origin.matches("rubEdge", edge))
+        .find(|intent| intent.enabled && intent.sequence.is_empty() && intent.origin.matches("rubEdge", edge))
         .map(|intent| &intent.command)
         .or_else(|| config.rub_edges.commands.get(edge))
 }
@@ -160,6 +165,7 @@ mod tests {
         GestureIntent {
             id: name.to_string(),
             name: name.to_string(),
+            enabled: true,
             gesture: GestureSpecConfig { trigger, strokes, modifier: Modifier::None },
             command: Command::DoNothing,
             execute_on_modifier: false,
@@ -284,5 +290,20 @@ mod tests {
         assert!(f.any_with_prefix(TriggerButton::Right, &[Direction::Up], &fg));
         assert!(f.any_with_prefix(TriggerButton::Right, &[Direction::Down], &fg));
         assert!(!f.any_with_prefix(TriggerButton::Right, &[Direction::Left], &fg));
+    }
+
+    #[test]
+    fn disabled_intents_do_not_match_or_keep_prefixes_alive() {
+        let mut doc = ConfigDocument::default();
+        let mut disabled = intent("disabled", TriggerButton::Right, vec![Direction::Down]);
+        disabled.enabled = false;
+        doc.global.intents.push(disabled);
+        let finder = IntentFinder::new(doc);
+        let fg = ForegroundApp::default();
+
+        assert!(finder
+            .find(TriggerButton::Right, &[Direction::Down], Modifier::None, &fg)
+            .is_none());
+        assert!(!finder.any_with_prefix(TriggerButton::Right, &[Direction::Down], &fg));
     }
 }

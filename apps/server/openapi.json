@@ -72,6 +72,10 @@
                       "type": "string",
                       "maxLength": 64
                     },
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true
+                    },
                     "gesture": {
                       "type": "object",
                       "properties": {
@@ -640,6 +644,10 @@
                       "name": {
                         "type": "string",
                         "maxLength": 64
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
                       },
                       "gesture": {
                         "type": "object",
@@ -4600,6 +4608,10 @@
                 "name": {
                   "type": "string",
                   "maxLength": 64
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
                 },
                 "origin": {
                   "oneOf": [

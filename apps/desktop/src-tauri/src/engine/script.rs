@@ -652,6 +652,7 @@ mod tests {
             config.boundary_intents.push(BoundaryIntent {
                 id: id.into(),
                 name: id.into(),
+                enabled: true,
                 origin: BoundaryOrigin::HotCorner {
                     corner: "leftTop".into(),
                 },

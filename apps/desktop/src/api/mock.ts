@@ -29,6 +29,7 @@ function intent(
   return {
     id: newId(),
     name,
+    enabled: true,
     gesture: { trigger, strokes, modifier: "none" },
     command,
     executeOnModifier: false,

@@ -70,6 +70,7 @@ export function migrateConfigDocument(value: unknown): unknown {
       migrated.push({
         id: LEGACY_BOUNDARY_IDS[key],
         name: LEGACY_BOUNDARY_NAMES[key],
+        enabled: true,
         origin: { kind: "hotCorner", corner },
         sequence: [],
         command: command as BoundaryIntent["command"],
@@ -85,6 +86,7 @@ export function migrateConfigDocument(value: unknown): unknown {
       migrated.push({
         id: LEGACY_BOUNDARY_IDS[key],
         name: LEGACY_BOUNDARY_NAMES[key],
+        enabled: true,
         origin: { kind: "rubEdge", edge },
         sequence: [],
         command: command as BoundaryIntent["command"],

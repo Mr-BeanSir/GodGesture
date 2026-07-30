@@ -6,7 +6,14 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Edit, Delete, VideoCamera } from "@element-plus/icons-vue";
+import {
+  CircleCheckFilled,
+  CircleCloseFilled,
+  Delete,
+  Edit,
+  Plus,
+  VideoCamera,
+} from "@element-plus/icons-vue";
 import type {
   AppEntry,
   BoundaryIntent,
@@ -127,7 +134,12 @@ function selectIntent(id: string) {
 }
 
 function rowClass({ row }: { row: ActionRow }) {
-  return row.key === selectedIntentId.value ? "is-selected" : "";
+  return [
+    row.key === selectedIntentId.value ? "is-selected" : "",
+    row.intent.enabled ? "" : "is-disabled",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // ---- 应用增删改 ----
@@ -188,9 +200,8 @@ function openReRecord() {
     addActionVisible.value = true;
   }
 }
-function reRecordRow(row: ActionRow) {
-  selectIntent(row.key);
-  openReRecord();
+function toggleAction(row: ActionRow) {
+  row.intent.enabled = !row.intent.enabled;
 }
 
 function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; overwriteId: string | null }) {
@@ -212,6 +223,7 @@ function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; over
     const created: GestureIntent = {
       id: newId(),
       name: t("gestures.newIntentName"),
+      enabled: true,
       gesture,
       command: createDefaultCommand("doNothing"),
       executeOnModifier: false,
@@ -266,6 +278,7 @@ async function onBoundaryConfirm(value: { origin: BoundaryOrigin; sequence: Boun
     const intent: BoundaryIntent = {
       id: newId(),
       name: t("actions.newBoundaryName"),
+      enabled: true,
       origin: value.origin,
       sequence: value.sequence,
       command: createDefaultCommand("doNothing"),
@@ -325,6 +338,11 @@ async function deleteAction(row: ActionRow) {
   }
 }
 
+async function deleteSelectedAction() {
+  const row = sortedActions.value.find((candidate) => candidate.key === selectedIntentId.value);
+  if (row) await deleteAction(row);
+}
+
 /** 冲突检测用:排除重录目标自身 */
 const captureExisting = computed(() => intentsArray());
 const captureExcludeId = computed(() => reRecordId.value ?? undefined);
@@ -378,27 +396,27 @@ onMounted(() => selectApp(GLOBAL));
     <section class="gestures__main">
       <header class="gestures__main-head">
         <h3 class="gestures__title">{{ currentTitle }}</h3>
-        <div class="gestures__toggles">
+        <div class="gestures__settings-strip">
           <template v-if="!currentIsGlobal && currentApp">
-            <div class="gg-switch-row">
-              <el-switch v-model="currentApp.inheritGlobalGestures" />
+            <label class="gestures__setting">
               <span>{{ t("gestures.inheritGlobal") }}</span>
-            </div>
+              <el-switch v-model="currentApp.inheritGlobalGestures" />
+            </label>
           </template>
           <template v-else>
-            <div class="gg-switch-row">
-              <el-switch v-model="doc.hotCorners.enabled" />
+            <label class="gestures__setting">
               <span>{{ t("actions.enableHotCorners") }}</span>
-            </div>
-            <div class="gg-switch-row">
-              <el-switch v-model="doc.rubEdges.enabled" />
+              <el-switch v-model="doc.hotCorners.enabled" />
+            </label>
+            <label class="gestures__setting">
               <span>{{ t("actions.enableRubEdges") }}</span>
-            </div>
+              <el-switch v-model="doc.rubEdges.enabled" />
+            </label>
           </template>
-          <div class="gg-switch-row">
+          <label class="gestures__setting gestures__setting--danger">
+            <span>{{ currentIsGlobal ? t("gestures.blacklistGlobalShort") : t("gestures.blacklistShort") }}</span>
             <el-switch v-model="blacklisted" />
-            <span>{{ currentIsGlobal ? t("gestures.blacklistGlobal") : t("gestures.blacklist") }}</span>
-          </div>
+          </label>
         </div>
       </header>
 
@@ -453,10 +471,18 @@ onMounted(() => selectApp(GLOBAL));
                   {{ t(`command.types.${row.intent.command.type}`) }}
                 </template>
               </el-table-column>
-              <el-table-column width="72" align="right">
+              <el-table-column width="42" align="right">
                 <template #default="{ row }">
-                  <el-button link size="small" :icon="VideoCamera" @click.stop="reRecordRow(row)" />
-                  <el-button link size="small" :icon="Delete" @click.stop="deleteAction(row)" />
+                  <el-tooltip :content="t(row.intent.enabled ? 'gestures.disableAction' : 'gestures.enableAction')">
+                    <el-button
+                      link
+                      class="gestures__icon-action"
+                      :class="{ 'is-enabled': row.intent.enabled }"
+                      :icon="row.intent.enabled ? CircleCheckFilled : CircleCloseFilled"
+                      :aria-label="t(row.intent.enabled ? 'gestures.disableAction' : 'gestures.enableAction')"
+                      @click.stop="toggleAction(row)"
+                    />
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>
@@ -470,12 +496,14 @@ onMounted(() => selectApp(GLOBAL));
             :key="selectedIntent.id"
             :intent="selectedIntent"
             @re-record="openReRecord"
+            @delete="deleteSelectedAction"
           />
           <BoundaryIntentEditor
             v-else-if="selectedBoundary"
             :key="selectedBoundary.id"
             :intent="selectedBoundary"
             @re-record="openReRecord"
+            @delete="deleteSelectedAction"
           />
           <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
         </section>
@@ -579,7 +607,7 @@ onMounted(() => selectApp(GLOBAL));
 }
 .gestures__main-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
@@ -589,10 +617,27 @@ onMounted(() => selectApp(GLOBAL));
   font-size: 16px;
   line-height: 28px;
 }
-.gestures__toggles {
+.gestures__settings-strip {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 5px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-extra-light);
+}
+.gestures__setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gestures__setting--danger {
+  color: var(--el-color-danger);
 }
 .gestures__dormant {
   display: flex;
@@ -646,6 +691,18 @@ onMounted(() => selectApp(GLOBAL));
 .gestures__table :deep(tr) {
   cursor: pointer;
 }
+.gestures__table :deep(.el-table__row.is-disabled) {
+  color: var(--el-text-color-secondary);
+}
+.gestures__icon-action {
+  width: 26px;
+  height: 26px;
+  margin-left: 0 !important;
+  color: var(--el-text-color-placeholder);
+}
+.gestures__icon-action.is-enabled {
+  color: var(--el-color-success);
+}
 .gestures__editor-pane {
   padding: 12px 14px;
   overflow-y: auto;
@@ -658,7 +715,7 @@ onMounted(() => selectApp(GLOBAL));
   .gestures__main-head {
     gap: 8px;
   }
-  .gestures__toggles {
+  .gestures__settings-strip {
     font-size: 12px;
   }
 }

@@ -121,6 +121,8 @@ fn default_modifier() -> Modifier {
 pub struct GestureIntent {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub gesture: GestureSpecConfig,
     pub command: Command,
     #[serde(default)]
@@ -255,6 +257,8 @@ pub enum BoundaryToken {
 pub struct BoundaryIntent {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub origin: BoundaryOrigin,
     #[serde(default)]
     pub sequence: Vec<BoundaryToken>,
@@ -441,6 +445,7 @@ pub fn default_seed() -> ConfigDocument {
     let intent = |name: &str, trigger: T, strokes: Vec<super::types::Direction>, command: Command| GestureIntent {
         id: uuid::Uuid::new_v4().to_string(),
         name: name.to_string(),
+        enabled: true,
         gesture: GestureSpecConfig { trigger, strokes, modifier: super::types::Modifier::None },
         command,
         execute_on_modifier: false,
@@ -653,6 +658,7 @@ impl ConfigDocument {
             self.boundary_intents.push(BoundaryIntent {
                 id: id.into(),
                 name: name.into(),
+                enabled: true,
                 origin: BoundaryOrigin::HotCorner { corner: corner.into() },
                 sequence: Vec::new(),
                 command,
@@ -670,6 +676,7 @@ impl ConfigDocument {
             self.boundary_intents.push(BoundaryIntent {
                 id: id.into(),
                 name: name.into(),
+                enabled: true,
                 origin: BoundaryOrigin::RubEdge { edge: edge.into() },
                 sequence: Vec::new(),
                 command,

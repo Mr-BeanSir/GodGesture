@@ -343,6 +343,8 @@ export interface components {
                         /** @enum {string} */
                         type: "audioVolume";
                     };
+                    /** @default true */
+                    enabled: boolean;
                     /** @default false */
                     executeOnModifier: boolean;
                     gesture: {
@@ -449,6 +451,8 @@ export interface components {
                     /** @enum {string} */
                     type: "audioVolume";
                 };
+                /** @default true */
+                enabled: boolean;
                 /** Format: uuid */
                 id: string;
                 name: string;
@@ -566,6 +570,8 @@ export interface components {
                         /** @enum {string} */
                         type: "audioVolume";
                     };
+                    /** @default true */
+                    enabled: boolean;
                     /** @default false */
                     executeOnModifier: boolean;
                     gesture: {

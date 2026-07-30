@@ -64,7 +64,7 @@ impl BoundaryMatcher {
         let mut candidates: Vec<_> = config
             .boundary_intents
             .iter()
-            .filter(|intent| intent.origin.matches(kind, key))
+            .filter(|intent| intent.enabled && intent.origin.matches(kind, key))
             .cloned()
             .collect();
         candidates.sort_by_key(|intent| intent.order);
@@ -171,6 +171,7 @@ mod tests {
         BoundaryIntent {
             id: id.into(),
             name: id.into(),
+            enabled: true,
             origin: BoundaryOrigin::HotCorner {
                 corner: "leftTop".into(),
             },
@@ -184,10 +185,16 @@ mod tests {
         Point { x: 0, y: 0 }
     }
 
+    fn config_with(intents: Vec<BoundaryIntent>) -> ConfigDocument {
+        ConfigDocument {
+            boundary_intents: intents,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn empty_sequence_completes_on_activation() {
-        let mut config = ConfigDocument::default();
-        config.boundary_intents = vec![intent("empty", vec![], 0)];
+        let config = config_with(vec![intent("empty", vec![], 0)]);
         let mut matcher = BoundaryMatcher::default();
         assert!(matches!(
             matcher.activate(
@@ -203,8 +210,7 @@ mod tests {
 
     #[test]
     fn matches_button_wheel_and_stroke_in_order() {
-        let mut config = ConfigDocument::default();
-        config.boundary_intents = vec![intent(
+        let config = config_with(vec![intent(
             "sequence",
             vec![
                 BoundaryToken::Button {
@@ -218,7 +224,7 @@ mod tests {
                 },
             ],
             0,
-        )];
+        )]);
         let mut matcher = BoundaryMatcher::default();
         let t = Instant::now();
         assert_eq!(
@@ -266,8 +272,7 @@ mod tests {
 
     #[test]
     fn mismatch_and_timeout_return_only_previously_consumed_input() {
-        let mut config = ConfigDocument::default();
-        config.boundary_intents = vec![intent(
+        let config = config_with(vec![intent(
             "wheel",
             vec![
                 BoundaryToken::Wheel {
@@ -278,7 +283,7 @@ mod tests {
                 },
             ],
             0,
-        )];
+        )]);
         let mut matcher = BoundaryMatcher::default();
         let t = Instant::now();
         matcher.activate(
@@ -321,8 +326,7 @@ mod tests {
 
     #[test]
     fn disabled_or_different_origins_do_not_arm() {
-        let mut config = ConfigDocument::default();
-        config.boundary_intents = vec![intent("x", vec![], 0)];
+        let mut config = config_with(vec![intent("x", vec![], 0)]);
         config.hot_corners.enabled = false;
         let mut matcher = BoundaryMatcher::default();
         assert_eq!(
@@ -341,6 +345,26 @@ mod tests {
                 CornerEdgeHit::Corner(ScreenCorner::RightTop),
                 pt(),
                 Instant::now()
+            ),
+            BoundaryResult::Idle
+        );
+    }
+
+    #[test]
+    fn disabled_boundary_intent_does_not_arm() {
+        let mut disabled = intent("disabled", vec![BoundaryToken::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        }], 0);
+        disabled.enabled = false;
+        let config = config_with(vec![disabled]);
+        let mut matcher = BoundaryMatcher::default();
+
+        assert_eq!(
+            matcher.activate(
+                &config,
+                CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+                pt(),
+                Instant::now(),
             ),
             BoundaryResult::Idle
         );

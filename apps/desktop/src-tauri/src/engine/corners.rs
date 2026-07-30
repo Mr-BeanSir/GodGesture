@@ -258,6 +258,20 @@ impl CornerEdgeDetector {
             .or(edge.map(CornerEdgeHit::Edge))
     }
 
+    /// 返回光标当前所在的非角落边缘带,供带后续序列的边缘动作直接进入等待状态。
+    pub fn edge_at<F>(&mut self, pos: Point, now: Instant, screen_lookup: F) -> Option<ScreenEdge>
+    where
+        F: FnOnce() -> Option<ScreenInfo>,
+    {
+        let screen = self.screen_for(pos, now, screen_lookup)?;
+        let local = Point {
+            x: pos.x - screen.bounds.left,
+            y: pos.y - screen.bounds.top,
+        };
+        let thick = (EDGE_THICK_BASE * screen.dpi_scale) as i32;
+        active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
+    }
+
     fn screen_for<F>(&mut self, pos: Point, now: Instant, lookup: F) -> Option<ScreenInfo>
     where
         F: FnOnce() -> Option<ScreenInfo>,

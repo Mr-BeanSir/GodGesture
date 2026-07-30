@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { reactive } from "vue";
 import type { BoundaryIntent, BoundaryToken } from "@godgesture/shared";
-import { cloneBoundarySequence, findBoundaryConflict } from "../boundary-actions";
+import { cloneBoundarySequence, findBoundaryConflict, reorderBoundarySequence } from "../boundary-actions";
 
 const wheel: BoundaryToken = { type: "wheel", direction: "forward" };
 const right: BoundaryToken = { type: "stroke", direction: "right" };
+
+describe("boundary sequence ordering", () => {
+  it("moves one token without mutating the source", () => {
+    const middle: BoundaryToken = { type: "button", button: "middle" };
+    const source = [wheel, right, middle];
+
+    expect(reorderBoundarySequence(source, 0, 2)).toEqual([right, middle, wheel]);
+    expect(source).toEqual([wheel, right, middle]);
+  });
+});
 
 function intent(id: string, sequence: BoundaryToken[]): BoundaryIntent {
   return {
     id,
     name: id,
+    enabled: true,
     origin: { kind: "hotCorner", corner: "leftTop" },
     sequence,
     command: { type: "doNothing" },
