@@ -37,8 +37,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 - `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 笔、阈值/超时、点击透传、修饰和捕获状态机。
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
-- `engine/runtime.rs`:钩子输入到识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层。
-- `engine/script.rs`:单 QuickJS Runtime、按逻辑命令惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界。
+- `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
+- `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -71,9 +71,9 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Desktop Vue
 
-- 页面:`OptionsView`, `GesturesView`, `CornersEdgesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。
-- `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、触发角与摩擦边、手势模板、
-  账户与同步、设置、关于;默认页仍为设置。主区不承担页面滚动,六页各自声明唯一
+- 页面:`OptionsView`, `GesturesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。触发角与摩擦边已并入手势页,不再有独立页面。
+- `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、手势模板、账户与同步、设置、
+  关于;默认页仍为设置。主区不承担页面滚动,五页各自声明唯一
   主滚动区或明确的分区滚动责任。
 - `QuickStartDialog.vue` 与 `onboarding/quick-guide.ts` 提供版本化的本机首次引导、平台就绪检查、默认手势试用和既有配置入口;About 可重开,浏览器 `?guide=1` 可强制展示。
 - `api/backend.ts` 是唯一 Tauri IPC 网关;浏览器运行时自动使用 `api/mock.ts`。
@@ -82,13 +82,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - Options 在 macOS 显示 Accessibility、Input Monitoring、event posting 与引擎状态,支持请求权限和打开系统设置;本机设置成功后重读运行时状态,保留登录项 `requires approval`。
 - `runAsAdmin` 在 macOS 禁用并提供双语说明;后端也会清理旧本机文件可能遗留的 `true`,不伪装成已应用。
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
-- 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。
+- 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。`HotkeyInput.vue` 的键盘快捷键录制使用独立草稿:新和弦替换旧值,支持 Ctrl/Win(Cmd)/Alt 等纯修饰组合,最后一个物理键抬起时自动提交,Escape 或未完成失焦则取消。
 - `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Windows 验证/规范化 `.exe` 并解析 `.lnk`,macOS 在 Bundle ID 分组提供准星和 `.app` 拖放且隐藏 Windows 字段。
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
-- `GesturesView.vue` 使用固定应用列表 + 手势表格 + 意图编辑器工作台;三个区域分别
-  持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列和行操作保持可见。
+- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程和最多 12 步的边角序列构建器,触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
@@ -100,7 +99,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 1`;手势模板是独立分发协议,采纳后才并入个人配置,不提升配置格式版本。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 2`,新增全局 `boundaryIntents`;读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
@@ -112,6 +111,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 - WGestures 导入的 `language = lua` 脚本只保留原文并可编辑,不会执行或自动转换为 JavaScript。
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
+- 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
 - stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
@@ -227,6 +227,13 @@ Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。macOS targ
 可视点上限、上下堆叠与左右错位显示器、窗口切片接缝及任务栏带状区域。Windows 实机
 验收覆盖连续轨迹、任务栏层级、任务栏上方轨迹以及双向跨屏。macOS 仅完成源码同步和
 联合显示器边界测试代码,Windows 未执行该平台测试,不提供 Apple 编译或真机证据。
+
+2026-07-30 统一动作与快捷键录制验证:shared 92/92 + build;Desktop 102/102 +
+typecheck/build;`pnpm check:api`、Server typecheck、Web Console typecheck 通过;Rust library
+`185 passed, 2 ignored`,`cargo clippy --lib --no-default-features -- -D warnings` 通过。
+浏览器 preview 以 `800x560` 中文浅色和 `980x700` 英文深色验收手势页与两步新增动作
+对话框,确认白色应用列表、无横向溢出、翻译 key 泄漏或对话框越界。macOS 边角序列
+仍按上方未完成边界等待真机证据。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

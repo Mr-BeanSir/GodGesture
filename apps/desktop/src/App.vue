@@ -7,7 +7,6 @@ import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import {
-  Aim,
   Connection,
   InfoFilled,
   MagicStick,
@@ -36,12 +35,11 @@ import LegacyImportDialog from "./components/LegacyImportDialog.vue";
 import QuickStartDialog from "./components/QuickStartDialog.vue";
 import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
-import CornersEdgesView from "./views/CornersEdgesView.vue";
 import AccountView from "./views/AccountView.vue";
 import TemplatesView from "./views/TemplatesView.vue";
 import AboutView from "./views/AboutView.vue";
 
-type Section = "options" | "gestures" | "cornersEdges" | "templates" | "account" | "about";
+type Section = "options" | "gestures" | "templates" | "account" | "about";
 type LocaleSetting = "auto" | AppLocale;
 
 const { t, locale } = useI18n();
@@ -60,14 +58,12 @@ let unlistenSingleInstance: (() => void) | undefined;
 const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
-  cornersEdges: CornersEdgesView,
   templates: TemplatesView,
   account: AccountView,
   about: AboutView,
 } as const;
 const NAV_ITEMS = [
   { id: "gestures", icon: MagicStick },
-  { id: "cornersEdges", icon: Aim },
   { id: "templates", icon: Connection },
   { id: "account", icon: User },
   { id: "options", icon: Setting },

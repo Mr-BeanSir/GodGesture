@@ -5,17 +5,28 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Edit, Delete, VideoCamera } from "@element-plus/icons-vue";
-import type { AppEntry, GestureIntent, GestureSpec } from "@godgesture/shared";
+import type {
+  AppEntry,
+  BoundaryIntent,
+  BoundaryOrigin,
+  BoundaryToken,
+  GestureIntent,
+  GestureSpec,
+} from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
 import { createDefaultCommand } from "../utils/commands";
+import { findBoundaryConflict } from "../utils/boundary-actions";
 import MnemonicText from "../components/MnemonicText.vue";
 import IntentEditor from "../components/IntentEditor.vue";
 import CaptureDialog from "../components/CaptureDialog.vue";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
+import AddActionDialog from "../components/AddActionDialog.vue";
+import BoundaryIntentEditor from "../components/BoundaryIntentEditor.vue";
+import BoundaryMnemonic from "../components/BoundaryMnemonic.vue";
 
 const GLOBAL = "__global__";
 
@@ -30,6 +41,15 @@ const captureVisible = ref(false);
 const reRecordId = ref<string | null>(null);
 const appDialogVisible = ref(false);
 const editingApp = ref<AppEntry | null>(null);
+const addActionVisible = ref(false);
+const editingBoundaryId = ref<string | null>(null);
+
+type ActionRow =
+  | { kind: "gesture"; key: string; id: string; name: string; intent: GestureIntent }
+  | { kind: "boundary"; key: string; id: string; name: string; intent: BoundaryIntent };
+
+const gestureKey = (id: string) => `gesture:${id}`;
+const boundaryKey = (id: string) => `boundary:${id}`;
 
 const currentIsGlobal = computed(() => selectedAppId.value === GLOBAL);
 const sortedApps = computed(() => [...doc.value.apps].sort((a, b) => a.order - b.order));
@@ -42,8 +62,44 @@ function intentsArray(): GestureIntent[] {
 }
 
 const sortedIntents = computed(() => [...intentsArray()].sort((a, b) => a.order - b.order));
+const sortedActions = computed<ActionRow[]>(() => {
+  const gestures: ActionRow[] = sortedIntents.value.map((intent) => ({
+    kind: "gesture",
+    key: gestureKey(intent.id),
+    id: intent.id,
+    name: intent.name,
+    intent,
+  }));
+  if (!currentIsGlobal.value) return gestures;
+  const boundaries: ActionRow[] = [...doc.value.boundaryIntents]
+    .sort((a, b) => a.order - b.order)
+    .map((intent) => ({
+      kind: "boundary",
+      key: boundaryKey(intent.id),
+      id: intent.id,
+      name: intent.name,
+      intent,
+    }));
+  return [...gestures, ...boundaries];
+});
 const selectedIntent = computed<GestureIntent | null>(
-  () => intentsArray().find((i) => i.id === selectedIntentId.value) ?? null,
+  () => {
+    const id = selectedIntentId.value?.startsWith("gesture:")
+      ? selectedIntentId.value.slice("gesture:".length)
+      : null;
+    return id ? (intentsArray().find((intent) => intent.id === id) ?? null) : null;
+  },
+);
+const selectedBoundary = computed<BoundaryIntent | null>(() => {
+  const id = selectedIntentId.value?.startsWith("boundary:")
+    ? selectedIntentId.value.slice("boundary:".length)
+    : null;
+  return id ? (doc.value.boundaryIntents.find((intent) => intent.id === id) ?? null) : null;
+});
+const editingBoundary = computed<BoundaryIntent | null>(() =>
+  editingBoundaryId.value
+    ? (doc.value.boundaryIntents.find((intent) => intent.id === editingBoundaryId.value) ?? null)
+    : null,
 );
 
 const currentTitle = computed(() =>
@@ -63,15 +119,15 @@ const blacklisted = computed<boolean>({
 
 function selectApp(id: string) {
   selectedAppId.value = id;
-  selectedIntentId.value = sortedIntents.value[0]?.id ?? null;
+  selectedIntentId.value = sortedActions.value[0]?.key ?? null;
 }
 
 function selectIntent(id: string) {
   selectedIntentId.value = id;
 }
 
-function rowClass({ row }: { row: GestureIntent }) {
-  return row.id === selectedIntentId.value ? "is-selected" : "";
+function rowClass({ row }: { row: ActionRow }) {
+  return row.key === selectedIntentId.value ? "is-selected" : "";
 }
 
 // ---- 应用增删改 ----
@@ -114,18 +170,26 @@ async function deleteApp(app: AppEntry) {
   if (selectedAppId.value === app.id) selectApp(GLOBAL);
 }
 
-// ---- 意图录制 / 增删 ----
+// ---- 动作录制 / 增删 ----
 function openRecordNew() {
+  editingBoundaryId.value = null;
+  addActionVisible.value = true;
+}
+function beginGestureRecord() {
   reRecordId.value = null;
   captureVisible.value = true;
 }
 function openReRecord() {
-  if (!selectedIntent.value) return;
-  reRecordId.value = selectedIntent.value.id;
-  captureVisible.value = true;
+  if (selectedIntent.value) {
+    reRecordId.value = selectedIntent.value.id;
+    captureVisible.value = true;
+  } else if (selectedBoundary.value) {
+    editingBoundaryId.value = selectedBoundary.value.id;
+    addActionVisible.value = true;
+  }
 }
-function reRecordRow(id: string) {
-  selectIntent(id);
+function reRecordRow(row: ActionRow) {
+  selectIntent(row.key);
   openReRecord();
 }
 
@@ -138,7 +202,7 @@ function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; over
       const idx = arr.findIndex((i) => i.id === overwriteId);
       if (idx >= 0) arr.splice(idx, 1);
     }
-    selectedIntentId.value = reRecordId.value;
+    selectedIntentId.value = gestureKey(reRecordId.value);
   } else {
     if (overwriteId) {
       const idx = arr.findIndex((i) => i.id === overwriteId);
@@ -154,9 +218,64 @@ function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; over
       order,
     };
     arr.push(created);
-    selectedIntentId.value = created.id;
+    selectedIntentId.value = gestureKey(created.id);
   }
   reRecordId.value = null;
+}
+
+async function onBoundaryConfirm(value: { origin: BoundaryOrigin; sequence: BoundaryToken[] }) {
+  const conflict = findBoundaryConflict(
+    doc.value.boundaryIntents,
+    value.origin,
+    value.sequence,
+    editingBoundaryId.value,
+  );
+  if (conflict?.kind === "exact") {
+    try {
+      await ElMessageBox.confirm(
+        t("actions.overwriteMessage", { name: conflict.intent.name }),
+        t("actions.overwriteTitle"),
+        {
+          type: "warning",
+          confirmButtonText: t("capture.overwrite"),
+          cancelButtonText: t("common.cancel"),
+        },
+      );
+    } catch {
+      return;
+    }
+    const index = doc.value.boundaryIntents.findIndex(
+      (intent) => intent.id === conflict.intent.id,
+    );
+    if (index >= 0) doc.value.boundaryIntents.splice(index, 1);
+  } else if (conflict) {
+    ElMessage.warning(t("actions.prefixConflict", { name: conflict.intent.name }));
+    return;
+  }
+
+  if (editingBoundaryId.value) {
+    const intent = doc.value.boundaryIntents.find(
+      (candidate) => candidate.id === editingBoundaryId.value,
+    );
+    if (intent) {
+      intent.origin = value.origin;
+      intent.sequence = value.sequence;
+      selectedIntentId.value = boundaryKey(intent.id);
+    }
+  } else {
+    const intent: BoundaryIntent = {
+      id: newId(),
+      name: t("actions.newBoundaryName"),
+      origin: value.origin,
+      sequence: value.sequence,
+      command: createDefaultCommand("doNothing"),
+      order: doc.value.boundaryIntents.reduce((max, item) => Math.max(max, item.order), -1) + 1,
+    };
+    doc.value.boundaryIntents.push(intent);
+    selectedIntentId.value = boundaryKey(intent.id);
+  }
+  editingBoundaryId.value = null;
+  addActionVisible.value = false;
 }
 
 async function deleteIntent(intent: GestureIntent) {
@@ -176,8 +295,33 @@ async function deleteIntent(intent: GestureIntent) {
   const arr = intentsArray();
   const idx = arr.findIndex((i) => i.id === intent.id);
   if (idx >= 0) arr.splice(idx, 1);
-  if (selectedIntentId.value === intent.id) {
-    selectedIntentId.value = sortedIntents.value[0]?.id ?? null;
+  if (selectedIntentId.value === gestureKey(intent.id)) {
+    selectedIntentId.value = sortedActions.value[0]?.key ?? null;
+  }
+}
+
+async function deleteAction(row: ActionRow) {
+  if (row.kind === "gesture") {
+    await deleteIntent(row.intent);
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      t("gestures.deleteIntentConfirm", { name: row.name }),
+      t("common.confirmDeleteTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("common.delete"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
+  } catch {
+    return;
+  }
+  const index = doc.value.boundaryIntents.findIndex((intent) => intent.id === row.id);
+  if (index >= 0) doc.value.boundaryIntents.splice(index, 1);
+  if (selectedIntentId.value === row.key) {
+    selectedIntentId.value = sortedActions.value[0]?.key ?? null;
   }
 }
 
@@ -241,6 +385,16 @@ onMounted(() => selectApp(GLOBAL));
               <span>{{ t("gestures.inheritGlobal") }}</span>
             </div>
           </template>
+          <template v-else>
+            <div class="gg-switch-row">
+              <el-switch v-model="doc.hotCorners.enabled" />
+              <span>{{ t("actions.enableHotCorners") }}</span>
+            </div>
+            <div class="gg-switch-row">
+              <el-switch v-model="doc.rubEdges.enabled" />
+              <span>{{ t("actions.enableRubEdges") }}</span>
+            </div>
+          </template>
           <div class="gg-switch-row">
             <el-switch v-model="blacklisted" />
             <span>{{ currentIsGlobal ? t("gestures.blacklistGlobal") : t("gestures.blacklist") }}</span>
@@ -256,21 +410,28 @@ onMounted(() => selectApp(GLOBAL));
       <div class="gestures__workspace">
         <section class="gestures__table-pane">
           <div class="gestures__toolbar">
-            <span class="gestures__count">{{ sortedIntents.length }}</span>
+            <span class="gestures__count">{{ sortedActions.length }}</span>
             <el-button type="primary" size="small" :icon="VideoCamera" @click="openRecordNew">
               {{ t("gestures.addIntent") }}
             </el-button>
           </div>
           <div class="gestures__table-body">
             <el-table
-              v-if="sortedIntents.length"
-              :data="sortedIntents"
+              v-if="sortedActions.length"
+              :data="sortedActions"
               :row-class-name="rowClass"
               height="100%"
               size="small"
               class="gestures__table"
-              @row-click="(row: GestureIntent) => selectIntent(row.id)"
+              @row-click="(row: ActionRow) => selectIntent(row.key)"
             >
+              <el-table-column :label="t('gestures.colKind')" width="76">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.kind === 'boundary' ? 'warning' : 'info'">
+                    {{ t(row.kind === "boundary" ? "gestures.boundaryKind" : "gestures.gestureKind") }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column
                 :label="t('gestures.colName')"
                 prop="name"
@@ -279,7 +440,8 @@ onMounted(() => selectApp(GLOBAL));
               />
               <el-table-column :label="t('gestures.colMnemonic')" min-width="88">
                 <template #default="{ row }">
-                  <MnemonicText :gesture="row.gesture" />
+                  <MnemonicText v-if="row.kind === 'gesture'" :gesture="row.intent.gesture" />
+                  <BoundaryMnemonic v-else :intent="row.intent" />
                 </template>
               </el-table-column>
               <el-table-column
@@ -288,13 +450,13 @@ onMounted(() => selectApp(GLOBAL));
                 show-overflow-tooltip
               >
                 <template #default="{ row }">
-                  {{ t(`command.types.${row.command.type}`) }}
+                  {{ t(`command.types.${row.intent.command.type}`) }}
                 </template>
               </el-table-column>
               <el-table-column width="72" align="right">
                 <template #default="{ row }">
-                  <el-button link size="small" :icon="VideoCamera" @click.stop="reRecordRow(row.id)" />
-                  <el-button link size="small" :icon="Delete" @click.stop="deleteIntent(row)" />
+                  <el-button link size="small" :icon="VideoCamera" @click.stop="reRecordRow(row)" />
+                  <el-button link size="small" :icon="Delete" @click.stop="deleteAction(row)" />
                 </template>
               </el-table-column>
             </el-table>
@@ -309,6 +471,12 @@ onMounted(() => selectApp(GLOBAL));
             :intent="selectedIntent"
             @re-record="openReRecord"
           />
+          <BoundaryIntentEditor
+            v-else-if="selectedBoundary"
+            :key="selectedBoundary.id"
+            :intent="selectedBoundary"
+            @re-record="openReRecord"
+          />
           <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
         </section>
       </div>
@@ -319,6 +487,12 @@ onMounted(() => selectApp(GLOBAL));
       :existing-intents="captureExisting"
       :exclude-id="captureExcludeId"
       @confirm="onCaptureConfirm"
+    />
+    <AddActionDialog
+      v-model="addActionVisible"
+      :initial-boundary="editingBoundary"
+      @record-gesture="beginGestureRecord"
+      @confirm-boundary="onBoundaryConfirm"
     />
     <AppDialog v-model="appDialogVisible" :app="editingApp" @save="onAppSave" />
   </div>
@@ -339,6 +513,7 @@ onMounted(() => selectApp(GLOBAL));
   min-height: 0;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -442,12 +617,14 @@ onMounted(() => selectApp(GLOBAL));
 }
 .gestures__table-pane {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 40px minmax(0, 1fr);
 }
 .gestures__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   padding: 0 10px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }

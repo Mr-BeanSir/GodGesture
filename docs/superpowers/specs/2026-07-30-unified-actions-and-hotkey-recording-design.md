@@ -90,7 +90,7 @@ Recording behavior:
 - entering the recorder does not mutate saved configuration;
 - the chosen origin and captured tokens are held as a draft;
 - live mnemonic feedback uses the same visual vocabulary as the action list;
-- Restart clears only the draft sequence and retains the chosen origin;
+- Removing draft tokens retains the chosen origin;
 - Cancel discards the draft;
 - Confirm atomically adds or replaces the intent;
 - exact duplicates are conflicts and offer overwrite;
@@ -98,9 +98,10 @@ Recording behavior:
   requires the user to keep recording or replace the conflicting action rather
   than creating an ambiguous pair.
 
-The recorder uses native capture while running in Tauri and a deterministic
-mock in browser tests. Capture lifecycle retains the current explicit start,
-cancel, listener cleanup, and failure reporting guarantees.
+The recorder uses an explicit picker for the origin and appends normalized
+wheel, mouse-button, or stroke tokens from bounded selectors. This keeps the
+draft deterministic in both Tauri and browser preview without opening a second
+global native capture session.
 
 ## Hotkey Recording
 
@@ -187,9 +188,8 @@ semantics.
 
 ## Error and Conflict Handling
 
-- Unsupported recorder input shows a localized warning and leaves the draft
-  active.
-- Capture start/cancel failures are observable and retryable.
+- The recorder prevents additions after the twelve-token limit while keeping
+  the existing draft editable.
 - Exact or prefix boundary conflicts are resolved before configuration mutation.
 - Schema migration errors do not overwrite the source document.
 - Runtime replay failure is logged; the matcher is reset so it cannot remain
