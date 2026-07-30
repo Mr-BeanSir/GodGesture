@@ -8,9 +8,13 @@
 //! 平台层负责保持输入恢复时序。Windows 普通点击在当前低级钩子回调返回后由
 //! 钩子消息泵重放;起始超时的 SynthesizeDown 仍同步执行以衔接后续真实抬起。
 
-use super::config::{Command, ConfigDocument, GestureIntent};
+use super::boundary::{BoundaryMatcher, BoundaryReplay, BoundaryResult};
+use super::config::{
+    BoundaryMouseButton, BoundaryToken, BoundaryWheelDirection, Command, ConfigDocument,
+    GestureIntent,
+};
 use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
-use super::intents::{hot_corner_command, rub_edge_command, ForegroundApp, IntentFinder};
+use super::intents::{ForegroundApp, IntentFinder};
 use super::parser::{StrokeEvent, StrokeParser};
 use super::tracker::{Action, Input, MouseButton, PathTracker, TrackerHost, TrackerParams};
 use super::types::{Direction, Modifier, Point, TriggerButton};
@@ -67,6 +71,7 @@ pub enum EngineMsg {
     },
     /// 触发角 / 摩擦边命中,命令已按配置解析出来
     CornerEdgeFired {
+        intent_id: String,
         hit: CornerEdgeHit,
         command: Command,
         /// 命中时的光标位置(命令执行上下文的 origin)
@@ -86,6 +91,7 @@ pub trait PlatformServices: Send + Sync {
     fn is_fullscreen(&self) -> bool;
     fn synthesize_click(&self, button: super::tracker::MouseButton, pos: Point);
     fn synthesize_down(&self, button: super::tracker::MouseButton, pos: Point);
+    fn synthesize_wheel(&self, forward: bool);
     /// 光标所在显示器的完整边界与 DPI 缩放(触发角/摩擦边判定用)。
     /// 该点不属于任何已知显示器时返回 None。
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo>;
@@ -127,6 +133,9 @@ pub struct EngineShared {
     chord: Mutex<ChordState>,
     /// 触发角 / 摩擦边检测状态(仅钩子线程访问)
     corner_edge: Mutex<CornerEdgeDetector>,
+    boundary: Mutex<BoundaryMatcher>,
+    boundary_parser: Mutex<Option<StrokeParser>>,
+    boundary_swallow_ups: AtomicU8,
     /// 物理按下的鼠标键位掩码 —— 任意键按下即抑制触发角/摩擦边。
     /// 从钩子事件自行累计,避免在钩子线程上做 GetAsyncKeyState 系统调用。
     buttons_down: AtomicU8,
@@ -155,6 +164,9 @@ impl EngineShared {
             effective_move_px: Mutex::new(48.0),
             chord: Mutex::new(ChordState::default()),
             corner_edge: Mutex::new(CornerEdgeDetector::new()),
+            boundary: Mutex::new(BoundaryMatcher::default()),
+            boundary_parser: Mutex::new(None),
+            boundary_swallow_ups: AtomicU8::new(0),
             buttons_down: AtomicU8::new(0),
             corners_enabled: AtomicBool::new(corners_enabled),
             edges_enabled: AtomicBool::new(edges_enabled),
@@ -164,6 +176,7 @@ impl EngineShared {
 
     /// 进入手势录制模式。
     pub fn start_recording(&self) {
+        self.cancel_boundary_sequence();
         self.recording.store(true, Ordering::SeqCst);
     }
 
@@ -181,6 +194,9 @@ impl EngineShared {
     }
 
     pub fn set_paused(&self, paused: bool) {
+        if paused {
+            self.cancel_boundary_sequence();
+        }
         let previous = self.paused.swap(paused, Ordering::SeqCst);
         if previous != paused {
             let _ = self.tx.send(EngineMsg::PauseChanged(paused));
@@ -198,6 +214,9 @@ impl EngineShared {
 
     pub fn toggle_paused(&self) -> bool {
         let now = !self.paused.fetch_xor(true, Ordering::SeqCst);
+        if now {
+            self.cancel_boundary_sequence();
+        }
         let _ = self.tx.send(EngineMsg::PauseChanged(now));
         now
     }
@@ -208,6 +227,7 @@ impl EngineShared {
 
     /// 配置变更(设置界面保存/同步拉取后调用)
     pub fn replace_config(&self, config: ConfigDocument) {
+        self.cancel_boundary_sequence();
         let live_keys = super::script::live_script_keys(&config);
         self.tracker.lock().set_params(tracker_params_from(&config));
         self.corners_enabled
@@ -249,13 +269,25 @@ impl EngineShared {
         // 先记录物理按键状态:下面的和弦分支会提前 return,放这里才不会漏记
         match &input {
             Input::ButtonDown(b, _) => {
-                self.buttons_down.fetch_or(button_bit(*b), Ordering::Relaxed);
+                self.buttons_down
+                    .fetch_or(button_bit(*b), Ordering::Relaxed);
             }
             Input::ButtonUp(b, _) => {
                 self.buttons_down
                     .fetch_and(!button_bit(*b), Ordering::Relaxed);
             }
             _ => {}
+        }
+        if let Input::ButtonUp(button, _) = &input {
+            let bit = button_bit(*button);
+            if self.boundary_swallow_ups.fetch_and(!bit, Ordering::Relaxed) & bit != 0 {
+                return true;
+            }
+        }
+
+        let now = Instant::now();
+        if self.handle_boundary_input(&input, now) {
+            return true;
         }
         let move_pos = match &input {
             Input::Move(p) => Some(*p),
@@ -284,7 +316,6 @@ impl EngineShared {
             }
         }
 
-        let now = Instant::now();
         let mut host = HostImpl { shared: self };
         let outcome = self.tracker.lock().handle(input, now, &mut host);
         self.apply_actions(outcome.actions);
@@ -294,6 +325,135 @@ impl EngineShared {
             self.detect_corner_edge(pos, now);
         }
         outcome.swallow
+    }
+
+    fn handle_boundary_input(&self, input: &Input, now: Instant) -> bool {
+        if !self.boundary.lock().is_active() {
+            return false;
+        }
+        match input {
+            Input::ButtonDown(button, pos) => {
+                let result = self.boundary.lock().feed(
+                    BoundaryToken::Button {
+                        button: boundary_button(*button),
+                    },
+                    Some(BoundaryReplay::Click {
+                        button: *button,
+                        pos: *pos,
+                    }),
+                    now,
+                );
+                let swallow = matches!(
+                    result,
+                    BoundaryResult::Pending | BoundaryResult::Complete { .. }
+                );
+                self.apply_boundary_result(result);
+                swallow
+            }
+            Input::Wheel { forward, .. } => {
+                let result = self.boundary.lock().feed(
+                    BoundaryToken::Wheel {
+                        direction: if *forward {
+                            BoundaryWheelDirection::Forward
+                        } else {
+                            BoundaryWheelDirection::Backward
+                        },
+                    },
+                    Some(BoundaryReplay::Wheel { forward: *forward }),
+                    now,
+                );
+                let swallow = matches!(
+                    result,
+                    BoundaryResult::Pending | BoundaryResult::Complete { .. }
+                );
+                self.apply_boundary_result(result);
+                swallow
+            }
+            Input::Move(point) => {
+                let direction = {
+                    let mut parser = self.boundary_parser.lock();
+                    parser.as_mut().and_then(|parser| {
+                        if parser.feed(*point) == StrokeEvent::Grew {
+                            parser.strokes().last().copied()
+                        } else {
+                            None
+                        }
+                    })
+                };
+                if let Some(direction) = direction {
+                    let result =
+                        self.boundary
+                            .lock()
+                            .feed(BoundaryToken::Stroke { direction }, None, now);
+                    self.apply_boundary_result(result);
+                }
+                false
+            }
+            Input::ButtonUp(button, _) => {
+                let result = self.boundary.lock().cancel();
+                let swallow = matches!(
+                    &result,
+                    BoundaryResult::Cancelled { replay }
+                        if replay.iter().any(|entry| matches!(
+                            entry,
+                            BoundaryReplay::Click { button: replay_button, .. }
+                                if replay_button == button
+                        ))
+                );
+                self.apply_boundary_result(result);
+                if swallow {
+                    self.boundary_swallow_ups
+                        .fetch_and(!button_bit(*button), Ordering::Relaxed);
+                }
+                swallow
+            }
+        }
+    }
+
+    fn apply_boundary_result(&self, result: BoundaryResult) {
+        match result {
+            BoundaryResult::Idle | BoundaryResult::Pending => {}
+            BoundaryResult::Complete {
+                intent,
+                hit,
+                origin,
+                consumed,
+            } => {
+                *self.boundary_parser.lock() = None;
+                for replay in consumed {
+                    if let BoundaryReplay::Click { button, .. } = replay {
+                        self.boundary_swallow_ups
+                            .fetch_or(button_bit(button), Ordering::Relaxed);
+                    }
+                }
+                let _ = self.tx.send(EngineMsg::CornerEdgeFired {
+                    intent_id: intent.id.clone(),
+                    hit,
+                    command: intent.command.clone(),
+                    origin,
+                });
+            }
+            BoundaryResult::Cancelled { replay } => {
+                *self.boundary_parser.lock() = None;
+                for input in replay {
+                    match input {
+                        BoundaryReplay::Click { button, pos } => {
+                            self.boundary_swallow_ups
+                                .fetch_or(button_bit(button), Ordering::Relaxed);
+                            self.platform.synthesize_click(button, pos);
+                        }
+                        BoundaryReplay::Wheel { forward } => {
+                            self.platform.synthesize_wheel(forward);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn cancel_boundary_sequence(&self) {
+        let result = self.boundary.lock().cancel();
+        self.apply_boundary_result(result);
     }
 
     /// 触发角 / 摩擦边判定(钩子线程)。命中即把解析好的命令投给执行线程 ——
@@ -331,36 +491,39 @@ impl EngineShared {
             return;
         }
 
-        // 未配命令就当没这回事(查找函数内部已校验 enabled 开关)
-        let (command, disable_in_fullscreen) = {
+        let disable_in_fullscreen = {
             let finder = self.finder.lock();
             let config = finder.config();
-            let command = match hit {
-                CornerEdgeHit::Corner(c) => hot_corner_command(config, c.key()),
-                CornerEdgeHit::Edge(e) => rub_edge_command(config, e.key()),
-            }
-            .cloned();
-            (
-                command,
-                config.preferences.path_tracker.disable_in_fullscreen,
-            )
-        };
-        let Some(command) = command else {
-            return;
+            config.preferences.path_tracker.disable_in_fullscreen
         };
         // 全屏抑制与手势共用同一偏好;放在最后才查,免得每次移动都问系统
         if disable_in_fullscreen && self.platform.is_fullscreen() {
             return;
         }
-        let _ = self.tx.send(EngineMsg::CornerEdgeFired {
-            hit,
-            command,
-            origin: pos,
-        });
+        self.cancel_boundary_sequence();
+        let result = {
+            let finder = self.finder.lock();
+            self.boundary
+                .lock()
+                .activate(finder.config(), hit, pos, now)
+        };
+        if matches!(result, BoundaryResult::Pending) {
+            let (effective, enable_8) = {
+                let finder = self.finder.lock();
+                (
+                    *self.effective_move_px.lock(),
+                    finder.config().preferences.path_tracker.enable_8_directions,
+                )
+            };
+            *self.boundary_parser.lock() = Some(StrokeParser::new(pos, effective, enable_8));
+        }
+        self.apply_boundary_result(result);
     }
 
     /// 定时线程入口
     fn on_tick(self: &Arc<Self>, now: Instant) {
+        let boundary = self.boundary.lock().tick(now);
+        self.apply_boundary_result(boundary);
         let actions = self.tracker.lock().tick(now);
         self.apply_actions(actions);
     }
@@ -481,7 +644,12 @@ impl EngineShared {
                                 .or_else(|| {
                                     // 带修饰未命中时回退无修饰意图(WGestures 语义:
                                     // 修饰只在有对应意图时才有意义)
-                                    finder.find(s.trigger, s.parser.strokes(), Modifier::None, &s.fg)
+                                    finder.find(
+                                        s.trigger,
+                                        s.parser.strokes(),
+                                        Modifier::None,
+                                        &s.fg,
+                                    )
                                 })
                                 .cloned()
                         };
@@ -573,6 +741,16 @@ fn button_bit(button: MouseButton) -> u8 {
     }
 }
 
+fn boundary_button(button: MouseButton) -> BoundaryMouseButton {
+    match button {
+        MouseButton::Left => BoundaryMouseButton::Left,
+        MouseButton::Middle => BoundaryMouseButton::Middle,
+        MouseButton::Right => BoundaryMouseButton::Right,
+        MouseButton::X1 => BoundaryMouseButton::X1,
+        MouseButton::X2 => BoundaryMouseButton::X2,
+    }
+}
+
 /// "#AARRGGBB" → u32(解析失败返回不透明白,便于肉眼发现配置错误)
 fn parse_argb(s: &str) -> u32 {
     s.strip_prefix('#')
@@ -595,6 +773,8 @@ fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::config::{BoundaryIntent, BoundaryOrigin};
+    use crate::engine::corners::{ScreenCorner, ScreenRect};
 
     struct StubPlatform;
 
@@ -615,6 +795,8 @@ mod tests {
 
         fn synthesize_down(&self, _button: MouseButton, _pos: Point) {}
 
+        fn synthesize_wheel(&self, _forward: bool) {}
+
         fn screen_at(&self, _pos: Point) -> Option<ScreenInfo> {
             None
         }
@@ -627,9 +809,132 @@ mod tests {
         assert!(shared.toggle_paused());
         assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(true)));
         shared.set_paused(false);
+        assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(false)));
+    }
+
+    #[derive(Default)]
+    struct BoundaryPlatform {
+        clicks: Mutex<Vec<(MouseButton, Point)>>,
+        wheels: Mutex<Vec<bool>>,
+    }
+
+    impl PlatformServices for BoundaryPlatform {
+        fn resolve_foreground_app(
+            &self,
+            _pos: Point,
+            _prefer_cursor_window: bool,
+        ) -> ForegroundApp {
+            ForegroundApp::default()
+        }
+
+        fn is_fullscreen(&self) -> bool {
+            false
+        }
+
+        fn synthesize_click(&self, button: MouseButton, pos: Point) {
+            self.clicks.lock().push((button, pos));
+        }
+
+        fn synthesize_down(&self, _button: MouseButton, _pos: Point) {}
+
+        fn synthesize_wheel(&self, forward: bool) {
+            self.wheels.lock().push(forward);
+        }
+
+        fn screen_at(&self, _pos: Point) -> Option<ScreenInfo> {
+            Some(ScreenInfo {
+                bounds: ScreenRect {
+                    left: 0,
+                    top: 0,
+                    right: 1919,
+                    bottom: 1079,
+                },
+                dpi_scale: 1.0,
+            })
+        }
+    }
+
+    fn boundary_config(sequence: Vec<BoundaryToken>) -> ConfigDocument {
+        let mut config = ConfigDocument::default();
+        config.boundary_intents.push(BoundaryIntent {
+            id: "20000000-0000-4000-8000-000000000001".into(),
+            name: "Boundary test".into(),
+            origin: BoundaryOrigin::HotCorner {
+                corner: "leftTop".into(),
+            },
+            sequence,
+            command: Command::Pause,
+            order: 0,
+        });
+        config
+    }
+
+    #[test]
+    fn boundary_button_sequence_fires_and_swallows_the_matching_up() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let config = boundary_config(vec![BoundaryToken::Button {
+            button: BoundaryMouseButton::Right,
+        }]);
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 0, y: 0 })));
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 })));
         assert!(matches!(
             rx.recv().unwrap(),
-            EngineMsg::PauseChanged(false)
+            EngineMsg::CornerEdgeFired {
+                intent_id,
+                hit: CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+                command: Command::Pause,
+                ..
+            } if intent_id == "20000000-0000-4000-8000-000000000001"
+        ));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 0, y: 0 })));
+    }
+
+    #[test]
+    fn incomplete_boundary_button_sequence_replays_a_click() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let config = boundary_config(vec![
+            BoundaryToken::Button {
+                button: BoundaryMouseButton::Right,
+            },
+            BoundaryToken::Stroke {
+                direction: Direction::Down,
+            },
+        ]);
+        let (shared, _rx) = EngineShared::new(config, platform.clone());
+
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 })));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 0, y: 0 })));
+        assert_eq!(
+            platform.clicks.lock().as_slice(),
+            &[(MouseButton::Right, Point { x: 0, y: 0 })]
+        );
+    }
+
+    #[test]
+    fn boundary_stroke_sequence_uses_its_own_parser() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let config = boundary_config(vec![
+            BoundaryToken::Button {
+                button: BoundaryMouseButton::Right,
+            },
+            BoundaryToken::Stroke {
+                direction: Direction::Right,
+            },
+        ]);
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 })));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            EngineMsg::CornerEdgeFired {
+                command: Command::Pause,
+                ..
+            }
         ));
     }
 }

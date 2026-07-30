@@ -3,8 +3,8 @@
 pub mod clipboard;
 pub mod commands;
 pub mod hook;
-pub mod input;
 pub mod icon;
+pub mod input;
 pub mod keys;
 pub mod overlay;
 pub mod permissions;
@@ -89,6 +89,12 @@ impl PlatformServices for MacPlatform {
     fn synthesize_down(&self, button: MouseButton, pos: Point) {
         if let Err(error) = input::synthesize_down(button, pos) {
             log::error!("macOS button synthesis failed: {error}");
+        }
+    }
+
+    fn synthesize_wheel(&self, forward: bool) {
+        if let Err(error) = input::wheel(if forward { 120 } else { -120 }) {
+            log::error!("macOS wheel synthesis failed: {error}");
         }
     }
 

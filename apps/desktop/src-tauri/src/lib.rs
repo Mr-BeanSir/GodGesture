@@ -14,8 +14,8 @@ use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script::{
-    gesture_script_key, hot_corner_script_key, rub_edge_script_key, ScriptDefinition, ScriptEngine,
-    ScriptInvocation, ScriptSlot,
+    boundary_script_key, gesture_script_key, ScriptDefinition, ScriptEngine, ScriptInvocation,
+    ScriptSlot,
 };
 #[cfg(any(windows, target_os = "macos"))]
 use std::collections::HashSet;
@@ -299,14 +299,6 @@ fn script_key_for_intent(intent_id: &str) -> String {
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-fn script_key_for_corner_edge(hit: engine::corners::CornerEdgeHit) -> String {
-    match hit {
-        engine::corners::CornerEdgeHit::Corner(corner) => hot_corner_script_key(corner.key()),
-        engine::corners::CornerEdgeHit::Edge(edge) => rub_edge_script_key(edge.key()),
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
 fn retain_live_script_contexts(
     engine: &mut Option<ScriptEngine>,
     live_keys: Option<&HashSet<String>>,
@@ -580,6 +572,7 @@ fn spawn_engine_consumer(
                         }
                     }
                     EngineMsg::CornerEdgeFired {
+                        intent_id,
                         hit,
                         command,
                         origin,
@@ -594,7 +587,7 @@ fn spawn_engine_consumer(
                             native_window: fg.native_window,
                         };
                         execute_intent(
-                            &script_key_for_corner_edge(hit),
+                            &boundary_script_key(&intent_id),
                             &command,
                             ScriptInvocation {
                                 gesture: context,

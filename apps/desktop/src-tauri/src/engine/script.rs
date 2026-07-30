@@ -313,6 +313,10 @@ pub fn gesture_script_key(intent_id: &str) -> String {
     format!("intent:{intent_id}")
 }
 
+pub fn boundary_script_key(intent_id: &str) -> String {
+    format!("boundary:{intent_id}")
+}
+
 pub fn hot_corner_script_key(slot: &str) -> String {
     format!("hot-corner:{slot}")
 }
@@ -339,6 +343,13 @@ pub fn live_script_keys(config: &ConfigDocument) -> Vec<String> {
                 .map(|intent| gesture_script_key(&intent.id)),
         );
     }
+    keys.extend(
+        config
+            .boundary_intents
+            .iter()
+            .filter(|intent| matches!(&intent.command, Command::Script { .. }))
+            .map(|intent| boundary_script_key(&intent.id)),
+    );
     keys.extend(
         config
             .hot_corners
@@ -555,6 +566,7 @@ fn modifier_name(modifier: Modifier) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use super::super::config::{BoundaryIntent, BoundaryOrigin};
     use super::super::types::Point;
     use super::*;
 
@@ -619,6 +631,39 @@ mod tests {
             modifier_triggered_script: String::new(),
             gesture_ended_script: String::new(),
         }
+    }
+
+    fn script_command() -> Command {
+        Command::Script {
+            language: "js".into(),
+            init_script: String::new(),
+            script: String::new(),
+            handle_modifiers: false,
+            gesture_recognized_script: String::new(),
+            modifier_triggered_script: String::new(),
+            gesture_ended_script: String::new(),
+        }
+    }
+
+    #[test]
+    fn live_script_keys_keep_boundary_intents_isolated_by_id() {
+        let mut config = ConfigDocument::default();
+        for (id, order) in [("boundary-a", 0), ("boundary-b", 1)] {
+            config.boundary_intents.push(BoundaryIntent {
+                id: id.into(),
+                name: id.into(),
+                origin: BoundaryOrigin::HotCorner {
+                    corner: "leftTop".into(),
+                },
+                sequence: Vec::new(),
+                command: script_command(),
+                order,
+            });
+        }
+
+        let keys = live_script_keys(&config);
+        assert!(keys.contains(&boundary_script_key("boundary-a")));
+        assert!(keys.contains(&boundary_script_key("boundary-b")));
     }
 
     #[test]

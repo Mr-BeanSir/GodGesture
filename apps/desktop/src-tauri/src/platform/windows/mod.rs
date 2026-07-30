@@ -48,6 +48,12 @@ impl PlatformServices for WindowsPlatform {
         input::synthesize_down(button, pos);
     }
 
+    fn synthesize_wheel(&self, forward: bool) {
+        if let Err(error) = input::wheel(if forward { 120 } else { -120 }) {
+            log::error!("无法重放鼠标滚轮: {error}");
+        }
+    }
+
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo> {
         window::screen_at(pos)
     }
