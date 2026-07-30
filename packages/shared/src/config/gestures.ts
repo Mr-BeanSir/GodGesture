@@ -137,7 +137,8 @@ export const PauseCommand = z.object(base("pause"));
 
 export const AudioVolumeCommand = z.object({
   ...base("audioVolume"),
-  delta: z.number().int().min(1).max(20).default(1),
+  /** 正数提高、负数降低、0 切换静音;绝对值是音量键步数 */
+  delta: z.number().int().min(-20).max(20).default(1),
 });
 
 export const Command = z

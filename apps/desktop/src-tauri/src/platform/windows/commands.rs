@@ -7,6 +7,7 @@
 //! DoNothing 顾名思义。
 
 use super::{clipboard, hook::EXTRA_INFO_TAG, input, window};
+use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
@@ -304,25 +305,6 @@ fn dock_half(hwnd: HWND, left: bool) {
         ) {
             log::error!("窗口停靠请求入队失败: {error}");
         }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum AudioVolumeAction {
-    Mute,
-    Up(u32),
-    Down(u32),
-}
-
-fn audio_volume_action(modifier: Modifier, delta: i32) -> AudioVolumeAction {
-    // 上限对齐 schema 的 max(20)。不封顶的话,一个手改出来的
-    // delta = i32::MIN 会敲 21 亿次音量键,把执行线程彻底挂住。
-    const MAX_STEPS: u32 = 20;
-    let steps = delta.unsigned_abs().min(MAX_STEPS);
-    match modifier {
-        Modifier::WheelForward => AudioVolumeAction::Up(steps),
-        Modifier::WheelBackward => AudioVolumeAction::Down(steps),
-        _ => AudioVolumeAction::Mute,
     }
 }
 
@@ -663,46 +645,6 @@ fn hex_digit(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn audio_volume_none_toggles_mute() {
-        assert_eq!(
-            audio_volume_action(Modifier::None, 20),
-            AudioVolumeAction::Mute
-        );
-    }
-
-    #[test]
-    fn audio_volume_middle_button_toggles_mute() {
-        assert_eq!(
-            audio_volume_action(Modifier::MiddleButtonDown, 7),
-            AudioVolumeAction::Mute
-        );
-    }
-
-    #[test]
-    fn audio_volume_wheel_forward_uses_delta_as_up_amplitude() {
-        assert_eq!(
-            audio_volume_action(Modifier::WheelForward, 7),
-            AudioVolumeAction::Up(7)
-        );
-    }
-
-    #[test]
-    fn audio_volume_wheel_backward_uses_delta_as_down_amplitude() {
-        assert_eq!(
-            audio_volume_action(Modifier::WheelBackward, 7),
-            AudioVolumeAction::Down(7)
-        );
-    }
-
-    #[test]
-    fn audio_volume_other_modifiers_use_safe_mute_fallback() {
-        assert_eq!(
-            audio_volume_action(Modifier::LeftButtonDown, 7),
-            AudioVolumeAction::Mute
-        );
-    }
 
     #[test]
     fn url_encode_basics() {

@@ -88,7 +88,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -113,7 +113,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
 - 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
 - 带后续序列的摩擦边动作在光标进入边缘带后直接等待输入;滚轮事件会按当前指针位置即时武装,不要求滚动前再次移动。空序列摩擦边仍保持快速往复命中。Windows 平台无关运行时测试覆盖下边缘首格滚轮和停留后重新武装;macOS 复用同一状态机,仍需真机观察。
-- 手势工作台支持普通手势和边角动作的单条启停;列表仅保留状态图标,删除与重录/编辑序列集中在编辑面板。边角助记符使用灰色屏幕边框 SVG 标出蓝色命中边或角点;边角序列可通过拖拽把手快速排序。
+- 手势工作台支持普通手势和边角动作的单条启停;列表仅保留状态图标,删除与重录/编辑序列集中在助记符下方的独立操作行。边角助记符先绘制灰色屏幕边框、再在上层绘制蓝色命中边;角触发使用蓝色拐角及相邻边段,边角序列可通过拖拽把手快速排序。
+- 音量命令的 `delta` 范围为 `-20..20`:正数提高、负数降低、零切换静音;滚轮修饰决定加减方向并使用绝对值作为步数。Windows 与 macOS 共用同一平台无关判定,不再出现普通触发忽略配置数值而总是静音的语义漂移。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
 - stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
@@ -238,6 +239,14 @@ typecheck/build;`pnpm check:api`、Server typecheck、Web Console typecheck 通�
 在同一屏幕选择器中显示。另以 Vue reactive 序列回归测试和浏览器“下边缘 + 滚轮向前”
 完整保存流程确认提交不会再触发 `DataCloneError`。macOS 边角序列仍按上方未完成边界
 等待真机证据。
+
+2026-07-30 动作编辑与命令语义验证:shared 94/94 + typecheck;Desktop 104/104 +
+typecheck/build;`pnpm check:api` 通过;Rust library `188 passed, 2 ignored`,
+`cargo clippy --lib --tests -- -D warnings` 通过。浏览器 preview 确认普通手势操作行位于
+助记符下方,脚本编辑器在切换命令类型后保持编辑面板有界宽度;边角 SVG 通过 DOM 结构
+确认灰框先绘制、蓝色边/拐角后绘制且不再使用角点 circle。Monaco 已加载 JavaScript
+worker、宿主声明、触发字符补全、快速建议和参数提示;应用内浏览器的自动输入桥接未能
+稳定取得补全弹窗截图,因此不把该自动化限制记录为真实桌面视觉验收。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

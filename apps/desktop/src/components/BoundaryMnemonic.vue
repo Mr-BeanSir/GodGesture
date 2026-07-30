@@ -33,14 +33,22 @@ const activeCorner = computed(() =>
       role="img"
       :aria-label="origin"
     >
-      <line x1="4" y1="4" x2="20" y2="4" :class="{ 'is-active': activeEdge === 'top' }" />
-      <line x1="20" y1="4" x2="20" y2="20" :class="{ 'is-active': activeEdge === 'right' }" />
-      <line x1="20" y1="20" x2="4" y2="20" :class="{ 'is-active': activeEdge === 'bottom' }" />
-      <line x1="4" y1="20" x2="4" y2="4" :class="{ 'is-active': activeEdge === 'left' }" />
-      <circle v-if="activeCorner === 'leftTop'" cx="4" cy="4" r="2.5" />
-      <circle v-else-if="activeCorner === 'rightTop'" cx="20" cy="4" r="2.5" />
-      <circle v-else-if="activeCorner === 'leftBottom'" cx="4" cy="20" r="2.5" />
-      <circle v-else-if="activeCorner === 'rightBottom'" cx="20" cy="20" r="2.5" />
+      <g class="boundary-mnemonic__frame">
+        <line x1="4" y1="4" x2="20" y2="4" />
+        <line x1="20" y1="4" x2="20" y2="20" />
+        <line x1="20" y1="20" x2="4" y2="20" />
+        <line x1="4" y1="20" x2="4" y2="4" />
+      </g>
+      <g class="boundary-mnemonic__active">
+        <line v-if="activeEdge === 'top'" x1="4" y1="4" x2="20" y2="4" />
+        <line v-else-if="activeEdge === 'right'" x1="20" y1="4" x2="20" y2="20" />
+        <line v-else-if="activeEdge === 'bottom'" x1="20" y1="20" x2="4" y2="20" />
+        <line v-else-if="activeEdge === 'left'" x1="4" y1="20" x2="4" y2="4" />
+        <path v-if="activeCorner === 'leftTop'" d="M 4 11 L 4 4 L 11 4" />
+        <path v-else-if="activeCorner === 'rightTop'" d="M 13 4 L 20 4 L 20 11" />
+        <path v-else-if="activeCorner === 'leftBottom'" d="M 4 13 L 4 20 L 11 20" />
+        <path v-else-if="activeCorner === 'rightBottom'" d="M 13 20 L 20 20 L 20 13" />
+      </g>
     </svg>
     <template v-if="intent.sequence.length">
       <span class="boundary-mnemonic__arrow">›</span>
@@ -67,17 +75,18 @@ const activeCorner = computed(() =>
   flex: 0 0 auto;
   overflow: visible;
 }
-.boundary-mnemonic__screen line {
+.boundary-mnemonic__frame line {
   stroke: var(--el-border-color-darker);
   stroke-width: 2.5;
   stroke-linecap: round;
 }
-.boundary-mnemonic__screen line.is-active {
+.boundary-mnemonic__active line,
+.boundary-mnemonic__active path {
+  fill: none;
   stroke: var(--el-color-primary);
   stroke-width: 3.5;
-}
-.boundary-mnemonic__screen circle {
-  fill: var(--el-color-primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .boundary-mnemonic__arrow {
   color: var(--el-text-color-placeholder);

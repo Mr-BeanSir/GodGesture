@@ -40,18 +40,20 @@ function onModifierChange(value: GestureModifier) {
 
       <div class="gg-field intent-editor__trigger-field">
         <label class="gg-field-label">{{ t("gestures.colMnemonic") }}</label>
-        <div class="intent-editor__mnemonic-row">
+        <div class="intent-editor__trigger-stack">
           <MnemonicText :gesture="intent.gesture" class="intent-editor__mnemonic" />
-          <el-button size="small" @click="emit('reRecord')">{{ t("gestures.reRecord") }}</el-button>
-          <el-tooltip :content="t('gestures.deleteIntent')">
-            <el-button
-              link
-              type="danger"
-              :icon="Delete"
-              :aria-label="t('gestures.deleteIntent')"
-              @click="emit('delete')"
-            />
-          </el-tooltip>
+          <div class="intent-editor__actions">
+            <el-button size="small" @click="emit('reRecord')">{{ t("gestures.reRecord") }}</el-button>
+            <el-tooltip :content="t('gestures.deleteIntent')">
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :aria-label="t('gestures.deleteIntent')"
+                @click="emit('delete')"
+              />
+            </el-tooltip>
+          </div>
         </div>
       </div>
 
@@ -83,14 +85,20 @@ function onModifierChange(value: GestureModifier) {
 <style scoped>
 .intent-editor {
   display: grid;
+  min-width: 0;
   gap: 16px;
 }
 .intent-editor__summary {
   display: grid;
+  min-width: 0;
   grid-template-columns: minmax(180px, 1.35fr) minmax(150px, 1fr);
   gap: 12px 18px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.intent-editor__summary > .gg-field,
+.intent-editor > .gg-field {
+  min-width: 0;
 }
 .intent-editor__name-field {
   grid-column: 1;
@@ -103,13 +111,23 @@ function onModifierChange(value: GestureModifier) {
   grid-column: 1;
   max-width: 280px;
 }
-.intent-editor__mnemonic-row {
+.intent-editor__trigger-stack {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 .intent-editor__mnemonic {
+  min-width: 0;
+  max-width: 100%;
   font-size: 20px;
+  overflow-wrap: anywhere;
+}
+.intent-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .intent-editor__execute {
   display: flex;

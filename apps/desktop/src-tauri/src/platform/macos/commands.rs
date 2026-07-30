@@ -1,6 +1,7 @@
 // macOS command execution boundary. Runs on the engine consumer thread.
 
 use super::{clipboard, input, window};
+use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
@@ -133,16 +134,10 @@ fn web_search(
 }
 
 fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
-    let steps = delta.unsigned_abs().min(20);
-    let key = match modifier {
-        Modifier::WheelForward => "volumeUp",
-        Modifier::WheelBackward => "volumeDown",
-        _ => "volumeMute",
-    };
-    let count = if matches!(modifier, Modifier::WheelForward | Modifier::WheelBackward) {
-        steps
-    } else {
-        1
+    let (key, count) = match audio_volume_action(modifier, delta) {
+        AudioVolumeAction::Mute => ("volumeMute", 1),
+        AudioVolumeAction::Up(steps) => ("volumeUp", steps),
+        AudioVolumeAction::Down(steps) => ("volumeDown", steps),
     };
     for _ in 0..count {
         input::tap_key(key)?;

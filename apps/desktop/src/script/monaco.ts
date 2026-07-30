@@ -37,14 +37,17 @@ async function initializeMonaco(): Promise<MonacoApi> {
 
   typescript.javascriptDefaults.setCompilerOptions({
     allowNonTsExtensions: true,
+    allowJs: true,
     checkJs: true,
     lib: ["es2020"],
+    noEmit: true,
     target: typescript.ScriptTarget.ES2020,
   });
   typescript.javascriptDefaults.setDiagnosticsOptions({
     noSemanticValidation: false,
     noSyntaxValidation: false,
   });
+  typescript.javascriptDefaults.setEagerModelSync(true);
   typescript.javascriptDefaults.addExtraLib(
     apiDeclarations,
     "inmemory://godgesture/script-api/godgesture.d.ts",

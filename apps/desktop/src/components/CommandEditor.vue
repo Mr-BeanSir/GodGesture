@@ -64,7 +64,7 @@ function applyPreset(p: SearchPreset) {
 
 function updateVolumeDelta(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return;
-  patch({ delta: Math.min(20, Math.max(1, Math.round(value))) });
+  patch({ delta: Math.min(20, Math.max(-20, Math.round(value))) });
 }
 </script>
 
@@ -317,7 +317,7 @@ function updateVolumeDelta(value: unknown) {
       <div class="gg-field">
         <label class="gg-field-label">{{ t("command.audioVolume.delta") }}</label>
         <el-input-number
-          :min="1"
+          :min="-20"
           :max="20"
           :model-value="asVolume.delta"
           @update:model-value="updateVolumeDelta"
@@ -331,8 +331,12 @@ function updateVolumeDelta(value: unknown) {
 <style scoped>
 .cmd-editor {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 14px;
+}
+.cmd-editor > .gg-field {
+  min-width: 0;
 }
 .cmd-editor__type,
 .cmd-editor__lang {

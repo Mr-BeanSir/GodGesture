@@ -540,7 +540,7 @@
                             },
                             "delta": {
                               "type": "integer",
-                              "minimum": 1,
+                              "minimum": -20,
                               "maximum": 20,
                               "default": 1
                             }
@@ -1113,7 +1113,7 @@
                               },
                               "delta": {
                                 "type": "integer",
-                                "minimum": 1,
+                                "minimum": -20,
                                 "maximum": 20,
                                 "default": 1
                               }
@@ -1581,7 +1581,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -2007,7 +2007,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -2433,7 +2433,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -2859,7 +2859,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -3301,7 +3301,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -3727,7 +3727,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -4153,7 +4153,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -4579,7 +4579,7 @@
                           },
                           "delta": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": -20,
                             "maximum": 20,
                             "default": 1
                           }
@@ -5164,7 +5164,7 @@
                         },
                         "delta": {
                           "type": "integer",
-                          "minimum": 1,
+                          "minimum": -20,
                           "maximum": 20,
                           "default": 1
                         }
