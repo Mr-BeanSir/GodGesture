@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 1;
+pub const CONFIG_FORMAT_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // 命令(12 类;执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
@@ -29,14 +29,22 @@ pub enum Command {
         browser: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
-    WindowControl { operation: WindowOperation },
+    WindowControl {
+        operation: WindowOperation,
+    },
     TaskSwitcher,
     #[serde(rename_all = "camelCase")]
-    OpenFile { path: String },
+    OpenFile {
+        path: String,
+    },
     #[serde(rename_all = "camelCase")]
-    SendText { text: String },
+    SendText {
+        text: String,
+    },
     #[serde(rename_all = "camelCase")]
-    GotoUrl { url: String },
+    GotoUrl {
+        url: String,
+    },
     #[serde(rename_all = "camelCase")]
     Cmd {
         code: String,
@@ -169,10 +177,7 @@ pub struct GlobalApp {
 
 impl Default for GlobalApp {
     fn default() -> Self {
-        Self {
-            gesturing_enabled: true,
-            intents: Vec::new(),
-        }
+        Self { gesturing_enabled: true, intents: Vec::new() }
     }
 }
 
@@ -191,10 +196,7 @@ pub struct HotCornersConfig {
 
 impl Default for HotCornersConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            commands: Default::default(),
-        }
+        Self { enabled: true, commands: Default::default() }
     }
 }
 
@@ -207,12 +209,63 @@ pub struct RubEdgesConfig {
     pub commands: std::collections::HashMap<String, Command>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum BoundaryOrigin {
+    HotCorner { corner: String },
+    RubEdge { edge: String },
+}
+
+impl BoundaryOrigin {
+    pub fn matches(&self, kind: &str, key: &str) -> bool {
+        match self {
+            Self::HotCorner { corner } => kind == "hotCorner" && corner == key,
+            Self::RubEdge { edge } => kind == "rubEdge" && edge == key,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BoundaryWheelDirection {
+    Forward,
+    Backward,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BoundaryMouseButton {
+    Left,
+    Middle,
+    Right,
+    X1,
+    X2,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum BoundaryToken {
+    Wheel { direction: BoundaryWheelDirection },
+    Button { button: BoundaryMouseButton },
+    Stroke { direction: Direction },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundaryIntent {
+    pub id: String,
+    pub name: String,
+    pub origin: BoundaryOrigin,
+    #[serde(default)]
+    pub sequence: Vec<BoundaryToken>,
+    pub command: Command,
+    #[serde(default)]
+    pub order: i32,
+}
+
 impl Default for RubEdgesConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            commands: Default::default(),
-        }
+        Self { enabled: true, commands: Default::default() }
     }
 }
 
@@ -238,12 +291,7 @@ pub struct PathTrackerPreferences {
 impl Default for PathTrackerPreferences {
     fn default() -> Self {
         Self {
-            trigger_buttons: vec![
-                TriggerButton::Right,
-                TriggerButton::Middle,
-                TriggerButton::X1,
-                TriggerButton::X2,
-            ],
+            trigger_buttons: vec![TriggerButton::Right, TriggerButton::Middle, TriggerButton::X1, TriggerButton::X2],
             enable_8_directions: true,
             enable_windows_key_gesturing: false,
             prefer_cursor_window: true,
@@ -292,10 +340,7 @@ pub struct PauseHotkey {
 
 impl Default for PauseHotkey {
     fn default() -> Self {
-        Self {
-            modifiers: vec!["ctrl".into(), "shift".into(), "alt".into()],
-            key: "w".into(),
-        }
+        Self { modifiers: vec!["ctrl".into(), "shift".into(), "alt".into()], key: "w".into() }
     }
 }
 
@@ -344,6 +389,7 @@ pub struct ConfigDocument {
     pub apps: Vec<AppEntry>,
     pub hot_corners: HotCornersConfig,
     pub rub_edges: RubEdgesConfig,
+    pub boundary_intents: Vec<BoundaryIntent>,
     pub preferences: SyncedPreferences,
 }
 
@@ -355,6 +401,7 @@ impl Default for ConfigDocument {
             apps: Vec::new(),
             hot_corners: HotCornersConfig::default(),
             rub_edges: RubEdgesConfig::default(),
+            boundary_intents: Vec::new(),
             preferences: SyncedPreferences::default(),
         }
     }
@@ -370,11 +417,7 @@ pub struct MachineLocalSettings {
 
 impl Default for MachineLocalSettings {
     fn default() -> Self {
-        Self {
-            auto_start: false,
-            run_as_admin: false,
-            tray_icon_visible: true,
-        }
+        Self { auto_start: false, run_as_admin: false, tray_icon_visible: true }
     }
 }
 
@@ -395,19 +438,13 @@ pub struct SyncMetadata {
 /// 首次启动的默认手势库(对齐 WGestures 出厂常用项;命令执行 M2 生效)
 pub fn default_seed() -> ConfigDocument {
     use super::types::{Direction as D, TriggerButton as T};
-    let intent = |name: &str, trigger: T, strokes: Vec<super::types::Direction>, command: Command| {
-        GestureIntent {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: name.to_string(),
-            gesture: GestureSpecConfig {
-                trigger,
-                strokes,
-                modifier: super::types::Modifier::None,
-            },
-            command,
-            execute_on_modifier: false,
-            order: 0,
-        }
+    let intent = |name: &str, trigger: T, strokes: Vec<super::types::Direction>, command: Command| GestureIntent {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: name.to_string(),
+        gesture: GestureSpecConfig { trigger, strokes, modifier: super::types::Modifier::None },
+        command,
+        execute_on_modifier: false,
+        order: 0,
     };
     let hotkey = |mods: &[&str], keys: &[&str]| Command::HotKey {
         modifiers: mods.iter().map(|s| s.to_string()).collect(),
@@ -420,37 +457,21 @@ pub fn default_seed() -> ConfigDocument {
             "关闭窗口",
             T::Right,
             vec![D::Down, D::Right],
-            Command::WindowControl {
-                operation: WindowOperation::Close,
-            },
+            Command::WindowControl { operation: WindowOperation::Close },
         ),
         intent(
             "最大化/还原",
             T::Right,
             vec![D::Up],
-            Command::WindowControl {
-                operation: WindowOperation::MaximizeRestore,
-            },
+            Command::WindowControl { operation: WindowOperation::MaximizeRestore },
         ),
-        intent(
-            "最小化",
-            T::Right,
-            vec![D::Down],
-            Command::WindowControl {
-                operation: WindowOperation::Minimize,
-            },
-        ),
+        intent("最小化", T::Right, vec![D::Down], Command::WindowControl { operation: WindowOperation::Minimize }),
         intent("后退", T::Right, vec![D::Left], hotkey(&["alt"], &["left"])),
         intent("前进", T::Right, vec![D::Right], hotkey(&["alt"], &["right"])),
         intent("复制", T::Right, vec![D::RightDown], hotkey(&["ctrl"], &["c"])),
         intent("粘贴", T::Right, vec![D::RightUp], hotkey(&["ctrl"], &["v"])),
         intent("任务切换", T::Right, vec![D::Down, D::Up], Command::TaskSwitcher),
-        intent(
-            "刷新",
-            T::Right,
-            vec![D::Up, D::Down],
-            hotkey(&[], &["f5"]),
-        ),
+        intent("刷新", T::Right, vec![D::Up, D::Down], hotkey(&[], &["f5"])),
     ];
     doc
 }
@@ -494,7 +515,19 @@ impl ConfigStore {
             }
             return seed;
         }
-        Self::load_or_default(&path)
+        match std::fs::read_to_string(&path) {
+            Ok(text) => match serde_json::from_str::<ConfigDocument>(&text) {
+                Ok(mut document) => {
+                    document.migrate_legacy_boundaries();
+                    document
+                }
+                Err(error) => {
+                    log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
+                    ConfigDocument::default()
+                }
+            },
+            Err(_) => ConfigDocument::default(),
+        }
     }
 
     pub fn load_machine(&self) -> MachineLocalSettings {
@@ -502,7 +535,9 @@ impl ConfigStore {
     }
 
     pub fn save_config(&self, doc: &ConfigDocument) -> std::io::Result<()> {
-        self.save(&self.config_path(), doc)
+        let mut document = doc.clone();
+        document.migrate_legacy_boundaries();
+        self.save(&self.config_path(), &document)
     }
 
     pub fn save_machine(&self, m: &MachineLocalSettings) -> std::io::Result<()> {
@@ -519,10 +554,15 @@ impl ConfigStore {
                 return None;
             }
         };
-        serde_json::from_str(&text).map(Some).unwrap_or_else(|err| {
-            log::warn!("同步元数据损坏,忽略本地基线: {path:?}: {err}");
-            None
-        })
+        serde_json::from_str::<SyncMetadata>(&text)
+            .map(|mut metadata| {
+                metadata.last_synced_document.migrate_legacy_boundaries();
+                Some(metadata)
+            })
+            .unwrap_or_else(|err| {
+                log::warn!("同步元数据损坏,忽略本地基线: {path:?}: {err}");
+                None
+            })
     }
 
     pub fn save_sync_metadata(&self, metadata: &SyncMetadata) -> std::io::Result<()> {
@@ -540,10 +580,7 @@ impl ConfigStore {
         self.restore_file(&self.config_path(), &snapshot.config)
     }
 
-    pub(crate) fn restore_machine_snapshot(
-        &self,
-        snapshot: &ConfigFilesSnapshot,
-    ) -> io::Result<()> {
+    pub(crate) fn restore_machine_snapshot(&self, snapshot: &ConfigFilesSnapshot) -> io::Result<()> {
         self.restore_file(&self.machine_path(), &snapshot.machine)
     }
 
@@ -590,24 +627,68 @@ impl ConfigStore {
     }
 }
 
+impl ConfigDocument {
+    pub fn migrate_legacy_boundaries(&mut self) {
+        const CORNERS: [(&str, &str, &str); 4] = [
+            ("leftTop", "10000000-0000-4000-8000-000000000001", "Left top corner"),
+            ("rightTop", "10000000-0000-4000-8000-000000000002", "Right top corner"),
+            ("leftBottom", "10000000-0000-4000-8000-000000000003", "Left bottom corner"),
+            ("rightBottom", "10000000-0000-4000-8000-000000000004", "Right bottom corner"),
+        ];
+        const EDGES: [(&str, &str, &str); 4] = [
+            ("top", "10000000-0000-4000-8000-000000000005", "Top rub edge"),
+            ("right", "10000000-0000-4000-8000-000000000006", "Right rub edge"),
+            ("bottom", "10000000-0000-4000-8000-000000000007", "Bottom rub edge"),
+            ("left", "10000000-0000-4000-8000-000000000008", "Left rub edge"),
+        ];
+
+        let mut next_order = self.boundary_intents.len() as i32;
+        for (corner, id, name) in CORNERS {
+            let Some(command) = self.hot_corners.commands.remove(corner) else {
+                continue;
+            };
+            if self.boundary_intents.iter().any(|intent| intent.id == id) {
+                continue;
+            }
+            self.boundary_intents.push(BoundaryIntent {
+                id: id.into(),
+                name: name.into(),
+                origin: BoundaryOrigin::HotCorner { corner: corner.into() },
+                sequence: Vec::new(),
+                command,
+                order: next_order,
+            });
+            next_order += 1;
+        }
+        for (edge, id, name) in EDGES {
+            let Some(command) = self.rub_edges.commands.remove(edge) else {
+                continue;
+            };
+            if self.boundary_intents.iter().any(|intent| intent.id == id) {
+                continue;
+            }
+            self.boundary_intents.push(BoundaryIntent {
+                id: id.into(),
+                name: name.into(),
+                origin: BoundaryOrigin::RubEdge { edge: edge.into() },
+                sequence: Vec::new(),
+                command,
+                order: next_order,
+            });
+            next_order += 1;
+        }
+        self.format_version = CONFIG_FORMAT_VERSION;
+    }
+}
+
 #[cfg(windows)]
 fn replace_file(source: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
 
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    let source = source.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
+    let target = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     unsafe {
         MoveFileExW(
             PCWSTR(source.as_ptr()),
@@ -631,8 +712,7 @@ mod tests {
 
     impl TestDir {
         fn new() -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("godgesture-config-test-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir().join(format!("godgesture-config-test-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -655,16 +735,12 @@ mod tests {
     #[test]
     fn command_json_shape_matches_shared_schema() {
         // 与 shared zod 的 discriminatedUnion("type") 形状一致
-        let cmd = Command::HotKey {
-            modifiers: vec!["ctrl".into()],
-            keys: vec!["w".into()],
-        };
+        let cmd = Command::HotKey { modifiers: vec!["ctrl".into()], keys: vec!["w".into()] };
         let v = serde_json::to_value(&cmd).unwrap();
         assert_eq!(v["type"], "hotKey");
         assert_eq!(v["modifiers"][0], "ctrl");
 
-        let parsed: Command =
-            serde_json::from_value(serde_json::json!({"type": "doNothing"})).unwrap();
+        let parsed: Command = serde_json::from_value(serde_json::json!({"type": "doNothing"})).unwrap();
         assert_eq!(parsed, Command::DoNothing);
     }
 
@@ -679,6 +755,36 @@ mod tests {
         assert_eq!(v["trigger"], "right");
         assert_eq!(v["strokes"][0], "rightUp");
         assert_eq!(v["modifier"], "wheelForward");
+    }
+
+    #[test]
+    fn legacy_boundary_commands_migrate_deterministically() {
+        let mut document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "formatVersion": 1,
+            "hotCorners": {
+                "enabled": false,
+                "commands": { "leftTop": { "type": "pause" } }
+            },
+            "rubEdges": {
+                "commands": {
+                    "bottom": { "type": "hotKey", "modifiers": ["meta"], "keys": ["d"] }
+                }
+            }
+        }))
+        .unwrap();
+
+        document.migrate_legacy_boundaries();
+        assert_eq!(document.format_version, 2);
+        assert!(!document.hot_corners.enabled);
+        assert!(document.hot_corners.commands.is_empty());
+        assert!(document.rub_edges.commands.is_empty());
+        assert_eq!(document.boundary_intents.len(), 2);
+        assert_eq!(document.boundary_intents[0].id, "10000000-0000-4000-8000-000000000001");
+        assert_eq!(document.boundary_intents[1].origin, BoundaryOrigin::RubEdge { edge: "bottom".into() });
+
+        let once = document.clone();
+        document.migrate_legacy_boundaries();
+        assert_eq!(document, once);
     }
 
     #[test]
@@ -706,12 +812,7 @@ mod tests {
         let mut changed = original.clone();
         changed.preferences.auto_check_for_update = false;
         store.save_config(&changed).unwrap();
-        store
-            .save_machine(&MachineLocalSettings {
-                auto_start: true,
-                ..MachineLocalSettings::default()
-            })
-            .unwrap();
+        store.save_machine(&MachineLocalSettings { auto_start: true, ..MachineLocalSettings::default() }).unwrap();
 
         store.restore_config_snapshot(&snapshot).unwrap();
         store.restore_machine_snapshot(&snapshot).unwrap();
@@ -732,10 +833,7 @@ mod tests {
         };
         let mut second = first.clone();
         second.server_version = 4;
-        second
-            .last_synced_document
-            .preferences
-            .auto_check_for_update = false;
+        second.last_synced_document.preferences.auto_check_for_update = false;
 
         store.save_sync_metadata(&first).unwrap();
         store.save_sync_metadata(&second).unwrap();

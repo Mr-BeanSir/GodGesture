@@ -6,6 +6,8 @@ import { z } from "zod";
 import { HotkeyKeyName, HotkeyModifier } from "./hotkeys.js";
 import {
   MAX_COMMAND_TEXT_LENGTH,
+  MAX_BOUNDARY_INTENTS,
+  MAX_BOUNDARY_SEQUENCE_TOKENS,
   MAX_HOTKEY_KEYS,
   MAX_HOTKEY_MODIFIERS,
   MAX_INTENTS_PER_SCOPE,
@@ -257,3 +259,38 @@ export const RubEdgesConfig = z.object({
   commands: z.record(ScreenEdge, Command).default({}),
 });
 export type RubEdgesConfig = z.infer<typeof RubEdgesConfig>;
+
+// ---------------------------------------------------------------------------
+// 边角动作意图（全局）
+// ---------------------------------------------------------------------------
+
+export const BoundaryOrigin = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("hotCorner"), corner: ScreenCorner }),
+  z.object({ kind: z.literal("rubEdge"), edge: ScreenEdge }),
+]);
+export type BoundaryOrigin = z.infer<typeof BoundaryOrigin>;
+
+export const BoundaryMouseButton = z.enum(["left", "middle", "right", "x1", "x2"]);
+export type BoundaryMouseButton = z.infer<typeof BoundaryMouseButton>;
+
+export const BoundaryToken = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("wheel"), direction: z.enum(["forward", "backward"]) }),
+  z.object({ type: z.literal("button"), button: BoundaryMouseButton }),
+  z.object({ type: z.literal("stroke"), direction: StrokeDirection }),
+]);
+export type BoundaryToken = z.infer<typeof BoundaryToken>;
+
+export const BoundaryIntent = z.object({
+  id: z.string().uuid(),
+  name: z.string().max(64),
+  origin: BoundaryOrigin,
+  sequence: z.array(BoundaryToken).max(MAX_BOUNDARY_SEQUENCE_TOKENS).default([]),
+  command: Command,
+  order: z.number().int().default(0),
+});
+export type BoundaryIntent = z.infer<typeof BoundaryIntent>;
+
+export const BoundaryIntents = z
+  .array(BoundaryIntent)
+  .max(MAX_BOUNDARY_INTENTS)
+  .default([]);

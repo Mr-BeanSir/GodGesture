@@ -55,8 +55,12 @@ export function createLegacyImportPreview(document: ConfigDocument): LegacyImpor
     globalIntentCount: document.global.intents.length,
     appCount: document.apps.length,
     appIntentCount: document.apps.reduce((count, app) => count + app.intents.length, 0),
-    hotCornerCount: Object.keys(document.hotCorners.commands).length,
-    rubEdgeCount: Object.keys(document.rubEdges.commands).length,
+    hotCornerCount: document.boundaryIntents.filter(
+      (intent) => intent.origin.kind === "hotCorner",
+    ).length,
+    rubEdgeCount: document.boundaryIntents.filter(
+      (intent) => intent.origin.kind === "rubEdge",
+    ).length,
     documentSizeBytes: configDocumentSizeBytes(document),
   };
 }

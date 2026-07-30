@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              1
+              2
             ],
-            "default": 1
+            "default": 2
           },
           "global": {
             "type": "object",
@@ -4587,6 +4587,596 @@
               }
             },
             "default": {}
+          },
+          "boundaryIntents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "origin": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "hotCorner"
+                          ]
+                        },
+                        "corner": {
+                          "type": "string",
+                          "enum": [
+                            "leftTop",
+                            "rightTop",
+                            "leftBottom",
+                            "rightBottom"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "corner"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "rubEdge"
+                          ]
+                        },
+                        "edge": {
+                          "type": "string",
+                          "enum": [
+                            "left",
+                            "top",
+                            "right",
+                            "bottom"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "edge"
+                      ]
+                    }
+                  ]
+                },
+                "sequence": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "wheel"
+                            ]
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "forward",
+                              "backward"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "direction"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "button"
+                            ]
+                          },
+                          "button": {
+                            "type": "string",
+                            "enum": [
+                              "left",
+                              "middle",
+                              "right",
+                              "x1",
+                              "x2"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "button"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "stroke"
+                            ]
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "rightUp",
+                              "right",
+                              "rightDown",
+                              "down",
+                              "leftDown",
+                              "left",
+                              "leftUp"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "direction"
+                        ]
+                      }
+                    ]
+                  },
+                  "maxItems": 12,
+                  "default": []
+                },
+                "command": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "doNothing"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "hotKey"
+                          ]
+                        },
+                        "modifiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "ctrl",
+                              "shift",
+                              "alt",
+                              "meta"
+                            ]
+                          },
+                          "maxItems": 4
+                        },
+                        "keys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "a",
+                              "b",
+                              "c",
+                              "d",
+                              "e",
+                              "f",
+                              "g",
+                              "h",
+                              "i",
+                              "j",
+                              "k",
+                              "l",
+                              "m",
+                              "n",
+                              "o",
+                              "p",
+                              "q",
+                              "r",
+                              "s",
+                              "t",
+                              "u",
+                              "v",
+                              "w",
+                              "x",
+                              "y",
+                              "z",
+                              "0",
+                              "1",
+                              "2",
+                              "3",
+                              "4",
+                              "5",
+                              "6",
+                              "7",
+                              "8",
+                              "9",
+                              "f1",
+                              "f2",
+                              "f3",
+                              "f4",
+                              "f5",
+                              "f6",
+                              "f7",
+                              "f8",
+                              "f9",
+                              "f10",
+                              "f11",
+                              "f12",
+                              "f13",
+                              "f14",
+                              "f15",
+                              "f16",
+                              "f17",
+                              "f18",
+                              "f19",
+                              "f20",
+                              "f21",
+                              "f22",
+                              "f23",
+                              "f24",
+                              "backspace",
+                              "tab",
+                              "clear",
+                              "enter",
+                              "pauseBreak",
+                              "capsLock",
+                              "esc",
+                              "space",
+                              "pageUp",
+                              "pageDown",
+                              "end",
+                              "home",
+                              "left",
+                              "up",
+                              "right",
+                              "down",
+                              "printScreen",
+                              "insert",
+                              "delete",
+                              "contextMenu",
+                              "sleep",
+                              "numpad0",
+                              "numpad1",
+                              "numpad2",
+                              "numpad3",
+                              "numpad4",
+                              "numpad5",
+                              "numpad6",
+                              "numpad7",
+                              "numpad8",
+                              "numpad9",
+                              "numpadMultiply",
+                              "numpadAdd",
+                              "numpadSeparator",
+                              "numpadSubtract",
+                              "numpadDecimal",
+                              "numpadDivide",
+                              "numpadEnter",
+                              "numpadEqual",
+                              "numLock",
+                              "scrollLock",
+                              "browserBack",
+                              "browserForward",
+                              "browserRefresh",
+                              "browserStop",
+                              "browserSearch",
+                              "browserFavorites",
+                              "browserHome",
+                              "volumeMute",
+                              "volumeDown",
+                              "volumeUp",
+                              "mediaNextTrack",
+                              "mediaPrevTrack",
+                              "mediaStop",
+                              "mediaPlayPause",
+                              "launchMail",
+                              "launchMediaSelect",
+                              "launchApp1",
+                              "launchApp2",
+                              "semicolon",
+                              "equals",
+                              "comma",
+                              "minus",
+                              "period",
+                              "slash",
+                              "backquote",
+                              "bracketLeft",
+                              "backslash",
+                              "bracketRight",
+                              "quote",
+                              "intlBackslash"
+                            ]
+                          },
+                          "maxItems": 16
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "modifiers",
+                        "keys"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "webSearch"
+                          ]
+                        },
+                        "engineName": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "engineUrl": {
+                          "type": "string",
+                          "maxLength": 4096
+                        },
+                        "browser": {
+                          "type": "string",
+                          "nullable": true,
+                          "maxLength": 4096,
+                          "default": null
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "engineName",
+                        "engineUrl"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "windowControl"
+                          ]
+                        },
+                        "operation": {
+                          "type": "string",
+                          "enum": [
+                            "maximizeRestore",
+                            "minimize",
+                            "close",
+                            "toggleTopmost",
+                            "dockLeft",
+                            "dockRight"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "operation"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "taskSwitcher"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "openFile"
+                          ]
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "path"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "sendText"
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 16384
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "gotoUrl"
+                          ]
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "url"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "cmd"
+                          ]
+                        },
+                        "code": {
+                          "type": "string",
+                          "maxLength": 16384
+                        },
+                        "showWindow": {
+                          "type": "boolean",
+                          "default": true
+                        },
+                        "autoSetWorkingDir": {
+                          "type": "boolean",
+                          "default": true
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "code"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "script"
+                          ]
+                        },
+                        "language": {
+                          "type": "string",
+                          "enum": [
+                            "js",
+                            "lua"
+                          ],
+                          "default": "js"
+                        },
+                        "initScript": {
+                          "type": "string",
+                          "maxLength": 32768,
+                          "default": ""
+                        },
+                        "script": {
+                          "type": "string",
+                          "maxLength": 32768,
+                          "default": ""
+                        },
+                        "handleModifiers": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "gestureRecognizedScript": {
+                          "type": "string",
+                          "maxLength": 32768,
+                          "default": ""
+                        },
+                        "modifierTriggeredScript": {
+                          "type": "string",
+                          "maxLength": 32768,
+                          "default": ""
+                        },
+                        "gestureEndedScript": {
+                          "type": "string",
+                          "maxLength": 32768,
+                          "default": ""
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "pause"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "audioVolume"
+                          ]
+                        },
+                        "delta": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 20,
+                          "default": 1
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    }
+                  ]
+                },
+                "order": {
+                  "type": "integer",
+                  "default": 0
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "origin",
+                "command"
+              ]
+            },
+            "maxItems": 256,
+            "default": []
           },
           "preferences": {
             "type": "object",

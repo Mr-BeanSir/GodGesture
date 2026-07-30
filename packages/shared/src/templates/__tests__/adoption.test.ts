@@ -31,7 +31,13 @@ describe("gesture template adoption", () => {
     expect(plan.stats).toEqual({ added: 1, replaced: 0, skipped: 0 });
     expect(plan.document.global.intents[0]?.id).toBe(ids[0]);
     expect(plan.document.preferences.locale).toBe("en");
-    expect(plan.document.hotCorners.commands.leftTop).toEqual({ type: "pause" });
+    expect(plan.document.boundaryIntents).toContainEqual(
+      expect.objectContaining({
+        origin: { kind: "hotCorner", corner: "leftTop" },
+        sequence: [],
+        command: { type: "pause" },
+      }),
+    );
     expect(document.global.intents).toHaveLength(0);
   });
 

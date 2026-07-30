@@ -375,11 +375,119 @@ export interface components {
                     matchByExactPath: boolean;
                 };
             }[];
+            /** @default [] */
+            boundaryIntents: {
+                command: {
+                    /** @enum {string} */
+                    type: "doNothing";
+                } | {
+                    keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                    modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                    /** @enum {string} */
+                    type: "hotKey";
+                } | {
+                    /** @default null */
+                    browser: string | null;
+                    engineName: string;
+                    engineUrl: string;
+                    /** @enum {string} */
+                    type: "webSearch";
+                } | {
+                    /** @enum {string} */
+                    operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                    /** @enum {string} */
+                    type: "windowControl";
+                } | {
+                    /** @enum {string} */
+                    type: "taskSwitcher";
+                } | {
+                    path: string;
+                    /** @enum {string} */
+                    type: "openFile";
+                } | {
+                    text: string;
+                    /** @enum {string} */
+                    type: "sendText";
+                } | {
+                    /** @enum {string} */
+                    type: "gotoUrl";
+                    url: string;
+                } | {
+                    /** @default true */
+                    autoSetWorkingDir: boolean;
+                    code: string;
+                    /** @default true */
+                    showWindow: boolean;
+                    /** @enum {string} */
+                    type: "cmd";
+                } | {
+                    /** @default  */
+                    gestureEndedScript: string;
+                    /** @default  */
+                    gestureRecognizedScript: string;
+                    /** @default false */
+                    handleModifiers: boolean;
+                    /** @default  */
+                    initScript: string;
+                    /**
+                     * @default js
+                     * @enum {string}
+                     */
+                    language: "js" | "lua";
+                    /** @default  */
+                    modifierTriggeredScript: string;
+                    /** @default  */
+                    script: string;
+                    /** @enum {string} */
+                    type: "script";
+                } | {
+                    /** @enum {string} */
+                    type: "pause";
+                } | {
+                    /** @default 1 */
+                    delta: number;
+                    /** @enum {string} */
+                    type: "audioVolume";
+                };
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @default 0 */
+                order: number;
+                origin: {
+                    /** @enum {string} */
+                    corner: "leftTop" | "rightTop" | "leftBottom" | "rightBottom";
+                    /** @enum {string} */
+                    kind: "hotCorner";
+                } | {
+                    /** @enum {string} */
+                    edge: "left" | "top" | "right" | "bottom";
+                    /** @enum {string} */
+                    kind: "rubEdge";
+                };
+                /** @default [] */
+                sequence: ({
+                    /** @enum {string} */
+                    direction: "forward" | "backward";
+                    /** @enum {string} */
+                    type: "wheel";
+                } | {
+                    /** @enum {string} */
+                    button: "left" | "middle" | "right" | "x1" | "x2";
+                    /** @enum {string} */
+                    type: "button";
+                } | {
+                    /** @enum {string} */
+                    direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                    /** @enum {string} */
+                    type: "stroke";
+                })[];
+            }[];
             /**
-             * @default 1
+             * @default 2
              * @enum {number}
              */
-            formatVersion: 1;
+            formatVersion: 2;
             /** @default {} */
             global: {
                 /** @default true */

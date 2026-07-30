@@ -11,15 +11,27 @@ describe("importLegacyConfig(wg2 + config.plist)", () => {
   });
 
   it("产出合法 ConfigDocument", () => {
-    expect(document.formatVersion).toBe(1);
+    expect(document.formatVersion).toBe(2);
     expect(() => ConfigDocument.parse(document)).not.toThrow();
   });
 
   it("手势库(global/apps/角/边)贯通", () => {
     expect(document.global.intents).toHaveLength(2);
     expect(document.apps).toHaveLength(1);
-    expect(document.hotCorners.commands.leftBottom).toEqual({ type: "taskSwitcher" });
-    expect(document.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["meta"], keys: ["d"] });
+    expect(document.boundaryIntents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          origin: { kind: "hotCorner", corner: "leftBottom" },
+          sequence: [],
+          command: { type: "taskSwitcher" },
+        }),
+        expect.objectContaining({
+          origin: { kind: "rubEdge", edge: "left" },
+          sequence: [],
+          command: { type: "hotKey", modifiers: ["meta"], keys: ["d"] },
+        }),
+      ]),
+    );
   });
 
   it("PathTracker 偏好映射", () => {

@@ -43,11 +43,12 @@ impl IntentFinder {
     /// 匹配应用条目。优先级:AUMID 精确 → 精确路径(若启用)→ exe 文件名 → Bundle ID
     pub fn match_app(&self, fg: &ForegroundApp) -> Option<&AppEntry> {
         if let Some(aumid) = &fg.aumid {
-            if let Some(app) = self.config.apps.iter().find(|a| {
-                a.windows
-                    .as_ref()
-                    .is_some_and(|w| w.aumid.as_deref() == Some(aumid.as_str()))
-            }) {
+            if let Some(app) = self
+                .config
+                .apps
+                .iter()
+                .find(|a| a.windows.as_ref().is_some_and(|w| w.aumid.as_deref() == Some(aumid.as_str())))
+            {
                 return Some(app);
             }
         }
@@ -55,10 +56,7 @@ impl IntentFinder {
             let path_lower = path.to_lowercase();
             if let Some(app) = self.config.apps.iter().find(|a| {
                 a.windows.as_ref().is_some_and(|w| {
-                    w.match_by_exact_path
-                        && w.exact_path
-                            .as_deref()
-                            .is_some_and(|p| p.to_lowercase() == path_lower)
+                    w.match_by_exact_path && w.exact_path.as_deref().is_some_and(|p| p.to_lowercase() == path_lower)
                 })
             }) {
                 return Some(app);
@@ -76,11 +74,7 @@ impl IntentFinder {
             }
         }
         if let Some(bundle) = &fg.bundle_id {
-            if let Some(app) = self
-                .config
-                .apps
-                .iter()
-                .find(|a| a.mac.as_ref().is_some_and(|m| &m.bundle_id == bundle))
+            if let Some(app) = self.config.apps.iter().find(|a| a.mac.as_ref().is_some_and(|m| &m.bundle_id == bundle))
             {
                 return Some(app);
             }
@@ -108,9 +102,7 @@ impl IntentFinder {
         fg: &ForegroundApp,
     ) -> Option<&GestureIntent> {
         let matches = |i: &&GestureIntent| {
-            i.gesture.trigger == trigger
-                && i.gesture.strokes == strokes
-                && i.gesture.modifier == modifier
+            i.gesture.trigger == trigger && i.gesture.strokes == strokes && i.gesture.modifier == modifier
         };
         if let Some(app) = self.match_app(fg) {
             if let Some(intent) = app.intents.iter().find(matches) {
@@ -124,21 +116,11 @@ impl IntentFinder {
     }
 
     /// 该 (触发键, 前缀笔画) 下是否存在任何以此为前缀的意图 —— 供增量识别提示
-    pub fn any_with_prefix(
-        &self,
-        trigger: TriggerButton,
-        prefix: &[Direction],
-        fg: &ForegroundApp,
-    ) -> bool {
-        let starts = |i: &GestureIntent| {
-            i.gesture.trigger == trigger && i.gesture.strokes.starts_with(prefix)
-        };
+    pub fn any_with_prefix(&self, trigger: TriggerButton, prefix: &[Direction], fg: &ForegroundApp) -> bool {
+        let starts = |i: &GestureIntent| i.gesture.trigger == trigger && i.gesture.strokes.starts_with(prefix);
         let in_global = || self.config.global.intents.iter().any(starts);
         match self.match_app(fg) {
-            Some(app) => {
-                app.intents.iter().any(starts)
-                    || (app.inherit_global_gestures && in_global())
-            }
+            Some(app) => app.intents.iter().any(starts) || (app.inherit_global_gestures && in_global()),
             None => in_global(),
         }
     }
@@ -149,14 +131,24 @@ pub fn hot_corner_command<'c>(config: &'c ConfigDocument, corner: &str) -> Optio
     if !config.hot_corners.enabled {
         return None;
     }
-    config.hot_corners.commands.get(corner)
+    config
+        .boundary_intents
+        .iter()
+        .find(|intent| intent.sequence.is_empty() && intent.origin.matches("hotCorner", corner))
+        .map(|intent| &intent.command)
+        .or_else(|| config.hot_corners.commands.get(corner))
 }
 
 pub fn rub_edge_command<'c>(config: &'c ConfigDocument, edge: &str) -> Option<&'c Command> {
     if !config.rub_edges.enabled {
         return None;
     }
-    config.rub_edges.commands.get(edge)
+    config
+        .boundary_intents
+        .iter()
+        .find(|intent| intent.sequence.is_empty() && intent.origin.matches("rubEdge", edge))
+        .map(|intent| &intent.command)
+        .or_else(|| config.rub_edges.commands.get(edge))
 }
 
 #[cfg(test)]
@@ -168,11 +160,7 @@ mod tests {
         GestureIntent {
             id: name.to_string(),
             name: name.to_string(),
-            gesture: GestureSpecConfig {
-                trigger,
-                strokes,
-                modifier: Modifier::None,
-            },
+            gesture: GestureSpecConfig { trigger, strokes, modifier: Modifier::None },
             command: Command::DoNothing,
             execute_on_modifier: false,
             order: 0,
@@ -180,10 +168,7 @@ mod tests {
     }
 
     fn chrome_fg() -> ForegroundApp {
-        ForegroundApp {
-            exe_name: Some("chrome.exe".into()),
-            ..Default::default()
-        }
+        ForegroundApp { exe_name: Some("chrome.exe".into()), ..Default::default() }
     }
 
     fn config_with_chrome(inherit: bool, enabled: bool) -> ConfigDocument {
@@ -211,27 +196,15 @@ mod tests {
     fn app_intent_shadows_and_inherits_global() {
         let f = IntentFinder::new(config_with_chrome(true, true));
         let fg = chrome_fg();
-        assert_eq!(
-            f.find(TriggerButton::Right, &[Direction::Up], Modifier::None, &fg)
-                .unwrap()
-                .name,
-            "c-up"
-        );
+        assert_eq!(f.find(TriggerButton::Right, &[Direction::Up], Modifier::None, &fg).unwrap().name, "c-up");
         // 应用没有 Down,继承回退全局
-        assert_eq!(
-            f.find(TriggerButton::Right, &[Direction::Down], Modifier::None, &fg)
-                .unwrap()
-                .name,
-            "g-down"
-        );
+        assert_eq!(f.find(TriggerButton::Right, &[Direction::Down], Modifier::None, &fg).unwrap().name, "g-down");
     }
 
     #[test]
     fn no_inherit_blocks_global_fallback() {
         let f = IntentFinder::new(config_with_chrome(false, true));
-        assert!(f
-            .find(TriggerButton::Right, &[Direction::Down], Modifier::None, &chrome_fg())
-            .is_none());
+        assert!(f.find(TriggerButton::Right, &[Direction::Down], Modifier::None, &chrome_fg()).is_none());
     }
 
     #[test]
@@ -239,10 +212,7 @@ mod tests {
         let f = IntentFinder::new(config_with_chrome(true, false));
         assert!(!f.is_gesturing_enabled_for(&chrome_fg()));
         // 其他程序仍受全局开关控制
-        let other = ForegroundApp {
-            exe_name: Some("notepad.exe".into()),
-            ..Default::default()
-        };
+        let other = ForegroundApp { exe_name: Some("notepad.exe".into()), ..Default::default() };
         assert!(f.is_gesturing_enabled_for(&other));
     }
 
@@ -253,20 +223,14 @@ mod tests {
         let f = IntentFinder::new(doc);
 
         assert!(!f.is_gesturing_enabled_for(&chrome_fg()));
-        let other = ForegroundApp {
-            exe_name: Some("notepad.exe".into()),
-            ..Default::default()
-        };
+        let other = ForegroundApp { exe_name: Some("notepad.exe".into()), ..Default::default() };
         assert!(!f.is_gesturing_enabled_for(&other));
     }
 
     #[test]
     fn exe_name_match_is_case_insensitive() {
         let f = IntentFinder::new(config_with_chrome(true, true));
-        let fg = ForegroundApp {
-            exe_name: Some("CHROME.exe".into()),
-            ..Default::default()
-        };
+        let fg = ForegroundApp { exe_name: Some("CHROME.exe".into()), ..Default::default() };
         assert!(f.match_app(&fg).is_some());
     }
 
