@@ -12,6 +12,7 @@ import {
   type ScreenEdge,
   type StrokeDirection,
 } from "@godgesture/shared";
+import { cloneBoundarySequence } from "../utils/boundary-actions";
 
 type ActionChoice = "gesture" | "boundary";
 type TokenKind = BoundaryToken["type"];
@@ -53,7 +54,7 @@ function reset() {
   const initial = props.initialBoundary;
   step.value = initial ? 2 : 1;
   choice.value = initial ? "boundary" : "gesture";
-  sequence.value = initial ? structuredClone(initial.sequence) : [];
+  sequence.value = initial ? cloneBoundarySequence(initial.sequence) : [];
   if (initial?.origin.kind === "hotCorner") {
     originKind.value = "hotCorner";
     corner.value = initial.origin.corner;
@@ -94,7 +95,7 @@ function confirm() {
   const origin: BoundaryOrigin = originKind.value === "hotCorner"
     ? { kind: "hotCorner", corner: corner.value }
     : { kind: "rubEdge", edge: edge.value };
-  emit("confirmBoundary", { origin, sequence: structuredClone(sequence.value) });
+  emit("confirmBoundary", { origin, sequence: cloneBoundarySequence(sequence.value) });
 }
 
 function tokenLabel(token: BoundaryToken): string {
@@ -128,22 +129,30 @@ function tokenLabel(token: BoundaryToken): string {
       <div class="boundary-builder__origin">
         <div class="gg-field">
           <label class="gg-field-label">{{ t("actions.originType") }}</label>
-          <el-segmented v-model="originKind" :options="[
-            { label: t('corners.hotCornersTitle'), value: 'hotCorner' },
-            { label: t('corners.rubEdgesTitle'), value: 'rubEdge' },
-          ]" />
-        </div>
-        <div class="boundary-builder__screen">
-          <template v-if="originKind === 'hotCorner'">
-            <button v-for="item in corners" :key="item" type="button" class="boundary-builder__point" :class="[`is-${item}`, { 'is-active': corner === item }]" @click="corner = item">
+          <div class="boundary-builder__screen">
+            <button
+              v-for="item in corners"
+              :key="`corner-${item}`"
+              type="button"
+              class="boundary-builder__point"
+              :class="[`is-${item}`, { 'is-active': originKind === 'hotCorner' && corner === item }]"
+              :aria-pressed="originKind === 'hotCorner' && corner === item"
+              @click="originKind = 'hotCorner'; corner = item"
+            >
               {{ t(`corners.corner.${item}`) }}
             </button>
-          </template>
-          <template v-else>
-            <button v-for="item in edges" :key="item" type="button" class="boundary-builder__point" :class="[`is-${item}`, { 'is-active': edge === item }]" @click="edge = item">
+            <button
+              v-for="item in edges"
+              :key="`edge-${item}`"
+              type="button"
+              class="boundary-builder__point"
+              :class="[`is-${item}`, { 'is-active': originKind === 'rubEdge' && edge === item }]"
+              :aria-pressed="originKind === 'rubEdge' && edge === item"
+              @click="originKind = 'rubEdge'; edge = item"
+            >
               {{ t(`corners.edge.${item}`) }}
             </button>
-          </template>
+          </div>
         </div>
       </div>
 
@@ -197,9 +206,10 @@ function tokenLabel(token: BoundaryToken): string {
 .action-choice__item span { display: flex; flex-direction: column; gap: 7px; }
 .action-choice__item small { color: var(--el-text-color-secondary); line-height: 1.5; }
 .boundary-builder { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; }
-.boundary-builder__origin { display: flex; flex-direction: column; gap: 12px; }
+.boundary-builder__origin { min-width: 0; }
 .boundary-builder__screen { position: relative; aspect-ratio: 16 / 10; border: 2px solid var(--el-border-color); border-radius: 6px; background: var(--el-fill-color-lighter); }
 .boundary-builder__point { position: absolute; padding: 3px 6px; border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-bg-color); color: var(--el-text-color-regular); font-size: 11px; cursor: pointer; }
+.boundary-builder__point:hover, .boundary-builder__point:focus-visible { border-color: var(--el-color-primary); }
 .boundary-builder__point.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary); color: var(--el-color-white); }
 .boundary-builder__point.is-leftTop { top: 7px; left: 7px; } .boundary-builder__point.is-rightTop { top: 7px; right: 7px; } .boundary-builder__point.is-leftBottom { bottom: 7px; left: 7px; } .boundary-builder__point.is-rightBottom { right: 7px; bottom: 7px; }
 .boundary-builder__point.is-top { top: 7px; left: 50%; transform: translateX(-50%); } .boundary-builder__point.is-right { top: 50%; right: 7px; transform: translateY(-50%); } .boundary-builder__point.is-bottom { bottom: 7px; left: 50%; transform: translateX(-50%); } .boundary-builder__point.is-left { top: 50%; left: 7px; transform: translateY(-50%); }

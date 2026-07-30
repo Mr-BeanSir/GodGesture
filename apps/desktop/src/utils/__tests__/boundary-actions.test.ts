@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { reactive } from "vue";
 import type { BoundaryIntent, BoundaryToken } from "@godgesture/shared";
-import { findBoundaryConflict } from "../boundary-actions";
+import { cloneBoundarySequence, findBoundaryConflict } from "../boundary-actions";
 
 const wheel: BoundaryToken = { type: "wheel", direction: "forward" };
 const right: BoundaryToken = { type: "stroke", direction: "right" };
@@ -17,6 +18,17 @@ function intent(id: string, sequence: BoundaryToken[]): BoundaryIntent {
 }
 
 describe("boundary action conflicts", () => {
+  it("copies Vue reactive sequences into plain cloneable tokens", () => {
+    const sequence = reactive<BoundaryToken[]>([wheel, right]);
+
+    expect(() => structuredClone(sequence)).toThrow();
+    const copy = cloneBoundarySequence(sequence);
+    expect(copy).toEqual([wheel, right]);
+    expect(copy).not.toBe(sequence);
+    expect(copy[0]).not.toBe(sequence[0]);
+    expect(() => structuredClone(copy)).not.toThrow();
+  });
+
   it("distinguishes exact and prefix conflicts", () => {
     expect(
       findBoundaryConflict([intent("one", [wheel])], { kind: "hotCorner", corner: "leftTop" }, [wheel]),

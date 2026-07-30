@@ -1,5 +1,9 @@
 import type { BoundaryIntent, BoundaryOrigin, BoundaryToken } from "@godgesture/shared";
 
+export function cloneBoundarySequence(sequence: readonly BoundaryToken[]): BoundaryToken[] {
+  return sequence.map((token) => ({ ...token }));
+}
+
 function sameOrigin(a: BoundaryOrigin, b: BoundaryOrigin): boolean {
   if (a.kind !== b.kind) return false;
   return a.kind === "hotCorner"

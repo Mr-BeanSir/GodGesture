@@ -241,7 +241,7 @@ export default {
     gestureDescription: "按住触发键并移动鼠标，创建普通鼠标手势。",
     boundaryTitle: "边角动作",
     boundaryDescription: "到达指定触发角或完成摩擦边后，继续匹配滚轮、鼠标键或轨迹。",
-    originType: "起点类型",
+    originType: "起点",
     sequenceTitle: "后续动作",
     sequenceHint: "按执行顺序追加，最多 12 步。",
     immediate: "立即执行",

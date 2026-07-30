@@ -241,7 +241,7 @@ export default {
     gestureDescription: "Hold a trigger button and move the pointer to create a mouse gesture.",
     boundaryTitle: "Boundary action",
     boundaryDescription: "After reaching a hot corner or completing a rub edge, match wheel, mouse button, or stroke input.",
-    originType: "Origin type",
+    originType: "Origin",
     sequenceTitle: "Following actions",
     sequenceHint: "Append in execution order, up to 12 steps.",
     immediate: "Run immediately",

@@ -87,7 +87,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
-- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程和最多 12 步的边角序列构建器,触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
+- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,Lua 只保留高亮和不可执行警告。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
@@ -228,12 +228,14 @@ Desktop build 仍只有既有 VueUse PURE 注释和大 chunk 警告。macOS targ
 验收覆盖连续轨迹、任务栏层级、任务栏上方轨迹以及双向跨屏。macOS 仅完成源码同步和
 联合显示器边界测试代码,Windows 未执行该平台测试,不提供 Apple 编译或真机证据。
 
-2026-07-30 统一动作与快捷键录制验证:shared 92/92 + build;Desktop 102/102 +
+2026-07-30 统一动作与快捷键录制验证:shared 92/92 + build;Desktop 103/103 +
 typecheck/build;`pnpm check:api`、Server typecheck、Web Console typecheck 通过;Rust library
 `185 passed, 2 ignored`,`cargo clippy --lib --no-default-features -- -D warnings` 通过。
 浏览器 preview 以 `800x560` 中文浅色和 `980x700` 英文深色验收手势页与两步新增动作
-对话框,确认白色应用列表、无横向溢出、翻译 key 泄漏或对话框越界。macOS 边角序列
-仍按上方未完成边界等待真机证据。
+对话框,确认白色应用列表、无横向溢出、翻译 key 泄漏或对话框越界;八个边角起点
+在同一屏幕选择器中显示。另以 Vue reactive 序列回归测试和浏览器“下边缘 + 滚轮向前”
+完整保存流程确认提交不会再触发 `DataCloneError`。macOS 边角序列仍按上方未完成边界
+等待真机证据。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
