@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 2;
+pub const CONFIG_FORMAT_VERSION: u32 = 3;
 
 // ---------------------------------------------------------------------------
-// 命令(12 类;执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
+// 命令(执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -70,6 +70,12 @@ pub enum Command {
         #[serde(default)]
         gesture_ended_script: String,
     },
+    #[serde(rename_all = "camelCase")]
+    NodePlugin {
+        plugin_id: String,
+        #[serde(default = "default_node_export")]
+        export_name: String,
+    },
     Pause,
     #[serde(rename_all = "camelCase")]
     AudioVolume {
@@ -86,6 +92,9 @@ fn default_js() -> String {
 }
 fn default_delta() -> i32 {
     1
+}
+fn default_node_export() -> String {
+    "execute".into()
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -386,6 +395,45 @@ pub enum Locale {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodePlugin {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_node_entry")]
+    pub entry: String,
+    #[serde(default = "default_node_files")]
+    pub files: std::collections::HashMap<String, String>,
+    #[serde(default = "default_node_manifest")]
+    pub package_json: String,
+    #[serde(default)]
+    pub lockfile: Option<String>,
+    #[serde(default)]
+    pub allow_lifecycle_scripts: bool,
+}
+
+fn default_node_entry() -> String {
+    "index.mjs".into()
+}
+
+fn default_node_files() -> std::collections::HashMap<String, String> {
+    [(
+        "index.mjs".into(),
+        concat!(
+            "export async function execute(context) {\n",
+            "  await context.input.sendText(\"Hello from GodGesture\");\n",
+            "}\n"
+        )
+        .into(),
+    )]
+    .into_iter()
+    .collect()
+}
+
+fn default_node_manifest() -> String {
+    "{\n  \"private\": true,\n  \"type\": \"module\"\n}".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ConfigDocument {
     pub format_version: u32,
@@ -394,6 +442,7 @@ pub struct ConfigDocument {
     pub hot_corners: HotCornersConfig,
     pub rub_edges: RubEdgesConfig,
     pub boundary_intents: Vec<BoundaryIntent>,
+    pub node_plugins: Vec<NodePlugin>,
     pub preferences: SyncedPreferences,
 }
 
@@ -406,6 +455,7 @@ impl Default for ConfigDocument {
             hot_corners: HotCornersConfig::default(),
             rub_edges: RubEdgesConfig::default(),
             boundary_intents: Vec::new(),
+            node_plugins: Vec::new(),
             preferences: SyncedPreferences::default(),
         }
     }
@@ -749,6 +799,28 @@ mod tests {
 
         let parsed: Command = serde_json::from_value(serde_json::json!({"type": "doNothing"})).unwrap();
         assert_eq!(parsed, Command::DoNothing);
+
+        let node: Command = serde_json::from_value(serde_json::json!({
+            "type": "nodePlugin",
+            "pluginId": "30000000-0000-4000-8000-000000000001"
+        }))
+        .unwrap();
+        assert_eq!(
+            node,
+            Command::NodePlugin {
+                plugin_id: "30000000-0000-4000-8000-000000000001".into(),
+                export_name: "execute".into(),
+            }
+        );
+
+        let plugin: NodePlugin = serde_json::from_value(serde_json::json!({
+            "id": "30000000-0000-4000-8000-000000000001",
+            "name": "Example"
+        }))
+        .unwrap();
+        assert_eq!(plugin.entry, "index.mjs");
+        assert!(plugin.files.contains_key("index.mjs"));
+        assert!(plugin.package_json.contains("\"type\": \"module\""));
     }
 
     #[test]
@@ -781,7 +853,7 @@ mod tests {
         .unwrap();
 
         document.migrate_legacy_boundaries();
-        assert_eq!(document.format_version, 2);
+        assert_eq!(document.format_version, 3);
         assert!(!document.hot_corners.enabled);
         assert!(document.hot_corners.commands.is_empty());
         assert!(document.rub_edges.commands.is_empty());

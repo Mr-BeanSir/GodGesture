@@ -93,7 +93,7 @@ model UserConfig {
   updatedByDeviceId String?  @db.Uuid
 }
 
-/// 配置快照:每次成功推送保留的历史版本(保留最近 100 个)
+/// 配置快照:每次成功推送保留的历史版本(最多 100 个且每用户正文至多 64 MiB)
 model ConfigSnapshot {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @db.Uuid

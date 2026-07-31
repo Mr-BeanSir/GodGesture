@@ -1,5 +1,5 @@
 /**
- * 命令(Command)相关工具:12 类命令的类型清单与默认值工厂。
+ * 命令(Command)相关工具:命令类型清单与默认值工厂。
  * 单一事实源为 @godgesture/shared 的 zod Schema。
  */
 import type { Command } from "@godgesture/shared";
@@ -9,7 +9,7 @@ export type CommandType = Command["type"];
 /** 提取某一类命令的具体类型 */
 export type CommandOfType<T extends CommandType> = Extract<Command, { type: T }>;
 
-/** 12 类命令,顺序即下拉框展示顺序 */
+/** 当前工作台可直接新建的命令,顺序即下拉框展示顺序。 */
 export const COMMAND_TYPES: CommandType[] = [
   "doNothing",
   "hotKey",
@@ -71,6 +71,8 @@ export function createDefaultCommand(type: CommandType): Command {
         modifierTriggeredScript: "",
         gestureEndedScript: "",
       };
+    case "nodePlugin":
+      throw new Error("Node plugin commands require an existing plugin selection");
     case "pause":
       return { type: "pause" };
     case "audioVolume":

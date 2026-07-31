@@ -42,8 +42,8 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
     match cmd {
         // 由 consumer 特判 / 无动作
         Command::Pause | Command::DoNothing => {}
-        Command::Script { .. } => {
-            log::error!("Script 命令意外到达原生命令分发器");
+        Command::Script { .. } | Command::NodePlugin { .. } => {
+            log::error!("脚本命令意外到达原生命令分发器");
         }
 
         Command::HotKey { modifiers, keys } => {

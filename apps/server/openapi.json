@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              2
+              3
             ],
-            "default": 2
+            "default": 3
           },
           "global": {
             "type": "object",
@@ -513,6 +513,32 @@
                           },
                           "required": [
                             "type"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "nodePlugin"
+                              ]
+                            },
+                            "pluginId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "exportName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                              "default": "execute"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "pluginId"
                           ]
                         },
                         {
@@ -1094,6 +1120,32 @@
                               "type": {
                                 "type": "string",
                                 "enum": [
+                                  "nodePlugin"
+                                ]
+                              },
+                              "pluginId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "exportName": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                                "default": "execute"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "pluginId"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
                                   "pause"
                                 ]
                               }
@@ -1562,6 +1614,32 @@
                           "type": {
                             "type": "string",
                             "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
                               "pause"
                             ]
                           }
@@ -1980,6 +2058,32 @@
                         },
                         "required": [
                           "type"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
                         ]
                       },
                       {
@@ -2414,6 +2518,32 @@
                           "type": {
                             "type": "string",
                             "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
                               "pause"
                             ]
                           }
@@ -2832,6 +2962,32 @@
                         },
                         "required": [
                           "type"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
                         ]
                       },
                       {
@@ -3282,6 +3438,32 @@
                           "type": {
                             "type": "string",
                             "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
                               "pause"
                             ]
                           }
@@ -3700,6 +3882,32 @@
                         },
                         "required": [
                           "type"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
                         ]
                       },
                       {
@@ -4134,6 +4342,32 @@
                           "type": {
                             "type": "string",
                             "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
                               "pause"
                             ]
                           }
@@ -4552,6 +4786,32 @@
                         },
                         "required": [
                           "type"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "nodePlugin"
+                            ]
+                          },
+                          "pluginId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "exportName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                            "default": "execute"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "pluginId"
                         ]
                       },
                       {
@@ -5145,6 +5405,32 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "nodePlugin"
+                          ]
+                        },
+                        "pluginId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "exportName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+                          "default": "execute"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "pluginId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "pause"
                           ]
                         }
@@ -5188,6 +5474,57 @@
               ]
             },
             "maxItems": 256,
+            "default": []
+          },
+          "nodePlugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "entry": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "default": "index.mjs"
+                },
+                "files": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "default": {
+                    "index.mjs": "export async function execute(context) {\n  await context.input.sendText(\"Hello from GodGesture\");\n}\n"
+                  }
+                },
+                "packageJson": {
+                  "type": "string",
+                  "default": "{\n  \"private\": true,\n  \"type\": \"module\"\n}"
+                },
+                "lockfile": {
+                  "type": "string",
+                  "nullable": true,
+                  "default": null
+                },
+                "allowLifecycleScripts": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            },
+            "maxItems": 32,
             "default": []
           },
           "preferences": {

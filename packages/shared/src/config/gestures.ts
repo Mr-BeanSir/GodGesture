@@ -16,6 +16,7 @@ import {
   MAX_SCRIPT_TOTAL_LENGTH,
   MAX_URL_LENGTH,
 } from "./limits.js";
+import { NodePluginCommand } from "./plugins.js";
 
 /** 触发键:按住即进入手势状态的鼠标键 */
 export const TriggerButton = z.enum(["right", "middle", "x1", "x2"]);
@@ -153,6 +154,7 @@ export const Command = z
     GotoUrlCommand,
     CmdCommand,
     ScriptCommand,
+    NodePluginCommand,
     PauseCommand,
     AudioVolumeCommand,
   ])

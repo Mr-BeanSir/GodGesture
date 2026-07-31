@@ -7,36 +7,42 @@ import {
 import { Prisma } from '@prisma/client';
 import {
   ConfigDocument as ConfigDocumentSchema,
-  MAX_COMMAND_TEXT_LENGTH,
   MAX_CONFIG_DOCUMENT_BYTES,
+  MAX_NODE_PLUGIN_FILE_BYTES,
   configDocumentSizeBytes,
   type ConfigDocument,
 } from '@godgesture/shared';
-import { SyncService, SNAPSHOT_RETENTION } from './sync.service';
+import {
+  SNAPSHOT_RETENTION,
+  SNAPSHOT_STORAGE_BYTES,
+  SyncService,
+} from './sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** 文档内容本身不在 Service 层校验(由控制器的 ZodValidationPipe 负责) */
 const doc = { formatVersion: 1, apps: [] } as unknown as ConfigDocument;
 
 function sizedDocument(targetBytes: number): ConfigDocument {
-  const intents = Array.from({ length: 17 }, (_, index) => ({
-    id: `20000000-0000-4000-8000-${index.toString().padStart(12, '0')}`,
-    name: `Command ${index}`,
-    gesture: { trigger: 'right', strokes: ['up'], modifier: 'none' },
-    command: { type: 'cmd', code: '' },
-    executeOnModifier: false,
-    order: index,
+  const nodePlugins = Array.from({ length: 5 }, (_, pluginIndex) => ({
+    id: `30000000-0000-4000-8000-${pluginIndex.toString().padStart(12, '0')}`,
+    name: `Plugin ${pluginIndex}`,
+    entry: '0.mjs',
+    files: Object.fromEntries(
+      Array.from({ length: 4 }, (_, fileIndex) => [`${fileIndex}.mjs`, '']),
+    ),
+    packageJson: '{"private":true,"type":"module"}',
   }));
-  const document = ConfigDocumentSchema.parse({ global: { intents } });
+  const document = ConfigDocumentSchema.parse({ nodePlugins });
   let remaining = targetBytes - configDocumentSizeBytes(document);
   if (remaining < 0)
     throw new Error('target is smaller than the document shell');
-  for (const entry of document.global.intents) {
-    if (remaining === 0) break;
-    if (entry.command.type !== 'cmd') throw new Error('expected cmd command');
-    const length = Math.min(remaining, MAX_COMMAND_TEXT_LENGTH);
-    entry.command.code = 'x'.repeat(length);
-    remaining -= length;
+  for (const plugin of document.nodePlugins) {
+    for (const path of Object.keys(plugin.files)) {
+      if (remaining === 0) break;
+      const length = Math.min(remaining, MAX_NODE_PLUGIN_FILE_BYTES);
+      plugin.files[path] = 'x'.repeat(length);
+      remaining -= length;
+    }
   }
   if (remaining !== 0 || configDocumentSizeBytes(document) !== targetBytes) {
     throw new Error('could not construct an exact-size valid document');
@@ -65,6 +71,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
     configSnapshot: {
       create: jest.Mock;
       deleteMany: jest.Mock;
+      findMany: jest.Mock;
       findUnique: jest.Mock;
     };
     device: { updateMany: jest.Mock };
@@ -86,6 +93,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
       configSnapshot: {
         create: jest.fn().mockResolvedValue({}),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
       },
       device: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
@@ -128,7 +136,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
   });
 
   describe('push', () => {
-    it('接受恰好 256 KiB 的文档并记录精确快照字节数', async () => {
+    it('接受恰好 4 MiB 的文档并记录精确快照字节数', async () => {
       tx.userConfig.findUnique.mockResolvedValue(null);
       const document = sizedDocument(MAX_CONFIG_DOCUMENT_BYTES);
 
@@ -288,8 +296,14 @@ describe('SyncService(乐观并发 + 快照)', () => {
       ).rejects.toBe(databaseError);
     });
 
-    it('留存裁剪:同事务内删除版本 ≤ newVersion-100 的旧快照', async () => {
+    it('留存裁剪:只保留按版本倒序的最新 100 个快照', async () => {
       tx.userConfig.findUnique.mockResolvedValue({ version: 149 });
+      tx.configSnapshot.findMany.mockResolvedValue(
+        Array.from({ length: SNAPSHOT_RETENTION }, (_, index) => ({
+          version: 150 - index,
+          sizeBytes: 1,
+        })),
+      );
 
       await service.push('user-1', 'dev-1', {
         baseVersion: 149,
@@ -297,7 +311,29 @@ describe('SyncService(乐观并发 + 快照)', () => {
       });
 
       expect(tx.configSnapshot.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1', version: { lte: 150 - SNAPSHOT_RETENTION } },
+        where: { userId: 'user-1', version: { lt: 51 } },
+      });
+    });
+
+    it('留存裁剪:累计正文超过 64 MiB 时删除更老快照', async () => {
+      tx.userConfig.findUnique.mockResolvedValue({ version: 149 });
+      const snapshotBytes = 20 * 1024 * 1024;
+      expect(snapshotBytes * 3).toBeLessThanOrEqual(SNAPSHOT_STORAGE_BYTES);
+      expect(snapshotBytes * 4).toBeGreaterThan(SNAPSHOT_STORAGE_BYTES);
+      tx.configSnapshot.findMany.mockResolvedValue(
+        [150, 149, 148, 147].map((version) => ({
+          version,
+          sizeBytes: snapshotBytes,
+        })),
+      );
+
+      await service.push('user-1', 'dev-1', {
+        baseVersion: 149,
+        document: doc,
+      });
+
+      expect(tx.configSnapshot.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', version: { lt: 148 } },
       });
     });
   });

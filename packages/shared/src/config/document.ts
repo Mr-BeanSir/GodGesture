@@ -12,9 +12,10 @@ import {
 } from "./gestures.js";
 import { SyncedPreferences } from "./preferences.js";
 import { MAX_APPS } from "./limits.js";
+import { NodePlugins } from "./plugins.js";
 
 /** 配置文档格式版本(载荷结构演进用,与同步版本号无关) */
-export const CONFIG_FORMAT_VERSION = 2;
+export const CONFIG_FORMAT_VERSION = 3;
 
 const LEGACY_BOUNDARY_IDS = {
   "hotCorner:leftTop": "10000000-0000-4000-8000-000000000001",
@@ -46,7 +47,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function migrateConfigDocument(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const version = value.formatVersion ?? 1;
-  if (version !== 1 && version !== CONFIG_FORMAT_VERSION) return value;
+  if (version !== 1 && version !== 2 && version !== CONFIG_FORMAT_VERSION) return value;
 
   const hotCorners = isRecord(value.hotCorners) ? value.hotCorners : {};
   const rubEdges = isRecord(value.rubEdges) ? value.rubEdges : {};
@@ -101,6 +102,7 @@ export function migrateConfigDocument(value: unknown): unknown {
     hotCorners: { ...hotCorners, commands: {} },
     rubEdges: { ...rubEdges, commands: {} },
     boundaryIntents: [...existing, ...migrated],
+    nodePlugins: Array.isArray(value.nodePlugins) ? value.nodePlugins : [],
   };
 }
 
@@ -108,16 +110,35 @@ export function migrateConfigDocument(value: unknown): unknown {
  * 用户配置整体文档:云同步的载荷,也是本地 config 文件的主体。
  * 不含本机专属设置(MachineLocalSettings 单独存本地)。
  */
-const ConfigDocumentV2 = z.object({
-  formatVersion: z
-    .literal(CONFIG_FORMAT_VERSION)
-    .default(CONFIG_FORMAT_VERSION),
-  global: GlobalApp.default({}),
-  apps: z.array(AppEntry).max(MAX_APPS).default([]),
-  hotCorners: HotCornersConfig.default({}),
-  rubEdges: RubEdgesConfig.default({}),
-  boundaryIntents: BoundaryIntents,
-  preferences: SyncedPreferences.default({}),
-});
-export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV2);
+const ConfigDocumentV3 = z
+  .object({
+    formatVersion: z
+      .literal(CONFIG_FORMAT_VERSION)
+      .default(CONFIG_FORMAT_VERSION),
+    global: GlobalApp.default({}),
+    apps: z.array(AppEntry).max(MAX_APPS).default([]),
+    hotCorners: HotCornersConfig.default({}),
+    rubEdges: RubEdgesConfig.default({}),
+    boundaryIntents: BoundaryIntents,
+    nodePlugins: NodePlugins,
+    preferences: SyncedPreferences.default({}),
+  })
+  .superRefine((document, ctx) => {
+    const pluginIds = new Set(document.nodePlugins.map((plugin) => plugin.id));
+    const commands = [
+      ...document.global.intents.map((intent) => intent.command),
+      ...document.apps.flatMap((app) => app.intents.map((intent) => intent.command)),
+      ...document.boundaryIntents.map((intent) => intent.command),
+    ];
+    for (const command of commands) {
+      if (command.type === "nodePlugin" && !pluginIds.has(command.pluginId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["nodePlugins"],
+          message: `Node plugin command references missing plugin '${command.pluginId}'`,
+        });
+      }
+    }
+  });
+export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV3);
 export type ConfigDocument = z.infer<typeof ConfigDocument>;

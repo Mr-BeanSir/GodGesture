@@ -11,7 +11,8 @@ describe("importLegacyConfig(wg2 + config.plist)", () => {
   });
 
   it("产出合法 ConfigDocument", () => {
-    expect(document.formatVersion).toBe(2);
+    expect(document.formatVersion).toBe(3);
+    expect(document.nodePlugins).toEqual([]);
     expect(() => ConfigDocument.parse(document)).not.toThrow();
   });
 

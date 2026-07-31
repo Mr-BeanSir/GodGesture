@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-07-30。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-07-31。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -82,7 +82,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 本机设置通过显式串行更新操作保存,可观察 Task Scheduler/UAC pending 与结构化错误;`rollback_incomplete` 会重读后端状态,文档保存不会清除本机错误。
 - Options 在 macOS 显示 Accessibility、Input Monitoring、event posting 与引擎状态,支持请求权限和打开系统设置;本机设置成功后重读运行时状态,保留登录项 `requires approval`。
 - `runAsAdmin` 在 macOS 禁用并提供双语说明;后端也会清理旧本机文件可能遗留的 `true`,不伪装成已应用。
-- `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、256 KiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
+- `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、4 MiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
 - 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。`HotkeyInput.vue` 的键盘快捷键录制使用独立草稿:新和弦替换旧值,支持 Ctrl/Win(Cmd)/Alt 等纯修饰组合,最后一个物理键抬起时自动提交,Escape 或未完成失焦则取消。
 - `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Windows 验证/规范化 `.exe` 并解析 `.lnk`,macOS 在 Bundle ID 分组提供准星和 `.app` 拖放且隐藏 Windows 字段。
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
@@ -100,12 +100,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 2`,全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 3`,新增有界 `nodePlugins` 项目集合和 `nodePlugin` 命令引用;v1/v2 自动迁移到 v3,但旧 QuickJS 源码暂不自动转换。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
 - OAuth 已实现 GitHub/Google 可配置提供方和 PKCE;微信/QQ 保留配置位并默认不可用。不得按邮箱把 OAuth 自动关联到未验证密码账户。
-- 同步使用整库版本、乐观并发、后写胜出和快照;恢复快照也要求版本 CAS。设备删除会撤销其访问。
+- 同步使用整库版本、乐观并发、后写胜出和快照;文档上限为 4 MiB,快照同时限制最新 100 个和每用户 64 MiB 正文。恢复快照也要求版本 CAS。设备删除会撤销其访问。
 - Web Console 使用 shared Schema 校验 API 数据,支持密码/OAuth 登录、跨标签刷新协调、只读配置、设备改名/移除和快照恢复。
 
 ## 已知未完成边界
@@ -266,6 +266,14 @@ Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限�
 宿主调用、顺序、协议错误、超时和 Worker 崩溃后重载;显式 release gate 通过,
 `cargo clippy --lib --tests -- -D warnings` 通过。该证据只满足 Windows 原型门槛;
 尚未使用随应用打包的 Node,macOS CI/真机门槛未执行,因此不得删除 QuickJS。
+
+2026-07-31 Node 插件配置协议:shared 配置升级至 v3,新增最多 32 个 Node 插件、
+每插件最多 64 个文件、单文件 256 KiB、源码合计 1 MiB、manifest 64 KiB 和 lockfile
+512 KiB 限制;同步文档上限提高至 4 MiB,Server 快照按最新 100 个及每用户 64 MiB
+正文双重裁剪。shared `99/99` + build;Desktop `105/105` + typecheck/build;Server
+`87/87` + typecheck;Web Console typecheck/build;`pnpm check:api`;Rust library
+`194 passed, 3 ignored`,`cargo clippy --lib --tests -- -D warnings` 通过。QuickJS 仍是
+生产脚本执行路径,Node 配置尚未接入生产宿主。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

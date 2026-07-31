@@ -264,7 +264,7 @@ describe("gesture template adoption", () => {
     const largeScriptSlot = "x".repeat(32 * 1024);
     const document = ConfigDocument.parse({
       global: {
-        intents: [0, 1, 2].map((index) => ({
+        intents: Array.from({ length: 64 }, (_, index) => ({
           ...existingIntent(`Large ${index}`, [index === 0 ? "up" : index === 1 ? "right" : "down"], index),
           command: {
             type: "script",

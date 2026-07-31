@@ -38,7 +38,7 @@ describe("config capacity limits", () => {
     expect(configDocumentSizeBytes({ value: "界" })).toBe(
       new TextEncoder().encode(JSON.stringify({ value: "界" })).length,
     );
-    expect(MAX_CONFIG_DOCUMENT_BYTES).toBe(256 * 1024);
+    expect(MAX_CONFIG_DOCUMENT_BYTES).toBe(4 * 1024 * 1024);
   });
 
   it("bounds apps and intents per scope", () => {

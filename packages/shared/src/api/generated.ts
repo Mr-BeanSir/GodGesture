@@ -335,6 +335,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -443,6 +450,13 @@ export interface components {
                     /** @enum {string} */
                     type: "script";
                 } | {
+                    /** @default execute */
+                    exportName: string;
+                    /** Format: uuid */
+                    pluginId: string;
+                    /** @enum {string} */
+                    type: "nodePlugin";
+                } | {
                     /** @enum {string} */
                     type: "pause";
                 } | {
@@ -488,10 +502,10 @@ export interface components {
                 })[];
             }[];
             /**
-             * @default 2
+             * @default 3
              * @enum {number}
              */
-            formatVersion: 2;
+            formatVersion: 3;
             /** @default {} */
             global: {
                 /** @default true */
@@ -561,6 +575,13 @@ export interface components {
                         script: string;
                         /** @enum {string} */
                         type: "script";
+                    } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
                     } | {
                         /** @enum {string} */
                         type: "pause";
@@ -659,6 +680,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -730,6 +758,13 @@ export interface components {
                         script: string;
                         /** @enum {string} */
                         type: "script";
+                    } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
                     } | {
                         /** @enum {string} */
                         type: "pause";
@@ -803,6 +838,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -875,6 +917,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -887,6 +936,33 @@ export interface components {
                 /** @default true */
                 enabled: boolean;
             };
+            /** @default [] */
+            nodePlugins: {
+                /** @default false */
+                allowLifecycleScripts: boolean;
+                /** @default index.mjs */
+                entry: string;
+                /**
+                 * @default {
+                 *       "index.mjs": "export async function execute(context) {\n  await context.input.sendText(\"Hello from GodGesture\");\n}\n"
+                 *     }
+                 */
+                files: {
+                    [key: string]: string;
+                };
+                /** Format: uuid */
+                id: string;
+                /** @default null */
+                lockfile: string | null;
+                name: string;
+                /**
+                 * @default {
+                 *       "private": true,
+                 *       "type": "module"
+                 *     }
+                 */
+                packageJson: string;
+            }[];
             /** @default {} */
             preferences: {
                 /** @default true */
@@ -1025,6 +1101,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -1096,6 +1179,13 @@ export interface components {
                         script: string;
                         /** @enum {string} */
                         type: "script";
+                    } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
                     } | {
                         /** @enum {string} */
                         type: "pause";
@@ -1169,6 +1259,13 @@ export interface components {
                         /** @enum {string} */
                         type: "script";
                     } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
                         /** @enum {string} */
                         type: "pause";
                     } | {
@@ -1240,6 +1337,13 @@ export interface components {
                         script: string;
                         /** @enum {string} */
                         type: "script";
+                    } | {
+                        /** @default execute */
+                        exportName: string;
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
                     } | {
                         /** @enum {string} */
                         type: "pause";

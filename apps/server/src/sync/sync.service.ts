@@ -25,6 +25,8 @@ import { isPrismaError } from '../common/prisma-exception.filter';
 
 /** 快照留存条数:每用户保留最新 100 个,推送事务内裁剪 */
 export const SNAPSHOT_RETENTION = 100;
+/** 插件源码提高单文档上限后,历史正文仍保持有界。 */
+export const SNAPSHOT_STORAGE_BYTES = 64 * 1024 * 1024;
 
 /**
  * 同步:整库版本 + 乐观并发 + 后写胜出 + 快照(ADR-0009)。
@@ -229,9 +231,7 @@ export class SyncService {
         createdAt: now,
       },
     });
-    await tx.configSnapshot.deleteMany({
-      where: { userId, version: { lte: newVersion - SNAPSHOT_RETENTION } },
-    });
+    await this.pruneSnapshots(tx, userId);
     await tx.device.updateMany({
       where: { id: deviceId },
       data: { lastSeenAt: now },
@@ -249,5 +249,33 @@ export class SyncService {
       );
     }
     return sizeBytes;
+  }
+
+  private async pruneSnapshots(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
+    const candidates = await tx.configSnapshot.findMany({
+      where: { userId },
+      orderBy: { version: 'desc' },
+      take: SNAPSHOT_RETENTION,
+      select: { version: true, sizeBytes: true },
+    });
+    let retainedBytes = 0;
+    let oldestRetainedVersion: number | null = null;
+    for (const snapshot of candidates) {
+      if (
+        oldestRetainedVersion !== null &&
+        retainedBytes + snapshot.sizeBytes > SNAPSHOT_STORAGE_BYTES
+      ) {
+        break;
+      }
+      retainedBytes += snapshot.sizeBytes;
+      oldestRetainedVersion = snapshot.version;
+    }
+    if (oldestRetainedVersion === null) return;
+    await tx.configSnapshot.deleteMany({
+      where: { userId, version: { lt: oldestRetainedVersion } },
+    });
   }
 }

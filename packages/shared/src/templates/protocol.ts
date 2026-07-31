@@ -305,6 +305,7 @@ export function parseGestureTemplatePackage(
 export function commandTemplateRisks(command: z.infer<typeof Command>) {
   switch (command.type) {
     case "script":
+    case "nodePlugin":
       return ["script"] as const;
     case "cmd":
       return ["commandLine"] as const;
