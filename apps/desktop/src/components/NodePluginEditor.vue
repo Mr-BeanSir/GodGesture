@@ -1,25 +1,60 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, toRaw, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, Plus } from "@element-plus/icons-vue";
+import { Delete, Plus, Refresh } from "@element-plus/icons-vue";
 import type { NodePlugin, NodePluginCommand } from "@godgesture/shared";
 import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
+import { useBackend } from "../api/backend";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
+import {
+  listPluginDependencies,
+  removePluginDependency,
+  setPluginDependency,
+} from "../utils/nodePluginPackages";
 import ScriptEditor from "./ScriptEditor.vue";
 
 const props = defineProps<{ modelValue: NodePluginCommand }>();
 const emit = defineEmits<{ (event: "update:modelValue", value: NodePluginCommand): void }>();
 const { t } = useI18n();
 const store = useConfigStore();
+const backend = useBackend();
 const newFilePath = ref("");
 const activeFile = ref("index.mjs");
+const dependencyName = ref("");
+const dependencySpec = ref("latest");
+const packageState = ref<"idle" | "running" | "ready" | "error">("idle");
+const packageOutput = ref("");
+const packageError = ref("");
+const activeBottomTab = ref("problems");
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
   plugins.value.find((candidate) => candidate.id === props.modelValue.pluginId) ?? null,
 );
 const fileNames = computed(() => (plugin.value ? Object.keys(plugin.value.files).sort() : []));
+const manifestError = computed(() => {
+  if (!plugin.value) return "";
+  try {
+    listPluginDependencies(plugin.value.packageJson);
+    return "";
+  } catch {
+    return t("command.nodePlugin.problemManifest");
+  }
+});
+const dependencies = computed(() => {
+  if (!plugin.value || manifestError.value) return [];
+  return listPluginDependencies(plugin.value.packageJson);
+});
+const problems = computed(() => {
+  const result: string[] = [];
+  if (manifestError.value) result.push(manifestError.value);
+  if (dependencies.value.length && !plugin.value?.lockfile) {
+    result.push(t("command.nodePlugin.problemLockfile"));
+  }
+  if (packageError.value) result.push(packageError.value);
+  return result;
+});
 const activeSource = computed({
   get: () => plugin.value?.files[activeFile.value] ?? "",
   set: (value: string) => {
@@ -73,6 +108,53 @@ function setEntry(path: string) {
   if (plugin.value && path in plugin.value.files) plugin.value.entry = path;
 }
 
+function addDependency() {
+  if (!plugin.value) return;
+  try {
+    plugin.value.packageJson = setPluginDependency(
+      plugin.value.packageJson,
+      dependencyName.value,
+      dependencySpec.value,
+    );
+    plugin.value.lockfile = null;
+    dependencyName.value = "";
+    dependencySpec.value = "latest";
+    packageState.value = "idle";
+    packageError.value = "";
+  } catch (error) {
+    packageError.value = t(`command.nodePlugin.${error instanceof Error ? error.message : "packageSpecInvalid"}`);
+    activeBottomTab.value = "problems";
+  }
+}
+
+function removeDependency(name: string) {
+  if (!plugin.value) return;
+  plugin.value.packageJson = removePluginDependency(plugin.value.packageJson, name);
+  plugin.value.lockfile = null;
+  packageState.value = "idle";
+  packageError.value = "";
+}
+
+async function prepareDependencies() {
+  if (!plugin.value || manifestError.value) return;
+  packageState.value = "running";
+  packageError.value = "";
+  packageOutput.value = "";
+  activeBottomTab.value = "output";
+  try {
+    const snapshot = JSON.parse(JSON.stringify(toRaw(plugin.value))) as NodePlugin;
+    const result = await backend.nodePluginInstall(snapshot);
+    plugin.value.lockfile = result.lockfile;
+    packageOutput.value = result.output || t("command.nodePlugin.prepareComplete");
+    packageState.value = result.ready ? "ready" : "error";
+  } catch (error) {
+    packageState.value = "error";
+    packageError.value = error instanceof Error ? error.message : String(error);
+    packageOutput.value = packageError.value;
+    activeBottomTab.value = "problems";
+  }
+}
+
 watch(
   () => [props.modelValue.pluginId, plugin.value?.entry] as const,
   ([, entry]) => {
@@ -87,6 +169,16 @@ watch(
     if (!plugin.value && plugins.value.length) selectPlugin(plugins.value[0]!.id);
   },
   { immediate: true },
+);
+
+watch(
+  () => [plugin.value?.id, plugin.value?.packageJson] as const,
+  ([id, manifest], [previousId, previousManifest]) => {
+    if (plugin.value && id === previousId && manifest !== previousManifest) {
+      plugin.value.lockfile = null;
+      packageState.value = "idle";
+    }
+  },
 );
 </script>
 
@@ -178,11 +270,78 @@ watch(
           <el-input v-model="plugin.lockfile" type="textarea" :rows="7" :placeholder="t('command.nodePlugin.lockfilePlaceholder')" />
         </div>
       </div>
-      <el-alert :title="t('command.nodePlugin.syncHint')" type="info" :closable="false" />
+
+      <section class="node-plugin-editor__dependencies">
+        <div class="node-plugin-editor__section-head">
+          <div>
+            <strong>{{ t("command.nodePlugin.dependencies") }}</strong>
+            <span class="gg-hint">{{ t("command.nodePlugin.dependenciesHint") }}</span>
+          </div>
+          <el-button
+            size="small"
+            :icon="Refresh"
+            :loading="packageState === 'running'"
+            :disabled="Boolean(manifestError)"
+            @click="prepareDependencies"
+          >
+            {{ t("command.nodePlugin.prepare") }}
+          </el-button>
+        </div>
+        <div class="node-plugin-editor__dependency-add">
+          <el-input
+            v-model="dependencyName"
+            size="small"
+            :placeholder="t('command.nodePlugin.packageName')"
+            @keyup.enter="addDependency"
+          />
+          <el-input
+            v-model="dependencySpec"
+            size="small"
+            :placeholder="t('command.nodePlugin.packageSpec')"
+            @keyup.enter="addDependency"
+          />
+          <el-button size="small" :icon="Plus" @click="addDependency">
+            {{ t("command.nodePlugin.addDependency") }}
+          </el-button>
+        </div>
+        <div v-if="dependencies.length" class="node-plugin-editor__dependency-list">
+          <div v-for="dependency in dependencies" :key="dependency.name" class="node-plugin-editor__dependency">
+            <code>{{ dependency.name }}</code>
+            <span>{{ dependency.spec }}</span>
+            <el-tag v-if="dependency.optional" size="small" type="info">
+              {{ t("command.nodePlugin.optional") }}
+            </el-tag>
+            <el-tooltip :content="t('command.nodePlugin.removeDependency')">
+              <el-button
+                link
+                size="small"
+                :icon="Delete"
+                :aria-label="t('command.nodePlugin.removeDependency')"
+                @click="removeDependency(dependency.name)"
+              />
+            </el-tooltip>
+          </div>
+        </div>
+        <div v-else class="gg-hint">{{ t("command.nodePlugin.noDependencies") }}</div>
+      </section>
+
       <label class="gg-switch-row">
         <el-switch v-model="plugin.allowLifecycleScripts" />
         <span>{{ t("command.nodePlugin.allowLifecycleScripts") }}</span>
       </label>
+      <el-alert :title="t('command.nodePlugin.syncHint')" type="info" :closable="false" />
+
+      <el-tabs v-model="activeBottomTab" class="node-plugin-editor__bottom-tabs">
+        <el-tab-pane :label="`${t('command.nodePlugin.problems')} (${problems.length})`" name="problems">
+          <ul v-if="problems.length" class="node-plugin-editor__problems">
+            <li v-for="problem in problems" :key="problem">{{ problem }}</li>
+          </ul>
+          <el-empty v-else :description="t('command.nodePlugin.noProblems')" :image-size="36" />
+        </el-tab-pane>
+        <el-tab-pane :label="t('command.nodePlugin.output')" name="output">
+          <pre class="node-plugin-editor__output">{{ packageOutput || t("command.nodePlugin.noOutput") }}</pre>
+        </el-tab-pane>
+      </el-tabs>
     </template>
     <el-empty v-else :description="t('command.nodePlugin.empty')" :image-size="48" />
   </div>
@@ -207,10 +366,30 @@ watch(
 .node-plugin-editor__code-head { color: var(--el-text-color-primary); font-family: "Cascadia Code", Consolas, monospace; }
 .node-plugin-editor__entry { color: var(--el-color-success); font-family: inherit; }
 .node-plugin-editor__package-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.node-plugin-editor__dependencies { display: grid; min-width: 0; gap: 8px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
+.node-plugin-editor__section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.node-plugin-editor__section-head > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.node-plugin-editor__section-head strong { font-size: 13px; font-weight: 600; }
+.node-plugin-editor__dependency-add { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(100px, .5fr) auto; gap: 6px; }
+.node-plugin-editor__dependency-list { display: grid; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.node-plugin-editor__dependency { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .45fr) auto 28px; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 9px; border-bottom: 1px solid var(--el-border-color-lighter); font-size: 12px; }
+.node-plugin-editor__dependency:last-child { border-bottom: 0; }
+.node-plugin-editor__dependency code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-plugin-editor__dependency > span { color: var(--el-text-color-secondary); }
+.node-plugin-editor__bottom-tabs { min-width: 0; }
+.node-plugin-editor__problems { display: grid; gap: 5px; margin: 0; padding: 8px 8px 8px 26px; color: var(--el-color-danger); font-size: 12px; }
+.node-plugin-editor__output { box-sizing: border-box; max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 4px; background: var(--el-fill-color-darker); color: var(--el-text-color-primary); font: 12px/1.5 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 @container (max-width: 520px) {
   .node-plugin-editor__meta,
   .node-plugin-editor__package-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .node-plugin-editor__dependency-add {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, .55fr);
+  }
+  .node-plugin-editor__dependency-add .el-button {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 }
 @container (max-width: 420px) {

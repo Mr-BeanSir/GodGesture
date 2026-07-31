@@ -175,6 +175,29 @@ export function createMockBackend(): Backend {
     async configSet(document) {
       doc = ConfigDocument.parse(document);
     },
+    async nodePluginInstall(plugin) {
+      const manifest = JSON.parse(plugin.packageJson) as {
+        dependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+      };
+      const dependencies = {
+        ...manifest.dependencies,
+        ...manifest.optionalDependencies,
+      };
+      return {
+        lockfile: [
+          "lockfileVersion: '9.0'",
+          "settings:",
+          "  autoInstallPeers: true",
+          "importers:",
+          "  .:",
+          `    dependencies: ${Object.keys(dependencies).length ? "resolved" : "{}"}`,
+          "",
+        ].join("\n"),
+        output: `Prepared ${Object.keys(dependencies).length} dependencies in browser preview.`,
+        ready: true,
+      };
+    },
     async machineGet() {
       return { ...machine };
     },

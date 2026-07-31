@@ -89,7 +89,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备和有界 Problems/Output 面板。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -309,6 +309,13 @@ export;工作区支持插件名称、多源文件新增/删除/入口切换、Mo
 诊断。真实 Node 临时项目测试覆盖生成 ESM、跨槽状态和修饰兼容。Desktop `111/111` +
 typecheck/build,定向 `git diff --check` 通过。依赖增删/锁文件生成、安装/离线状态和
 Problems/输出仍待后续实现。
+
+2026-07-31 Node 依赖工作区:Node 插件编辑器增加内联依赖增改删、manifest 校验、用户主动
+lockfile 解析/离线生产安装和入口 import smoke;Rust 通过同一内置 Node/pnpm 工具链执行,
+输出限制 128 KiB、单命令超时 120 秒,并把 `@godgesture/sdk` 内置运行时写入物化插件。
+Windows/macOS 共用 Tauri IPC,浏览器 mock 可演示保存 lockfile、Problems 和 Output。Desktop
+`114/114` + typecheck/build;Rust library `200 passed, 3 ignored`;严格 clippy 通过。
+依赖搜索、更新建议和 macOS 真机性能门槛仍待后续实现,QuickJS 继续保留。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

@@ -2,13 +2,14 @@
 
 use super::config::NodePlugin;
 use super::node_host::{default_supervisor_path, InvocationResult, NodeHost};
+use super::node_packages::write_builtin_sdk;
 use super::script::{ScriptHost, ScriptInvocation, ScriptSlot};
 use crossbeam_channel::{bounded, Sender, TrySendError};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -302,7 +303,12 @@ fn materialize_plugin(
     let revision = plugin_fingerprint(plugin);
     let plugin_root = workspace.join(&plugin.id).join(format!("{revision:016x}"));
     let ready = plugin_root.join(".ready");
-    if !ready.is_file() {
+    let sdk_entry = plugin_root
+        .join("node_modules")
+        .join("@godgesture")
+        .join("sdk")
+        .join("index.mjs");
+    if !ready.is_file() || !sdk_entry.is_file() {
         if plugin_root.exists() {
             fs::remove_dir_all(&plugin_root)
                 .map_err(|error| format!("clear incomplete plugin project: {error}"))?;
@@ -325,6 +331,7 @@ fn materialize_plugin(
                 .map_err(|error| format!("write plugin source '{path}': {error}"))?;
         }
         install_dependencies(workspace, &plugin_root, node, pnpm, plugin, &manifest)?;
+        write_builtin_sdk(&plugin_root)?;
         fs::write(&ready, revision.to_string())
             .map_err(|error| format!("mark plugin project ready: {error}"))?;
     }
@@ -355,9 +362,8 @@ fn install_dependencies(
     }
     let store = workspace.join(".pnpm-store");
     fs::create_dir_all(&store).map_err(|error| format!("create pnpm store: {error}"))?;
-    let mut command = Command::new(node);
+    let mut command = super::node_toolchain::pnpm_command(node, pnpm);
     command
-        .arg(pnpm)
         .arg("install")
         .arg("--offline")
         .arg("--frozen-lockfile")

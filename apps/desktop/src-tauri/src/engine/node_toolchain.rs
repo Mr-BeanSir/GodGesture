@@ -1,6 +1,7 @@
 //! Resolve the Node.js and pnpm binaries shipped with the desktop bundle.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeToolchain {
@@ -42,6 +43,19 @@ pub fn from_resource_root(resource_root: &Path) -> Result<NodeToolchain, String>
         pnpm,
         supervisor,
     })
+}
+
+pub fn pnpm_command(node: &Path, pnpm: &Path) -> Command {
+    let is_script = pnpm.extension().and_then(|extension| extension.to_str()).is_some_and(
+        |extension| matches!(extension.to_ascii_lowercase().as_str(), "cjs" | "mjs" | "js"),
+    );
+    if is_script {
+        let mut command = Command::new(node);
+        command.arg(pnpm);
+        command
+    } else {
+        Command::new(pnpm)
+    }
 }
 
 #[cfg(test)]

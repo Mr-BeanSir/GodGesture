@@ -486,25 +486,12 @@ fn spawn_engine_consumer(
                 }
             });
             let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
-            let node_service = match (app.path().app_local_data_dir(), app.path().resource_dir()) {
-                (Ok(data_dir), Ok(resource_dir)) => {
-                    let toolchain = engine::node_toolchain::from_resource_root(&resource_dir)
-                        .or_else(|error| {
-                            #[cfg(debug_assertions)]
-                            {
-                                log::debug!("{error}; using PATH Node for debug development");
-                                Ok(engine::node_toolchain::NodeToolchain {
-                                    node: std::path::PathBuf::from("node"),
-                                    pnpm: std::path::PathBuf::from("pnpm"),
-                                    supervisor: engine::node_host::default_supervisor_path(),
-                                })
-                            }
-                            #[cfg(not(debug_assertions))]
-                            {
-                                Err(error)
-                            }
-                        });
-                    toolchain.and_then(|toolchain| {
+            let node_service = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|error| format!("resolve Node plugin data directory: {error}"))
+                .and_then(|data_dir| {
+                    resolve_node_toolchain(&app).and_then(|toolchain| {
                         NodeScriptService::start(
                             toolchain.node,
                             toolchain.pnpm,
@@ -515,10 +502,7 @@ fn spawn_engine_consumer(
                             initial_plugins,
                         )
                     })
-                }
-                (Err(error), _) => Err(format!("resolve Node plugin data directory: {error}")),
-                (_, Err(error)) => Err(format!("resolve Node plugin resource directory: {error}")),
-            };
+                });
             let node_service = match node_service {
                 Ok(service) => Some(service),
                 Err(error) => {
@@ -980,6 +964,49 @@ fn config_set(
     }
     engine.replace_config(document);
     Ok(())
+}
+
+fn resolve_node_toolchain(
+    app: &tauri::AppHandle,
+) -> Result<engine::node_toolchain::NodeToolchain, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("resolve Node plugin resource directory: {error}"))?;
+    engine::node_toolchain::from_resource_root(&resource_dir).or_else(|error| {
+        #[cfg(debug_assertions)]
+        {
+            log::debug!("{error}; using PATH Node for debug development");
+            Ok(engine::node_toolchain::NodeToolchain {
+                node: std::path::PathBuf::from("node"),
+                pnpm: std::path::PathBuf::from("pnpm"),
+                supervisor: engine::node_host::default_supervisor_path(),
+            })
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            Err(error)
+        }
+    })
+}
+
+#[tauri::command]
+async fn node_plugin_install(
+    plugin: engine::config::NodePlugin,
+    app: tauri::AppHandle,
+) -> Result<engine::node_packages::NodePackageResult, String> {
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
+        .join("node-plugins")
+        .join("runtime");
+    let toolchain = resolve_node_toolchain(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine::node_packages::install_plugin(&workspace, &toolchain, &plugin)
+    })
+    .await
+    .map_err(|error| format!("Node package worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -2007,6 +2034,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             config_get,
             config_set,
+            node_plugin_install,
             machine_get,
             machine_set,
             machine_status,

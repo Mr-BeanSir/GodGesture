@@ -4,6 +4,7 @@
  * Rust 侧需实现的命令(snake_case,与本文件一一对应):
  * - config_get(): ConfigDocument
  * - config_set(document: ConfigDocument)        // 保存并即时生效
+ * - node_plugin_install(plugin): NodePackageResult // 用户主动解析/准备依赖
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
  * - machine_status(): MachineRuntimeStatus
@@ -24,6 +25,7 @@ import type {
   ConfigDocument,
   DevicePlatform,
   MachineLocalSettings,
+  NodePlugin,
 } from "@godgesture/shared";
 import { createMockBackend } from "./mock";
 
@@ -101,6 +103,12 @@ export interface UpdateMetadata {
   publishedAt: string | null;
 }
 
+export interface NodePackageResult {
+  lockfile: string | null;
+  output: string;
+  ready: boolean;
+}
+
 export type UpdateDownloadEvent =
   | { event: "started"; data: { contentLength: number | null } }
   | {
@@ -130,6 +138,7 @@ export interface Backend {
   configGet(): Promise<ConfigDocument>;
   /** 保存并即时生效 */
   configSet(document: ConfigDocument): Promise<void>;
+  nodePluginInstall(plugin: NodePlugin): Promise<NodePackageResult>;
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
@@ -239,6 +248,14 @@ function createTauriBackend(): Backend {
     async configSet(document) {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("config_set", { document });
+    },
+    async nodePluginInstall(plugin) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<NodePackageResult>("node_plugin_install", { plugin });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
     },
     async machineGet() {
       const { invoke } = await import("@tauri-apps/api/core");
