@@ -379,9 +379,12 @@ export default {
       gestureRecognizedScript: "手势识别时脚本",
       modifierTriggeredScript: "修饰触发时脚本",
       gestureEndedScript: "手势结束时脚本",
+      convertToNodePlugin: "转换为 Node.js 插件",
+      convertHint: "会在新插件中保留原脚本文件和生命周期槽位。",
     },
     nodePlugin: {
       newName: "未命名 Node 插件",
+      convertedName: "转换后的 JavaScript 插件",
       newPlugin: "新建插件",
       name: "插件名称",
       exportName: "处理函数导出名",

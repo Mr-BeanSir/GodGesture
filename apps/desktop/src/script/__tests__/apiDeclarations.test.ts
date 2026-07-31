@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import apiDeclarations from "../../../script-api/godgesture.d.ts?raw";
+import sdkDeclarations from "../../../script-api/godgesture-sdk.d.ts?raw";
 
 describe("GodGesture script API declarations", () => {
   it("documents every runtime host surface", () => {
@@ -42,5 +43,11 @@ describe("GodGesture script API declarations", () => {
     ]) {
       expect(apiDeclarations).toContain(`\"${literal}\"`);
     }
+  });
+
+  it("exposes the Node SDK module to the editor", () => {
+    expect(sdkDeclarations).toContain('declare module "@godgesture/sdk"');
+    expect(sdkDeclarations).toContain("PluginContext");
+    expect(sdkDeclarations).toContain("defineHandler");
   });
 });

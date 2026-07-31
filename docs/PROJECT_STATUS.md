@@ -89,7 +89,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker 和 `script-api/godgesture.d.ts`;五个脚本槽共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -111,6 +111,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 ## 已知未完成边界
 
 - WGestures 导入的 `language = lua` 脚本只保留原文并可编辑,不会执行或自动转换为 JavaScript。
+- 旧 JavaScript 命令可一键转换为 Node 插件:五个生命周期槽原样保存在 `legacy/`,生成入口使用单个 `vm` Context 保持跨槽全局状态,并保留“由脚本处理修饰动作”开关语义。旧宿主 API 是同步外观,Node SDK 是异步 API;依赖 `Clipboard.readText()` 等同步返回值的脚本需在转换后改为 `await context.clipboard.readText()`,无法完全自动等价转换。
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
 - 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
 - 带后续序列的摩擦边动作在光标进入边缘带后直接等待输入;滚轮事件会按当前指针位置即时武装,不要求滚动前再次移动。空序列摩擦边仍保持快速往复命中。Windows 平台无关运行时测试覆盖下边缘首格滚轮和停留后重新武装;macOS 复用同一状态机,仍需真机观察。
@@ -298,8 +299,16 @@ export;工作区支持插件名称、多源文件新增/删除/入口切换、Mo
 编辑、精确 lockfile 和生命周期脚本批准。布局按编辑器容器宽度响应,在 `980x700`
 中文与 `800x560` 英文浏览器 preview 中完成新增文件、切换文件、自动保存和 DOM
 溢出检查,无横向溢出或翻译 key 泄漏。Desktop `106/106` + typecheck/build,
-`git diff --check` 通过。依赖增删/锁文件生成、Node/SDK 完整类型、Problems/输出和旧脚本
-转换仍待后续实现。
+`git diff --check` 通过。
+
+2026-07-31 旧脚本转换与 Node 编辑类型:旧 JavaScript 命令可一键生成保留五个原始槽位
+的 Node 插件,使用 Node `vm` 保持跨槽全局状态,并分别兼容启用或关闭脚本修饰处理的
+执行语义;Lua 不提供转换。Monaco 惰性注入 `@types/node`、undici/fetch 与
+`@godgesture/sdk` 声明。浏览器 preview 已确认 `node:` 补全包含 Node 内置模块、SDK
+命名导入补全 `defineHandler`,且 `node:fs/promises` 与 SDK 的有效导入无 unknown module
+诊断。真实 Node 临时项目测试覆盖生成 ESM、跨槽状态和修饰兼容。Desktop `111/111` +
+typecheck/build,定向 `git diff --check` 通过。依赖增删/锁文件生成、安装/离线状态和
+Problems/输出仍待后续实现。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

@@ -20,6 +20,7 @@ import NodePluginEditor from "./NodePluginEditor.vue";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
 import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
+import { convertScriptCommandToNodePlugin } from "../utils/nodePluginMigration";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
@@ -49,6 +50,16 @@ function ensureNodePlugin() {
   };
   configStore.doc.nodePlugins.push(created);
   return created;
+}
+
+function convertScriptToNodePlugin() {
+  if (asScript.value.language !== "js" || !configStore.doc) return;
+  const migration = convertScriptCommandToNodePlugin(
+    asScript.value,
+    t("command.nodePlugin.convertedName"),
+  );
+  configStore.doc.nodePlugins.push(migration.plugin);
+  emit("update:modelValue", migration.command);
 }
 
 const type = computed<CommandType>({
@@ -293,6 +304,12 @@ function updateVolumeDelta(value: unknown) {
           @update:model-value="patch({ script: $event })"
         />
       </div>
+      <div v-if="asScript.language === 'js'" class="cmd-editor__migration">
+        <el-button size="small" @click="convertScriptToNodePlugin">
+          {{ t("command.script.convertToNodePlugin") }}
+        </el-button>
+        <span class="gg-hint">{{ t("command.script.convertHint") }}</span>
+      </div>
       <el-collapse class="cmd-editor__advanced">
         <el-collapse-item :title="t('command.script.advanced')" name="advanced">
           <div class="gg-switch-row">
@@ -386,6 +403,12 @@ function updateVolumeDelta(value: unknown) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.cmd-editor__migration {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .cmd-editor__advanced {
   border-top: none;

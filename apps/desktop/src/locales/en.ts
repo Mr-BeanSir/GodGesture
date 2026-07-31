@@ -381,9 +381,12 @@ export default {
       gestureRecognizedScript: "On gesture recognized",
       modifierTriggeredScript: "On modifier triggered",
       gestureEndedScript: "On gesture ended",
+      convertToNodePlugin: "Convert to Node.js plugin",
+      convertHint: "Preserves the legacy source files and lifecycle slots in a new plugin.",
     },
     nodePlugin: {
       newName: "Untitled Node plugin",
+      convertedName: "Converted JavaScript plugin",
       newPlugin: "New plugin",
       name: "Plugin name",
       exportName: "Handler export",

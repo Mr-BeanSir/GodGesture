@@ -1,5 +1,6 @@
 import type * as Monaco from "monaco-editor/editor/editor.api";
 import apiDeclarations from "../../script-api/godgesture.d.ts?raw";
+import sdkDeclarations from "../../script-api/godgesture-sdk.d.ts?raw";
 
 type MonacoApi = typeof Monaco;
 
@@ -28,13 +29,14 @@ async function initializeMonaco(): Promise<MonacoApi> {
     },
   };
 
-  const [monaco, typescript] = await Promise.all([
+  const [monaco, typescript, , , { nodeDeclarationFiles }] = await Promise.all([
     // editor.api exposes the data surface but does not register visible contributions
     // such as the suggestion widget, parameter hints, or hover UI.
     import("monaco-editor/editor/editor.main"),
     import("monaco-editor/languages/features/typescript/register"),
     import("monaco-editor/languages/definitions/javascript/register"),
     import("monaco-editor/languages/definitions/lua/register"),
+    import("./node-declarations"),
   ]);
 
   typescript.javascriptDefaults.setCompilerOptions({
@@ -54,5 +56,18 @@ async function initializeMonaco(): Promise<MonacoApi> {
     apiDeclarations,
     "inmemory://godgesture/script-api/godgesture.d.ts",
   );
+  typescript.javascriptDefaults.addExtraLib(
+    sdkDeclarations,
+    "inmemory://godgesture/script-api/godgesture-sdk.d.ts",
+  );
+  for (const [path, declaration] of Object.entries(nodeDeclarationFiles).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const relative = path.replace(/^\.\.\/\.\.\/node_modules\//, "");
+    typescript.javascriptDefaults.addExtraLib(
+      declaration,
+      `inmemory://godgesture/node_modules/${relative}`,
+    );
+  }
   return monaco;
 }
