@@ -66,6 +66,14 @@ _避免_: 程序、进程
 **暂停 (Pause)**:
 临时停用全部手势识别的全局状态,可经托盘、全局快捷键、左键+中键和弦、暂停命令四种途径切换。
 
+**Node 插件 (Node Plugin)**:
+由 GodGesture 管理的 JavaScript 项目,使用随应用分发的 Node.js LTS、ESM 和 npm
+依赖;可由一个或多个手势动作调用,源文件和锁文件参与同步,安装后的依赖缓存按机器保存。
+
+**Node 插件宿主 (Node Plugin Host)**:
+常驻的 Node.js sidecar 与插件 Worker 组成的运行时,通过本地 IPC 调用原生输入、窗口、
+剪贴板和状态 API;不在手势触发时启动进程、加载模块或安装依赖。
+
 ### 同步领域(随访谈逐步敲定)
 
 **手势模板 (Gesture Template)**:

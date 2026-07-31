@@ -12,7 +12,7 @@ WGestures 配置导入仍是独立保留的兼容迁移能力。
 | 跨平台功能或平台抽象 | [0001](0001-dual-platform-simultaneous-release.md) | Windows 与 macOS 同版本交付,或明确标注单平台能力 |
 | 仓库结构、共享协议或技术栈 | [0002](0002-pnpm-monorepo.md), [0003](0003-initial-tech-stack.md) | pnpm monorepo、Tauri/Vue/NestJS/Prisma/REST + OpenAPI |
 | Server 部署或生产网络边界 | [0004](0004-deployment-on-self-hosted-1panel.md) | 自有 Ubuntu + 1Panel 手动部署、docker-compose |
-| JavaScript 脚本能力 | [0005](0005-js-scripting-via-quickjs.md) | rquickjs/QuickJS,单 Runtime、多隔离 Context |
+| JavaScript 脚本能力 | [0005](0005-js-scripting-via-quickjs.md), [0012](0012-node-only-script-runtime.md) | 迁移期 QuickJS 单 Runtime;性能门槛通过后由常驻 Node.js 插件宿主承接完整 Node API |
 | 手势轨迹或命令提示 | [0006](0006-native-overlay-rendering.md) | 原生自绘覆盖层,不用 WebView |
 | Windows 提权、启动或签名 | [0007](0007-admin-run-option-no-uiaccess.md), [0011](0011-free-adhoc-macos-distribution.md) | 不使用 uiAccess;macOS 发布结论以 `0011` 为准 |
 | 后端职责、更新或模板分发 | [0008](0008-backend-owns-only-user-data.md) | Server 只存用户数据,公开内容通过 GitHub 分发 |
@@ -21,5 +21,5 @@ WGestures 配置导入仍是独立保留的兼容迁移能力。
 
 ## 状态
 
-- `0001`~`0006`、`0008`~`0011`:有效。
+- `0001`~`0006`、`0008`~`0012`:有效。
 - `0007`:Windows 决策有效;其中旧 macOS 签名结论已由 `0011` 取代。
