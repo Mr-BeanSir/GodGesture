@@ -13,6 +13,8 @@ use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
+use engine::node_service::{NodeInvocationOutcome, NodeScriptService, OutcomeSink};
+#[cfg(any(windows, target_os = "macos"))]
 use engine::script::{
     boundary_script_key, gesture_script_key, ScriptDefinition, ScriptEngine, ScriptInvocation,
     ScriptSlot,
@@ -178,6 +180,34 @@ struct ActiveScript {
 }
 
 #[cfg(any(windows, target_os = "macos"))]
+struct ActiveNodeScript {
+    key: String,
+    plugin_id: String,
+    invocation: ScriptInvocation,
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+enum IncomingLifecycleScript {
+    QuickJs {
+        key: String,
+        definition: ScriptDefinition,
+    },
+    Node {
+        key: String,
+        plugin_id: String,
+    },
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+impl IncomingLifecycleScript {
+    fn key(&self) -> &str {
+        match self {
+            Self::QuickJs { key, .. } | Self::Node { key, .. } => key,
+        }
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModifierScriptTransition {
     NoChange,
@@ -294,6 +324,101 @@ fn start_active_script(
 }
 
 #[cfg(any(windows, target_os = "macos"))]
+fn run_node_slot(
+    service: Option<&NodeScriptService>,
+    plugin_id: &str,
+    handler: &str,
+    slot: ScriptSlot,
+    invocation: ScriptInvocation,
+) -> bool {
+    let Some(service) = service else {
+        log::error!("Node plugin runtime is unavailable; '{plugin_id}:{handler}' was skipped");
+        return false;
+    };
+    service.invoke(plugin_id, handler, true, slot, invocation)
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn end_active_node_script(
+    active_node: &mut Option<ActiveNodeScript>,
+    service: Option<&NodeScriptService>,
+    invocation: Option<ScriptInvocation>,
+) {
+    let Some(mut active) = active_node.take() else {
+        return;
+    };
+    if let Some(invocation) = invocation {
+        active.invocation = invocation;
+    }
+    run_node_slot(
+        service,
+        &active.plugin_id,
+        "gestureEnded",
+        ScriptSlot::GestureEnded,
+        active.invocation,
+    );
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn end_active_lifecycle(
+    active_script: &mut Option<ActiveScript>,
+    active_node: &mut Option<ActiveNodeScript>,
+    script_engine: &mut Option<ScriptEngine>,
+    node_service: Option<&NodeScriptService>,
+    overlay: &platform::current::overlay::Overlay,
+    invocation: Option<ScriptInvocation>,
+) {
+    end_active_script(active_script, script_engine, overlay, invocation);
+    end_active_node_script(active_node, node_service, invocation);
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn start_incoming_lifecycle(
+    incoming: IncomingLifecycleScript,
+    active_script: &mut Option<ActiveScript>,
+    active_node: &mut Option<ActiveNodeScript>,
+    script_engine: &mut Option<ScriptEngine>,
+    node_service: Option<&NodeScriptService>,
+    overlay: &platform::current::overlay::Overlay,
+    invocation: ScriptInvocation,
+) {
+    match incoming {
+        IncomingLifecycleScript::QuickJs { key, definition } => {
+            start_active_script(
+                active_script,
+                script_engine,
+                overlay,
+                key,
+                definition,
+                invocation,
+            );
+        }
+        IncomingLifecycleScript::Node { key, plugin_id } => {
+            if run_node_slot(
+                node_service,
+                &plugin_id,
+                "gestureRecognized",
+                ScriptSlot::GestureRecognized,
+                invocation,
+            ) {
+                run_node_slot(
+                    node_service,
+                    &plugin_id,
+                    "modifierTriggered",
+                    ScriptSlot::ModifierTriggered,
+                    invocation,
+                );
+                *active_node = Some(ActiveNodeScript {
+                    key,
+                    plugin_id,
+                    invocation,
+                });
+            }
+        }
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 fn script_key_for_intent(intent_id: &str) -> String {
     gesture_script_key(intent_id)
 }
@@ -330,20 +455,63 @@ fn spawn_engine_consumer(
         .spawn(move || {
             let mut task_switcher = TaskSwitcherConsumer::default();
             let script_host = platform::current::script::create_host(&app);
-            let mut script_engine = match ScriptEngine::new(script_host) {
+            let mut script_engine = match ScriptEngine::new(Arc::clone(&script_host)) {
                 Ok(engine) => Some(engine),
                 Err(error) => {
                     log::error!("QuickJS runtime initialization failed: {error}");
                     None
                 }
             };
+            let outcome_overlay = overlay.clone();
+            let outcome_sink: OutcomeSink = Arc::new(move |outcome: NodeInvocationOutcome| {
+                match outcome.result {
+                    Ok(_) => {
+                        if let Some(status) = outcome.status {
+                            if outcome.invocation.trigger.is_some() {
+                                outcome_overlay.send(OverlayCmd::Recognized(Some(status)));
+                            } else {
+                                log::info!(
+                                    "Node plugin '{}:{}' status: {status}",
+                                    outcome.plugin_id,
+                                    outcome.handler
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => log::error!(
+                        "Node plugin '{}:{}' failed: {error}",
+                        outcome.plugin_id,
+                        outcome.handler
+                    ),
+                }
+            });
+            let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
+            let node_service = match app.path().app_local_data_dir() {
+                Ok(data_dir) => NodeScriptService::start_development(
+                    data_dir.join("node-plugins").join("runtime"),
+                    script_host,
+                    outcome_sink,
+                    initial_plugins,
+                )
+                .map_err(|error| format!("Node plugin service initialization failed: {error}")),
+                Err(error) => Err(format!("resolve Node plugin data directory: {error}")),
+            };
+            let node_service = match node_service {
+                Ok(service) => Some(service),
+                Err(error) => {
+                    log::error!("{error}");
+                    None
+                }
+            };
             let mut active_script: Option<ActiveScript> = None;
+            let mut active_node_script: Option<ActiveNodeScript> = None;
             let mut live_script_keys: Option<HashSet<String>> = None;
             for msg in rx {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         task_switcher.finish();
                         active_script = None;
+                        active_node_script = None;
                         retain_live_script_contexts(
                             &mut script_engine,
                             live_script_keys.as_ref(),
@@ -395,68 +563,103 @@ fn spawn_engine_consumer(
                             let immediate_intent =
                                 intent.as_ref().filter(|intent| intent.execute_on_modifier);
                             let lifecycle_script = immediate_intent.and_then(|intent| {
-                                ScriptDefinition::from_command(&intent.command)
-                                    .filter(|definition| definition.handle_modifiers)
-                                    .map(|definition| {
-                                        (script_key_for_intent(&intent.id), definition)
-                                    })
+                                if let Some(definition) =
+                                    ScriptDefinition::from_command(&intent.command)
+                                        .filter(|definition| definition.handle_modifiers)
+                                {
+                                    return Some(IncomingLifecycleScript::QuickJs {
+                                        key: script_key_for_intent(&intent.id),
+                                        definition,
+                                    });
+                                }
+                                match &intent.command {
+                                    engine::config::Command::NodePlugin { plugin_id, .. } => {
+                                        Some(IncomingLifecycleScript::Node {
+                                            key: format!("node:{}:{plugin_id}", intent.id),
+                                            plugin_id: plugin_id.clone(),
+                                        })
+                                    }
+                                    _ => None,
+                                }
                             });
+                            let active_lifecycle_key = active_script
+                                .as_ref()
+                                .map(|active| active.key.as_str())
+                                .or_else(|| {
+                                    active_node_script
+                                        .as_ref()
+                                        .map(|active| active.key.as_str())
+                                });
                             let transition = modifier_script_transition(
-                                active_script.as_ref().map(|active| active.key.as_str()),
-                                lifecycle_script.as_ref().map(|(key, _)| key.as_str()),
+                                active_lifecycle_key,
+                                lifecycle_script.as_ref().map(IncomingLifecycleScript::key),
                                 immediate_intent.is_some(),
                             );
                             let has_lifecycle_script = lifecycle_script.is_some();
 
                             match transition {
                                 ModifierScriptTransition::Continue => {
-                                    let active = active_script
-                                        .as_mut()
-                                        .expect("continue requires an active script");
-                                    active.invocation = invocation;
-                                    run_script_slot(
-                                        &mut script_engine,
-                                        &overlay,
-                                        &active.key,
-                                        &active.definition,
-                                        ScriptSlot::ModifierTriggered,
-                                        invocation,
-                                    );
+                                    if let Some(active) = active_script.as_mut() {
+                                        active.invocation = invocation;
+                                        run_script_slot(
+                                            &mut script_engine,
+                                            &overlay,
+                                            &active.key,
+                                            &active.definition,
+                                            ScriptSlot::ModifierTriggered,
+                                            invocation,
+                                        );
+                                    } else if let Some(active) = active_node_script.as_mut() {
+                                        active.invocation = invocation;
+                                        run_node_slot(
+                                            node_service.as_ref(),
+                                            &active.plugin_id,
+                                            "modifierTriggered",
+                                            ScriptSlot::ModifierTriggered,
+                                            invocation,
+                                        );
+                                    }
                                 }
                                 ModifierScriptTransition::Start => {
-                                    let (key, definition) = lifecycle_script
+                                    let incoming = lifecycle_script
                                         .expect("start requires an incoming lifecycle script");
-                                    start_active_script(
+                                    start_incoming_lifecycle(
+                                        incoming,
                                         &mut active_script,
+                                        &mut active_node_script,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
-                                        key,
-                                        definition,
                                         invocation,
                                     );
                                 }
                                 ModifierScriptTransition::Replace => {
-                                    end_active_script(
+                                    end_active_lifecycle(
                                         &mut active_script,
+                                        &mut active_node_script,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
                                         Some(invocation),
                                     );
-                                    let (key, definition) = lifecycle_script
+                                    let incoming = lifecycle_script
                                         .expect("replace requires an incoming lifecycle script");
-                                    start_active_script(
+                                    start_incoming_lifecycle(
+                                        incoming,
                                         &mut active_script,
+                                        &mut active_node_script,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
-                                        key,
-                                        definition,
                                         invocation,
                                     );
                                 }
                                 ModifierScriptTransition::Finish => {
-                                    end_active_script(
+                                    end_active_lifecycle(
                                         &mut active_script,
+                                        &mut active_node_script,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
                                         Some(invocation),
                                     );
@@ -473,6 +676,7 @@ fn spawn_engine_consumer(
                                         invocation,
                                         &shared,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
                                     );
                                 }
@@ -485,9 +689,11 @@ fn spawn_engine_consumer(
                         modifier,
                         context,
                     } => {
-                        end_active_script(
+                        end_active_lifecycle(
                             &mut active_script,
+                            &mut active_node_script,
                             &mut script_engine,
+                            node_service.as_ref(),
                             &overlay,
                             Some(ScriptInvocation {
                                 gesture: context,
@@ -522,6 +728,10 @@ fn spawn_engine_consumer(
                                         "TaskSwitcher 已在增量识别时执行,PathEnd 仅释放 Alt"
                                     );
                                 } else if ScriptDefinition::from_command(&intent.command).is_some()
+                                    || matches!(
+                                        &intent.command,
+                                        engine::config::Command::NodePlugin { .. }
+                                    )
                                 {
                                     let key = script_key_for_intent(&intent.id);
                                     execute_intent(
@@ -534,6 +744,7 @@ fn spawn_engine_consumer(
                                         },
                                         &shared,
                                         &mut script_engine,
+                                        node_service.as_ref(),
                                         &overlay,
                                     );
                                 } else {
@@ -555,6 +766,7 @@ fn spawn_engine_consumer(
                                 },
                                 &shared,
                                 &mut script_engine,
+                                node_service.as_ref(),
                                 &overlay,
                             );
                         }
@@ -596,12 +808,14 @@ fn spawn_engine_consumer(
                             },
                             &shared,
                             &mut script_engine,
+                            node_service.as_ref(),
                             &overlay,
                         );
                     }
                     EngineMsg::PathCancelled => {
                         task_switcher.finish();
                         active_script = None;
+                        active_node_script = None;
                         retain_live_script_contexts(
                             &mut script_engine,
                             live_script_keys.as_ref(),
@@ -615,6 +829,13 @@ fn spawn_engine_consumer(
                         publish_pause_state(&app, paused);
                     }
                     EngineMsg::ScriptConfigChanged { live_keys } => {
+                        if let Some(service) = node_service.as_ref() {
+                            service.sync_plugins(
+                                app.state::<Arc<ConfigStore>>()
+                                    .load_config()
+                                    .node_plugins,
+                            );
+                        }
                         live_script_keys = Some(live_keys.into_iter().collect());
                         retain_live_script_contexts(
                             &mut script_engine,
@@ -643,6 +864,7 @@ fn execute_intent(
     invocation: ScriptInvocation,
     shared: &Arc<EngineShared>,
     script_engine: &mut Option<ScriptEngine>,
+    node_service: Option<&NodeScriptService>,
     overlay: &platform::current::overlay::Overlay,
 ) {
     if matches!(command, engine::config::Command::Pause) {
@@ -654,6 +876,22 @@ fn execute_intent(
             overlay,
             key,
             &definition,
+            ScriptSlot::Execute,
+            invocation,
+        );
+    } else if let engine::config::Command::NodePlugin {
+        plugin_id,
+        export_name,
+    } = command
+    {
+        let Some(service) = node_service else {
+            log::error!("Node plugin runtime is unavailable; '{plugin_id}:{export_name}' was skipped");
+            return;
+        };
+        service.invoke(
+            plugin_id.clone(),
+            export_name.clone(),
+            false,
             ScriptSlot::Execute,
             invocation,
         );

@@ -78,6 +78,7 @@ pub enum OverlayCmd {
     Cancel,
 }
 
+#[derive(Clone)]
 pub struct Overlay {
     tx: Sender<OverlayCmd>,
     thread_id: Arc<AtomicU32>,

@@ -55,7 +55,7 @@ pub enum ScriptSlot {
 }
 
 impl ScriptSlot {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Init => "init",
             Self::Execute => "execute",

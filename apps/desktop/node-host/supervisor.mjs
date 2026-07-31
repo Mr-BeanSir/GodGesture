@@ -1,11 +1,16 @@
 import { Worker } from "node:worker_threads";
 
 const MAX_FRAME_BYTES = 1024 * 1024;
+const DEFAULT_INVOCATION_TIMEOUT_MS = 5_000;
 const workers = new Map();
+const definitions = new Map();
 let input = Buffer.alloc(0);
 
 function writeFrame(message) {
   const payload = Buffer.from(JSON.stringify(message));
+  if (payload.length > MAX_FRAME_BYTES) {
+    throw new Error(`frame exceeds ${MAX_FRAME_BYTES} bytes`);
+  }
   const header = Buffer.allocUnsafe(4);
   header.writeUInt32BE(payload.length);
   process.stdout.write(header);
@@ -13,33 +18,42 @@ function writeFrame(message) {
 }
 
 function response(id, ok, value) {
-  writeFrame(ok
-    ? { type: "response", id, ok, result: value ?? null }
-    : { type: "response", id, ok, error: String(value) });
+  writeFrame(
+    ok
+      ? { type: "response", id, ok, result: value ?? null }
+      : { type: "response", id, ok, error: String(value) },
+  );
 }
 
 function rejectPending(state, error) {
   for (const pending of state.pendingInvocations.values()) {
+    clearTimeout(pending.timer);
     pending.reject(error);
   }
   state.pendingInvocations.clear();
 }
 
-async function createPlugin(pluginId, source) {
-  const existing = workers.get(pluginId);
-  if (existing) {
-    workers.delete(pluginId);
-    rejectPending(existing, new Error("plugin reloaded"));
-    await existing.worker.terminate();
-  }
+async function stopPlugin(pluginId, reason) {
+  const state = workers.get(pluginId);
+  if (!state) return;
+  workers.delete(pluginId);
+  rejectPending(state, new Error(reason));
+  await state.worker.terminate();
+}
+
+async function createPlugin(pluginId) {
+  const definition = definitions.get(pluginId);
+  if (!definition) throw new Error(`plugin '${pluginId}' has no definition`);
+  await stopPlugin(pluginId, "plugin reloaded");
 
   const worker = new Worker(new URL("./worker.mjs", import.meta.url), {
-    workerData: { pluginId, source },
+    workerData: { pluginId, entryPath: definition.entryPath },
   });
   const state = {
     worker,
     ready: false,
     pendingInvocations: new Map(),
+    invocationTail: Promise.resolve(),
   };
   workers.set(pluginId, state);
 
@@ -58,6 +72,7 @@ async function createPlugin(pluginId, source) {
       const pending = state.pendingInvocations.get(message.requestId);
       if (!pending) return;
       state.pendingInvocations.delete(message.requestId);
+      clearTimeout(pending.timer);
       if (message.ok) pending.resolve(message.result ?? null);
       else pending.reject(new Error(message.error));
       return;
@@ -85,29 +100,61 @@ async function createPlugin(pluginId, source) {
   });
 
   await ready;
+  return state;
 }
 
-function invokePlugin(pluginId, requestId, handler, context) {
-  const state = workers.get(pluginId);
-  if (!state?.ready) throw new Error(`plugin '${pluginId}' is not loaded`);
+async function ensurePlugin(pluginId) {
+  const current = workers.get(pluginId);
+  if (current?.ready) return current;
+  return createPlugin(pluginId);
+}
+
+function invokeOnce(state, pluginId, requestId, handler, optional, context, timeoutMs) {
   return new Promise((resolve, reject) => {
-    state.pendingInvocations.set(requestId, { resolve, reject });
-    state.worker.postMessage({ type: "invoke", requestId, handler, context });
+    const timer = setTimeout(() => {
+      if (!state.pendingInvocations.delete(requestId)) return;
+      reject(new Error(`plugin invocation timed out after ${timeoutMs} ms`));
+      if (workers.get(pluginId) === state) workers.delete(pluginId);
+      rejectPending(state, new Error("plugin worker terminated after timeout"));
+      void state.worker.terminate();
+    }, timeoutMs);
+    state.pendingInvocations.set(requestId, { resolve, reject, timer });
+    state.worker.postMessage({ type: "invoke", requestId, handler, optional, context });
   });
+}
+
+async function invokePlugin(pluginId, requestId, handler, optional, context, timeoutMs) {
+  const state = await ensurePlugin(pluginId);
+  const invoke = () =>
+    invokeOnce(state, pluginId, requestId, handler, optional, context, timeoutMs);
+  const result = state.invocationTail.then(invoke, invoke);
+  state.invocationTail = result.catch(() => undefined);
+  return result;
 }
 
 async function handleMessage(message) {
   switch (message.type) {
     case "load":
-      await createPlugin(message.pluginId, message.source);
+      definitions.set(message.pluginId, { entryPath: message.entryPath });
+      await createPlugin(message.pluginId);
       response(message.id, true, { loaded: message.pluginId });
       break;
+    case "unload":
+      definitions.delete(message.pluginId);
+      await stopPlugin(message.pluginId, "plugin unloaded");
+      response(message.id, true, null);
+      break;
     case "invoke": {
+      const timeoutMs = Number.isSafeInteger(message.timeoutMs)
+        ? Math.max(1, Math.min(message.timeoutMs, 60_000))
+        : DEFAULT_INVOCATION_TIMEOUT_MS;
       const result = await invokePlugin(
         message.pluginId,
         message.id,
         message.handler,
+        message.optional === true,
         message.context ?? {},
+        timeoutMs,
       );
       response(message.id, true, result);
       break;
@@ -119,8 +166,10 @@ async function handleMessage(message) {
       break;
     }
     case "shutdown":
-      await Promise.all([...workers.values()].map(({ worker }) => worker.terminate()));
-      workers.clear();
+      await Promise.all(
+        [...workers.keys()].map((pluginId) => stopPlugin(pluginId, "host shutdown")),
+      );
+      definitions.clear();
       response(message.id, true, null);
       process.exitCode = 0;
       process.stdin.pause();
@@ -141,8 +190,8 @@ function consumeInput() {
     input = input.subarray(length + 4);
     const message = JSON.parse(payload.toString("utf8"));
     Promise.resolve(handleMessage(message)).catch((error) => {
-      if (message?.id !== undefined) response(message.id, false, error.message);
-      else process.stderr.write(`${error.stack ?? error}\n`);
+      if (message?.id !== undefined) response(message.id, false, error?.stack ?? error);
+      else process.stderr.write(`${error?.stack ?? error}\n`);
     });
   }
 }
@@ -152,11 +201,11 @@ process.stdin.on("data", (chunk) => {
   try {
     consumeInput();
   } catch (error) {
-    process.stderr.write(`${error.stack ?? error}\n`);
+    process.stderr.write(`${error?.stack ?? error}\n`);
     process.exitCode = 1;
     process.stdin.pause();
   }
 });
 process.stdin.on("end", () => {
-  for (const state of workers.values()) state.worker.terminate();
+  for (const state of workers.values()) void state.worker.terminate();
 });

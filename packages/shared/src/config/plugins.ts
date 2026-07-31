@@ -66,6 +66,20 @@ export const NodePluginFiles = z
         message: `Plugin must contain at most ${MAX_NODE_PLUGIN_FILES} files`,
       });
     }
+    for (const [path] of entries) {
+      const firstSegment = path.split("/", 1)[0]!.toLowerCase();
+      if (
+        firstSegment === "node_modules" ||
+        path.toLowerCase() === "package.json" ||
+        path.toLowerCase() === "pnpm-lock.yaml"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [path],
+          message: `Plugin source path '${path}' is reserved`,
+        });
+      }
+    }
     const total = entries.reduce((bytes, [, content]) => bytes + utf8SizeBytes(content), 0);
     if (total > MAX_NODE_PLUGIN_SOURCE_BYTES) {
       ctx.addIssue({

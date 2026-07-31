@@ -58,6 +58,12 @@ describe("Node plugin configuration", () => {
     expect(() =>
       NodePlugin.parse(plugin({ files: { "src/CON.js": "" }, entry: "src/CON.js" })),
     ).toThrow();
+    expect(() =>
+      NodePlugin.parse(plugin({ files: { "package.json": "" }, entry: "package.json" })),
+    ).toThrow(/reserved/);
+    expect(() =>
+      NodePlugin.parse(plugin({ files: { "node_modules/x.mjs": "" }, entry: "node_modules/x.mjs" })),
+    ).toThrow(/reserved/);
     expect(() => NodePlugin.parse(plugin({ packageJson: "{}" }))).toThrow();
     expect(() =>
       ConfigDocument.parse({

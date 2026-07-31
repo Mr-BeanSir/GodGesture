@@ -225,6 +225,15 @@ importers:
         specifier: ^2.1.10
         version: 2.2.12(typescript@5.6.3)
 
+  packages/sdk:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@24.13.3)(terser@5.49.0)
+
   packages/shared:
     dependencies:
       openapi-fetch:

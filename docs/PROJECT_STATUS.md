@@ -39,7 +39,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
 - `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
 - `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
-- `engine/node_host.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/Worker、framed JSON IPC 和性能原型;当前只用于合同测试与基准,尚未接管生产脚本执行,QuickJS 仍是实际运行时。
+- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。当前开发接线使用 PATH 中的 Node,随应用打包的固定 Node/pnpm 尚未完成。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -274,6 +274,18 @@ Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限�
 `87/87` + typecheck;Web Console typecheck/build;`pnpm check:api`;Rust library
 `194 passed, 3 ignored`,`cargo clippy --lib --tests -- -D warnings` 通过。QuickJS 仍是
 生产脚本执行路径,Node 配置尚未接入生产宿主。
+
+2026-07-31 Node 插件生产宿主接线:同步插件被校验后按内容修订物化为真实 ESM 项目,
+常驻 supervisor 为每插件预载 Worker;手势执行线程只向 256 条有界队列投递,Node
+执行、宿主调用和超时均不阻塞输入钩子或原生命令。`init`、`execute`、
+`gestureRecognized`、`modifierTriggered`、`gestureEnded` 已接入,相对导入、完整 Node API、
+`fetch`、输入/窗口/剪贴板/状态异步 API、每插件顺序、可选生命周期、Worker 超时/崩溃
+重建和重建后自动 `init` 均由真实 Node 测试覆盖。新增 `@godgesture/sdk` 类型与运行时
+helper 包。Windows release 新基准:冷启动 `96.786 ms`,noop p95/p99 `0.152/0.223 ms`,
+包含输入、剪贴板和状态三次真实宿主往返的 handler p95/p99 `0.495/0.640 ms`。
+shared `99/99`;Desktop `105/105`;SDK `1/1` + typecheck/build;Rust library
+`196 passed, 3 ignored`,严格 clippy 通过。当前仍从 PATH 启动系统 Node,尚未内置 Node/pnpm、
+安装 npm 依赖或完成 macOS 门槛,因此 QuickJS 不得移除。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

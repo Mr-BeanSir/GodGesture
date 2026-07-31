@@ -7,6 +7,7 @@ pub mod config;
 pub mod corners;
 pub mod intents;
 pub mod node_host;
+pub mod node_service;
 pub mod parser;
 pub mod runtime;
 pub mod script;

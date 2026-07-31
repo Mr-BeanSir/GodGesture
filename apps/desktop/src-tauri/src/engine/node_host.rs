@@ -1,15 +1,20 @@
-//! Persistent Node host prototype and performance gate for ADR-0012.
+//! Framed client for the persistent Node plugin supervisor (ADR-0012).
 
+use super::config::WindowOperation;
+use super::script::{ScriptHost, ScriptInvocation, ScriptMouseButton, ScriptSlot};
+use super::types::{Modifier, TriggerButton};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_STATUS_CHARS: usize = 200;
 
 fn write_frame(mut writer: impl Write, message: &Value) -> Result<(), String> {
     let payload = serde_json::to_vec(message).map_err(|error| error.to_string())?;
@@ -40,43 +45,52 @@ fn read_frame(mut reader: impl Read) -> Result<Value, String> {
     serde_json::from_slice(&payload).map_err(|error| error.to_string())
 }
 
-fn default_supervisor_path() -> PathBuf {
+pub(crate) fn default_supervisor_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("node-host")
         .join("supervisor.mjs")
 }
 
-pub struct NodeHostPrototype {
+pub struct NodeHost {
     child: Child,
     stdin: ChildStdin,
     receiver: Receiver<Result<Value, String>>,
     next_request_id: u64,
     request_timeout: Duration,
+    host: Arc<dyn ScriptHost>,
 }
 
 #[derive(Debug)]
 pub struct InvocationResult {
     pub value: Value,
     pub host_calls: Vec<Value>,
+    pub status: Option<String>,
 }
 
-impl NodeHostPrototype {
-    pub fn start(node: impl AsRef<Path>) -> Result<Self, String> {
-        Self::start_with_timeout(node, REQUEST_TIMEOUT)
+impl NodeHost {
+    pub fn start(node: impl AsRef<Path>, host: Arc<dyn ScriptHost>) -> Result<Self, String> {
+        Self::start_with_timeout(node, REQUEST_TIMEOUT, host)
     }
 
     fn start_with_timeout(
         node: impl AsRef<Path>,
         request_timeout: Duration,
+        host: Arc<dyn ScriptHost>,
     ) -> Result<Self, String> {
-        Self::start_with_supervisor(node.as_ref(), &default_supervisor_path(), request_timeout)
+        Self::start_with_supervisor(
+            node.as_ref(),
+            &default_supervisor_path(),
+            request_timeout,
+            host,
+        )
     }
 
-    fn start_with_supervisor(
+    pub(crate) fn start_with_supervisor(
         node: &Path,
         supervisor: &Path,
         request_timeout: Duration,
+        host: Arc<dyn ScriptHost>,
     ) -> Result<Self, String> {
         let mut child = Command::new(node)
             .arg(supervisor)
@@ -110,40 +124,64 @@ impl NodeHostPrototype {
             receiver,
             next_request_id: 1,
             request_timeout,
+            host,
         })
     }
 
-    fn request(&mut self, mut message: Value) -> Result<InvocationResult, String> {
+    fn request(
+        &mut self,
+        mut message: Value,
+        invocation: Option<ScriptInvocation>,
+    ) -> Result<InvocationResult, String> {
         let id = self.next_request_id;
         self.next_request_id += 1;
         message["id"] = json!(id);
         write_frame(&mut self.stdin, &message)?;
 
         let mut host_calls = Vec::new();
+        let mut status = None;
+        let deadline = Instant::now() + self.request_timeout;
         loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("Node host response timeout".into());
+            }
             let incoming = self
                 .receiver
-                .recv_timeout(self.request_timeout)
+                .recv_timeout(remaining)
                 .map_err(|error| format!("Node host response timeout: {error}"))??;
             match incoming.get("type").and_then(Value::as_str) {
                 Some("hostCall") => {
                     host_calls.push(incoming.clone());
-                    write_frame(
-                        &mut self.stdin,
-                        &json!({
+                    let result = invocation
+                        .ok_or_else(|| "Node host call has no invocation context".to_string())
+                        .and_then(|invocation| {
+                            execute_host_call(&*self.host, invocation, &incoming, &mut status)
+                        });
+                    let response = match result {
+                        Ok(result) => json!({
                             "type": "hostResult",
                             "pluginId": incoming["pluginId"],
                             "callId": incoming["callId"],
                             "ok": true,
-                            "result": null,
+                            "result": result,
                         }),
-                    )?;
+                        Err(error) => json!({
+                            "type": "hostResult",
+                            "pluginId": incoming["pluginId"],
+                            "callId": incoming["callId"],
+                            "ok": false,
+                            "error": error,
+                        }),
+                    };
+                    write_frame(&mut self.stdin, &response)?;
                 }
                 Some("response") if incoming.get("id").and_then(Value::as_u64) == Some(id) => {
                     if incoming.get("ok").and_then(Value::as_bool) == Some(true) {
                         return Ok(InvocationResult {
                             value: incoming.get("result").cloned().unwrap_or(Value::Null),
                             host_calls,
+                            status,
                         });
                     }
                     return Err(incoming
@@ -157,31 +195,56 @@ impl NodeHostPrototype {
         }
     }
 
-    pub fn load_plugin(&mut self, plugin_id: &str, source: &str) -> Result<(), String> {
-        self.request(json!({
-            "type": "load",
-            "pluginId": plugin_id,
-            "source": source,
-        }))?;
+    pub fn load_plugin(&mut self, plugin_id: &str, entry_path: &Path) -> Result<(), String> {
+        self.request(
+            json!({
+                "type": "load",
+                "pluginId": plugin_id,
+                "entryPath": entry_path,
+            }),
+            None,
+        )?;
         Ok(())
+    }
+
+    pub fn unload_plugin(&mut self, plugin_id: &str) -> Result<(), String> {
+        self.request(
+            json!({
+                "type": "unload",
+                "pluginId": plugin_id,
+            }),
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
     }
 
     pub fn invoke(
         &mut self,
         plugin_id: &str,
         handler: &str,
-        context: Value,
+        optional: bool,
+        slot: ScriptSlot,
+        invocation: ScriptInvocation,
     ) -> Result<InvocationResult, String> {
-        self.request(json!({
-            "type": "invoke",
-            "pluginId": plugin_id,
-            "handler": handler,
-            "context": context,
-        }))
+        self.request(
+            json!({
+                "type": "invoke",
+                "pluginId": plugin_id,
+                "handler": handler,
+                "optional": optional,
+                "timeoutMs": REQUEST_TIMEOUT.as_millis(),
+                "context": invocation_context(invocation, slot),
+            }),
+            Some(invocation),
+        )
     }
 }
 
-impl Drop for NodeHostPrototype {
+impl Drop for NodeHost {
     fn drop(&mut self) {
         let id = self.next_request_id;
         let _ = write_frame(&mut self.stdin, &json!({ "type": "shutdown", "id": id }));
@@ -197,24 +260,260 @@ impl Drop for NodeHostPrototype {
     }
 }
 
+fn invocation_context(invocation: ScriptInvocation, slot: ScriptSlot) -> Value {
+    json!({
+        "origin": { "x": invocation.gesture.origin.x, "y": invocation.gesture.origin.y },
+        "endpoint": { "x": invocation.gesture.endpoint.x, "y": invocation.gesture.endpoint.y },
+        "triggerButton": invocation.trigger.map(trigger_button_name),
+        "modifier": modifier_name(invocation.modifier),
+        "phase": slot.name(),
+        "targetWindowAvailable": invocation.gesture.native_window != 0,
+    })
+}
+
+fn execute_host_call(
+    host: &dyn ScriptHost,
+    invocation: ScriptInvocation,
+    message: &Value,
+    status: &mut Option<String>,
+) -> Result<Value, String> {
+    let method = message
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Node host call is missing method".to_string())?;
+    let args = message
+        .get("args")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("Node host call '{method}' has invalid args"))?;
+    match method {
+        "input.keyCombo" => {
+            host.key_combo(string_array(args, 0)?, string_array(args, 1)?)?;
+            Ok(Value::Null)
+        }
+        "input.sendText" => {
+            host.send_text(string_arg(args, 0)?.to_string())?;
+            Ok(Value::Null)
+        }
+        "input.mouseClick" => {
+            host.mouse_click(mouse_button_arg(args, 0)?)?;
+            Ok(Value::Null)
+        }
+        "input.mouseDown" | "input.mouseUp" => {
+            host.mouse_button(mouse_button_arg(args, 0)?, method.ends_with("Down"))?;
+            Ok(Value::Null)
+        }
+        "input.movePointer" => {
+            host.move_pointer(i32_arg(args, 0)?, i32_arg(args, 1)?)?;
+            Ok(Value::Null)
+        }
+        "input.wheel" => {
+            host.wheel(i32_arg(args, 0)?)?;
+            Ok(Value::Null)
+        }
+        "window.activateTarget" => {
+            host.activate_target(invocation.gesture)?;
+            Ok(Value::Null)
+        }
+        "window.perform" => {
+            host.window_operation(window_operation_arg(args, 0)?, invocation.gesture)?;
+            Ok(Value::Null)
+        }
+        "clipboard.readText" => Ok(json!(host.clipboard_read_text()?)),
+        "clipboard.writeText" => {
+            host.clipboard_write_text(string_arg(args, 0)?.to_string())?;
+            Ok(Value::Null)
+        }
+        "clipboard.selectedText" => Ok(json!(host.clipboard_selected_text()?)),
+        "status.report" => {
+            *status = Some(
+                string_arg(args, 0)?
+                    .chars()
+                    .take(MAX_STATUS_CHARS)
+                    .collect(),
+            );
+            Ok(Value::Null)
+        }
+        _ => Err(format!("unknown Node host method '{method}'")),
+    }
+}
+
+fn string_arg(args: &[Value], index: usize) -> Result<&str, String> {
+    args.get(index)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("argument {index} must be a string"))
+}
+
+fn string_array(args: &[Value], index: usize) -> Result<Vec<String>, String> {
+    args.get(index)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("argument {index} must be a string array"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("argument {index} must contain only strings"))
+        })
+        .collect()
+}
+
+fn i32_arg(args: &[Value], index: usize) -> Result<i32, String> {
+    let value = args
+        .get(index)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| format!("argument {index} must be an integer"))?;
+    i32::try_from(value).map_err(|_| format!("argument {index} is outside the i32 range"))
+}
+
+fn mouse_button_arg(args: &[Value], index: usize) -> Result<ScriptMouseButton, String> {
+    match string_arg(args, index)?.to_ascii_lowercase().as_str() {
+        "left" => Ok(ScriptMouseButton::Left),
+        "right" => Ok(ScriptMouseButton::Right),
+        "middle" => Ok(ScriptMouseButton::Middle),
+        "x1" => Ok(ScriptMouseButton::X1),
+        "x2" => Ok(ScriptMouseButton::X2),
+        value => Err(format!("unknown mouse button '{value}'")),
+    }
+}
+
+fn window_operation_arg(args: &[Value], index: usize) -> Result<WindowOperation, String> {
+    match string_arg(args, index)? {
+        "maximizeRestore" => Ok(WindowOperation::MaximizeRestore),
+        "minimize" => Ok(WindowOperation::Minimize),
+        "close" => Ok(WindowOperation::Close),
+        "toggleTopmost" => Ok(WindowOperation::ToggleTopmost),
+        "dockLeft" => Ok(WindowOperation::DockLeft),
+        "dockRight" => Ok(WindowOperation::DockRight),
+        value => Err(format!("unknown window operation '{value}'")),
+    }
+}
+
+fn trigger_button_name(trigger: TriggerButton) -> &'static str {
+    match trigger {
+        TriggerButton::Right => "right",
+        TriggerButton::Middle => "middle",
+        TriggerButton::X1 => "x1",
+        TriggerButton::X2 => "x2",
+    }
+}
+
+fn modifier_name(modifier: Modifier) -> &'static str {
+    match modifier {
+        Modifier::None => "none",
+        Modifier::WheelForward => "wheelForward",
+        Modifier::WheelBackward => "wheelBackward",
+        Modifier::LeftButtonDown => "leftButtonDown",
+        Modifier::MiddleButtonDown => "middleButtonDown",
+        Modifier::RightButtonDown => "rightButtonDown",
+        Modifier::X1Down => "x1Down",
+        Modifier::X2Down => "x2Down",
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::runtime::GestureContext;
     use super::*;
+    use parking_lot::Mutex;
+    use std::fs;
     use std::io::{self, Cursor};
     use std::time::Instant;
 
     const PROBE_SOURCE: &str = r#"
 import { basename } from "node:path";
+import { suffix } from "./helper.mjs";
 let count = 0;
 export function noop() { return ++count; }
 export async function hostCall(context) {
-  await context.input.sendText(basename("one/two"));
+  await context.input.sendText(`${basename("one/two")}${suffix}`);
+  await context.status.report(`${context.phase}:${await context.clipboard.readText()}`);
   return { node: process.versions.node, fetch: typeof fetch, count: ++count };
 }
 "#;
 
-    fn node_host() -> NodeHostPrototype {
-        NodeHostPrototype::start("node").expect("Node.js must be available for Desktop development")
+    #[derive(Default)]
+    struct FakeHost {
+        text: Mutex<Vec<String>>,
+    }
+
+    impl ScriptHost for FakeHost {
+        fn key_combo(&self, _: Vec<String>, _: Vec<String>) -> Result<(), String> {
+            Ok(())
+        }
+        fn send_text(&self, text: String) -> Result<(), String> {
+            self.text.lock().push(text);
+            Ok(())
+        }
+        fn mouse_click(&self, _: ScriptMouseButton) -> Result<(), String> {
+            Ok(())
+        }
+        fn mouse_button(&self, _: ScriptMouseButton, _: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn move_pointer(&self, _: i32, _: i32) -> Result<(), String> {
+            Ok(())
+        }
+        fn wheel(&self, _: i32) -> Result<(), String> {
+            Ok(())
+        }
+        fn activate_target(&self, _: GestureContext) -> Result<(), String> {
+            Ok(())
+        }
+        fn window_operation(
+            &self,
+            _: WindowOperation,
+            _: GestureContext,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+        fn clipboard_read_text(&self) -> Result<Option<String>, String> {
+            Ok(Some("clipboard".into()))
+        }
+        fn clipboard_write_text(&self, _: String) -> Result<(), String> {
+            Ok(())
+        }
+        fn clipboard_selected_text(&self) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+    }
+
+    struct TestProject(PathBuf);
+
+    impl TestProject {
+        fn new(source: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "godgesture-node-project-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("package.json"), r#"{"private":true,"type":"module"}"#)
+                .unwrap();
+            fs::write(path.join("index.mjs"), source).unwrap();
+            fs::write(path.join("helper.mjs"), "export const suffix = '!';").unwrap();
+            Self(path)
+        }
+
+        fn entry(&self) -> PathBuf {
+            self.0.join("index.mjs")
+        }
+    }
+
+    impl Drop for TestProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn invocation() -> ScriptInvocation {
+        ScriptInvocation {
+            gesture: GestureContext::default(),
+            trigger: Some(TriggerButton::Right),
+            modifier: Modifier::None,
+        }
+    }
+
+    fn node_host(host: Arc<dyn ScriptHost>) -> NodeHost {
+        NodeHost::start("node", host).expect("Node.js must be available for Desktop development")
     }
 
     #[test]
@@ -251,60 +550,105 @@ export async function hostCall(context) {
     }
 
     #[test]
-    fn persistent_worker_runs_real_node_and_host_calls() {
-        let mut host = node_host();
-        host.load_plugin("probe", PROBE_SOURCE).unwrap();
-        assert_eq!(host.invoke("probe", "noop", json!({})).unwrap().value, 1);
-        let result = host.invoke("probe", "hostCall", json!({})).unwrap();
+    fn persistent_worker_runs_real_esm_node_and_host_calls() {
+        let project = TestProject::new(PROBE_SOURCE);
+        let fake = Arc::new(FakeHost::default());
+        let mut host = node_host(fake.clone());
+        host.load_plugin("probe", &project.entry()).unwrap();
+        assert_eq!(
+            host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                .unwrap()
+                .value,
+            1
+        );
+        let result = host
+            .invoke(
+                "probe",
+                "hostCall",
+                false,
+                ScriptSlot::GestureRecognized,
+                invocation(),
+            )
+            .unwrap();
         assert_eq!(result.value["fetch"], "function");
         assert!(result.value["node"].as_str().is_some());
         assert_eq!(result.value["count"], 2);
-        assert_eq!(result.host_calls.len(), 1);
-        assert_eq!(result.host_calls[0]["method"], "input.sendText");
-        assert_eq!(result.host_calls[0]["args"], json!(["two"]));
+        assert_eq!(result.host_calls.len(), 3);
+        assert_eq!(fake.text.lock().as_slice(), &["two!".to_string()]);
+        assert_eq!(result.status.as_deref(), Some("gestureRecognized:clipboard"));
     }
 
     #[test]
-    fn requests_are_ordered_and_protocol_errors_are_stable() {
-        let mut host = node_host();
-        host.load_plugin("probe", PROBE_SOURCE).unwrap();
+    fn requests_are_ordered_and_optional_handlers_are_noops() {
+        let project = TestProject::new(PROBE_SOURCE);
+        let mut host = node_host(Arc::new(FakeHost::default()));
+        host.load_plugin("probe", &project.entry()).unwrap();
         for expected in 1..=100 {
             assert_eq!(
-                host.invoke("probe", "noop", json!({})).unwrap().value,
+                host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                    .unwrap()
+                    .value,
                 expected
             );
         }
+        assert_eq!(
+            host.invoke("probe", "init", true, ScriptSlot::Init, invocation())
+                .unwrap()
+                .value,
+            Value::Null
+        );
+        let initialized = TestProject::new(
+            "let value = 0; export function init() { value = 41; } export function read() { return ++value; }",
+        );
+        host.load_plugin("initialized", &initialized.entry()).unwrap();
+        assert_eq!(
+            host.invoke(
+                "initialized",
+                "read",
+                false,
+                ScriptSlot::Execute,
+                invocation(),
+            )
+            .unwrap()
+            .value,
+            42
+        );
         assert!(host
-            .request(json!({ "type": "unknown" }))
+            .request(json!({ "type": "unknown" }), None)
             .unwrap_err()
             .contains("unknown message type"));
     }
 
     #[test]
-    fn timeout_and_worker_crash_do_not_poison_a_new_host_or_worker() {
-        let mut timed =
-            NodeHostPrototype::start_with_timeout("node", Duration::from_millis(200)).unwrap();
-        timed
-            .load_plugin(
-                "hung",
-                "export async function execute() { await new Promise(() => {}); }",
-            )
-            .unwrap();
+    fn timeout_and_worker_crash_allow_a_clean_reload() {
+        let hung = TestProject::new(
+            "export async function execute() { await new Promise(() => {}); }",
+        );
+        let fake: Arc<dyn ScriptHost> = Arc::new(FakeHost::default());
+        let mut timed = node_host(fake.clone());
+        timed.load_plugin("hung", &hung.entry()).unwrap();
+        timed.request_timeout = Duration::from_millis(200);
         assert!(timed
-            .invoke("hung", "execute", json!({}))
+            .invoke("hung", "execute", false, ScriptSlot::Execute, invocation())
             .unwrap_err()
             .contains("timeout"));
         drop(timed);
 
-        let mut host = node_host();
-        host.load_plugin("probe", "export function crash() { process.exit(17); }")
-            .unwrap();
+        let crash = TestProject::new("export function crash() { process.exit(17); }");
+        let probe = TestProject::new(PROBE_SOURCE);
+        let mut host = node_host(fake);
+        host.load_plugin("probe", &crash.entry()).unwrap();
         assert!(host
-            .invoke("probe", "crash", json!({}))
+            .invoke("probe", "crash", false, ScriptSlot::Execute, invocation())
             .unwrap_err()
             .contains("exited with code 17"));
-        host.load_plugin("probe", PROBE_SOURCE).unwrap();
-        assert_eq!(host.invoke("probe", "noop", json!({})).unwrap().value, 1);
+        host.load_plugin("probe", &probe.entry()).unwrap();
+        assert_eq!(
+            host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                .unwrap()
+                .value,
+            1
+        );
     }
 
     fn percentile(samples: &mut [Duration], percentile: f64) -> Duration {
@@ -317,23 +661,36 @@ export async function hostCall(context) {
     #[ignore = "release-mode performance gate; run explicitly with --release --ignored --nocapture"]
     fn node_host_performance_gate() {
         const ITERATIONS: usize = 10_000;
+        let project = TestProject::new(PROBE_SOURCE);
         let cold_started = Instant::now();
-        let mut host = node_host();
-        host.load_plugin("probe", PROBE_SOURCE).unwrap();
+        let mut host = node_host(Arc::new(FakeHost::default()));
+        host.load_plugin("probe", &project.entry()).unwrap();
         let cold = cold_started.elapsed();
 
         let mut no_op = Vec::with_capacity(ITERATIONS);
         let mut last = Value::Null;
         for _ in 0..ITERATIONS {
             let started = Instant::now();
-            last = host.invoke("probe", "noop", json!({})).unwrap().value;
+            last = host
+                .invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                .unwrap()
+                .value;
             no_op.push(started.elapsed());
         }
         assert_eq!(last, ITERATIONS);
         let mut host_call = Vec::with_capacity(ITERATIONS);
         for _ in 0..ITERATIONS {
             let started = Instant::now();
-            last = host.invoke("probe", "hostCall", json!({})).unwrap().value;
+            last = host
+                .invoke(
+                    "probe",
+                    "hostCall",
+                    false,
+                    ScriptSlot::Execute,
+                    invocation(),
+                )
+                .unwrap()
+                .value;
             host_call.push(started.elapsed());
         }
         assert_eq!(last["count"], ITERATIONS * 2);
