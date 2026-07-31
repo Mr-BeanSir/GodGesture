@@ -40,6 +40,9 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @godgesture/shared build
 
+      - name: Fetch pinned Node toolchain
+        run: pnpm fetch:node-toolchain --target=windows-x64
+
       - name: Test desktop frontend
         run: pnpm --filter @godgesture/desktop test
 
@@ -146,6 +149,9 @@ jobs:
 
       - name: Build shared package
         run: pnpm --filter @godgesture/shared build
+
+      - name: Fetch pinned Node toolchain
+        run: pnpm fetch:node-toolchain --target=universal-apple-darwin
 
       - name: Require updater signing key
         shell: bash

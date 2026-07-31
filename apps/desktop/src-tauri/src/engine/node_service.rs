@@ -8,8 +8,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const SERVICE_QUEUE_CAPACITY: usize = 256;
 const HOST_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
@@ -19,6 +21,7 @@ const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 const MAX_LOCKFILE_BYTES: usize = 512 * 1024;
+const PACKAGE_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone)]
 pub struct NodeInvocationOutcome {
@@ -54,6 +57,7 @@ struct PreparedPlugin {
 
 struct ServiceState {
     node: PathBuf,
+    pnpm: PathBuf,
     supervisor: PathBuf,
     workspace: PathBuf,
     script_host: Arc<dyn ScriptHost>,
@@ -66,6 +70,7 @@ struct ServiceState {
 impl NodeScriptService {
     pub fn start(
         node: PathBuf,
+        pnpm: PathBuf,
         supervisor: PathBuf,
         workspace: PathBuf,
         script_host: Arc<dyn ScriptHost>,
@@ -79,6 +84,7 @@ impl NodeScriptService {
             .spawn(move || {
                 let mut state = ServiceState {
                     node,
+                    pnpm,
                     supervisor,
                     workspace,
                     script_host,
@@ -113,6 +119,7 @@ impl NodeScriptService {
     ) -> Result<Self, String> {
         Self::start(
             PathBuf::from("node"),
+            PathBuf::from("pnpm"),
             default_supervisor_path(),
             workspace,
             script_host,
@@ -167,7 +174,7 @@ impl ServiceState {
         let mut next_errors = HashMap::new();
         for plugin in plugins {
             let id = plugin.id.clone();
-            match materialize_plugin(&self.workspace, &plugin) {
+            match materialize_plugin(&self.workspace, &self.node, &self.pnpm, &plugin) {
                 Ok(prepared) => {
                     next_plugins.insert(id, prepared);
                 }
@@ -203,18 +210,10 @@ impl ServiceState {
         ids.sort();
         for id in ids {
             let plugin = &self.plugins[&id];
-            let result = host
-                .load_plugin(&id, &plugin.entry_path)
-                .and_then(|_| {
-                    host.invoke(
-                        &id,
-                        "init",
-                        true,
-                        ScriptSlot::Init,
-                        empty_invocation(),
-                    )
+            let result = host.load_plugin(&id, &plugin.entry_path).and_then(|_| {
+                host.invoke(&id, "init", true, ScriptSlot::Init, empty_invocation())
                     .map(|_| ())
-                });
+            });
             if let Err(error) = result {
                 log::error!("Node plugin '{id}' could not load: {error}");
                 self.load_errors.insert(id, error);
@@ -232,16 +231,11 @@ impl ServiceState {
         slot: ScriptSlot,
         invocation: ScriptInvocation,
     ) {
-        let (result, status) = match self.invoke_inner(
-            &plugin_id,
-            &handler,
-            optional,
-            slot,
-            invocation,
-        ) {
-            Ok(InvocationResult { value, status, .. }) => (Ok(value), status),
-            Err(error) => (Err(error), None),
-        };
+        let (result, status) =
+            match self.invoke_inner(&plugin_id, &handler, optional, slot, invocation) {
+                Ok(InvocationResult { value, status, .. }) => (Ok(value), status),
+                Err(error) => (Err(error), None),
+            };
         (self.outcome_sink)(NodeInvocationOutcome {
             plugin_id,
             handler,
@@ -296,8 +290,15 @@ fn empty_invocation() -> ScriptInvocation {
     }
 }
 
-fn materialize_plugin(workspace: &Path, plugin: &NodePlugin) -> Result<PreparedPlugin, String> {
+fn materialize_plugin(
+    workspace: &Path,
+    node: &Path,
+    pnpm: &Path,
+    plugin: &NodePlugin,
+) -> Result<PreparedPlugin, String> {
     validate_plugin(plugin)?;
+    let manifest: Value = serde_json::from_str(&plugin.package_json)
+        .map_err(|error| format!("invalid package.json: {error}"))?;
     let revision = plugin_fingerprint(plugin);
     let plugin_root = workspace.join(&plugin.id).join(format!("{revision:016x}"));
     let ready = plugin_root.join(".ready");
@@ -323,12 +324,78 @@ fn materialize_plugin(workspace: &Path, plugin: &NodePlugin) -> Result<PreparedP
             fs::write(&target, source)
                 .map_err(|error| format!("write plugin source '{path}': {error}"))?;
         }
+        install_dependencies(workspace, &plugin_root, node, pnpm, plugin, &manifest)?;
         fs::write(&ready, revision.to_string())
             .map_err(|error| format!("mark plugin project ready: {error}"))?;
     }
     Ok(PreparedPlugin {
         entry_path: plugin_root.join(plugin.entry.replace('/', std::path::MAIN_SEPARATOR_STR)),
     })
+}
+
+fn install_dependencies(
+    workspace: &Path,
+    plugin_root: &Path,
+    node: &Path,
+    pnpm: &Path,
+    plugin: &NodePlugin,
+    manifest: &Value,
+) -> Result<(), String> {
+    let has_dependencies = ["dependencies", "optionalDependencies"].iter().any(|key| {
+        manifest
+            .get(key)
+            .and_then(Value::as_object)
+            .is_some_and(|deps| !deps.is_empty())
+    });
+    if !has_dependencies {
+        return Ok(());
+    }
+    if plugin.lockfile.is_none() {
+        return Err("plugin dependencies require an exact pnpm lockfile".into());
+    }
+    let store = workspace.join(".pnpm-store");
+    fs::create_dir_all(&store).map_err(|error| format!("create pnpm store: {error}"))?;
+    let mut command = Command::new(node);
+    command
+        .arg(pnpm)
+        .arg("install")
+        .arg("--offline")
+        .arg("--frozen-lockfile")
+        .arg("--prod")
+        .arg("--store-dir")
+        .arg(&store)
+        .current_dir(plugin_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env("CI", "1");
+    if !plugin.allow_lifecycle_scripts {
+        command.arg("--ignore-scripts");
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("start bundled pnpm: {error}"))?;
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("wait for pnpm: {error}"))?
+        {
+            if status.success() {
+                return Ok(());
+            }
+            return Err(format!("pnpm install failed ({status})"));
+        }
+        if started.elapsed() >= PACKAGE_INSTALL_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "pnpm install exceeded {} seconds",
+                PACKAGE_INSTALL_TIMEOUT.as_secs()
+            ));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn validate_plugin(plugin: &NodePlugin) -> Result<(), String> {
@@ -343,7 +410,9 @@ fn validate_plugin(plugin: &NodePlugin) -> Result<(), String> {
     for (path, source) in &plugin.files {
         validate_source_path(path)?;
         if source.len() > MAX_FILE_BYTES {
-            return Err(format!("plugin file '{path}' exceeds {MAX_FILE_BYTES} bytes"));
+            return Err(format!(
+                "plugin file '{path}' exceeds {MAX_FILE_BYTES} bytes"
+            ));
         }
         source_bytes += source.len();
     }
@@ -439,17 +508,39 @@ mod tests {
     struct FakeHost;
 
     impl ScriptHost for FakeHost {
-        fn key_combo(&self, _: Vec<String>, _: Vec<String>) -> Result<(), String> { Ok(()) }
-        fn send_text(&self, _: String) -> Result<(), String> { Ok(()) }
-        fn mouse_click(&self, _: ScriptMouseButton) -> Result<(), String> { Ok(()) }
-        fn mouse_button(&self, _: ScriptMouseButton, _: bool) -> Result<(), String> { Ok(()) }
-        fn move_pointer(&self, _: i32, _: i32) -> Result<(), String> { Ok(()) }
-        fn wheel(&self, _: i32) -> Result<(), String> { Ok(()) }
-        fn activate_target(&self, _: GestureContext) -> Result<(), String> { Ok(()) }
-        fn window_operation(&self, _: WindowOperation, _: GestureContext) -> Result<(), String> { Ok(()) }
-        fn clipboard_read_text(&self) -> Result<Option<String>, String> { Ok(None) }
-        fn clipboard_write_text(&self, _: String) -> Result<(), String> { Ok(()) }
-        fn clipboard_selected_text(&self) -> Result<Option<String>, String> { Ok(None) }
+        fn key_combo(&self, _: Vec<String>, _: Vec<String>) -> Result<(), String> {
+            Ok(())
+        }
+        fn send_text(&self, _: String) -> Result<(), String> {
+            Ok(())
+        }
+        fn mouse_click(&self, _: ScriptMouseButton) -> Result<(), String> {
+            Ok(())
+        }
+        fn mouse_button(&self, _: ScriptMouseButton, _: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn move_pointer(&self, _: i32, _: i32) -> Result<(), String> {
+            Ok(())
+        }
+        fn wheel(&self, _: i32) -> Result<(), String> {
+            Ok(())
+        }
+        fn activate_target(&self, _: GestureContext) -> Result<(), String> {
+            Ok(())
+        }
+        fn window_operation(&self, _: WindowOperation, _: GestureContext) -> Result<(), String> {
+            Ok(())
+        }
+        fn clipboard_read_text(&self) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+        fn clipboard_write_text(&self, _: String) -> Result<(), String> {
+            Ok(())
+        }
+        fn clipboard_selected_text(&self) -> Result<Option<String>, String> {
+            Ok(None)
+        }
     }
 
     struct TestDir(PathBuf);
@@ -476,9 +567,7 @@ mod tests {
             id: "30000000-0000-4000-8000-000000000001".into(),
             name: "Test".into(),
             entry: "index.mjs".into(),
-            files: [("index.mjs".into(), source.into())]
-                .into_iter()
-                .collect(),
+            files: [("index.mjs".into(), source.into())].into_iter().collect(),
             package_json: r#"{"private":true,"type":"module"}"#.into(),
             lockfile: None,
             allow_lifecycle_scripts: false,
@@ -488,11 +577,18 @@ mod tests {
     #[test]
     fn materialization_is_revisioned_and_rejects_unsafe_paths() {
         let dir = TestDir::new();
-        let first = materialize_plugin(&dir.0, &plugin("export function execute() {}"))
-            .unwrap();
+        let first = materialize_plugin(
+            &dir.0,
+            Path::new("node"),
+            Path::new("pnpm"),
+            &plugin("export function execute() {}"),
+        )
+        .unwrap();
         assert!(first.entry_path.is_file());
         let second = materialize_plugin(
             &dir.0,
+            Path::new("node"),
+            Path::new("pnpm"),
             &plugin("export function execute() { return 2 }"),
         )
         .unwrap();
@@ -500,12 +596,12 @@ mod tests {
 
         let mut unsafe_plugin = plugin("");
         unsafe_plugin.entry = "../escape.mjs".into();
-        unsafe_plugin.files = [("../escape.mjs".into(), "".into())]
-            .into_iter()
-            .collect();
-        assert!(materialize_plugin(&dir.0, &unsafe_plugin)
-            .unwrap_err()
-            .contains("not portable"));
+        unsafe_plugin.files = [("../escape.mjs".into(), "".into())].into_iter().collect();
+        assert!(
+            materialize_plugin(&dir.0, Path::new("node"), Path::new("pnpm"), &unsafe_plugin)
+                .unwrap_err()
+                .contains("not portable")
+        );
     }
 
     #[test]

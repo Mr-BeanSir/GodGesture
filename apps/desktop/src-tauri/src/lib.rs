@@ -486,15 +486,38 @@ fn spawn_engine_consumer(
                 }
             });
             let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
-            let node_service = match app.path().app_local_data_dir() {
-                Ok(data_dir) => NodeScriptService::start_development(
-                    data_dir.join("node-plugins").join("runtime"),
-                    script_host,
-                    outcome_sink,
-                    initial_plugins,
-                )
-                .map_err(|error| format!("Node plugin service initialization failed: {error}")),
-                Err(error) => Err(format!("resolve Node plugin data directory: {error}")),
+            let node_service = match (app.path().app_local_data_dir(), app.path().resource_dir()) {
+                (Ok(data_dir), Ok(resource_dir)) => {
+                    let toolchain = engine::node_toolchain::from_resource_root(&resource_dir)
+                        .or_else(|error| {
+                            #[cfg(debug_assertions)]
+                            {
+                                log::debug!("{error}; using PATH Node for debug development");
+                                Ok(engine::node_toolchain::NodeToolchain {
+                                    node: std::path::PathBuf::from("node"),
+                                    pnpm: std::path::PathBuf::from("pnpm"),
+                                    supervisor: engine::node_host::default_supervisor_path(),
+                                })
+                            }
+                            #[cfg(not(debug_assertions))]
+                            {
+                                Err(error)
+                            }
+                        });
+                    toolchain.and_then(|toolchain| {
+                        NodeScriptService::start(
+                            toolchain.node,
+                            toolchain.pnpm,
+                            toolchain.supervisor,
+                            data_dir.join("node-plugins").join("runtime"),
+                            script_host,
+                            outcome_sink,
+                            initial_plugins,
+                        )
+                    })
+                }
+                (Err(error), _) => Err(format!("resolve Node plugin data directory: {error}")),
+                (_, Err(error)) => Err(format!("resolve Node plugin resource directory: {error}")),
             };
             let node_service = match node_service {
                 Ok(service) => Some(service),
