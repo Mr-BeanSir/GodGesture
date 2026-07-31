@@ -39,6 +39,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
 - `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
 - `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
+- `engine/node_host.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/Worker、framed JSON IPC 和性能原型;当前只用于合同测试与基准,尚未接管生产脚本执行,QuickJS 仍是实际运行时。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -256,6 +257,15 @@ Core Audio 读取并设置默认输出端点,macOS 使用系统音量百分比,`
 明显语法错误产生诊断标记。shared `95/95` + typecheck;Desktop `105/105` +
 typecheck/build;`pnpm check:api` 通过;Rust library `189 passed, 2 ignored`,
 `cargo clippy --lib --tests -- -D warnings` 通过。
+
+2026-07-31 Node 脚本宿主性能原型:Windows release 模式使用系统 Node `v22.13.0`
+运行常驻 supervisor 与预加载 Worker,真实加载 `node:path`、`process`、全局 `fetch`
+并完成一次 `Input.sendText` 宿主往返。10,000 次热态空处理为 p95 `0.140 ms`、
+p99 `0.199 ms`;10,000 次宿主调用为 p95 `0.246 ms`、p99 `0.320 ms`;冷启动并加载
+Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限、Node API、
+宿主调用、顺序、协议错误、超时和 Worker 崩溃后重载;显式 release gate 通过,
+`cargo clippy --lib --tests -- -D warnings` 通过。该证据只满足 Windows 原型门槛;
+尚未使用随应用打包的 Node,macOS CI/真机门槛未执行,因此不得删除 QuickJS。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

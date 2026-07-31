@@ -6,6 +6,7 @@ pub mod boundary;
 pub mod config;
 pub mod corners;
 pub mod intents;
+pub mod node_host;
 pub mod parser;
 pub mod runtime;
 pub mod script;
