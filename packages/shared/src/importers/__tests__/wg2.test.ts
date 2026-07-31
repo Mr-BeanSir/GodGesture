@@ -55,6 +55,29 @@ describe("importWg2", () => {
     expect(v2.global.intents[0]!.gesture.trigger).toBe("right");
   });
 
+  it("保留音量命令的负数调整量", () => {
+    const imported = importWg2(JSON.stringify({
+      FileVersion: "3",
+      Global: {
+        GestureIntents: [{
+          Name: "降低音量",
+          Gesture: { GestureButton: 1, Dirs: [0], Modifier: 0 },
+          Command: {
+            $type: "WGestures.Core.Commands.Impl.ChangeAudioVolumeCommand, WGestures.Core",
+            Delta: -1,
+          },
+        }],
+      },
+      Apps: {},
+      HotCornerCommands: [],
+    }));
+
+    expect(imported.global.intents[0]!.command).toEqual({
+      type: "audioVolume",
+      delta: -1,
+    });
+  });
+
   it("FileVersion 1:解包 Key/Value 意图且同名应用不会碰撞 intent id", () => {
     const pair = (name: string, dirs: number[]) => ({
       Key: { GestureButton: 0, Dirs: [7], Modifier: 0 },

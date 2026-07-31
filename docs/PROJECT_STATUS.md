@@ -145,7 +145,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
 - M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
-- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。中文输入法截获 `Ctrl+Space`,未取得可靠的补全弹窗证据;声明契约测试及 `Input` 无未定义诊断覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
+- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。Desktop 开发服务直接消费 shared 源码,Monaco 深层入口不参与 Vite 依赖预构建并复用同一模块实例,避免 JavaScript 模型静默退化为纯文本。浏览器 preview 已确认 `Input.` 可列出全部宿主 API 补全且语法错误产生诊断标记;声明契约测试覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
 - 2026-07-29 Windows 右键点击恢复修复:未形成手势时不再于低级钩子回调内嵌套 `SendInput`,而是在回调返回后由钩子线程消息泵重放完整点击;维护者在真实桌面确认右键抬起后已无明显感知延迟。已有 Vite-only 会话占用 `14200/14201` 时,真实 Tauri 开发会话自动使用 `14202/14203` 并连接成功。重复运行同一 debug 构建时第二进程以 0 退出,前后均仅一个 `godgesture.exe`,既有窗口已唤起;双语 toast 事件由 Desktop 测试覆盖,受本机窗口捕获接口限制未取得实机视觉证据。
 - 2026-07-29 原生轨迹调度修复:Windows 覆盖层不再清空无界 channel 后才绘制,
   单次唤醒最多消费 64 条命令,有剩余工作时重新唤醒;macOS 使用 FIFO pending 队列、
@@ -247,6 +247,15 @@ typecheck/build;`pnpm check:api` 通过;Rust library `188 passed, 2 ignored`,
 确认灰框先绘制、蓝色边/拐角后绘制且不再使用角点 circle。Monaco 已加载 JavaScript
 worker、宿主声明、触发字符补全、快速建议和参数提示;应用内浏览器的自动输入桥接未能
 稳定取得补全弹窗截图,因此不把该自动化限制记录为真实桌面视觉验收。
+
+2026-07-31 音量与脚本编辑修复:音量命令的数值统一解释为准确百分点,Windows 使用
+Core Audio 读取并设置默认输出端点,macOS 使用系统音量百分比,`0` 仍切换静音;负数可
+保存并表示降低音量,滚轮修饰仍按滚动方向使用绝对值。Desktop 开发服务直接消费 shared
+源码,Monaco 编辑器贡献、JavaScript 定义与 TypeScript provider 共享同一语言注册表。
+浏览器 preview 已确认 `-1` 保存后保持不变,并确认 `Input.` 补全包含全部 8 个宿主方法、
+明显语法错误产生诊断标记。shared `95/95` + typecheck;Desktop `105/105` +
+typecheck/build;`pnpm check:api` 通过;Rust library `189 passed, 2 ignored`,
+`cargo clippy --lib --tests -- -D warnings` 通过。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

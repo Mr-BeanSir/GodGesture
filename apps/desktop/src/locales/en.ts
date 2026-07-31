@@ -384,7 +384,7 @@ export default {
     pause: { desc: "Pause gesture recognition (resume via any of the resume paths)." },
     audioVolume: {
       delta: "Step per adjustment",
-      hint: "Positive raises volume, negative lowers it, and 0 toggles mute; wheel modifiers use the wheel direction and this value's magnitude",
+      hint: "Positive raises volume, negative lowers it, and 0 toggles mute; values are percentage points, and wheel modifiers use the wheel direction and this value's magnitude",
     },
   },
   corners: {

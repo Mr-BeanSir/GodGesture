@@ -134,15 +134,30 @@ fn web_search(
 }
 
 fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
-    let (key, count) = match audio_volume_action(modifier, delta) {
-        AudioVolumeAction::Mute => ("volumeMute", 1),
-        AudioVolumeAction::Up(steps) => ("volumeUp", steps),
-        AudioVolumeAction::Down(steps) => ("volumeDown", steps),
+    let script = match audio_volume_action(modifier, delta) {
+        AudioVolumeAction::Mute => concat!(
+            "set currentMuted to output muted of (get volume settings)\n",
+            "set volume output muted (not currentMuted)"
+        )
+        .to_string(),
+        AudioVolumeAction::Up(points) => format!(
+            "set currentVolume to output volume of (get volume settings)\nset volume output volume (currentVolume + {points})"
+        ),
+        AudioVolumeAction::Down(points) => format!(
+            "set currentVolume to output volume of (get volume settings)\nset volume output volume (currentVolume - {points})"
+        ),
     };
-    for _ in 0..count {
-        input::tap_key(key)?;
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|error| format!("launch volume AppleScript: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("volume AppleScript failed: {}", stderr.trim()))
     }
-    Ok(())
 }
 
 fn run_command(

@@ -7,23 +7,28 @@
 //! DoNothing 顾名思义。
 
 use super::{clipboard, hook::EXTRA_INFO_TAG, input, window};
-use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
+use crate::engine::audio::{audio_volume_action, target_volume_scalar, AudioVolumeAction};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
 use windows::core::{w, HSTRING, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, RPC_E_CHANGED_MODE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VK_MENU, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
+    VK_MENU, VK_TAB,
 };
 use windows::Win32::UI::Shell::{
-    ShellExecuteW, FOLDERID_Desktop, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+    FOLDERID_Desktop, SHGetKnownFolderPath, ShellExecuteW, KF_FLAG_DEFAULT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetWindowLongPtrW, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos,
@@ -66,9 +71,15 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             Err(error) => log::error!("GotoUrl 命令被拒绝: {error}"),
         },
         Command::WebSearch {
-            engine_url, browser, ..
+            engine_url,
+            browser,
+            ..
         } => web_search(engine_url, browser.as_deref(), ctx),
-        Command::AudioVolume { delta } => audio_volume(modifier, *delta),
+        Command::AudioVolume { delta } => {
+            if let Err(error) = audio_volume(modifier, *delta) {
+                log::error!("音量命令失败: {error}");
+            }
+        }
         Command::Cmd {
             code,
             show_window,
@@ -180,9 +191,9 @@ pub(crate) fn activate_target_for_script(ctx: &GestureContext) -> Result<(), Str
 /// 经常正是这些外壳窗口 —— 给触发角绑一个"关闭窗口",就会朝 `Progman` 发
 /// `WM_CLOSE`,足以把资源管理器桌面干掉。手势路径同样可能命中(在桌面上画手势)。
 const SHELL_WINDOW_CLASSES: &[&str] = &[
-    "Progman",           // 桌面
-    "WorkerW",           // 壁纸/桌面工作窗口
-    "Shell_TrayWnd",     // 主任务栏
+    "Progman",                // 桌面
+    "WorkerW",                // 壁纸/桌面工作窗口
+    "Shell_TrayWnd",          // 主任务栏
     "Shell_SecondaryTrayWnd", // 副屏任务栏
     "Shell_ChargeBar",
     "NotifyIconOverflowWindow",
@@ -261,7 +272,11 @@ fn toggle_topmost(hwnd: HWND) {
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let is_topmost = (ex & WS_EX_TOPMOST.0 as isize) != 0;
-        let insert_after = if is_topmost { HWND_NOTOPMOST } else { HWND_TOPMOST };
+        let insert_after = if is_topmost {
+            HWND_NOTOPMOST
+        } else {
+            HWND_TOPMOST
+        };
         if let Err(error) = SetWindowPos(
             hwnd,
             Some(insert_after),
@@ -308,14 +323,63 @@ fn dock_half(hwnd: HWND, left: bool) {
     }
 }
 
-fn audio_volume(modifier: Modifier, delta: i32) {
-    let (vk, steps) = match audio_volume_action(modifier, delta) {
-        AudioVolumeAction::Mute => (VK_VOLUME_MUTE, 1),
-        AudioVolumeAction::Up(steps) => (VK_VOLUME_UP, steps),
-        AudioVolumeAction::Down(steps) => (VK_VOLUME_DOWN, steps),
-    };
-    for _ in 0..steps {
-        input::tap_vk(vk);
+struct AudioComApartment(bool);
+
+impl AudioComApartment {
+    fn init() -> Result<Self, String> {
+        match unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
+            Ok(()) => Ok(Self(true)),
+            Err(error) if error.code() == RPC_E_CHANGED_MODE => Ok(Self(false)),
+            Err(error) => Err(format!("initialize Core Audio COM: {error}")),
+        }
+    }
+}
+
+impl Drop for AudioComApartment {
+    fn drop(&mut self) {
+        if self.0 {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+fn default_audio_endpoint() -> Result<(AudioComApartment, IAudioEndpointVolume), String> {
+    let apartment = AudioComApartment::init()?;
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_INPROC_SERVER) }
+            .map_err(|error| format!("create audio device enumerator: {error}"))?;
+    let device = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) }
+        .map_err(|error| format!("open default render endpoint: {error}"))?;
+    let endpoint = unsafe { device.Activate(CLSCTX_INPROC_SERVER, None) }
+        .map_err(|error| format!("activate endpoint volume control: {error}"))?;
+    Ok((apartment, endpoint))
+}
+
+fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
+    let action = audio_volume_action(modifier, delta);
+    let (_apartment, endpoint) = default_audio_endpoint()?;
+    unsafe {
+        match action {
+            AudioVolumeAction::Mute => {
+                let muted = endpoint
+                    .GetMute()
+                    .map_err(|error| format!("read endpoint mute state: {error}"))?
+                    .as_bool();
+                endpoint
+                    .SetMute(!muted, std::ptr::null())
+                    .map_err(|error| format!("set endpoint mute state: {error}"))
+            }
+            action => {
+                let current = endpoint
+                    .GetMasterVolumeLevelScalar()
+                    .map_err(|error| format!("read endpoint volume: {error}"))?;
+                let target = target_volume_scalar(current, action)
+                    .expect("non-mute audio action must have a scalar target");
+                endpoint
+                    .SetMasterVolumeLevelScalar(target, std::ptr::null())
+                    .map_err(|error| format!("set endpoint volume: {error}"))
+            }
+        }
     }
 }
 
@@ -485,7 +549,9 @@ fn desktop_directory() -> Option<std::path::PathBuf> {
     let known = unsafe { SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None) }
         .ok()
         .and_then(|path| {
-            let result = unsafe { path.to_string() }.ok().map(std::path::PathBuf::from);
+            let result = unsafe { path.to_string() }
+                .ok()
+                .map(std::path::PathBuf::from);
             unsafe { CoTaskMemFree(Some(path.0.cast())) };
             result
         })
@@ -744,7 +810,10 @@ mod tests {
 
     #[test]
     fn cmd_normalization_handles_mixed_newlines_and_empty_scripts() {
-        assert_eq!(normalize_cmd_code("echo one\recho two\n\r\necho three"), "echo one & echo two & echo three");
+        assert_eq!(
+            normalize_cmd_code("echo one\recho two\n\r\necho three"),
+            "echo one & echo two & echo three"
+        );
         assert_eq!(normalize_cmd_code(" \r\n:: note\nrem\tcomment"), "");
     }
 

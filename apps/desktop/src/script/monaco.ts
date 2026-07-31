@@ -29,7 +29,9 @@ async function initializeMonaco(): Promise<MonacoApi> {
   };
 
   const [monaco, typescript] = await Promise.all([
-    import("monaco-editor/editor/editor.api"),
+    // editor.api exposes the data surface but does not register visible contributions
+    // such as the suggestion widget, parameter hints, or hover UI.
+    import("monaco-editor/editor/editor.main"),
     import("monaco-editor/languages/features/typescript/register"),
     import("monaco-editor/languages/definitions/javascript/register"),
     import("monaco-editor/languages/definitions/lua/register"),

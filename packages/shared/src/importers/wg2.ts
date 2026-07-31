@@ -267,7 +267,7 @@ class Wg2Importer {
         return { type: "pause" };
       case "ChangeAudioVolumeCommand": {
         const delta = asInt(raw["Delta"]) ?? 1;
-        return { type: "audioVolume", delta: Math.min(20, Math.max(1, delta)) };
+        return { type: "audioVolume", delta: Math.min(20, Math.max(-20, delta)) };
       }
       default: {
         const rawType = raw["$type"];

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { fileURLToPath, URL } from "node:url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -11,6 +12,22 @@ const hmrPort = Number(process.env.GODGESTURE_HMR_PORT || "14201");
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
+  resolve: {
+    // Consume the protocol source directly so Desktop dev cannot retain an optimized
+    // packages/shared/dist bundle from before a schema edit.
+    alias: {
+      "@godgesture/shared": fileURLToPath(
+        new URL("../../packages/shared/src/index.ts", import.meta.url),
+      ),
+    },
+    dedupe: ["monaco-editor"],
+  },
+  // Monaco's editor, language definitions, and TypeScript provider must share one
+  // registry. Optimizing the deep entry points separately creates isolated registries
+  // where JavaScript models silently fall back to plaintext.
+  optimizeDeps: {
+    exclude: ["monaco-editor"],
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
