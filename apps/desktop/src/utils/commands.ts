@@ -21,6 +21,7 @@ export const COMMAND_TYPES: CommandType[] = [
   "gotoUrl",
   "cmd",
   "script",
+  "nodePlugin",
   "pause",
   "audioVolume",
 ];

@@ -16,20 +16,53 @@ import {
 } from "../utils/commands";
 import HotkeyInput from "./HotkeyInput.vue";
 import ScriptEditor from "./ScriptEditor.vue";
+import NodePluginEditor from "./NodePluginEditor.vue";
+import { useConfigStore } from "../stores/config";
+import { newId } from "../utils/id";
+import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
 
 const { t } = useI18n();
+const configStore = useConfigStore();
 
 /** 局部字段写入:合并补丁后整体 emit(判别联合下用 Record 逃逸类型约束) */
 function patch(partial: Record<string, unknown>) {
   emit("update:modelValue", { ...props.modelValue, ...partial } as Command);
 }
 
+const asNodePlugin = computed(() => props.modelValue as CommandOfType<"nodePlugin">);
+
+function ensureNodePlugin() {
+  const existing = configStore.doc?.nodePlugins[0];
+  if (existing) return existing;
+  if (!configStore.doc) return null;
+  const created = {
+    id: newId(),
+    name: t("command.nodePlugin.newName"),
+    entry: "index.mjs",
+    files: { "index.mjs": DEFAULT_NODE_PLUGIN_SOURCE },
+    packageJson: DEFAULT_NODE_PLUGIN_MANIFEST,
+    lockfile: null,
+    allowLifecycleScripts: false,
+  };
+  configStore.doc.nodePlugins.push(created);
+  return created;
+}
+
 const type = computed<CommandType>({
   get: () => props.modelValue.type,
-  set: (next) => emit("update:modelValue", createDefaultCommand(next)),
+  set: (next) => {
+    if (next === "nodePlugin") {
+      const plugin = ensureNodePlugin();
+      if (plugin) {
+        emit("update:modelValue", { type: "nodePlugin", pluginId: plugin.id, exportName: "execute" });
+      }
+      return;
+    }
+    emit("update:modelValue", createDefaultCommand(next));
+  },
 });
 
 // 各具体类型的只读视图(仅在对应分支内渲染,断言安全)
@@ -308,6 +341,13 @@ function updateVolumeDelta(value: unknown) {
         </el-collapse-item>
       </el-collapse>
     </template>
+
+    <!-- Node 插件 -->
+    <NodePluginEditor
+      v-else-if="type === 'nodePlugin'"
+      :model-value="asNodePlugin"
+      @update:model-value="emit('update:modelValue', $event)"
+    />
 
     <!-- 暂停 -->
     <p v-else-if="type === 'pause'" class="gg-hint">{{ t("command.pause.desc") }}</p>

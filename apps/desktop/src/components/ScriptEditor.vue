@@ -6,7 +6,7 @@ import { loadMonaco } from "../script/monaco";
 const props = withDefaults(
   defineProps<{
     modelValue: string;
-    language?: "js" | "lua";
+    language?: "js" | "lua" | "json";
     editorLabel: string;
     height?: number;
   }>(),
@@ -26,8 +26,8 @@ let themeObserver: MutationObserver | undefined;
 let disposed = false;
 let applyingExternalValue = false;
 
-function editorLanguage(language: "js" | "lua") {
-  return language === "js" ? "javascript" : "lua";
+function editorLanguage(language: "js" | "lua" | "json") {
+  return language === "js" ? "javascript" : language;
 }
 
 function currentTheme() {
@@ -140,6 +140,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .script-editor {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   overflow: hidden;

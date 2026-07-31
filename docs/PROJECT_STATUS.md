@@ -39,7 +39,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
 - `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
 - `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
-- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。当前开发接线使用 PATH 中的 Node,随应用打包的固定 Node/pnpm 尚未完成。
+- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。release 只使用随应用分发的固定 Node/pnpm,debug 缺少内置工具链时才允许回退 PATH。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -284,8 +284,22 @@ Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限�
 helper 包。Windows release 新基准:冷启动 `96.786 ms`,noop p95/p99 `0.152/0.223 ms`,
 包含输入、剪贴板和状态三次真实宿主往返的 handler p95/p99 `0.495/0.640 ms`。
 shared `99/99`;Desktop `105/105`;SDK `1/1` + typecheck/build;Rust library
-`196 passed, 3 ignored`,严格 clippy 通过。当前仍从 PATH 启动系统 Node,尚未内置 Node/pnpm、
-安装 npm 依赖或完成 macOS 门槛,因此 QuickJS 不得移除。
+`196 passed, 3 ignored`,严格 clippy 通过。macOS 性能门槛尚未完成,因此 QuickJS 不得移除。
+
+2026-07-31 Node 内置工具链与依赖准备:发布资源固定为 Node `v24.18.1` LTS 与
+pnpm `10.34.5`,下载脚本校验官方 SHA-256/SHA-512 后按 Windows x64、macOS x64 和
+macOS arm64 填充 Tauri resource。release 缺少内置工具链时稳定失败,不读取 PATH;
+插件仅在物化新修订时使用独立 pnpm store 执行离线、精确锁文件、生产依赖安装,
+生命周期脚本默认禁用并可按插件显式允许。工具链脚本合同 `3/3`,release 静态合同
+`10/10`,Rust 定向编译与测试通过。手势触发路径不会安装依赖或访问网络。
+
+2026-07-31 Node 插件工作区:手势命令编辑器可创建、选择并绑定 Node 插件及 handler
+export;工作区支持插件名称、多源文件新增/删除/入口切换、Monaco 源码与 `package.json`
+编辑、精确 lockfile 和生命周期脚本批准。布局按编辑器容器宽度响应,在 `980x700`
+中文与 `800x560` 英文浏览器 preview 中完成新增文件、切换文件、自动保存和 DOM
+溢出检查,无横向溢出或翻译 key 泄漏。Desktop `106/106` + typecheck/build,
+`git diff --check` 通过。依赖增删/锁文件生成、Node/SDK 完整类型、Problems/输出和旧脚本
+转换仍待后续实现。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
