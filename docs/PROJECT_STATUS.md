@@ -317,6 +317,13 @@ Windows/macOS 共用 Tauri IPC,浏览器 mock 可演示保存 lockfile、Problem
 `114/114` + typecheck/build;Rust library `200 passed, 3 ignored`;严格 clippy 通过。
 依赖搜索、更新建议和 macOS 真机性能门槛仍待后续实现,QuickJS 继续保留。
 
+2026-07-31 Node macOS 性能门槛接线:`macOS CI` 使用与产品工具链一致的 Node
+`v24.18.1`,以 release 模式运行 10,000 次有序 no-op 和 10,000 次代表性宿主调用,
+断言批准的 p95/p99 上限并上传包含系统、架构、Node 版本和百分位结果的 30 天日志
+artifact。`docs/qa/M4_MACOS_SMOKE.md` 已增加物理 Mac 上的同一性能测试、首手势热态、
+Node/fetch/SDK、精确锁文件离线重建、Worker 与 supervisor 恢复验收。该 workflow
+尚未产生本次改动的 runner 结果,物理 Mac 项也未执行,因此不能据此删除 QuickJS。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程

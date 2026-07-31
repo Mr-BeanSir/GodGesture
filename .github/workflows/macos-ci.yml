@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.18.1
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
@@ -40,6 +40,30 @@ jobs:
         run: |
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
           cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Gate Node plugin host performance
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            sw_vers
+            uname -m
+            node --version
+            cargo test \
+              --manifest-path apps/desktop/src-tauri/Cargo.toml \
+              --release \
+              engine::node_host::tests::node_host_performance_gate \
+              -- --ignored --exact --nocapture
+          } 2>&1 | tee node-host-performance.log
+
+      - name: Upload Node plugin host performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-host-performance-macos-${{ runner.arch }}
+          path: node-host-performance.log
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Check both macOS architectures
         run: |

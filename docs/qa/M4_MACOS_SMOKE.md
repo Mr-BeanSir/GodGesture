@@ -36,11 +36,23 @@ does not satisfy them.
 - [ ] Global, inherited, overridden, and blacklisted application intentions match by Bundle ID.
 - [ ] Window minimize, close, zoom/restore, activate, dock left, and dock right work on the selected target. Toggle-topmost reports unsupported without crashing.
 
-## Commands And QuickJS
+## Commands And Script Runtimes
 
 - [ ] Hotkey, Web search, selected-text capture, URL, open file, key sequence, command line (hidden and Terminal), Mission Control, pause, and volume commands are exercised.
 - [ ] Clipboard contents, items, and formats survive selected-text capture when no concurrent clipboard owner changes them.
 - [ ] QuickJS persistent context, all lifecycle slots, host input/window/clipboard calls, exception recovery, and the 200 ms infinite-loop interrupt are exercised.
+
+QuickJS remains a migration fallback until every Node plugin item below passes
+on a physical Mac. GitHub runner results are supporting CI evidence, not a
+substitute for these observations.
+
+- [ ] Record the `macOS CI` workflow run and its `node-host-performance-macos-*` artifact. The release gate completes 10,000 ordered no-op events and 10,000 ordered representative host-call events with no loss or reordering.
+- [ ] On the physical Mac, run `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --release engine::node_host::tests::node_host_performance_gate -- --ignored --exact --nocapture`; record cold startup plus no-op and host-call p95/p99. No-op p95 is at most 5 ms, host-call p95 is at most 8 ms, and both p99 values are at most 16 ms.
+- [ ] A preloaded Node plugin handles the first gesture without starting another process, loading its entry module, installing dependencies, or accessing the package registry on the gesture path.
+- [ ] A plugin imports `node:fs/promises`, uses global `fetch`, imports `@godgesture/sdk`, and exercises input, window, clipboard, and status calls through the async SDK.
+- [ ] A plugin with multiple source files and an npm dependency runs from its exact lockfile. After the package store is warm, rebuilding the same plugin revision succeeds with network access disabled.
+- [ ] Forcing a plugin Worker to exit or time out produces a bounded diagnostic; the next invocation reloads the Worker, reruns `init`, and succeeds without interrupting the native mouse hook.
+- [ ] Forcing the Node supervisor to exit does not block or crash the native mouse hook. The service restarts it, reloads enabled plugins, and later gestures execute in order.
 
 ## Machine Settings And Distribution
 
