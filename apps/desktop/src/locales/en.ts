@@ -203,6 +203,15 @@ export default {
     x2Down: "X2 button",
   },
   gestures: {
+    scriptMigration: {
+      title: "Migrate legacy scripts",
+      action: "Migrate to Node.js plugins",
+      actionWithCount: "Migrate legacy scripts ({count})",
+      confirm: "Convert {count} legacy script commands in the configuration into separate Node.js plugins. Lua scripts remain unchanged, and converted plugins can still be reviewed and tested in the plugin editor.",
+      pluginName: "Migrated: {name}",
+      complete: "Converted {converted} JavaScript scripts.",
+      skipped: "Kept {luaSkipped} Lua scripts; {capacitySkipped} additional scripts could not be converted because the plugin limit was reached.",
+    },
     appIcon: "Application icon for {name}",
     appIconUnavailable: "Application icon unavailable for {name}",
     globalApp: "(Global)",

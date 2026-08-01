@@ -359,6 +359,11 @@ runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或�
 性能 gate,也没有性能 artifact。当前本地 Node 迁移提交尚未 push,因此该 run 不构成 macOS
 性能或 Node-only 证据。
 
+2026-08-01 旧脚本整库迁移:手势工作台会统计全局、应用与边角动作中的旧 `script` 命令,
+提供一次确认后的批量转换入口;每个 JavaScript 命令生成独立 Node 插件并替换引用,Lua
+保持原样,达到 32 插件上限时不修改剩余命令并报告跳过数量。Desktop `121/121` +
+typecheck/build、`git diff --check` 通过。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程

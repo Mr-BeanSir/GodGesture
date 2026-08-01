@@ -26,6 +26,10 @@ import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
 import { createDefaultCommand } from "../utils/commands";
 import { findBoundaryConflict } from "../utils/boundary-actions";
+import {
+  countLegacyScriptCommands,
+  migrateLegacyScriptsInDocument,
+} from "../utils/nodePluginMigration";
 import MnemonicText from "../components/MnemonicText.vue";
 import IntentEditor from "../components/IntentEditor.vue";
 import CaptureDialog from "../components/CaptureDialog.vue";
@@ -112,6 +116,35 @@ const editingBoundary = computed<BoundaryIntent | null>(() =>
 const currentTitle = computed(() =>
   currentIsGlobal.value ? t("gestures.globalApp") : (currentApp.value?.name ?? ""),
 );
+const legacyScriptCount = computed(() => countLegacyScriptCommands(doc.value));
+
+async function migrateLegacyScripts() {
+  try {
+    await ElMessageBox.confirm(
+      t("gestures.scriptMigration.confirm", { count: legacyScriptCount.value }),
+      t("gestures.scriptMigration.title"),
+      {
+        type: "warning",
+        confirmButtonText: t("gestures.scriptMigration.action"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
+  } catch {
+    return;
+  }
+  const report = migrateLegacyScriptsInDocument(doc.value, (name) =>
+    t("gestures.scriptMigration.pluginName", { name }),
+  );
+  if (report.converted) {
+    ElMessage.success(t("gestures.scriptMigration.complete", { converted: report.converted }));
+  }
+  if (report.luaSkipped || report.capacitySkipped) {
+    ElMessage.warning(t("gestures.scriptMigration.skipped", {
+      luaSkipped: report.luaSkipped,
+      capacitySkipped: report.capacitySkipped,
+    }));
+  }
+}
 
 const blacklisted = computed<boolean>({
   get: () =>
@@ -396,6 +429,15 @@ onMounted(() => selectApp(GLOBAL));
     <section class="gestures__main">
       <header class="gestures__main-head">
         <h3 class="gestures__title">{{ currentTitle }}</h3>
+        <el-button
+          v-if="legacyScriptCount"
+          size="small"
+          type="warning"
+          plain
+          @click="migrateLegacyScripts"
+        >
+          {{ t("gestures.scriptMigration.actionWithCount", { count: legacyScriptCount }) }}
+        </el-button>
         <div class="gestures__settings-strip">
           <template v-if="!currentIsGlobal && currentApp">
             <label class="gestures__setting">

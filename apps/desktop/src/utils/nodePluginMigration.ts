@@ -1,5 +1,5 @@
-import type { Command, NodePlugin, NodePluginCommand } from "@godgesture/shared";
-import { DEFAULT_NODE_PLUGIN_MANIFEST } from "@godgesture/shared";
+import type { Command, ConfigDocument, NodePlugin, NodePluginCommand } from "@godgesture/shared";
+import { DEFAULT_NODE_PLUGIN_MANIFEST, MAX_NODE_PLUGINS } from "@godgesture/shared";
 import { newId } from "./id";
 
 type ScriptCommand = Extract<Command, { type: "script" }>;
@@ -59,6 +59,63 @@ const SLOT_FILES = [
 export interface NodePluginMigration {
   plugin: NodePlugin;
   command: NodePluginCommand;
+}
+
+export interface LegacyScriptMigrationReport {
+  converted: number;
+  luaSkipped: number;
+  capacitySkipped: number;
+  pluginIds: string[];
+}
+
+/** Count legacy script commands without changing the document. */
+export function countLegacyScriptCommands(document: ConfigDocument) {
+  const commands = [
+    ...document.global.intents.map((intent) => intent.command),
+    ...document.apps.flatMap((app) => app.intents.map((intent) => intent.command)),
+    ...document.boundaryIntents.map((intent) => intent.command),
+  ];
+  return commands.filter((command) => command.type === "script").length;
+}
+
+/** Convert every JavaScript legacy command in one document to Node plugins. */
+export function migrateLegacyScriptsInDocument(
+  document: ConfigDocument,
+  nameFor: (name: string) => string,
+): LegacyScriptMigrationReport {
+  const report: LegacyScriptMigrationReport = {
+    converted: 0,
+    luaSkipped: 0,
+    capacitySkipped: 0,
+    pluginIds: [],
+  };
+  const scopes = [
+    document.global.intents,
+    ...document.apps.map((app) => app.intents),
+    document.boundaryIntents,
+  ];
+  for (const intents of scopes) {
+    for (const intent of intents) {
+      if (intent.command.type !== "script") continue;
+      if (intent.command.language !== "js") {
+        report.luaSkipped += 1;
+        continue;
+      }
+      if (document.nodePlugins.length >= MAX_NODE_PLUGINS) {
+        report.capacitySkipped += 1;
+        continue;
+      }
+      const migration = convertScriptCommandToNodePlugin(
+        intent.command,
+        nameFor(intent.name),
+      );
+      document.nodePlugins.push(migration.plugin);
+      intent.command = migration.command;
+      report.converted += 1;
+      report.pluginIds.push(migration.plugin.id);
+    }
+  }
+  return report;
 }
 
 export function convertScriptCommandToNodePlugin(
