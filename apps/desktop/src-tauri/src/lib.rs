@@ -11,9 +11,9 @@ use engine::config::ConfigFilesSnapshot;
 #[cfg(any(windows, target_os = "macos"))]
 use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
-use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::node_service::{NodeInvocationOutcome, NodeScriptService, OutcomeSink};
+use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script::{
     boundary_script_key, gesture_script_key, ScriptDefinition, ScriptEngine, ScriptInvocation,
@@ -463,8 +463,8 @@ fn spawn_engine_consumer(
                 }
             };
             let outcome_overlay = overlay.clone();
-            let outcome_sink: OutcomeSink = Arc::new(move |outcome: NodeInvocationOutcome| {
-                match outcome.result {
+            let outcome_sink: OutcomeSink =
+                Arc::new(move |outcome: NodeInvocationOutcome| match outcome.result {
                     Ok(_) => {
                         if let Some(status) = outcome.status {
                             if outcome.invocation.trigger.is_some() {
@@ -483,7 +483,6 @@ fn spawn_engine_consumer(
                         outcome.plugin_id,
                         outcome.handler
                     ),
-                }
             });
             let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
             let node_service = app
@@ -838,9 +837,7 @@ fn spawn_engine_consumer(
                     EngineMsg::ScriptConfigChanged { live_keys } => {
                         if let Some(service) = node_service.as_ref() {
                             service.sync_plugins(
-                                app.state::<Arc<ConfigStore>>()
-                                    .load_config()
-                                    .node_plugins,
+                                app.state::<Arc<ConfigStore>>().load_config().node_plugins,
                             );
                         }
                         live_script_keys = Some(live_keys.into_iter().collect());
@@ -892,7 +889,9 @@ fn execute_intent(
     } = command
     {
         let Some(service) = node_service else {
-            log::error!("Node plugin runtime is unavailable; '{plugin_id}:{export_name}' was skipped");
+            log::error!(
+                "Node plugin runtime is unavailable; '{plugin_id}:{export_name}' was skipped"
+            );
             return;
         };
         service.invoke(
@@ -1007,6 +1006,38 @@ async fn node_plugin_install(
     })
     .await
     .map_err(|error| format!("Node package worker failed: {error}"))?
+}
+
+#[tauri::command]
+async fn node_plugin_package_search(
+    query: String,
+) -> Result<Vec<engine::node_registry::NodePackageSearchResult>, String> {
+    engine::node_registry::search_node_packages(query).await
+}
+
+#[tauri::command]
+async fn node_plugin_package_latest(name: String) -> Result<String, String> {
+    engine::node_registry::latest_node_package_version(name).await
+}
+
+#[tauri::command]
+async fn node_plugin_test(
+    plugin: engine::config::NodePlugin,
+    handler: String,
+    app: tauri::AppHandle,
+) -> Result<engine::node_packages::NodeTestResult, String> {
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
+        .join("node-plugins")
+        .join("runtime");
+    let toolchain = resolve_node_toolchain(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine::node_packages::test_plugin(&workspace, &toolchain, &plugin, &handler)
+    })
+    .await
+    .map_err(|error| format!("Node test worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -2035,6 +2066,9 @@ pub fn run() {
             config_get,
             config_set,
             node_plugin_install,
+            node_plugin_package_search,
+            node_plugin_package_latest,
+            node_plugin_test,
             machine_get,
             machine_set,
             machine_status,

@@ -315,7 +315,8 @@ lockfile 解析/离线生产安装和入口 import smoke;Rust 通过同一内置
 输出限制 128 KiB、单命令超时 120 秒,并把 `@godgesture/sdk` 内置运行时写入物化插件。
 Windows/macOS 共用 Tauri IPC,浏览器 mock 可演示保存 lockfile、Problems 和 Output。Desktop
 `114/114` + typecheck/build;Rust library `200 passed, 3 ignored`;严格 clippy 通过。
-依赖搜索、更新建议和 macOS 真机性能门槛仍待后续实现,QuickJS 继续保留。
+依赖搜索与更新建议由后续 Node 插件工具链补齐;macOS 真机性能门槛仍待完成,
+QuickJS 继续保留。
 
 2026-07-31 Node macOS 性能门槛接线:`macOS CI` 使用与产品工具链一致的 Node
 `v24.18.1`,以 release 模式运行 10,000 次有序 no-op 和 10,000 次代表性宿主调用,
@@ -323,6 +324,16 @@ Windows/macOS 共用 Tauri IPC,浏览器 mock 可演示保存 lockfile、Problem
 artifact。`docs/qa/M4_MACOS_SMOKE.md` 已增加物理 Mac 上的同一性能测试、首手势热态、
 Node/fetch/SDK、精确锁文件离线重建、Worker 与 supervisor 恢复验收。该 workflow
 尚未产生本次改动的 runner 结果,物理 Mac 项也未执行,因此不能据此删除 QuickJS。
+
+2026-08-01 Node 插件工具链:编辑器通过受限原生网关搜索 npm 包和读取 latest dist-tag,
+可将搜索结果加入 manifest、以最多 4 路并发检查并采用最新版;网关固定 npm 官方 HTTPS
+origin、禁止重定向、限制 15 秒和 256 KiB,并过滤包名及截断说明。新增真实 Node handler
+dry-run,完整加载 ESM、Node API、`fetch` 和已锁定依赖,同时把输入、窗口、剪贴板与状态
+宿主调用记录为无副作用输出;有外部依赖但没有 lockfile 时明确拒绝,已有 lockfile 只执行
+离线 frozen install,测试过程不会隐式解析或修改依赖。Desktop `116/116` + typecheck/build;
+Rust library `204 passed, 3 ignored`,严格 clippy、cargo check 和 `git diff --check` 通过。
+浏览器 preview 已确认搜索/添加 `zod 4.4.3`、无误报更新检查、无副作用 dry-run Output,
+以及 `800x560` 无横向溢出。macOS runner/真机证据仍未取得,QuickJS 不得删除。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

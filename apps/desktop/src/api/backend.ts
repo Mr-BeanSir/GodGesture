@@ -5,6 +5,8 @@
  * - config_get(): ConfigDocument
  * - config_set(document: ConfigDocument)        // 保存并即时生效
  * - node_plugin_install(plugin): NodePackageResult // 用户主动解析/准备依赖
+ * - node_plugin_package_search(query): NodePackageSearchResult[] // npm registry metadata
+ * - node_plugin_package_latest(name): string // npm dist-tag metadata
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
  * - machine_status(): MachineRuntimeStatus
@@ -109,6 +111,18 @@ export interface NodePackageResult {
   ready: boolean;
 }
 
+export interface NodeTestResult {
+  output: string;
+  ready: boolean;
+}
+
+export interface NodePackageSearchResult {
+  name: string;
+  version: string;
+  description: string | null;
+  weeklyDownloads: number | null;
+}
+
 export type UpdateDownloadEvent =
   | { event: "started"; data: { contentLength: number | null } }
   | {
@@ -139,6 +153,9 @@ export interface Backend {
   /** 保存并即时生效 */
   configSet(document: ConfigDocument): Promise<void>;
   nodePluginInstall(plugin: NodePlugin): Promise<NodePackageResult>;
+  nodePluginPackageSearch(query: string): Promise<NodePackageSearchResult[]>;
+  nodePluginPackageLatest(name: string): Promise<string>;
+  nodePluginTest(plugin: NodePlugin, handler: string): Promise<NodeTestResult>;
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
@@ -253,6 +270,30 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       try {
         return await invoke<NodePackageResult>("node_plugin_install", { plugin });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async nodePluginPackageSearch(query) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<NodePackageSearchResult[]>("node_plugin_package_search", { query });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async nodePluginPackageLatest(name) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<string>("node_plugin_package_latest", { name });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async nodePluginTest(plugin, handler) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<NodeTestResult>("node_plugin_test", { plugin, handler });
       } catch (error) {
         throw normalizeBackendError(error);
       }

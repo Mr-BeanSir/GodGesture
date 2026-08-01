@@ -20,6 +20,13 @@ pub struct NodePackageResult {
     pub ready: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTestResult {
+    pub output: String,
+    pub ready: bool,
+}
+
 pub fn install_plugin(
     workspace: &Path,
     toolchain: &NodeToolchain,
@@ -34,9 +41,90 @@ pub fn install_plugin(
         .map_err(|error| format!("create package workspace: {error}"))?;
     fs::create_dir_all(&store).map_err(|error| format!("create package store: {error}"))?;
 
-    let result = install_inner(&operation_root, &store, toolchain, plugin);
+    let result = install_inner(&operation_root, &store, toolchain, plugin, true);
     let _ = fs::remove_dir_all(&operation_root);
     result
+}
+
+pub fn test_plugin(
+    workspace: &Path,
+    toolchain: &NodeToolchain,
+    plugin: &NodePlugin,
+    handler: &str,
+) -> Result<NodeTestResult, String> {
+    let mut characters = handler.chars();
+    let valid_handler = characters
+        .next()
+        .is_some_and(|character| character.is_ascii_alphabetic() || matches!(character, '_' | '$'))
+        && characters
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '$'));
+    if !valid_handler {
+        return Err("handler export name is invalid".into());
+    }
+    validate_plugin(plugin)?;
+    let operation_root = workspace
+        .join(".operations")
+        .join(uuid::Uuid::new_v4().to_string());
+    let store = workspace.join(".pnpm-store");
+    fs::create_dir_all(&operation_root)
+        .map_err(|error| format!("create test workspace: {error}"))?;
+    fs::create_dir_all(&store).map_err(|error| format!("create test package store: {error}"))?;
+    let result = test_inner(&operation_root, &store, toolchain, plugin, handler);
+    let _ = fs::remove_dir_all(&operation_root);
+    result
+}
+
+fn test_inner(
+    root: &Path,
+    store: &Path,
+    toolchain: &NodeToolchain,
+    plugin: &NodePlugin,
+    handler: &str,
+) -> Result<NodeTestResult, String> {
+    let has_dependencies = serde_json::from_str::<serde_json::Value>(&plugin.package_json)
+        .ok()
+        .is_some_and(|manifest| {
+            ["dependencies", "optionalDependencies"].iter().any(|key| {
+                manifest
+                    .get(key)
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(|items| !items.is_empty())
+            })
+        });
+    let prepared = if plugin.lockfile.is_some() {
+        install_inner(root, store, toolchain, plugin, false)?
+    } else if has_dependencies {
+        return Err(
+            "plugin dependencies have no lockfile; generate the lockfile before testing".into(),
+        );
+    } else {
+        write_plugin_project(root, plugin)?;
+        write_builtin_sdk(root)?;
+        NodePackageResult {
+            lockfile: None,
+            output: String::new(),
+            ready: true,
+        }
+    };
+    let runner = root.join(".godgesture-test-runner.mjs");
+    fs::write(&runner, include_str!("../../../node-host/test-runner.mjs"))
+        .map_err(|error| format!("write Node test runner: {error}"))?;
+    let entry = root.join(plugin.entry.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let args: Vec<std::ffi::OsString> = vec![
+        runner.as_os_str().to_owned(),
+        entry.as_os_str().to_owned(),
+        handler.into(),
+    ];
+    let output = run_command(Command::new(&toolchain.node), &args, root)?;
+    let mut text = String::new();
+    append_output(&mut text, &output);
+    if !output.status.success() {
+        return Err(format!("plugin test failed:\n{text}"));
+    }
+    Ok(NodeTestResult {
+        output: format!("lockfile ready: {}\n{text}", prepared.lockfile.is_some()),
+        ready: true,
+    })
 }
 
 fn install_inner(
@@ -44,42 +132,36 @@ fn install_inner(
     store: &Path,
     toolchain: &NodeToolchain,
     plugin: &NodePlugin,
+    resolve_lockfile: bool,
 ) -> Result<NodePackageResult, String> {
-    fs::write(root.join("package.json"), &plugin.package_json)
-        .map_err(|error| format!("write package.json: {error}"))?;
+    write_plugin_project(root, plugin)?;
     if let Some(lockfile) = &plugin.lockfile {
         fs::write(root.join("pnpm-lock.yaml"), lockfile)
             .map_err(|error| format!("write pnpm-lock.yaml: {error}"))?;
     }
-    for (path, source) in &plugin.files {
-        let destination = root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("create source directory '{path}': {error}"))?;
-        }
-        fs::write(destination, source)
-            .map_err(|error| format!("write source file '{path}': {error}"))?;
-    }
-
     let mut output = String::new();
-    let mut resolve_args = vec![
-        "install".into(),
-        "--lockfile-only".into(),
-        "--store-dir".into(),
-        store.as_os_str().to_owned(),
-        "--reporter=append-only".into(),
-    ];
-    if !plugin.allow_lifecycle_scripts {
-        resolve_args.push("--ignore-scripts".into());
-    }
-    let resolved = run_command(
-        super::node_toolchain::pnpm_command(&toolchain.node, &toolchain.pnpm),
-        &resolve_args,
-        root,
-    )?;
-    append_output(&mut output, &resolved);
-    if !resolved.status.success() {
-        return Err(format!("pnpm lockfile resolution failed:\n{output}"));
+    if resolve_lockfile {
+        let mut resolve_args = vec![
+            "install".into(),
+            "--lockfile-only".into(),
+            "--store-dir".into(),
+            store.as_os_str().to_owned(),
+            "--reporter=append-only".into(),
+        ];
+        if !plugin.allow_lifecycle_scripts {
+            resolve_args.push("--ignore-scripts".into());
+        }
+        let resolved = run_command(
+            super::node_toolchain::pnpm_command(&toolchain.node, &toolchain.pnpm),
+            &resolve_args,
+            root,
+        )?;
+        append_output(&mut output, &resolved);
+        if !resolved.status.success() {
+            return Err(format!("pnpm lockfile resolution failed:\n{output}"));
+        }
+    } else if !root.join("pnpm-lock.yaml").is_file() {
+        return Err("plugin lockfile is missing".into());
     }
 
     let mut install_args = vec![
@@ -125,6 +207,21 @@ fn install_inner(
         output,
         ready: true,
     })
+}
+
+fn write_plugin_project(root: &Path, plugin: &NodePlugin) -> Result<(), String> {
+    fs::write(root.join("package.json"), &plugin.package_json)
+        .map_err(|error| format!("write package.json: {error}"))?;
+    for (path, source) in &plugin.files {
+        let destination = root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create source directory '{path}': {error}"))?;
+        }
+        fs::write(destination, source)
+            .map_err(|error| format!("write source file '{path}': {error}"))?;
+    }
+    Ok(())
 }
 
 pub fn write_builtin_sdk(project_root: &Path) -> Result<(), String> {
@@ -235,6 +332,7 @@ fn validate_plugin(plugin: &NodePlugin) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     #[test]
     fn output_is_bounded() {
@@ -262,5 +360,64 @@ mod tests {
             allow_lifecycle_scripts: false,
         };
         assert!(validate_plugin(&plugin).is_err());
+    }
+
+    #[test]
+    fn dry_run_executes_a_real_node_handler() {
+        let workspace =
+            std::env::temp_dir().join(format!("godgesture-node-test-{}", uuid::Uuid::new_v4()));
+        let plugin = NodePlugin {
+            id: "30000000-0000-4000-8000-000000000001".into(),
+            name: "test".into(),
+            entry: "index.mjs".into(),
+            files: HashMap::from([(
+                String::from("index.mjs"),
+                "export async function execute(context) { await context.input.sendText('dry'); }"
+                    .into(),
+            )]),
+            package_json: r#"{"private":true,"type":"module"}"#.into(),
+            lockfile: None,
+            allow_lifecycle_scripts: false,
+        };
+        let toolchain = NodeToolchain {
+            node: PathBuf::from("node"),
+            pnpm: PathBuf::from("pnpm"),
+            supervisor: PathBuf::from("unused"),
+        };
+        let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
+        let _ = fs::remove_dir_all(&workspace);
+        let result = result.expect("Node dry-run should execute with the development toolchain");
+        assert!(result.ready);
+        assert!(result.output.contains("input.sendText"));
+    }
+
+    #[test]
+    fn dry_run_requires_a_lockfile_for_external_dependencies() {
+        let workspace =
+            std::env::temp_dir().join(format!("godgesture-node-test-{}", uuid::Uuid::new_v4()));
+        let plugin = NodePlugin {
+            id: "30000000-0000-4000-8000-000000000001".into(),
+            name: "test".into(),
+            entry: "index.mjs".into(),
+            files: HashMap::from([(
+                String::from("index.mjs"),
+                "export async function execute() {}".into(),
+            )]),
+            package_json: r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#
+                .into(),
+            lockfile: None,
+            allow_lifecycle_scripts: false,
+        };
+        let toolchain = NodeToolchain {
+            node: PathBuf::from("unused-node"),
+            pnpm: PathBuf::from("unused-pnpm"),
+            supervisor: PathBuf::from("unused"),
+        };
+        let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
+        let _ = fs::remove_dir_all(&workspace);
+        assert_eq!(
+            result.unwrap_err(),
+            "plugin dependencies have no lockfile; generate the lockfile before testing"
+        );
     }
 }

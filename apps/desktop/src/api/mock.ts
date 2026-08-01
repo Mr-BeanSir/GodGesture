@@ -198,6 +198,27 @@ export function createMockBackend(): Backend {
         ready: true,
       };
     },
+    async nodePluginPackageSearch(query) {
+      const normalized = query.trim().toLowerCase();
+      if (normalized.length < 2) return [];
+      return [
+        {
+          name: normalized === "zod" ? "zod" : `${normalized}-plugin`,
+          version: "4.4.3",
+          description: "Browser preview package result",
+          weeklyDownloads: 123456,
+        },
+      ];
+    },
+    async nodePluginPackageLatest(name) {
+      return name === "zod" ? "4.4.3" : "1.2.0";
+    },
+    async nodePluginTest(plugin, handler) {
+      return {
+        output: `Dry-run passed for ${plugin.name}:${handler}. Native host calls were recorded without side effects.`,
+        ready: true,
+      };
+    },
     async machineGet() {
       return { ...machine };
     },

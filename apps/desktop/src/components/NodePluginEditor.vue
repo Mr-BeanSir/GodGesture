@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, toRaw, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, Plus, Refresh } from "@element-plus/icons-vue";
+import { Delete, Plus, Refresh, Search, VideoPlay } from "@element-plus/icons-vue";
 import type { NodePlugin, NodePluginCommand } from "@godgesture/shared";
 import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
 import { useBackend } from "../api/backend";
@@ -12,6 +12,7 @@ import {
   removePluginDependency,
   setPluginDependency,
 } from "../utils/nodePluginPackages";
+import type { NodePackageSearchResult } from "../api/backend";
 import ScriptEditor from "./ScriptEditor.vue";
 
 const props = defineProps<{ modelValue: NodePluginCommand }>();
@@ -27,6 +28,12 @@ const packageState = ref<"idle" | "running" | "ready" | "error">("idle");
 const packageOutput = ref("");
 const packageError = ref("");
 const activeBottomTab = ref("problems");
+const packageSearchResults = ref<NodePackageSearchResult[]>([]);
+const packageSearchState = ref<"idle" | "running" | "error">("idle");
+const packageSearchError = ref("");
+const testState = ref<"idle" | "running" | "ready" | "error">("idle");
+type UpdateInfo = { state: "idle" | "running" | "ready" | "error"; latest?: string; error?: string };
+const updateInfo = ref<Record<string, UpdateInfo>>({});
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
@@ -53,6 +60,10 @@ const problems = computed(() => {
     result.push(t("command.nodePlugin.problemLockfile"));
   }
   if (packageError.value) result.push(packageError.value);
+  if (packageSearchError.value) result.push(packageSearchError.value);
+  for (const info of Object.values(updateInfo.value)) {
+    if (info.state === "error" && info.error) result.push(info.error);
+  }
   return result;
 });
 const activeSource = computed({
@@ -133,6 +144,68 @@ function removeDependency(name: string) {
   plugin.value.lockfile = null;
   packageState.value = "idle";
   packageError.value = "";
+  delete updateInfo.value[name];
+}
+
+async function searchPackages() {
+  const query = dependencyName.value.trim();
+  if (query.length < 2) return;
+  packageSearchState.value = "running";
+  packageSearchError.value = "";
+  try {
+    packageSearchResults.value = await backend.nodePluginPackageSearch(query);
+    packageSearchState.value = "idle";
+  } catch (error) {
+    packageSearchState.value = "error";
+    packageSearchResults.value = [];
+    packageSearchError.value = error instanceof Error ? error.message : String(error);
+    activeBottomTab.value = "problems";
+  }
+}
+
+function useSearchResult(result: NodePackageSearchResult) {
+  dependencyName.value = result.name;
+  dependencySpec.value = result.version;
+  packageSearchResults.value = [];
+  packageSearchError.value = "";
+}
+
+async function checkUpdates() {
+  if (!dependencies.value.length) return;
+  const names = dependencies.value.map((dependency) => dependency.name);
+  for (const name of names) updateInfo.value[name] = { state: "running" };
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < names.length) {
+      const name = names[cursor++];
+      try {
+        const latest = await backend.nodePluginPackageLatest(name);
+        const current = dependencies.value.find((dependency) => dependency.name === name)?.spec;
+        updateInfo.value[name] = { state: "ready", latest: latest === current ? undefined : latest };
+      } catch (error) {
+        updateInfo.value[name] = {
+          state: "error",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, worker));
+}
+
+function applyUpdate(name: string) {
+  const latest = updateInfo.value[name]?.latest;
+  if (!latest || !plugin.value) return;
+  try {
+    plugin.value.packageJson = setPluginDependency(plugin.value.packageJson, name, latest);
+    plugin.value.lockfile = null;
+    updateInfo.value[name] = { state: "idle" };
+    packageState.value = "idle";
+    packageError.value = "";
+  } catch (error) {
+    packageError.value = error instanceof Error ? error.message : String(error);
+    activeBottomTab.value = "problems";
+  }
 }
 
 async function prepareDependencies() {
@@ -149,6 +222,25 @@ async function prepareDependencies() {
     packageState.value = result.ready ? "ready" : "error";
   } catch (error) {
     packageState.value = "error";
+    packageError.value = error instanceof Error ? error.message : String(error);
+    packageOutput.value = packageError.value;
+    activeBottomTab.value = "problems";
+  }
+}
+
+async function testPlugin() {
+  if (!plugin.value || manifestError.value) return;
+  testState.value = "running";
+  packageError.value = "";
+  packageOutput.value = "";
+  activeBottomTab.value = "output";
+  try {
+    const snapshot = JSON.parse(JSON.stringify(toRaw(plugin.value))) as NodePlugin;
+    const result = await backend.nodePluginTest(snapshot, props.modelValue.exportName);
+    packageOutput.value = result.output || t("command.nodePlugin.testComplete");
+    testState.value = result.ready ? "ready" : "error";
+  } catch (error) {
+    testState.value = "error";
     packageError.value = error instanceof Error ? error.message : String(error);
     packageOutput.value = packageError.value;
     activeBottomTab.value = "problems";
@@ -273,27 +365,38 @@ watch(
 
       <section class="node-plugin-editor__dependencies">
         <div class="node-plugin-editor__section-head">
-          <div>
+          <div class="node-plugin-editor__section-copy">
             <strong>{{ t("command.nodePlugin.dependencies") }}</strong>
             <span class="gg-hint">{{ t("command.nodePlugin.dependenciesHint") }}</span>
           </div>
-          <el-button
-            size="small"
-            :icon="Refresh"
-            :loading="packageState === 'running'"
-            :disabled="Boolean(manifestError)"
-            @click="prepareDependencies"
-          >
-            {{ t("command.nodePlugin.prepare") }}
-          </el-button>
+          <div class="node-plugin-editor__section-actions">
+            <el-button size="small" :icon="Refresh" :loading="packageState === 'running'" :disabled="Boolean(manifestError)" @click="prepareDependencies">
+              {{ t("command.nodePlugin.prepare") }}
+            </el-button>
+            <el-button v-if="dependencies.length" size="small" :icon="Search" :loading="Object.values(updateInfo).some((item) => item.state === 'running')" @click="checkUpdates">
+              {{ t("command.nodePlugin.checkUpdates") }}
+            </el-button>
+            <el-button size="small" :icon="VideoPlay" :loading="testState === 'running'" :disabled="Boolean(manifestError)" @click="testPlugin">
+              {{ t("command.nodePlugin.testHandler") }}
+            </el-button>
+          </div>
         </div>
         <div class="node-plugin-editor__dependency-add">
-          <el-input
-            v-model="dependencyName"
-            size="small"
-            :placeholder="t('command.nodePlugin.packageName')"
-            @keyup.enter="addDependency"
-          />
+          <div class="node-plugin-editor__package-search">
+            <el-input
+              v-model="dependencyName"
+              size="small"
+              :placeholder="t('command.nodePlugin.packageName')"
+              @keyup.enter="searchPackages"
+            />
+            <el-button
+              size="small"
+              :icon="Search"
+              :loading="packageSearchState === 'running'"
+              :aria-label="t('command.nodePlugin.searchPackages')"
+              @click="searchPackages"
+            />
+          </div>
           <el-input
             v-model="dependencySpec"
             size="small"
@@ -304,6 +407,19 @@ watch(
             {{ t("command.nodePlugin.addDependency") }}
           </el-button>
         </div>
+        <div v-if="packageSearchResults.length" class="node-plugin-editor__search-results">
+          <button
+            v-for="result in packageSearchResults"
+            :key="`${result.name}@${result.version}`"
+            type="button"
+            class="node-plugin-editor__search-result"
+            @click="useSearchResult(result)"
+          >
+            <strong>{{ result.name }}</strong>
+            <span>{{ result.version }}</span>
+            <small>{{ result.description || t("command.nodePlugin.noDescription") }}</small>
+          </button>
+        </div>
         <div v-if="dependencies.length" class="node-plugin-editor__dependency-list">
           <div v-for="dependency in dependencies" :key="dependency.name" class="node-plugin-editor__dependency">
             <code>{{ dependency.name }}</code>
@@ -311,6 +427,15 @@ watch(
             <el-tag v-if="dependency.optional" size="small" type="info">
               {{ t("command.nodePlugin.optional") }}
             </el-tag>
+            <el-button
+              v-if="updateInfo[dependency.name]?.latest"
+              link
+              size="small"
+              type="primary"
+              @click="applyUpdate(dependency.name)"
+            >
+              {{ t("command.nodePlugin.updateTo", { version: updateInfo[dependency.name]?.latest }) }}
+            </el-button>
             <el-tooltip :content="t('command.nodePlugin.removeDependency')">
               <el-button
                 link
@@ -368,9 +493,17 @@ watch(
 .node-plugin-editor__package-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .node-plugin-editor__dependencies { display: grid; min-width: 0; gap: 8px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
 .node-plugin-editor__section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.node-plugin-editor__section-head > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.node-plugin-editor__section-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .node-plugin-editor__section-head strong { font-size: 13px; font-weight: 600; }
+.node-plugin-editor__section-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .node-plugin-editor__dependency-add { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(100px, .5fr) auto; gap: 6px; }
+.node-plugin-editor__package-search { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 4px; min-width: 0; }
+.node-plugin-editor__search-results { display: grid; max-height: 180px; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.node-plugin-editor__search-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 7px 9px; border: 0; border-bottom: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-blank); color: var(--el-text-color-primary); text-align: left; cursor: pointer; }
+.node-plugin-editor__search-result:last-child { border-bottom: 0; }
+.node-plugin-editor__search-result:hover, .node-plugin-editor__search-result:focus-visible { background: var(--el-color-primary-light-9); outline: none; }
+.node-plugin-editor__search-result span { color: var(--el-color-success); font: 12px "Cascadia Code", Consolas, monospace; }
+.node-plugin-editor__search-result small { grid-column: 1 / -1; overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }
 .node-plugin-editor__dependency-list { display: grid; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
 .node-plugin-editor__dependency { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .45fr) auto 28px; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 9px; border-bottom: 1px solid var(--el-border-color-lighter); font-size: 12px; }
 .node-plugin-editor__dependency:last-child { border-bottom: 0; }
@@ -387,6 +520,7 @@ watch(
   .node-plugin-editor__dependency-add {
     grid-template-columns: minmax(0, 1fr) minmax(100px, .55fr);
   }
+  .node-plugin-editor__package-search { grid-column: 1 / -1; }
   .node-plugin-editor__dependency-add .el-button {
     grid-column: 1 / -1;
     justify-self: start;

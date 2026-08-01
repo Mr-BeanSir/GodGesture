@@ -8,6 +8,7 @@ pub mod corners;
 pub mod intents;
 pub mod node_host;
 pub mod node_packages;
+pub mod node_registry;
 pub mod node_service;
 pub mod node_toolchain;
 pub mod parser;
