@@ -8,11 +8,22 @@ const props = withDefaults(
     modelValue: string;
     language?: "js" | "lua" | "json";
     editorLabel: string;
+    diagnosticKey?: string;
     height?: number;
   }>(),
   { language: "js", height: 160 },
 );
-const emit = defineEmits<{ (event: "update:modelValue", value: string): void }>();
+interface ScriptDiagnostic {
+  severity: "error" | "warning" | "info";
+  message: string;
+  line: number;
+  column: number;
+}
+
+const emit = defineEmits<{
+  (event: "update:modelValue", value: string): void;
+  (event: "diagnostics", value: { key: string; items: ScriptDiagnostic[] }): void;
+}>();
 
 const container = ref<HTMLElement>();
 const loading = ref(true);
@@ -23,6 +34,7 @@ let editor: Monaco.editor.IStandaloneCodeEditor | undefined;
 let model: Monaco.editor.ITextModel | undefined;
 let resizeObserver: ResizeObserver | undefined;
 let themeObserver: MutationObserver | undefined;
+let markerListener: Monaco.IDisposable | undefined;
 let disposed = false;
 let applyingExternalValue = false;
 
@@ -32,6 +44,12 @@ function editorLanguage(language: "js" | "lua" | "json") {
 
 function currentTheme() {
   return document.documentElement.classList.contains("dark") ? "vs-dark" : "vs";
+}
+
+function markerSeverity(monaco: typeof Monaco, severity: Monaco.MarkerSeverity) {
+  if (severity === monaco.MarkerSeverity.Error) return "error" as const;
+  if (severity === monaco.MarkerSeverity.Warning) return "warning" as const;
+  return "info" as const;
 }
 
 onMounted(async () => {
@@ -79,6 +97,27 @@ onMounted(async () => {
   editor.onDidChangeModelContent(() => {
     if (!applyingExternalValue && model) emit("update:modelValue", model.getValue());
   });
+  const emitDiagnostics = () => {
+    if (!model) return;
+    emit(
+      "diagnostics",
+      {
+        key: props.diagnosticKey ?? props.editorLabel,
+        items: monaco.editor.getModelMarkers({ resource: model.uri }).map((marker) => ({
+          severity: markerSeverity(monaco, marker.severity),
+          message: marker.message,
+          line: marker.startLineNumber,
+          column: marker.startColumn,
+        })),
+      },
+    );
+  };
+  markerListener = monaco.editor.onDidChangeMarkers((resources) => {
+    if (model && resources.some((resource) => resource.toString() === model?.uri.toString())) {
+      emitDiagnostics();
+    }
+  });
+  emitDiagnostics();
 
   resizeObserver = new ResizeObserver(() => editor?.layout());
   resizeObserver.observe(container.value);
@@ -94,6 +133,7 @@ watch(
     applyingExternalValue = true;
     model.setValue(value);
     applyingExternalValue = false;
+    emit("diagnostics", { key: props.diagnosticKey ?? props.editorLabel, items: [] });
   },
 );
 
@@ -115,6 +155,7 @@ onBeforeUnmount(() => {
   disposed = true;
   resizeObserver?.disconnect();
   themeObserver?.disconnect();
+  markerListener?.dispose();
   editor?.dispose();
   model?.dispose();
 });

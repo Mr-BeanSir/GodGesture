@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import monacoSource from "../monaco.ts?raw";
 import nodeDeclarationsSource from "../node-declarations.ts?raw";
 import viteConfigSource from "../../../vite.config.ts?raw";
+import scriptEditorSource from "../../components/ScriptEditor.vue?raw";
+import nodePluginEditorSource from "../../components/NodePluginEditor.vue?raw";
 
 describe("Monaco configuration", () => {
   it("loads editor contributions and JavaScript language support into one registry", () => {
@@ -18,5 +20,16 @@ describe("Monaco configuration", () => {
     expect(nodeDeclarationsSource).toContain("undici-types/**/*.d.ts");
     expect(viteConfigSource).toContain('dedupe: ["monaco-editor"]');
     expect(viteConfigSource).toContain('exclude: ["monaco-editor"]');
+  });
+
+  it("routes Monaco markers into the Node plugin Problems panel", () => {
+    expect(scriptEditorSource).toContain("onDidChangeMarkers");
+    expect(scriptEditorSource).toContain('emit("diagnostics"');
+    expect(scriptEditorSource).toContain("diagnosticKey");
+    expect(scriptEditorSource).toContain("items:");
+    expect(nodePluginEditorSource).toContain('@diagnostics="updateDiagnostics"');
+    expect(nodePluginEditorSource).toContain('@diagnostics="updateManifestDiagnostics"');
+    expect(nodePluginEditorSource).toContain("diagnostic.line");
+    expect(nodePluginEditorSource).toContain("diagnostic.column");
   });
 });

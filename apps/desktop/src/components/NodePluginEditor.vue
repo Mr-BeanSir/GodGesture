@@ -37,6 +37,8 @@ type UpdateInfo = { state: "idle" | "running" | "ready" | "error"; latest?: stri
 const updateInfo = ref<Record<string, UpdateInfo>>({});
 const cacheStatus = ref<NodePluginCacheStatus | null>(null);
 const cacheStatusState = ref<"idle" | "running" | "error">("idle");
+type ScriptDiagnostic = { severity: "error" | "warning" | "info"; message: string; line: number; column: number };
+const fileDiagnostics = ref<Record<string, ScriptDiagnostic[]>>({});
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
@@ -65,6 +67,11 @@ const problems = computed(() => {
   if (packageError.value) result.push(packageError.value);
   if (packageSearchError.value) result.push(packageSearchError.value);
   if (cacheStatusState.value === "error") result.push(t("command.nodePlugin.cacheStatusError"));
+  for (const [file, diagnostics] of Object.entries(fileDiagnostics.value)) {
+    for (const diagnostic of diagnostics) {
+      result.push(`${file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.message}`);
+    }
+  }
   for (const info of Object.values(updateInfo.value)) {
     if (info.state === "error" && info.error) result.push(info.error);
   }
@@ -96,6 +103,7 @@ function createPlugin() {
 function selectPlugin(id: string) {
   const selected = plugins.value.find((candidate) => candidate.id === id);
   if (!selected) return;
+  fileDiagnostics.value = {};
   emit("update:modelValue", { ...props.modelValue, pluginId: selected.id });
   activeFile.value = selected.entry;
 }
@@ -116,11 +124,20 @@ function addFile() {
 function deleteFile(path: string) {
   if (!plugin.value || path === plugin.value.entry) return;
   delete plugin.value.files[path];
+  delete fileDiagnostics.value[path];
   activeFile.value = plugin.value.entry;
 }
 
 function setEntry(path: string) {
   if (plugin.value && path in plugin.value.files) plugin.value.entry = path;
+}
+
+function updateDiagnostics(payload: { key: string; items: ScriptDiagnostic[] }) {
+  fileDiagnostics.value[payload.key] = payload.items;
+}
+
+function updateManifestDiagnostics(payload: { key: string; items: ScriptDiagnostic[] }) {
+  fileDiagnostics.value[payload.key] = payload.items;
 }
 
 function addDependency() {
@@ -375,14 +392,14 @@ watch(
             <span>{{ activeFile }}</span>
             <span v-if="activeFile === plugin.entry" class="node-plugin-editor__entry">{{ t("command.nodePlugin.entry") }}</span>
           </div>
-          <ScriptEditor v-model="activeSource" language="js" :editor-label="activeFile" :height="260" />
+          <ScriptEditor :key="`${plugin.id}:${activeFile}`" v-model="activeSource" language="js" :editor-label="activeFile" :diagnostic-key="activeFile" :height="260" @diagnostics="updateDiagnostics" />
         </section>
       </div>
 
       <div class="node-plugin-editor__package-grid">
         <div class="gg-field">
           <label class="gg-field-label">{{ t("command.nodePlugin.manifest") }}</label>
-          <ScriptEditor v-model="plugin.packageJson" language="json" :editor-label="t('command.nodePlugin.manifest')" :height="150" />
+          <ScriptEditor v-model="plugin.packageJson" language="json" diagnostic-key="package.json" :editor-label="t('command.nodePlugin.manifest')" :height="150" @diagnostics="updateManifestDiagnostics" />
         </div>
         <div class="gg-field">
           <label class="gg-field-label">{{ t("command.nodePlugin.lockfile") }}</label>

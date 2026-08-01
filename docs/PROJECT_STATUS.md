@@ -344,7 +344,8 @@ typecheck、`git diff --check` 通过。设计中的
 本机缓存 readiness 已补为只读原生状态:复用 production revision fingerprint、`.ready`
 标记和内置 SDK 文件,区分无需缓存、缺锁文件、未准备与已就绪;“生成锁文件并准备”
 成功后会直接物化同一 production revision。结构化 manifest/lockfile diff 和独立
-typecheck 输出尚未完全实现;macOS
+`tsc` 子进程输出尚未实现;Monaco `checkJs`、Node/SDK 类型和 JSON marker 已接入
+Problems,按文件、行和列显示。macOS
 runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或删除 QuickJS。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
