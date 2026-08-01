@@ -71,14 +71,17 @@ async function download(url, destination, algorithm = "sha256") {
 async function extractArchive(archive, type, destination) {
   await mkdir(destination, { recursive: true });
   if (type === "zip") {
+    const env = {
+      ...process.env,
+      GODGESTURE_TOOLCHAIN_ARCHIVE: archive,
+      GODGESTURE_TOOLCHAIN_DESTINATION: destination,
+    };
     await execFileAsync("powershell", [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
-      archive,
-      destination,
-    ]);
+      "Expand-Archive -LiteralPath $env:GODGESTURE_TOOLCHAIN_ARCHIVE -DestinationPath $env:GODGESTURE_TOOLCHAIN_DESTINATION -Force",
+    ], { env });
   } else {
     await execFileAsync("tar", ["-xzf", archive, "-C", destination]);
   }
@@ -153,4 +156,4 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
 
-export { NODE_ARTIFACTS, PNPM_SHA512, PNPM_VERSION, NODE_VERSION, targetNames };
+export { NODE_ARTIFACTS, PNPM_SHA512, PNPM_VERSION, NODE_VERSION, extractArchive, targetNames };

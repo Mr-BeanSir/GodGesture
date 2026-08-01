@@ -24,6 +24,7 @@ apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/resources/node-toolchain/
 !apps/desktop/src-tauri/resources/
 !apps/desktop/src-tauri/resources/node-toolchain/
+apps/desktop/src-tauri/resources/node-toolchain/*
 !apps/desktop/src-tauri/resources/node-toolchain/.gitkeep
 
 # --- env & secrets ---

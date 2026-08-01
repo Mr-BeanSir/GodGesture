@@ -389,6 +389,24 @@ macOS Node gate。
 Rust gate 仅剩 `legacy_import.rs` 顶部 Windows 专属类型导入在 macOS 未使用;已补上同样的
 `cfg(windows)` 边界。Node 性能 gate 仍未执行,待下一次 runner 运行。
 
+2026-08-01 macOS CI #6 复核:提交 `9b2ada6` 在 macOS 15.7.7 arm64 runner 上完整通过
+shared build、Desktop 测试/typecheck/build、Rust 测试与严格 clippy、Node 插件性能 gate
+和双架构 `cargo check`;workflow run 为
+`https://github.com/Mr-BeanSir/GodGesture/actions/runs/30707285497`。Node
+`v24.18.1` 的性能 artifact `node-host-performance-macos-ARM64` 已上传,本地下载文件的
+SHA-256 为 `1a80f9edb29d7c0bdddbc9a1bff6abdaf1bd1f531d21ada8232ee40f3838ba71`。
+10,000 次有序 no-op 与 10,000 次代表性宿主调用均通过;冷启动 `257.88825 ms`,no-op
+p95/p99 为 `0.133084/0.231125 ms`,宿主调用 p95/p99 为 `0.403959/0.543875 ms`。
+该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
+npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
+
+2026-08-01 Node 工具链发布 smoke:在 Windows x64 真实执行 `pnpm fetch:node-toolchain
+--target=windows-x64`,修复 Windows PowerShell 解压调用的参数传递后,随包 Node
+`v24.18.1`、pnpm `10.34.5`、supervisor 和 worker 均可用。使用随包 Node 启动随包
+supervisor 完成插件 load/invoke、`fetch` 能力和 `Input.sendText` 宿主往返;生成资源按
+`.gitignore` 规则保持为本机发布输入,不进入仓库。工具链单测 4/4、release 合同 10/10、
+`git diff --check` 通过。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
