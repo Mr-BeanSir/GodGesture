@@ -14,6 +14,7 @@ import {
 } from "../utils/nodePluginPackages";
 import type { NodePackageSearchResult } from "../api/backend";
 import type { NodePluginCacheStatus } from "../api/backend";
+import { diffLockfile, diffManifest, summarizeDiff, type NodeDiffEntry } from "../utils/nodePluginDiff";
 import ScriptEditor from "./ScriptEditor.vue";
 
 const props = defineProps<{ modelValue: NodePluginCommand }>();
@@ -33,6 +34,9 @@ const packageSearchResults = ref<NodePackageSearchResult[]>([]);
 const packageSearchState = ref<"idle" | "running" | "error">("idle");
 const packageSearchError = ref("");
 const testState = ref<"idle" | "running" | "ready" | "error">("idle");
+const typecheckState = ref<"idle" | "running" | "ready" | "error">("idle");
+const typecheckDiagnostics = ref<{ file: string; line: number; column: number; severity: "error" | "warning" | "info"; message: string }[]>([]);
+const activeDiffTab = ref("manifest");
 type UpdateInfo = { state: "idle" | "running" | "ready" | "error"; latest?: string; error?: string };
 const updateInfo = ref<Record<string, UpdateInfo>>({});
 const cacheStatus = ref<NodePluginCacheStatus | null>(null);
@@ -40,6 +44,10 @@ const cacheStatusState = ref<"idle" | "running" | "error">("idle");
 type ScriptDiagnostic = { severity: "error" | "warning" | "info"; message: string; line: number; column: number };
 const fileDiagnostics = ref<Record<string, ScriptDiagnostic[]>>({});
 const dependencyBaselines = ref<Record<string, { packageJson: string; lockfile: string | null }>>({});
+const manifestDiff = computed(() => plugin.value && dependencyBaseline.value ? diffManifest(dependencyBaseline.value.packageJson, plugin.value.packageJson) : { entries: [] as NodeDiffEntry[] });
+const lockfileDiff = computed(() => plugin.value && dependencyBaseline.value ? diffLockfile(dependencyBaseline.value.lockfile, plugin.value.lockfile) : { entries: [] as NodeDiffEntry[] });
+const activeDiff = computed(() => activeDiffTab.value === "manifest" ? manifestDiff.value : lockfileDiff.value);
+const activeDiffSummary = computed(() => summarizeDiff(activeDiff.value.entries));
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
@@ -99,6 +107,9 @@ const problems = computed(() => {
   }
   for (const info of Object.values(updateInfo.value)) {
     if (info.state === "error" && info.error) result.push(info.error);
+  }
+  for (const diagnostic of typecheckDiagnostics.value) {
+    result.push(`${diagnostic.file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.message}`);
   }
   return result;
 });
@@ -315,6 +326,28 @@ async function testPlugin() {
   }
 }
 
+async function typecheckPlugin() {
+  if (!plugin.value || manifestError.value) return;
+  typecheckState.value = "running";
+  typecheckDiagnostics.value = [];
+  packageError.value = "";
+  packageOutput.value = "";
+  activeBottomTab.value = "output";
+  try {
+    const snapshot = JSON.parse(JSON.stringify(toRaw(plugin.value))) as NodePlugin;
+    const result = await backend.nodePluginTypecheck(snapshot);
+    typecheckDiagnostics.value = result.diagnostics;
+    packageOutput.value = result.output || t(result.ready ? "command.nodePlugin.typecheckComplete" : "command.nodePlugin.typecheckFailed");
+    typecheckState.value = result.ready ? "ready" : "error";
+    if (!result.ready) activeBottomTab.value = "problems";
+  } catch (error) {
+    typecheckState.value = "error";
+    packageError.value = error instanceof Error ? error.message : String(error);
+    packageOutput.value = packageError.value;
+    activeBottomTab.value = "problems";
+  }
+}
+
 watch(
   () => plugin.value?.id,
   () => {
@@ -492,6 +525,9 @@ watch(
             <el-button size="small" :icon="VideoPlay" :loading="testState === 'running'" :disabled="Boolean(manifestError)" @click="testPlugin">
               {{ t("command.nodePlugin.testHandler") }}
             </el-button>
+            <el-button size="small" :loading="typecheckState === 'running'" :disabled="Boolean(manifestError)" @click="typecheckPlugin">
+              {{ t("command.nodePlugin.typecheck") }}
+            </el-button>
           </div>
         </div>
         <div class="node-plugin-editor__dependency-add">
@@ -594,6 +630,31 @@ watch(
         <el-tab-pane :label="t('command.nodePlugin.output')" name="output">
           <pre class="node-plugin-editor__output">{{ packageOutput || t("command.nodePlugin.noOutput") }}</pre>
         </el-tab-pane>
+        <el-tab-pane :label="t('command.nodePlugin.diff')" name="diff">
+          <el-tabs v-model="activeDiffTab" class="node-plugin-editor__diff-tabs">
+            <el-tab-pane :label="t('command.nodePlugin.diffManifest')" name="manifest" />
+            <el-tab-pane :label="t('command.nodePlugin.diffLockfile')" name="lockfile" />
+          </el-tabs>
+          <div v-if="activeDiff.error" class="node-plugin-editor__diff-error">
+            {{ t('command.nodePlugin.diffParseError', { error: activeDiff.error }) }}
+          </div>
+          <el-empty v-else-if="!activeDiff.entries.length" :description="t('command.nodePlugin.diffNone')" :image-size="36" />
+          <div v-else class="node-plugin-editor__diff-summary">
+            <el-tag v-if="activeDiffSummary.added" size="small" type="success">{{ t('command.nodePlugin.diffAdded') }} {{ activeDiffSummary.added }}</el-tag>
+            <el-tag v-if="activeDiffSummary.removed" size="small" type="danger">{{ t('command.nodePlugin.diffRemoved') }} {{ activeDiffSummary.removed }}</el-tag>
+            <el-tag v-if="activeDiffSummary.changed" size="small" type="warning">{{ t('command.nodePlugin.diffChanged') }} {{ activeDiffSummary.changed }}</el-tag>
+          </div>
+          <div v-if="activeDiff.entries.length" class="node-plugin-editor__diff-list">
+            <div v-for="entry in activeDiff.entries" :key="`${entry.kind}:${entry.path}`" class="node-plugin-editor__diff-entry">
+              <div class="node-plugin-editor__diff-entry-head">
+                <el-tag size="small" :type="entry.kind === 'added' ? 'success' : entry.kind === 'removed' ? 'danger' : 'warning'">{{ t(`command.nodePlugin.diff${entry.kind[0].toUpperCase()}${entry.kind.slice(1)}`) }}</el-tag>
+                <code>{{ entry.path }}</code>
+              </div>
+              <div v-if="entry.before !== undefined" class="node-plugin-editor__diff-value node-plugin-editor__diff-value--before"><span>{{ t('command.nodePlugin.diffBefore') }}</span><code>{{ entry.before }}</code></div>
+              <div v-if="entry.after !== undefined" class="node-plugin-editor__diff-value node-plugin-editor__diff-value--after"><span>{{ t('command.nodePlugin.diffAfter') }}</span><code>{{ entry.after }}</code></div>
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </template>
     <el-empty v-else :description="t('command.nodePlugin.empty')" :image-size="48" />
@@ -646,6 +707,18 @@ watch(
 .node-plugin-editor__bottom-tabs { min-width: 0; }
 .node-plugin-editor__problems { display: grid; gap: 5px; margin: 0; padding: 8px 8px 8px 26px; color: var(--el-color-danger); font-size: 12px; }
 .node-plugin-editor__output { box-sizing: border-box; max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 4px; background: var(--el-fill-color-darker); color: var(--el-text-color-primary); font: 12px/1.5 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.node-plugin-editor__diff-tabs { margin-bottom: 4px; }
+.node-plugin-editor__diff-error { padding: 8px; color: var(--el-color-danger); font-size: 12px; }
+.node-plugin-editor__diff-summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
+.node-plugin-editor__diff-list { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+.node-plugin-editor__diff-entry { display: grid; gap: 4px; padding: 7px 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-fill-color-blank); }
+.node-plugin-editor__diff-entry-head { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.node-plugin-editor__diff-entry-head code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-plugin-editor__diff-value { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 6px; min-width: 0; padding: 3px 5px; font-size: 11px; }
+.node-plugin-editor__diff-value span { color: var(--el-text-color-secondary); }
+.node-plugin-editor__diff-value code { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.node-plugin-editor__diff-value--before { background: var(--el-color-danger-light-9); }
+.node-plugin-editor__diff-value--after { background: var(--el-color-success-light-9); }
 @container (max-width: 520px) {
   .node-plugin-editor__meta,
   .node-plugin-editor__package-grid {

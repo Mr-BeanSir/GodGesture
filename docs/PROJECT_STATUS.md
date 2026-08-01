@@ -400,6 +400,14 @@ p95/p99 为 `0.133084/0.231125 ms`,宿主调用 p95/p99 为 `0.403959/0.543875 m
 该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
 npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
 
+2026-08-02 Node 插件编辑器工具链补齐:编辑器增加 manifest 与 pnpm lockfile 的结构化
+added/removed/changed 对比,Problems/Output 继续分别承载诊断与完整输出;新增用户主动触发的
+TypeScript typecheck IPC,由随包 Node 执行固定 tsc,使用 Node、undici 和 GodGesture SDK 类型,
+输出有界并规范化文件/行/列诊断。浏览器 mock、结构化 diff 单测、Desktop `126/126`、
+typecheck、Rust Node package 测试和严格 clippy 已通过。随包 TypeScript 资源尚未重新下载并
+写入忽略的本机工具链目录,发布前需重新运行 `pnpm fetch:node-toolchain --target=...`;QuickJS
+仍按 ADR-0012 保留。
+
 2026-08-01 Node 工具链发布 smoke:在 Windows x64 真实执行 `pnpm fetch:node-toolchain
 --target=windows-x64`,修复 Windows PowerShell 解压调用的参数传递后,随包 Node
 `v24.18.1`、pnpm `10.34.5`、supervisor 和 worker 均可用。使用随包 Node 启动随包

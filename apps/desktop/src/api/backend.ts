@@ -116,6 +116,20 @@ export interface NodeTestResult {
   ready: boolean;
 }
 
+export interface NodeTypecheckDiagnostic {
+  file: string;
+  line: number;
+  column: number;
+  severity: "error" | "warning" | "info";
+  message: string;
+}
+
+export interface NodeTypecheckResult {
+  output: string;
+  ready: boolean;
+  diagnostics: NodeTypecheckDiagnostic[];
+}
+
 export interface NodePluginCacheStatus {
   state: "notRequired" | "lockfileMissing" | "missing" | "ready";
   revision: string;
@@ -161,6 +175,7 @@ export interface Backend {
   nodePluginPackageSearch(query: string): Promise<NodePackageSearchResult[]>;
   nodePluginPackageLatest(name: string): Promise<string>;
   nodePluginTest(plugin: NodePlugin, handler: string): Promise<NodeTestResult>;
+  nodePluginTypecheck(plugin: NodePlugin): Promise<NodeTypecheckResult>;
   nodePluginCacheStatus(plugin: NodePlugin): Promise<NodePluginCacheStatus>;
 
   machineGet(): Promise<MachineLocalSettings>;
@@ -300,6 +315,14 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       try {
         return await invoke<NodeTestResult>("node_plugin_test", { plugin, handler });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async nodePluginTypecheck(plugin) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<NodeTypecheckResult>("node_plugin_typecheck", { plugin });
       } catch (error) {
         throw normalizeBackendError(error);
       }

@@ -213,10 +213,20 @@ export function createMockBackend(): Backend {
     async nodePluginPackageLatest(name) {
       return name === "zod" ? "4.4.3" : "1.2.0";
     },
-    async nodePluginTest(plugin, handler) {
+  async nodePluginTest(plugin, handler) {
       return {
         output: `Dry-run passed for ${plugin.name}:${handler}. Native host calls were recorded without side effects.`,
         ready: true,
+      };
+    },
+    async nodePluginTypecheck(plugin) {
+      const diagnostics = plugin.files[plugin.entry]?.includes("typecheck-error")
+        ? [{ file: plugin.entry, line: 1, column: 1, severity: "error" as const, message: "Typecheck error (browser preview)." }]
+        : [];
+      return {
+        output: `TypeScript check completed for ${plugin.name} in browser preview.`,
+        ready: diagnostics.length === 0,
+        diagnostics,
       };
     },
     async nodePluginCacheStatus(plugin) {

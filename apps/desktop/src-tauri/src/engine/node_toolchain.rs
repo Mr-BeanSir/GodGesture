@@ -8,6 +8,7 @@ pub struct NodeToolchain {
     pub node: PathBuf,
     pub pnpm: PathBuf,
     pub supervisor: PathBuf,
+    pub typescript: PathBuf,
 }
 
 /// Keep native package artifacts isolated when a synced profile is used by
@@ -39,10 +40,12 @@ pub fn from_resource_root(resource_root: &Path) -> Result<NodeToolchain, String>
     });
     let pnpm = root.join("pnpm").join("bin").join("pnpm.cjs");
     let supervisor = root.join("supervisor.mjs");
+    let typescript = root.join("typescript").join("lib").join("tsc.js");
     for (name, path) in [
         ("Node.js", &node),
         ("pnpm", &pnpm),
         ("Node supervisor", &supervisor),
+        ("TypeScript compiler", &typescript),
     ] {
         if !path.is_file() {
             return Err(format!("bundled {name} is missing: {}", path.display()));
@@ -52,6 +55,7 @@ pub fn from_resource_root(resource_root: &Path) -> Result<NodeToolchain, String>
         node,
         pnpm,
         supervisor,
+        typescript,
     })
 }
 

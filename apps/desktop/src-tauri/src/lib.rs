@@ -980,6 +980,7 @@ fn resolve_node_toolchain(
                 node: std::path::PathBuf::from("node"),
                 pnpm: std::path::PathBuf::from("pnpm"),
                 supervisor: engine::node_host::default_supervisor_path(),
+                typescript: std::path::PathBuf::from("typescript/lib/tsc.js"),
             })
         }
         #[cfg(not(debug_assertions))]
@@ -1047,6 +1048,25 @@ async fn node_plugin_test(
     })
     .await
     .map_err(|error| format!("Node test worker failed: {error}"))?
+}
+
+#[tauri::command]
+async fn node_plugin_typecheck(
+    plugin: engine::config::NodePlugin,
+    app: tauri::AppHandle,
+) -> Result<engine::node_packages::NodeTypecheckResult, String> {
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
+        .join("node-plugins")
+        .join("runtime");
+    let toolchain = resolve_node_toolchain(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine::node_packages::typecheck_plugin(&workspace, &toolchain, &plugin)
+    })
+    .await
+    .map_err(|error| format!("Node typecheck worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -2096,6 +2116,7 @@ pub fn run() {
             node_plugin_package_search,
             node_plugin_package_latest,
             node_plugin_test,
+            node_plugin_typecheck,
             node_plugin_cache_status,
             machine_get,
             machine_set,

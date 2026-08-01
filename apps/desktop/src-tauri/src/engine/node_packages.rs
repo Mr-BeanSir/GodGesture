@@ -27,6 +27,24 @@ pub struct NodeTestResult {
     pub ready: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTypecheckDiagnostic {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub severity: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTypecheckResult {
+    pub output: String,
+    pub ready: bool,
+    pub diagnostics: Vec<NodeTypecheckDiagnostic>,
+}
+
 pub fn install_plugin(
     workspace: &Path,
     toolchain: &NodeToolchain,
@@ -72,6 +90,118 @@ pub fn test_plugin(
     let result = test_inner(&operation_root, &store, toolchain, plugin, handler);
     let _ = fs::remove_dir_all(&operation_root);
     result
+}
+
+pub fn typecheck_plugin(
+    workspace: &Path,
+    toolchain: &NodeToolchain,
+    plugin: &NodePlugin,
+) -> Result<NodeTypecheckResult, String> {
+    validate_plugin(plugin)?;
+    let operation_root = workspace
+        .join(".operations")
+        .join(uuid::Uuid::new_v4().to_string());
+    fs::create_dir_all(&operation_root)
+        .map_err(|error| format!("create typecheck workspace: {error}"))?;
+    let result = typecheck_inner(&operation_root, toolchain, plugin);
+    let _ = fs::remove_dir_all(&operation_root);
+    result
+}
+
+fn typecheck_inner(
+    root: &Path,
+    toolchain: &NodeToolchain,
+    plugin: &NodePlugin,
+) -> Result<NodeTypecheckResult, String> {
+    write_plugin_project(root, plugin)?;
+    write_builtin_sdk(root)?;
+    write_builtin_sdk_types(root)?;
+    copy_toolchain_types(root, toolchain)?;
+    let config = serde_json::json!({
+        "compilerOptions": {
+            "target": "ES2022",
+            "module": "NodeNext",
+            "moduleResolution": "NodeNext",
+            "allowJs": true,
+            "checkJs": true,
+            "noEmit": true,
+            "strict": true,
+            "skipLibCheck": true,
+            "resolveJsonModule": true,
+            "types": ["node"]
+        },
+        "include": ["**/*.mjs", "**/*.js", "**/*.ts"]
+    });
+    fs::write(root.join("tsconfig.json"), serde_json::to_vec_pretty(&config).unwrap())
+        .map_err(|error| format!("write typecheck config: {error}"))?;
+    let args: Vec<std::ffi::OsString> = vec![
+        toolchain.typescript.as_os_str().to_owned(),
+        "--project".into(),
+        root.join("tsconfig.json").as_os_str().to_owned(),
+        "--pretty".into(),
+        "false".into(),
+    ];
+    let output = run_command(Command::new(&toolchain.node), &args, root)?;
+    let mut text = String::new();
+    append_output(&mut text, &output);
+    let diagnostics = parse_typecheck_diagnostics(&text);
+    Ok(NodeTypecheckResult {
+        output: text,
+        ready: output.status.success() && diagnostics.iter().all(|item| item.severity != "error"),
+        diagnostics,
+    })
+}
+
+fn write_builtin_sdk_types(project_root: &Path) -> Result<(), String> {
+    let sdk_root = project_root.join("node_modules").join("@godgesture").join("sdk");
+    fs::write(
+        sdk_root.join("index.d.ts"),
+        include_str!("../../../script-api/godgesture-sdk.d.ts"),
+    )
+    .map_err(|error| format!("write built-in SDK types: {error}"))
+}
+
+fn copy_toolchain_types(project_root: &Path, toolchain: &NodeToolchain) -> Result<(), String> {
+    let target_root = toolchain
+        .typescript
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or_else(|| "resolve bundled TypeScript root".to_string())?;
+    let source = target_root.join("node_modules");
+    if !source.is_dir() {
+        return Ok(());
+    }
+    copy_directory(&source, &project_root.join("node_modules"))
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| format!("create type directory: {error}"))?;
+    for entry in fs::read_dir(source).map_err(|error| format!("read type directory: {error}"))? {
+        let entry = entry.map_err(|error| format!("read type entry: {error}"))?;
+        let path = entry.path();
+        let target = destination.join(entry.file_name());
+        if path.is_dir() {
+            copy_directory(&path, &target)?;
+        } else {
+            fs::copy(&path, &target).map_err(|error| format!("copy type file: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_typecheck_diagnostics(output: &str) -> Vec<NodeTypecheckDiagnostic> {
+    output.lines().filter_map(|line| {
+        let (location, rest) = line.split_once(": error TS").or_else(|| line.split_once(": warning TS"))?;
+        let severity = if line.contains(": warning TS") { "warning" } else { "error" };
+        let (file, coordinates) = location.rsplit_once('(')?;
+        let coordinates = coordinates.strip_suffix(')')?;
+        let mut parts = coordinates.split(',');
+        let line_number = parts.next()?.parse().ok()?;
+        let column = parts.next()?.parse().ok()?;
+        let message = rest.split_once(": ").map(|(_, value)| value).unwrap_or(rest).to_string();
+        Some(NodeTypecheckDiagnostic { file: file.replace('\\', "/"), line: line_number, column, severity: severity.into(), message })
+    }).collect()
 }
 
 fn test_inner(
@@ -232,7 +362,7 @@ pub fn write_builtin_sdk(project_root: &Path) -> Result<(), String> {
     fs::create_dir_all(&sdk_root).map_err(|error| format!("create built-in SDK: {error}"))?;
     fs::write(
         sdk_root.join("package.json"),
-        r#"{"name":"@godgesture/sdk","type":"module","exports":"./index.mjs"}"#,
+        r#"{"name":"@godgesture/sdk","type":"module","types":"./index.d.ts","exports":{"types":"./index.d.ts","import":"./index.mjs"}}"#,
     )
     .map_err(|error| format!("write built-in SDK manifest: {error}"))?;
     fs::write(
@@ -383,6 +513,7 @@ mod tests {
             node: PathBuf::from("node"),
             pnpm: PathBuf::from("pnpm"),
             supervisor: PathBuf::from("unused"),
+            typescript: PathBuf::from("typescript/lib/tsc.js"),
         };
         let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
         let _ = fs::remove_dir_all(&workspace);
@@ -412,6 +543,7 @@ mod tests {
             node: PathBuf::from("unused-node"),
             pnpm: PathBuf::from("unused-pnpm"),
             supervisor: PathBuf::from("unused"),
+            typescript: PathBuf::from("typescript/lib/tsc.js"),
         };
         let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
         let _ = fs::remove_dir_all(&workspace);
@@ -419,5 +551,17 @@ mod tests {
             result.unwrap_err(),
             "plugin dependencies have no lockfile; generate the lockfile before testing"
         );
+    }
+
+    #[test]
+    fn parses_tsc_diagnostics_with_stable_locations() {
+        let diagnostics = parse_typecheck_diagnostics(
+            "src/index.mjs(4,7): error TS2304: Cannot find name 'missing'.\nsrc/index.mjs(5,1): warning TS6133: unused.",
+        );
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[0].file, "src/index.mjs");
+        assert_eq!(diagnostics[0].line, 4);
+        assert_eq!(diagnostics[0].column, 7);
+        assert_eq!(diagnostics[1].severity, "warning");
     }
 }

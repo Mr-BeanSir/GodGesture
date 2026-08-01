@@ -135,6 +135,18 @@ async function copySupervisor(target) {
   await cp(join(ROOT, "apps", "desktop", "node-host", "worker.mjs"), join(output, "worker.mjs"));
 }
 
+async function copyTypeScript(target) {
+  const output = join(OUTPUT_ROOT, target);
+  const sourceRoot = join(ROOT, "apps", "desktop", "node_modules");
+  for (const [source, destination] of [
+    [join(sourceRoot, "typescript"), join(output, "typescript")],
+    [join(sourceRoot, "@types", "node"), join(output, "node_modules", "@types", "node")],
+    [join(sourceRoot, "undici-types"), join(output, "node_modules", "undici-types")],
+  ]) {
+    await cp(source, destination, { recursive: true });
+  }
+}
+
 async function main() {
   const requested = process.argv.find((value) => value.startsWith("--target="))?.slice("--target=".length);
   const targets = targetNames(requested);
@@ -144,6 +156,7 @@ async function main() {
       await installNode(target, tempRoot);
       await installPnpm(target, tempRoot);
       await copySupervisor(target);
+      await copyTypeScript(target);
     }
     await writeFile(
       join(OUTPUT_ROOT, "manifest.json"),

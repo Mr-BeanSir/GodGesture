@@ -22,6 +22,13 @@ test("pins a current Node LTS and pnpm release", () => {
   assert.match(PNPM_SHA512, /^[A-Za-z0-9+/]+={0,2}$/);
 });
 
+test("ships the fixed TypeScript editor/runtime declarations with every target", async () => {
+  const source = await readFile(new URL("../fetch-node-toolchain.mjs", import.meta.url), "utf8");
+  assert.match(source, /copyTypeScript/);
+  assert.match(source, /join\(sourceRoot, "@types", "node"\)/);
+  assert.match(source, /undici-types/);
+});
+
 test("maps supported release targets to exact Node archives", () => {
   assert.deepEqual(targetNames("windows-x64"), ["windows-x64"]);
   assert.deepEqual(targetNames("universal-apple-darwin"), ["macos-x64", "macos-arm64"]);
