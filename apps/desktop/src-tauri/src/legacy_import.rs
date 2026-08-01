@@ -1,3 +1,4 @@
+#[cfg(windows)]
 use crate::engine::config::{ConfigDocument, MachineLocalSettings, PauseHotkey};
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]

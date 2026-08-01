@@ -385,6 +385,10 @@ macOS 图标弃用 API/未使用导入、非 Windows 旧导入事务辅助、以
 frontend 验证显式设置 `NODE_OPTIONS=--max-old-space-size=6144`,待新运行确认构建和后续
 macOS Node gate。
 
+2026-08-01 macOS CI #5 复核:提交 `828e35c` 已通过前端 build（6 GiB 堆配置生效）,但
+Rust gate 仅剩 `legacy_import.rs` 顶部 Windows 专属类型导入在 macOS 未使用;已补上同样的
+`cfg(windows)` 边界。Node 性能 gate 仍未执行,待下一次 runner 运行。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
