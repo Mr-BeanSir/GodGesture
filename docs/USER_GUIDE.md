@@ -88,8 +88,11 @@ TCC 权限是三件不同的事；不要使用 `sudo` 启动 GUI，也不要移�
 GodGesture 支持 12 类命令：什么也不做、快捷键、Web 搜索、窗口控制、任务切换、
 打开文件、按键序列、打开网址、命令行、JavaScript、暂停和音量控制。
 
-JavaScript 在内置 QuickJS 中运行，不提供 Node.js 或浏览器标准库。导入的 Lua
-脚本会保留原文并显示警告，但不会执行或自动转换。
+新脚本推荐使用“Node.js 插件”：支持随应用分发的 Node.js、ESM、`fetch`、Node
+内置模块、npm 依赖和 `@godgesture/sdk`。旧的 JavaScript `script` 命令在迁移期仍
+由内置 QuickJS 运行，不提供 Node.js 或浏览器标准库。导入的 Lua 脚本会保留原文并
+显示警告，但不会执行或自动转换。开发者 API、项目结构、依赖管理和迁移说明见
+[脚本开发指南](SCRIPTING.md)。
 
 ## 模板与 WGestures 导入
 

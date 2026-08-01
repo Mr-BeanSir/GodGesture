@@ -1,7 +1,7 @@
 # GodGesture
 
 GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它提供按应用
-手势、触发角、摩擦边、脚本和窗口命令,并支持可选账户、多设备同步、配置
+手势、触发角、摩擦边、Node 插件脚本和窗口命令,并支持可选账户、多设备同步、配置
 快照、手势模板与原生更新。
 
 ## 下载
@@ -17,7 +17,8 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 应用内更新会使用仓库中固定的 minisign 公钥验证更新包。这个签名保护更新
 完整性，但不等同于 Windows 发布者签名或 Apple Developer ID。
 
-安装、首次启动和权限步骤见 [用户指南](docs/USER_GUIDE.md)。
+安装、首次启动和权限步骤见 [用户指南](docs/USER_GUIDE.md)；脚本开发见
+[脚本开发指南](docs/SCRIPTING.md)。
 
 ## 快速开始
 
@@ -38,7 +39,7 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 - 修饰、按应用意图、全局继承与黑名单；
 - 窗口、快捷键、文本、文件、URL、命令行、音量与任务切换等 12 类命令；
 - 原生轨迹与命令提示覆盖层；
-- QuickJS JavaScript 脚本与 Monaco 编辑器；
+- Node.js 插件脚本、npm 依赖与 Monaco 编辑器；迁移期继续兼容旧 QuickJS 脚本；
 - WGestures `gestures.wg2` / `config.plist` 导入；
 - 可选账户、整库同步、设备管理与配置快照；
 - 独立 [手势模板仓库](https://github.com/Mr-BeanSir/gesture-templates)；

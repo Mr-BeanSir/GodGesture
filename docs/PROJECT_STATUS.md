@@ -335,6 +335,15 @@ Rust library `204 passed, 3 ignored`,严格 clippy、cargo check 和 `git diff -
 浏览器 preview 已确认搜索/添加 `zod 4.4.3`、无误报更新检查、无副作用 dry-run Output,
 以及 `800x560` 无横向溢出。macOS runner/真机证据仍未取得,QuickJS 不得删除。
 
+2026-08-01 Node 脚本文档:新增 `docs/SCRIPTING.md`,以当前实现为准说明 Node 插件项目
+结构、完整 Node/fetch 能力、五个生命周期、`PluginContext`/SDK API、npm 搜索与精确
+lockfile、离线缓存、dry-run、恢复、旧 QuickJS 转换、分发与信任边界。README 与用户
+指南已把 Node 插件列为新脚本推荐路径,同时明确 QuickJS 仍是迁移兼容层。文档契约
+测试覆盖 SDK 方法、生命周期、窗口操作、容量边界和迁移状态,Desktop `117/117` +
+typecheck、`git diff --check` 通过。设计中的
+结构化 manifest/lockfile diff、本机缓存状态和独立 typecheck 输出尚未完全实现;macOS
+runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或删除 QuickJS。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
