@@ -13,6 +13,7 @@ import {
   setPluginDependency,
 } from "../utils/nodePluginPackages";
 import type { NodePackageSearchResult } from "../api/backend";
+import type { NodePluginCacheStatus } from "../api/backend";
 import ScriptEditor from "./ScriptEditor.vue";
 
 const props = defineProps<{ modelValue: NodePluginCommand }>();
@@ -34,6 +35,8 @@ const packageSearchError = ref("");
 const testState = ref<"idle" | "running" | "ready" | "error">("idle");
 type UpdateInfo = { state: "idle" | "running" | "ready" | "error"; latest?: string; error?: string };
 const updateInfo = ref<Record<string, UpdateInfo>>({});
+const cacheStatus = ref<NodePluginCacheStatus | null>(null);
+const cacheStatusState = ref<"idle" | "running" | "error">("idle");
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
@@ -61,6 +64,7 @@ const problems = computed(() => {
   }
   if (packageError.value) result.push(packageError.value);
   if (packageSearchError.value) result.push(packageSearchError.value);
+  if (cacheStatusState.value === "error") result.push(t("command.nodePlugin.cacheStatusError"));
   for (const info of Object.values(updateInfo.value)) {
     if (info.state === "error" && info.error) result.push(info.error);
   }
@@ -220,11 +224,28 @@ async function prepareDependencies() {
     plugin.value.lockfile = result.lockfile;
     packageOutput.value = result.output || t("command.nodePlugin.prepareComplete");
     packageState.value = result.ready ? "ready" : "error";
+    await refreshCacheStatus();
   } catch (error) {
     packageState.value = "error";
     packageError.value = error instanceof Error ? error.message : String(error);
     packageOutput.value = packageError.value;
     activeBottomTab.value = "problems";
+  }
+}
+
+async function refreshCacheStatus() {
+  if (!plugin.value || manifestError.value) {
+    cacheStatus.value = null;
+    return;
+  }
+  cacheStatusState.value = "running";
+  try {
+    const snapshot = JSON.parse(JSON.stringify(toRaw(plugin.value))) as NodePlugin;
+    cacheStatus.value = await backend.nodePluginCacheStatus(snapshot);
+    cacheStatusState.value = "idle";
+  } catch {
+    cacheStatusState.value = "error";
+    cacheStatus.value = null;
   }
 }
 
@@ -252,6 +273,12 @@ watch(
   ([, entry]) => {
     if (entry && !(activeFile.value in (plugin.value?.files ?? {}))) activeFile.value = entry;
   },
+  { immediate: true },
+);
+
+watch(
+  () => [plugin.value?.id, plugin.value?.packageJson, plugin.value?.lockfile] as const,
+  () => void refreshCacheStatus(),
   { immediate: true },
 );
 
@@ -447,6 +474,13 @@ watch(
             </el-tooltip>
           </div>
         </div>
+        <div v-if="cacheStatus" class="node-plugin-editor__cache-status">
+          <span>{{ t("command.nodePlugin.cacheStatus") }}</span>
+          <el-tag size="small" :type="cacheStatus.state === 'ready' || cacheStatus.state === 'notRequired' ? 'success' : cacheStatus.state === 'lockfileMissing' ? 'warning' : 'info'">
+            {{ t(`command.nodePlugin.cacheState.${cacheStatus.state}`) }}
+          </el-tag>
+          <code v-if="cacheStatus.state !== 'notRequired'">{{ cacheStatus.revision }}</code>
+        </div>
         <div v-else class="gg-hint">{{ t("command.nodePlugin.noDependencies") }}</div>
       </section>
 
@@ -509,6 +543,8 @@ watch(
 .node-plugin-editor__dependency:last-child { border-bottom: 0; }
 .node-plugin-editor__dependency code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-plugin-editor__dependency > span { color: var(--el-text-color-secondary); }
+.node-plugin-editor__cache-status { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
+.node-plugin-editor__cache-status code { min-width: 0; overflow: hidden; color: var(--el-text-color-placeholder); text-overflow: ellipsis; white-space: nowrap; }
 .node-plugin-editor__bottom-tabs { min-width: 0; }
 .node-plugin-editor__problems { display: grid; gap: 5px; margin: 0; padding: 8px 8px 8px 26px; color: var(--el-color-danger); font-size: 12px; }
 .node-plugin-editor__output { box-sizing: border-box; max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 4px; background: var(--el-fill-color-darker); color: var(--el-text-color-primary); font: 12px/1.5 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

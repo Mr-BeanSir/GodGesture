@@ -116,6 +116,11 @@ export interface NodeTestResult {
   ready: boolean;
 }
 
+export interface NodePluginCacheStatus {
+  state: "notRequired" | "lockfileMissing" | "missing" | "ready";
+  revision: string;
+}
+
 export interface NodePackageSearchResult {
   name: string;
   version: string;
@@ -156,6 +161,7 @@ export interface Backend {
   nodePluginPackageSearch(query: string): Promise<NodePackageSearchResult[]>;
   nodePluginPackageLatest(name: string): Promise<string>;
   nodePluginTest(plugin: NodePlugin, handler: string): Promise<NodeTestResult>;
+  nodePluginCacheStatus(plugin: NodePlugin): Promise<NodePluginCacheStatus>;
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
@@ -294,6 +300,14 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       try {
         return await invoke<NodeTestResult>("node_plugin_test", { plugin, handler });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async nodePluginCacheStatus(plugin) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<NodePluginCacheStatus>("node_plugin_cache_status", { plugin });
       } catch (error) {
         throw normalizeBackendError(error);
       }

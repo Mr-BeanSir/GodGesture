@@ -483,7 +483,7 @@ fn spawn_engine_consumer(
                         outcome.plugin_id,
                         outcome.handler
                     ),
-            });
+                });
             let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
             let node_service = app
                 .path()
@@ -1002,7 +1002,16 @@ async fn node_plugin_install(
         .join("runtime");
     let toolchain = resolve_node_toolchain(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        engine::node_packages::install_plugin(&workspace, &toolchain, &plugin)
+        let result = engine::node_packages::install_plugin(&workspace, &toolchain, &plugin)?;
+        let mut prepared_plugin = plugin;
+        prepared_plugin.lockfile = result.lockfile.clone();
+        engine::node_service::ensure_plugin_cache(
+            &workspace,
+            &toolchain.node,
+            &toolchain.pnpm,
+            &prepared_plugin,
+        )?;
+        Ok(result)
     })
     .await
     .map_err(|error| format!("Node package worker failed: {error}"))?
@@ -1038,6 +1047,24 @@ async fn node_plugin_test(
     })
     .await
     .map_err(|error| format!("Node test worker failed: {error}"))?
+}
+
+#[tauri::command]
+async fn node_plugin_cache_status(
+    plugin: engine::config::NodePlugin,
+    app: tauri::AppHandle,
+) -> Result<engine::node_service::NodePluginCacheStatus, String> {
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
+        .join("node-plugins")
+        .join("runtime");
+    tauri::async_runtime::spawn_blocking(move || {
+        engine::node_service::plugin_cache_status(&workspace, &plugin)
+    })
+    .await
+    .map_err(|error| format!("Node cache status worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -2069,6 +2096,7 @@ pub fn run() {
             node_plugin_package_search,
             node_plugin_package_latest,
             node_plugin_test,
+            node_plugin_cache_status,
             machine_get,
             machine_set,
             machine_status,

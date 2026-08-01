@@ -67,3 +67,32 @@ describe("mock backend updater", () => {
     ).rejects.toThrow("update_not_pending");
   });
 });
+
+describe("mock backend Node plugin cache", () => {
+  it("reports whether the current dependency revision needs preparation", async () => {
+    const backend = createMockBackend();
+    const base = {
+      id: "30000000-0000-4000-8000-000000000001",
+      name: "Test",
+      entry: "index.mjs",
+      files: { "index.mjs": "export function execute() {}" },
+      allowLifecycleScripts: false,
+    };
+
+    await expect(
+      backend.nodePluginCacheStatus({
+        ...base,
+        packageJson: '{"private":true,"type":"module"}',
+        lockfile: null,
+      }),
+    ).resolves.toMatchObject({ state: "notRequired" });
+
+    await expect(
+      backend.nodePluginCacheStatus({
+        ...base,
+        packageJson: '{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}',
+        lockfile: null,
+      }),
+    ).resolves.toMatchObject({ state: "lockfileMissing" });
+  });
+});

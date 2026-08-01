@@ -219,6 +219,20 @@ export function createMockBackend(): Backend {
         ready: true,
       };
     },
+    async nodePluginCacheStatus(plugin) {
+      const manifest = JSON.parse(plugin.packageJson) as {
+        dependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+      };
+      const hasDependencies = Boolean(
+        Object.keys(manifest.dependencies ?? {}).length ||
+        Object.keys(manifest.optionalDependencies ?? {}).length,
+      );
+      return {
+        state: hasDependencies ? (plugin.lockfile ? "ready" : "lockfileMissing") : "notRequired",
+        revision: "browser-preview",
+      };
+    },
     async machineGet() {
       return { ...machine };
     },

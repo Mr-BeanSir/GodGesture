@@ -56,6 +56,13 @@ struct PreparedPlugin {
     entry_path: PathBuf,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodePluginCacheStatus {
+    pub state: String,
+    pub revision: String,
+}
+
 struct ServiceState {
     node: PathBuf,
     pnpm: PathBuf,
@@ -175,7 +182,7 @@ impl ServiceState {
         let mut next_errors = HashMap::new();
         for plugin in plugins {
             let id = plugin.id.clone();
-            match materialize_plugin(&self.workspace, &self.node, &self.pnpm, &plugin) {
+            match prepare_plugin_cache(&self.workspace, &self.node, &self.pnpm, &plugin) {
                 Ok(prepared) => {
                     next_plugins.insert(id, prepared);
                 }
@@ -291,7 +298,7 @@ fn empty_invocation() -> ScriptInvocation {
     }
 }
 
-fn materialize_plugin(
+fn prepare_plugin_cache(
     workspace: &Path,
     node: &Path,
     pnpm: &Path,
@@ -337,6 +344,56 @@ fn materialize_plugin(
     }
     Ok(PreparedPlugin {
         entry_path: plugin_root.join(plugin.entry.replace('/', std::path::MAIN_SEPARATOR_STR)),
+    })
+}
+
+pub(crate) fn ensure_plugin_cache(
+    workspace: &Path,
+    node: &Path,
+    pnpm: &Path,
+    plugin: &NodePlugin,
+) -> Result<(), String> {
+    prepare_plugin_cache(workspace, node, pnpm, plugin).map(|_| ())
+}
+
+pub fn plugin_cache_status(
+    workspace: &Path,
+    plugin: &NodePlugin,
+) -> Result<NodePluginCacheStatus, String> {
+    validate_plugin(plugin)?;
+    let manifest: Value = serde_json::from_str(&plugin.package_json)
+        .map_err(|error| format!("invalid package.json: {error}"))?;
+    let has_dependencies = ["dependencies", "optionalDependencies"].iter().any(|key| {
+        manifest
+            .get(key)
+            .and_then(Value::as_object)
+            .is_some_and(|deps| !deps.is_empty())
+    });
+    let revision = plugin_fingerprint(plugin);
+    let revision_hex = format!("{revision:016x}");
+    if !has_dependencies {
+        return Ok(NodePluginCacheStatus {
+            state: "notRequired".into(),
+            revision: revision_hex,
+        });
+    }
+    if plugin.lockfile.is_none() {
+        return Ok(NodePluginCacheStatus {
+            state: "lockfileMissing".into(),
+            revision: revision_hex,
+        });
+    }
+    let plugin_root = workspace.join(&plugin.id).join(&revision_hex);
+    let marker = fs::read_to_string(plugin_root.join(".ready")).ok();
+    let sdk_entry = plugin_root
+        .join("node_modules")
+        .join("@godgesture")
+        .join("sdk")
+        .join("index.mjs");
+    let ready = marker.as_deref() == Some(&revision.to_string()) && sdk_entry.is_file();
+    Ok(NodePluginCacheStatus {
+        state: if ready { "ready" } else { "missing" }.into(),
+        revision: revision_hex,
     })
 }
 
@@ -583,7 +640,7 @@ mod tests {
     #[test]
     fn materialization_is_revisioned_and_rejects_unsafe_paths() {
         let dir = TestDir::new();
-        let first = materialize_plugin(
+        let first = prepare_plugin_cache(
             &dir.0,
             Path::new("node"),
             Path::new("pnpm"),
@@ -591,7 +648,7 @@ mod tests {
         )
         .unwrap();
         assert!(first.entry_path.is_file());
-        let second = materialize_plugin(
+        let second = prepare_plugin_cache(
             &dir.0,
             Path::new("node"),
             Path::new("pnpm"),
@@ -604,9 +661,36 @@ mod tests {
         unsafe_plugin.entry = "../escape.mjs".into();
         unsafe_plugin.files = [("../escape.mjs".into(), "".into())].into_iter().collect();
         assert!(
-            materialize_plugin(&dir.0, Path::new("node"), Path::new("pnpm"), &unsafe_plugin)
+            prepare_plugin_cache(&dir.0, Path::new("node"), Path::new("pnpm"), &unsafe_plugin)
                 .unwrap_err()
                 .contains("not portable")
+        );
+    }
+
+    #[test]
+    fn cache_status_distinguishes_dependency_readiness() {
+        let dir = TestDir::new();
+        let no_dependencies = plugin("export function execute() {}");
+        assert_eq!(
+            plugin_cache_status(&dir.0, &no_dependencies).unwrap().state,
+            "notRequired"
+        );
+
+        let mut dependency_plugin = no_dependencies.clone();
+        dependency_plugin.package_json =
+            r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#.into();
+        assert_eq!(
+            plugin_cache_status(&dir.0, &dependency_plugin)
+                .unwrap()
+                .state,
+            "lockfileMissing"
+        );
+        dependency_plugin.lockfile = Some("lockfileVersion: '9.0'".into());
+        assert_eq!(
+            plugin_cache_status(&dir.0, &dependency_plugin)
+                .unwrap()
+                .state,
+            "missing"
         );
     }
 
