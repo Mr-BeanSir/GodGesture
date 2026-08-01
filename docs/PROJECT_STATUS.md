@@ -407,6 +407,11 @@ supervisor 完成插件 load/invoke、`fetch` 能力和 `Input.sendText` 宿主�
 `.gitignore` 规则保持为本机发布输入,不进入仓库。工具链单测 4/4、release 合同 10/10、
 `git diff --check` 通过。
 
+2026-08-02 Node 缓存隔离修复:插件物化目录与 pnpm store 现在按构建 OS/架构隔离,
+生命周期脚本批准状态进入 revision fingerprint,避免同步配置或信任设置变化后复用
+不匹配的原生依赖。Rust library `207 passed, 3 ignored`,严格 clippy 和定向格式检查
+通过。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程

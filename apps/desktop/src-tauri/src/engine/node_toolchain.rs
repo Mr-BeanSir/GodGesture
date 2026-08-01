@@ -10,6 +10,16 @@ pub struct NodeToolchain {
     pub supervisor: PathBuf,
 }
 
+/// Keep native package artifacts isolated when a synced profile is used by
+/// different operating systems or CPU architectures.
+pub fn platform_cache_root(workspace: &Path) -> PathBuf {
+    workspace.join(format!(
+        "{}-{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ))
+}
+
 pub fn target_name() -> Result<&'static str, String> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => Ok("windows-x64"),
@@ -46,9 +56,15 @@ pub fn from_resource_root(resource_root: &Path) -> Result<NodeToolchain, String>
 }
 
 pub fn pnpm_command(node: &Path, pnpm: &Path) -> Command {
-    let is_script = pnpm.extension().and_then(|extension| extension.to_str()).is_some_and(
-        |extension| matches!(extension.to_ascii_lowercase().as_str(), "cjs" | "mjs" | "js"),
-    );
+    let is_script = pnpm
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "cjs" | "mjs" | "js"
+            )
+        });
     if is_script {
         let mut command = Command::new(node);
         command.arg(pnpm);
@@ -76,5 +92,18 @@ mod tests {
         let error = from_resource_root(&root).unwrap_err();
         assert!(error.contains("bundled"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_root_includes_build_platform_and_architecture() {
+        let root = Path::new("workspace");
+        assert_eq!(
+            platform_cache_root(root),
+            root.join(format!(
+                "{}-{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            ))
+        );
     }
 }

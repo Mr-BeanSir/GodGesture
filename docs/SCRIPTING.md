@@ -15,7 +15,9 @@ GodGesture 的长期方向是使用随应用分发的 Node.js LTS 作为唯一�
   验收后才会移除。
 
 Node 插件源码、`package.json` 和精确 `pnpm-lock.yaml` 属于用户配置，会参与整库
-同步；安装后的 `node_modules` 和 pnpm store 是本机缓存，不会同步。
+同步；安装后的 `node_modules` 和 pnpm store 是本机缓存，不会同步。缓存路径按插件
+revision、操作系统和 CPU 架构隔离；生命周期脚本批准状态也参与 revision，切换批准
+状态会重新准备本机依赖。
 
 ## 快速开始
 

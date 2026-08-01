@@ -36,7 +36,7 @@ pub fn install_plugin(
     let operation_root = workspace
         .join(".operations")
         .join(uuid::Uuid::new_v4().to_string());
-    let store = workspace.join(".pnpm-store");
+    let store = super::node_toolchain::platform_cache_root(workspace).join(".pnpm-store");
     fs::create_dir_all(&operation_root)
         .map_err(|error| format!("create package workspace: {error}"))?;
     fs::create_dir_all(&store).map_err(|error| format!("create package store: {error}"))?;
@@ -65,7 +65,7 @@ pub fn test_plugin(
     let operation_root = workspace
         .join(".operations")
         .join(uuid::Uuid::new_v4().to_string());
-    let store = workspace.join(".pnpm-store");
+    let store = super::node_toolchain::platform_cache_root(workspace).join(".pnpm-store");
     fs::create_dir_all(&operation_root)
         .map_err(|error| format!("create test workspace: {error}"))?;
     fs::create_dir_all(&store).map_err(|error| format!("create test package store: {error}"))?;

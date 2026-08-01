@@ -308,7 +308,9 @@ fn prepare_plugin_cache(
     let manifest: Value = serde_json::from_str(&plugin.package_json)
         .map_err(|error| format!("invalid package.json: {error}"))?;
     let revision = plugin_fingerprint(plugin);
-    let plugin_root = workspace.join(&plugin.id).join(format!("{revision:016x}"));
+    let plugin_root = super::node_toolchain::platform_cache_root(workspace)
+        .join(&plugin.id)
+        .join(format!("{revision:016x}"));
     let ready = plugin_root.join(".ready");
     let sdk_entry = plugin_root
         .join("node_modules")
@@ -383,7 +385,9 @@ pub fn plugin_cache_status(
             revision: revision_hex,
         });
     }
-    let plugin_root = workspace.join(&plugin.id).join(&revision_hex);
+    let plugin_root = super::node_toolchain::platform_cache_root(workspace)
+        .join(&plugin.id)
+        .join(&revision_hex);
     let marker = fs::read_to_string(plugin_root.join(".ready")).ok();
     let sdk_entry = plugin_root
         .join("node_modules")
@@ -417,7 +421,7 @@ fn install_dependencies(
     if plugin.lockfile.is_none() {
         return Err("plugin dependencies require an exact pnpm lockfile".into());
     }
-    let store = workspace.join(".pnpm-store");
+    let store = super::node_toolchain::platform_cache_root(workspace).join(".pnpm-store");
     fs::create_dir_all(&store).map_err(|error| format!("create pnpm store: {error}"))?;
     let mut command = super::node_toolchain::pnpm_command(node, pnpm);
     command
@@ -538,6 +542,14 @@ fn plugin_fingerprint(plugin: &NodePlugin) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     hash_bytes(&mut hash, plugin.entry.as_bytes());
     hash_bytes(&mut hash, plugin.package_json.as_bytes());
+    hash_bytes(
+        &mut hash,
+        if plugin.allow_lifecycle_scripts {
+            b"lifecycle-scripts-enabled"
+        } else {
+            b"lifecycle-scripts-disabled"
+        },
+    );
     if let Some(lockfile) = &plugin.lockfile {
         hash_bytes(&mut hash, lockfile.as_bytes());
     }
@@ -692,6 +704,14 @@ mod tests {
                 .state,
             "missing"
         );
+    }
+
+    #[test]
+    fn cache_revision_includes_lifecycle_script_policy() {
+        let plugin = plugin("export function execute() {}");
+        let mut approved = plugin.clone();
+        approved.allow_lifecycle_scripts = true;
+        assert_ne!(plugin_fingerprint(&plugin), plugin_fingerprint(&approved));
     }
 
     #[test]
