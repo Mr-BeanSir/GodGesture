@@ -415,6 +415,10 @@ export default {
       noDependencies: "This plugin has no external dependencies. Node built-ins and {'@'}godgesture/sdk need no entry.",
       cacheStatus: "Local cache",
       cacheStatusError: "Could not read local cache status.",
+      manifestChanged: "Manifest changed",
+      manifestUnchanged: "Manifest unchanged",
+      lockfileStale: "Lockfile needs update",
+      lockfileCurrent: "Lockfile matches dependencies",
       cacheState: {
         notRequired: "Not required",
         lockfileMissing: "Lockfile required",

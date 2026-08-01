@@ -413,6 +413,10 @@ export default {
       noDependencies: "当前插件没有外部依赖。Node 内置模块和 {'@'}godgesture/sdk 无需添加。",
       cacheStatus: "本机缓存",
       cacheStatusError: "无法读取本机缓存状态。",
+      manifestChanged: "manifest 已修改",
+      manifestUnchanged: "manifest 未修改",
+      lockfileStale: "锁文件需要更新",
+      lockfileCurrent: "锁文件与当前依赖一致",
       cacheState: {
         notRequired: "无需缓存",
         lockfileMissing: "需要锁文件",

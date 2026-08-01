@@ -39,6 +39,7 @@ const cacheStatus = ref<NodePluginCacheStatus | null>(null);
 const cacheStatusState = ref<"idle" | "running" | "error">("idle");
 type ScriptDiagnostic = { severity: "error" | "warning" | "info"; message: string; line: number; column: number };
 const fileDiagnostics = ref<Record<string, ScriptDiagnostic[]>>({});
+const dependencyBaselines = ref<Record<string, { packageJson: string; lockfile: string | null }>>({});
 
 const plugins = computed(() => store.doc?.nodePlugins ?? []);
 const plugin = computed<NodePlugin | null>(() =>
@@ -58,6 +59,30 @@ const dependencies = computed(() => {
   if (!plugin.value || manifestError.value) return [];
   return listPluginDependencies(plugin.value.packageJson);
 });
+const dependencyBaseline = computed(() =>
+  plugin.value ? dependencyBaselines.value[plugin.value.id] : undefined,
+);
+const manifestChanged = computed(() =>
+  Boolean(
+    plugin.value &&
+      dependencyBaseline.value &&
+      plugin.value.packageJson !== dependencyBaseline.value.packageJson,
+  ),
+);
+const lockfileChanged = computed(() =>
+  Boolean(
+    plugin.value &&
+      dependencyBaseline.value &&
+      plugin.value.lockfile !== dependencyBaseline.value.lockfile,
+  ),
+);
+const lockfileStale = computed(() =>
+  Boolean(
+    plugin.value &&
+      dependencies.value.length &&
+      (!plugin.value.lockfile || lockfileChanged.value),
+  ),
+);
 const problems = computed(() => {
   const result: string[] = [];
   if (manifestError.value) result.push(manifestError.value);
@@ -96,6 +121,7 @@ function createPlugin() {
     allowLifecycleScripts: false,
   };
   store.doc.nodePlugins.push(created);
+  dependencyBaselines.value[created.id] = { packageJson: created.packageJson, lockfile: created.lockfile };
   emit("update:modelValue", { type: "nodePlugin", pluginId: created.id, exportName: "execute" });
   activeFile.value = created.entry;
 }
@@ -104,6 +130,9 @@ function selectPlugin(id: string) {
   const selected = plugins.value.find((candidate) => candidate.id === id);
   if (!selected) return;
   fileDiagnostics.value = {};
+  if (!dependencyBaselines.value[selected.id]) {
+    dependencyBaselines.value[selected.id] = { packageJson: selected.packageJson, lockfile: selected.lockfile };
+  }
   emit("update:modelValue", { ...props.modelValue, pluginId: selected.id });
   activeFile.value = selected.entry;
 }
@@ -239,6 +268,7 @@ async function prepareDependencies() {
     const snapshot = JSON.parse(JSON.stringify(toRaw(plugin.value))) as NodePlugin;
     const result = await backend.nodePluginInstall(snapshot);
     plugin.value.lockfile = result.lockfile;
+    dependencyBaselines.value[plugin.value.id] = { packageJson: plugin.value.packageJson, lockfile: plugin.value.lockfile };
     packageOutput.value = result.output || t("command.nodePlugin.prepareComplete");
     packageState.value = result.ready ? "ready" : "error";
     await refreshCacheStatus();
@@ -284,6 +314,19 @@ async function testPlugin() {
     activeBottomTab.value = "problems";
   }
 }
+
+watch(
+  () => plugin.value?.id,
+  () => {
+    if (plugin.value && !dependencyBaselines.value[plugin.value.id]) {
+      dependencyBaselines.value[plugin.value.id] = {
+        packageJson: plugin.value.packageJson,
+        lockfile: plugin.value.lockfile,
+      };
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => [props.modelValue.pluginId, plugin.value?.entry] as const,
@@ -498,6 +541,14 @@ watch(
           </el-tag>
           <code v-if="cacheStatus.state !== 'notRequired'">{{ cacheStatus.revision }}</code>
         </div>
+        <div class="node-plugin-editor__change-status" aria-live="polite">
+          <el-tag size="small" :type="manifestChanged ? 'warning' : 'success'">
+            {{ manifestChanged ? t("command.nodePlugin.manifestChanged") : t("command.nodePlugin.manifestUnchanged") }}
+          </el-tag>
+          <el-tag size="small" :type="lockfileStale ? 'warning' : 'success'">
+            {{ lockfileStale ? t("command.nodePlugin.lockfileStale") : t("command.nodePlugin.lockfileCurrent") }}
+          </el-tag>
+        </div>
         <div v-else class="gg-hint">{{ t("command.nodePlugin.noDependencies") }}</div>
       </section>
 
@@ -562,6 +613,7 @@ watch(
 .node-plugin-editor__dependency > span { color: var(--el-text-color-secondary); }
 .node-plugin-editor__cache-status { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 .node-plugin-editor__cache-status code { min-width: 0; overflow: hidden; color: var(--el-text-color-placeholder); text-overflow: ellipsis; white-space: nowrap; }
+.node-plugin-editor__change-status { display: flex; flex-wrap: wrap; gap: 6px; }
 .node-plugin-editor__bottom-tabs { min-width: 0; }
 .node-plugin-editor__problems { display: grid; gap: 5px; margin: 0; padding: 8px 8px 8px 26px; color: var(--el-color-danger); font-size: 12px; }
 .node-plugin-editor__output { box-sizing: border-box; max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 4px; background: var(--el-fill-color-darker); color: var(--el-text-color-primary); font: 12px/1.5 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -31,5 +31,7 @@ describe("Monaco configuration", () => {
     expect(nodePluginEditorSource).toContain('@diagnostics="updateManifestDiagnostics"');
     expect(nodePluginEditorSource).toContain("diagnostic.line");
     expect(nodePluginEditorSource).toContain("diagnostic.column");
+    expect(nodePluginEditorSource).toContain("manifestChanged");
+    expect(nodePluginEditorSource).toContain("lockfileStale");
   });
 });
