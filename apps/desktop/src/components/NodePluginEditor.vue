@@ -431,11 +431,37 @@ watch(
         </aside>
 
         <section class="node-plugin-editor__code">
+          <template v-for="file in fileNames" :key="`${plugin.id}:model:${file}`">
+            <ScriptEditor
+              v-if="file !== activeFile"
+              v-model="plugin.files[file]"
+              model-only
+              language="js"
+              :editor-label="file"
+              :diagnostic-key="file"
+              :model-path="`${plugin.id}/${file}`"
+              retain-model
+              @diagnostics="updateDiagnostics"
+            />
+          </template>
           <div class="node-plugin-editor__code-head">
-            <span>{{ activeFile }}</span>
+            <div class="node-plugin-editor__code-tabs" role="tablist">
+              <button
+                v-for="file in fileNames"
+                :key="file"
+                type="button"
+                class="node-plugin-editor__code-tab"
+                :class="{ 'is-active': file === activeFile }"
+                role="tab"
+                :aria-selected="file === activeFile"
+                @click="activeFile = file"
+              >
+                {{ file }}
+              </button>
+            </div>
             <span v-if="activeFile === plugin.entry" class="node-plugin-editor__entry">{{ t("command.nodePlugin.entry") }}</span>
           </div>
-          <ScriptEditor :key="`${plugin.id}:${activeFile}`" v-model="activeSource" language="js" :editor-label="activeFile" :diagnostic-key="activeFile" :height="260" @diagnostics="updateDiagnostics" />
+          <ScriptEditor :key="`${plugin.id}:${activeFile}`" v-model="activeSource" language="js" :editor-label="activeFile" :diagnostic-key="activeFile" :model-path="`${plugin.id}/${activeFile}`" retain-model :height="260" @diagnostics="updateDiagnostics" />
         </section>
       </div>
 
@@ -549,7 +575,7 @@ watch(
             {{ lockfileStale ? t("command.nodePlugin.lockfileStale") : t("command.nodePlugin.lockfileCurrent") }}
           </el-tag>
         </div>
-        <div v-else class="gg-hint">{{ t("command.nodePlugin.noDependencies") }}</div>
+        <div v-if="!dependencies.length" class="gg-hint">{{ t("command.nodePlugin.noDependencies") }}</div>
       </section>
 
       <label class="gg-switch-row">
@@ -591,6 +617,9 @@ watch(
 .node-plugin-editor__file-actions { padding: 8px; }
 .node-plugin-editor__code { min-width: 0; background: var(--el-fill-color-blank); }
 .node-plugin-editor__code-head { color: var(--el-text-color-primary); font-family: "Cascadia Code", Consolas, monospace; }
+.node-plugin-editor__code-tabs { display: flex; min-width: 0; gap: 2px; overflow-x: auto; }
+.node-plugin-editor__code-tab { max-width: 180px; padding: 8px 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--el-text-color-secondary); font: inherit; cursor: pointer; }
+.node-plugin-editor__code-tab:hover, .node-plugin-editor__code-tab.is-active { border-bottom-color: var(--el-color-primary); color: var(--el-color-primary); }
 .node-plugin-editor__entry { color: var(--el-color-success); font-family: inherit; }
 .node-plugin-editor__package-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .node-plugin-editor__dependencies { display: grid; min-width: 0; gap: 8px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }

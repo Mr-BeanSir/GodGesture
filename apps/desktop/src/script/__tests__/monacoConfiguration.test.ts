@@ -27,11 +27,14 @@ describe("Monaco configuration", () => {
     expect(scriptEditorSource).toContain('emit("diagnostics"');
     expect(scriptEditorSource).toContain("diagnosticKey");
     expect(scriptEditorSource).toContain("items:");
+    expect(scriptEditorSource).toContain("retainModel");
+    expect(scriptEditorSource).toContain("modelPath");
     expect(nodePluginEditorSource).toContain('@diagnostics="updateDiagnostics"');
     expect(nodePluginEditorSource).toContain('@diagnostics="updateManifestDiagnostics"');
     expect(nodePluginEditorSource).toContain("diagnostic.line");
     expect(nodePluginEditorSource).toContain("diagnostic.column");
     expect(nodePluginEditorSource).toContain("manifestChanged");
     expect(nodePluginEditorSource).toContain("lockfileStale");
+    expect(nodePluginEditorSource).toContain("node-plugin-editor__code-tabs");
   });
 });

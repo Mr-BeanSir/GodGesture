@@ -9,9 +9,12 @@ const props = withDefaults(
     language?: "js" | "lua" | "json";
     editorLabel: string;
     diagnosticKey?: string;
+    modelPath?: string;
+    retainModel?: boolean;
+    modelOnly?: boolean;
     height?: number;
   }>(),
-  { language: "js", height: 160 },
+  { language: "js", height: 160, retainModel: false, modelOnly: false },
 );
 interface ScriptDiagnostic {
   severity: "error" | "warning" | "info";
@@ -38,6 +41,57 @@ let markerListener: Monaco.IDisposable | undefined;
 let disposed = false;
 let applyingExternalValue = false;
 
+const retainedModels = new Map<string, { model: Monaco.editor.ITextModel; refs: number; cleanup?: ReturnType<typeof setTimeout> }>();
+
+function modelUri(monaco: typeof Monaco) {
+  if (props.modelPath) {
+    const normalized = props.modelPath.replace(/\\/g, "/").replace(/^\/+/, "");
+    return monaco.Uri.parse(`inmemory://godgesture/plugins/${normalized}`);
+  }
+  const modelId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`;
+  return monaco.Uri.parse(`inmemory://godgesture/script/${modelId}.js`);
+}
+
+function acquireModel(monaco: typeof Monaco, uri: Monaco.Uri, value: string, language: string) {
+  if (!props.retainModel) return monaco.editor.createModel(value, language, uri);
+  const key = uri.toString();
+  const cached = retainedModels.get(key);
+  if (cached) {
+    if (cached.cleanup) clearTimeout(cached.cleanup);
+    cached.refs += 1;
+    return cached.model;
+  }
+  const created = monaco.editor.createModel(value, language, uri);
+  retainedModels.set(key, { model: created, refs: 1 });
+  return created;
+}
+
+function releaseModel() {
+  if (!model || !props.retainModel || !props.modelPath) {
+    model?.dispose();
+    return;
+  }
+  const key = model.uri.toString();
+  const cached = retainedModels.get(key);
+  if (!cached) {
+    model.dispose();
+    return;
+  }
+  cached.refs = Math.max(0, cached.refs - 1);
+  if (cached.refs === 0) {
+    cached.cleanup = setTimeout(() => {
+      const current = retainedModels.get(key);
+      if (current?.refs === 0) {
+        current.model.dispose();
+        retainedModels.delete(key);
+      }
+    }, 30_000);
+  }
+}
+
 function editorLanguage(language: "js" | "lua" | "json") {
   return language === "js" ? "javascript" : language;
 }
@@ -63,18 +117,35 @@ onMounted(async () => {
     loadFailed.value = true;
     return;
   }
-  if (disposed || !container.value) return;
+  if (disposed || (!props.modelOnly && !container.value)) return;
 
-  const modelId =
-    typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`;
-  model = monaco.editor.createModel(
-    props.modelValue,
-    editorLanguage(props.language),
-    monaco.Uri.parse(`inmemory://godgesture/script/${modelId}.js`),
-  );
-  editor = monaco.editor.create(container.value, {
+  model = acquireModel(monaco, modelUri(monaco), props.modelValue, editorLanguage(props.language));
+  const emitDiagnostics = () => {
+    if (!model) return;
+    emit(
+      "diagnostics",
+      {
+        key: props.diagnosticKey ?? props.editorLabel,
+        items: monaco.editor.getModelMarkers({ resource: model.uri }).map((marker) => ({
+          severity: markerSeverity(monaco, marker.severity),
+          message: marker.message,
+          line: marker.startLineNumber,
+          column: marker.startColumn,
+        })),
+      },
+    );
+  };
+  markerListener = monaco.editor.onDidChangeMarkers((resources) => {
+    if (model && resources.some((resource) => resource.toString() === model?.uri.toString())) {
+      emitDiagnostics();
+    }
+  });
+  emitDiagnostics();
+  if (props.modelOnly) {
+    loading.value = false;
+    return;
+  }
+  editor = monaco.editor.create(container.value!, {
     model,
     ariaLabel: props.editorLabel,
     automaticLayout: false,
@@ -97,30 +168,8 @@ onMounted(async () => {
   editor.onDidChangeModelContent(() => {
     if (!applyingExternalValue && model) emit("update:modelValue", model.getValue());
   });
-  const emitDiagnostics = () => {
-    if (!model) return;
-    emit(
-      "diagnostics",
-      {
-        key: props.diagnosticKey ?? props.editorLabel,
-        items: monaco.editor.getModelMarkers({ resource: model.uri }).map((marker) => ({
-          severity: markerSeverity(monaco, marker.severity),
-          message: marker.message,
-          line: marker.startLineNumber,
-          column: marker.startColumn,
-        })),
-      },
-    );
-  };
-  markerListener = monaco.editor.onDidChangeMarkers((resources) => {
-    if (model && resources.some((resource) => resource.toString() === model?.uri.toString())) {
-      emitDiagnostics();
-    }
-  });
-  emitDiagnostics();
-
   resizeObserver = new ResizeObserver(() => editor?.layout());
-  resizeObserver.observe(container.value);
+  resizeObserver.observe(container.value!);
   themeObserver = new MutationObserver(() => monaco.editor.setTheme(currentTheme()));
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   loading.value = false;
@@ -157,13 +206,14 @@ onBeforeUnmount(() => {
   themeObserver?.disconnect();
   markerListener?.dispose();
   editor?.dispose();
-  model?.dispose();
+  releaseModel();
 });
 </script>
 
 <template>
+  <span v-if="modelOnly" class="script-editor__model-only" aria-hidden="true" />
   <el-input
-    v-if="loadFailed"
+    v-else-if="loadFailed"
     type="textarea"
     :rows="Math.max(5, Math.round(props.height / 24))"
     :model-value="modelValue"

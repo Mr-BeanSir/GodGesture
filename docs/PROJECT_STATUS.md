@@ -335,6 +335,11 @@ Rust library `204 passed, 3 ignored`,严格 clippy、cargo check 和 `git diff -
 浏览器 preview 已确认搜索/添加 `zod 4.4.3`、无误报更新检查、无副作用 dry-run Output,
 以及 `800x560` 无横向溢出。macOS runner/真机证据仍未取得,QuickJS 不得删除。
 
+2026-08-01 Node 插件多文件编辑器:插件源码编辑器现在为每个文件保留稳定 Monaco model,
+使用插件 ID 与文件路径组成的 URI,并通过隐藏 model 同步所有源文件,使相对导入能够参与
+TypeScript worker 的跨文件诊断;可见编辑区提供文件标签页。Desktop `119/119` + typecheck/
+build 通过。浏览器刷新本地预览本轮被 URL 安全策略拒绝,未将旧页面观察计入视觉验收。
+
 2026-08-01 Node 脚本文档:新增 `docs/SCRIPTING.md`,以当前实现为准说明 Node 插件项目
 结构、完整 Node/fetch 能力、五个生命周期、`PluginContext`/SDK API、npm 搜索与精确
 lockfile、离线缓存、dry-run、恢复、旧 QuickJS 转换、分发与信任边界。README 与用户
