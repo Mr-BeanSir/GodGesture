@@ -354,6 +354,11 @@ lockfile 是否过期和当前缓存状态;完整结构化 manifest/lockfile dif
 按文件、行和列显示。macOS
 runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或删除 QuickJS。
 
+2026-08-01 macOS CI 触发复核:通过 GitHub Actions 页面触发的 run `30700761547` 使用远端
+旧 `main` 提交 `5b81245`,在 42 秒后因旧 workflow 检查失败结束,未执行本地新增的 Node
+性能 gate,也没有性能 artifact。当前本地 Node 迁移提交尚未 push,因此该 run 不构成 macOS
+性能或 Node-only 证据。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
