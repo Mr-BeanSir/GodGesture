@@ -71,6 +71,7 @@ export interface LegacyScriptMigrationReport {
   luaSkipped: number;
   capacitySkipped: number;
   sizeSkipped: number;
+  testFailed: number;
   pluginIds: string[];
 }
 
@@ -85,15 +86,17 @@ export function countLegacyScriptCommands(document: ConfigDocument) {
 }
 
 /** Convert every JavaScript legacy command in one document to Node plugins. */
-export function migrateLegacyScriptsInDocument(
+export async function migrateLegacyScriptsInDocument(
   document: ConfigDocument,
   nameFor: (name: string) => string,
-): LegacyScriptMigrationReport {
+  testPlugin: (plugin: NodePlugin) => Promise<boolean>,
+): Promise<LegacyScriptMigrationReport> {
   const report: LegacyScriptMigrationReport = {
     converted: 0,
     luaSkipped: 0,
     capacitySkipped: 0,
     sizeSkipped: 0,
+    testFailed: 0,
     pluginIds: [],
   };
   const scopes = [
@@ -119,12 +122,24 @@ export function migrateLegacyScriptsInDocument(
       const originalCommand = intent.command;
       document.nodePlugins.push(migration.plugin);
       intent.command = migration.command;
-      if (configDocumentSizeBytes(document) > MAX_CONFIG_DOCUMENT_BYTES) {
-        intent.command = originalCommand;
-        document.nodePlugins.pop();
+      const exceedsSizeLimit = configDocumentSizeBytes(document) > MAX_CONFIG_DOCUMENT_BYTES;
+      intent.command = originalCommand;
+      document.nodePlugins.pop();
+      if (exceedsSizeLimit) {
         report.sizeSkipped += 1;
         continue;
       }
+      try {
+        if (!(await testPlugin(migration.plugin))) {
+          report.testFailed += 1;
+          continue;
+        }
+      } catch {
+        report.testFailed += 1;
+        continue;
+      }
+      document.nodePlugins.push(migration.plugin);
+      intent.command = migration.command;
       report.converted += 1;
       report.pluginIds.push(migration.plugin.id);
     }

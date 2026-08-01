@@ -38,7 +38,7 @@ function pluginContext(report: (value: string) => void, modifier = "none") {
 }
 
 describe("legacy script migration", () => {
-  it("counts and converts JavaScript commands across all scopes", () => {
+  it("counts and converts JavaScript commands across all scopes", async () => {
     const document = ConfigDocument.parse({
       global: {
         intents: [{
@@ -61,14 +61,14 @@ describe("legacy script migration", () => {
       boundaryIntents: [],
     });
     expect(countLegacyScriptCommands(document)).toBe(2);
-    const report = migrateLegacyScriptsInDocument(document, (name) => `Migrated ${name}`);
-    expect(report).toMatchObject({ converted: 1, luaSkipped: 1, capacitySkipped: 0, sizeSkipped: 0 });
+    const report = await migrateLegacyScriptsInDocument(document, (name) => `Migrated ${name}`, async () => true);
+    expect(report).toMatchObject({ converted: 1, luaSkipped: 1, capacitySkipped: 0, sizeSkipped: 0, testFailed: 0 });
     expect(document.global.intents[0]!.command.type).toBe("nodePlugin");
     expect(document.apps[0]!.intents[0]!.command.type).toBe("script");
     expect(document.nodePlugins).toHaveLength(1);
   });
 
-  it("leaves legacy scripts unchanged when the plugin capacity is full", () => {
+  it("leaves legacy scripts unchanged when the plugin capacity is full", async () => {
     const document = ConfigDocument.parse({
       global: {
         intents: [{
@@ -83,8 +83,47 @@ describe("legacy script migration", () => {
         name: `Plugin ${index}`,
       })),
     });
-    const report = migrateLegacyScriptsInDocument(document, (name) => name);
+    const report = await migrateLegacyScriptsInDocument(document, (name) => name, async () => true);
     expect(report).toMatchObject({ converted: 0, luaSkipped: 0, capacitySkipped: 1, sizeSkipped: 0 });
+    expect(document.global.intents[0]!.command.type).toBe("script");
+  });
+
+  it("keeps a legacy script when Node dry-run fails", async () => {
+    const document = ConfigDocument.parse({
+      global: {
+        intents: [{
+          id: "30000000-0000-4000-8000-000000000031",
+          name: "Broken",
+          gesture: { trigger: "right", strokes: [], modifier: "none" },
+          command: { type: "script", language: "js", script: "throw new Error('bad');" },
+        }],
+      },
+    });
+    const report = await migrateLegacyScriptsInDocument(
+      document,
+      (name) => name,
+      async () => false,
+    );
+    expect(report).toMatchObject({ converted: 0, testFailed: 1 });
+    expect(document.global.intents[0]!.command.type).toBe("script");
+    expect(document.nodePlugins).toHaveLength(0);
+  });
+
+  it("keeps a legacy script when Node dry-run throws", async () => {
+    const document = ConfigDocument.parse({
+      global: {
+        intents: [{
+          id: "30000000-0000-4000-8000-000000000032",
+          name: "Rejected",
+          gesture: { trigger: "right", strokes: [], modifier: "none" },
+          command: { type: "script", language: "js", script: "return 1;" },
+        }],
+      },
+    });
+    const report = await migrateLegacyScriptsInDocument(document, (name) => name, async () => {
+      throw new Error("test unavailable");
+    });
+    expect(report.testFailed).toBe(1);
     expect(document.global.intents[0]!.command.type).toBe("script");
   });
 

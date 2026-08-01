@@ -23,6 +23,7 @@ import type {
   GestureSpec,
 } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
+import { useBackend } from "../api/backend";
 import { newId } from "../utils/id";
 import { createDefaultCommand } from "../utils/commands";
 import { findBoundaryConflict } from "../utils/boundary-actions";
@@ -43,6 +44,7 @@ const GLOBAL = "__global__";
 
 const { t } = useI18n();
 const store = useConfigStore();
+const backend = useBackend();
 const doc = computed(() => store.doc!);
 
 const selectedAppId = ref<string>(GLOBAL);
@@ -117,8 +119,10 @@ const currentTitle = computed(() =>
   currentIsGlobal.value ? t("gestures.globalApp") : (currentApp.value?.name ?? ""),
 );
 const legacyScriptCount = computed(() => countLegacyScriptCommands(doc.value));
+const migrationRunning = ref(false);
 
 async function migrateLegacyScripts() {
+  if (migrationRunning.value) return;
   try {
     await ElMessageBox.confirm(
       t("gestures.scriptMigration.confirm", { count: legacyScriptCount.value }),
@@ -132,17 +136,26 @@ async function migrateLegacyScripts() {
   } catch {
     return;
   }
-  const report = migrateLegacyScriptsInDocument(doc.value, (name) =>
-    t("gestures.scriptMigration.pluginName", { name }),
-  );
+  migrationRunning.value = true;
+  let report;
+  try {
+    report = await migrateLegacyScriptsInDocument(
+      doc.value,
+      (name) => t("gestures.scriptMigration.pluginName", { name }),
+      async (plugin) => (await backend.nodePluginTest(plugin, "execute")).ready,
+    );
+  } finally {
+    migrationRunning.value = false;
+  }
   if (report.converted) {
     ElMessage.success(t("gestures.scriptMigration.complete", { converted: report.converted }));
   }
-  if (report.luaSkipped || report.capacitySkipped || report.sizeSkipped) {
+  if (report.luaSkipped || report.capacitySkipped || report.sizeSkipped || report.testFailed) {
     ElMessage.warning(t("gestures.scriptMigration.skipped", {
       luaSkipped: report.luaSkipped,
       capacitySkipped: report.capacitySkipped,
       sizeSkipped: report.sizeSkipped,
+      testFailed: report.testFailed,
     }));
   }
 }
@@ -435,6 +448,7 @@ onMounted(() => selectApp(GLOBAL));
           size="small"
           type="warning"
           plain
+          :loading="migrationRunning"
           @click="migrateLegacyScripts"
         >
           {{ t("gestures.scriptMigration.actionWithCount", { count: legacyScriptCount }) }}

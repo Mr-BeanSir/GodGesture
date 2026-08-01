@@ -4,7 +4,7 @@
  * 对外 v-model 为 Command;切换类型时用 createDefaultCommand 生成默认值。
  * 被「手势」区(手势意图)与「触发角 & 摩擦边」区共用。
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Command } from "@godgesture/shared";
 import {
@@ -19,14 +19,24 @@ import ScriptEditor from "./ScriptEditor.vue";
 import NodePluginEditor from "./NodePluginEditor.vue";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
-import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
+import {
+  configDocumentSizeBytes,
+  DEFAULT_NODE_PLUGIN_MANIFEST,
+  DEFAULT_NODE_PLUGIN_SOURCE,
+  MAX_CONFIG_DOCUMENT_BYTES,
+  MAX_NODE_PLUGINS,
+} from "@godgesture/shared";
 import { convertScriptCommandToNodePlugin } from "../utils/nodePluginMigration";
+import { useBackend } from "../api/backend";
+import { ElMessage } from "element-plus";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
 
 const { t } = useI18n();
 const configStore = useConfigStore();
+const backend = useBackend();
+const migrationRunning = ref(false);
 
 /** 局部字段写入:合并补丁后整体 emit(判别联合下用 Record 逃逸类型约束) */
 function patch(partial: Record<string, unknown>) {
@@ -52,14 +62,37 @@ function ensureNodePlugin() {
   return created;
 }
 
-function convertScriptToNodePlugin() {
+async function convertScriptToNodePlugin() {
   if (asScript.value.language !== "js" || !configStore.doc) return;
   const migration = convertScriptCommandToNodePlugin(
     asScript.value,
     t("command.nodePlugin.convertedName"),
   );
+  if (configStore.doc.nodePlugins.length >= MAX_NODE_PLUGINS) {
+    ElMessage.error(t("command.script.convertCapacityFailed"));
+    return;
+  }
   configStore.doc.nodePlugins.push(migration.plugin);
-  emit("update:modelValue", migration.command);
+  const exceedsSizeLimit = configDocumentSizeBytes(configStore.doc) > MAX_CONFIG_DOCUMENT_BYTES;
+  configStore.doc.nodePlugins.pop();
+  if (exceedsSizeLimit) {
+    ElMessage.error(t("command.script.convertSizeFailed"));
+    return;
+  }
+  migrationRunning.value = true;
+  try {
+    const result = await backend.nodePluginTest(migration.plugin, "execute");
+    if (!result.ready) {
+      ElMessage.error(t("command.script.convertTestFailed"));
+      return;
+    }
+    configStore.doc.nodePlugins.push(migration.plugin);
+    emit("update:modelValue", migration.command);
+  } catch (error) {
+    ElMessage.error(`${t("command.script.convertTestFailed")}: ${String(error)}`);
+  } finally {
+    migrationRunning.value = false;
+  }
 }
 
 const type = computed<CommandType>({
@@ -305,7 +338,7 @@ function updateVolumeDelta(value: unknown) {
         />
       </div>
       <div v-if="asScript.language === 'js'" class="cmd-editor__migration">
-        <el-button size="small" @click="convertScriptToNodePlugin">
+        <el-button size="small" :loading="migrationRunning" @click="convertScriptToNodePlugin">
           {{ t("command.script.convertToNodePlugin") }}
         </el-button>
         <span class="gg-hint">{{ t("command.script.convertHint") }}</span>

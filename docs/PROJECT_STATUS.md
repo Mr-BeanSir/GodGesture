@@ -360,9 +360,10 @@ runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或�
 性能或 Node-only 证据。
 
 2026-08-01 旧脚本整库迁移:手势工作台会统计全局、应用与边角动作中的旧 `script` 命令,
-提供一次确认后的批量转换入口;每个 JavaScript 命令生成独立 Node 插件并替换引用,Lua
-保持原样,达到 32 插件上限或整库 4 MiB 容量上限时原子回滚该条并报告跳过数量。Desktop
-`121/121` + typecheck/build、`git diff --check` 通过。
+提供一次确认后的批量转换入口;每个 JavaScript 命令先通过真实 Node `execute` dry-run
+才生成插件并替换引用,Lua 保持原样。达到 32 插件上限、整库 4 MiB 容量上限或 dry-run
+失败时均保留旧命令并报告跳过数量;单条编辑器转换遵循相同门槛。Desktop `123/123`
++ typecheck、`git diff --check` 通过。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
