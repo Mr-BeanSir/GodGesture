@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-08-01。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-08-02。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -411,6 +411,17 @@ supervisor 完成插件 load/invoke、`fetch` 能力和 `Input.sendText` 宿主�
 生命周期脚本批准状态进入 revision fingerprint,避免同步配置或信任设置变化后复用
 不匹配的原生依赖。Rust library `207 passed, 3 ignored`,严格 clippy 和定向格式检查
 通过。
+
+2026-08-02 macOS CI #7 复核:提交 `9881fe4` 在 macOS 15.7.7 arm64 runner 上完整通过
+shared build、Desktop 测试/typecheck/build、Rust 测试与严格 clippy、Node 插件性能 gate
+和双架构 `cargo check`;workflow run 为
+`https://github.com/Mr-BeanSir/GodGesture/actions/runs/30709559609`。Node
+`v24.18.1` 的 `node-host-performance-macos-ARM64` artifact 已上传,本地下载文件的
+SHA-256 为 `07f6629ff141a537bcaa0a1e9c19cc49a6ca919747710b1d30ba8675458ba766`。
+10,000 次有序 no-op 与 10,000 次代表性宿主调用均通过;冷启动 `263.573375 ms`,no-op
+p95/p99 为 `0.122083/0.18425 ms`,宿主调用 p95/p99 为 `0.350167/0.614709 ms`。
+该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
+npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
