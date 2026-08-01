@@ -359,6 +359,12 @@ runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或�
 性能 gate,也没有性能 artifact。当前本地 Node 迁移提交尚未 push,因此该 run 不构成 macOS
 性能或 Node-only 证据。
 
+2026-08-01 macOS CI 最新提交复核:run `30705019857` 已在 `19cec77` 上执行,但 Desktop
+typecheck 因 workflow 未先构建 `@godgesture/shared` 的 `dist` 入口失败,因此仍未进入
+Node 性能 gate,也没有性能 artifact。workflow 已在依赖安装后增加
+`pnpm --filter @godgesture/shared build`;本地按相同顺序重跑 shared build、Desktop
+`123/123`、typecheck、build 和 `git diff --check` 均通过,待推送该 workflow 修复后重跑。
+
 2026-08-01 旧脚本整库迁移:手势工作台会统计全局、应用与边角动作中的旧 `script` 命令,
 提供一次确认后的批量转换入口;每个 JavaScript 命令先通过真实 Node `execute` dry-run
 才生成插件并替换引用,Lua 保持原样。达到 32 插件上限、整库 4 MiB 容量上限或 dry-run
