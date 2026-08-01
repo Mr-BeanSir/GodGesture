@@ -42,7 +42,7 @@ pub fn write_text(text: &str) -> Result<(), String> {
 }
 
 fn snapshot(pasteboard: &NSPasteboard) -> Result<PasteboardSnapshot, String> {
-    let items = pasteboard.pasteboardItems().unwrap_or_else(NSArray::new);
+    let items = pasteboard.pasteboardItems().unwrap_or_default();
     let mut total_bytes = 0_usize;
     let mut snapshot_items = Vec::with_capacity(items.len());
     for item in &*items {
@@ -51,8 +51,7 @@ fn snapshot(pasteboard: &NSPasteboard) -> Result<PasteboardSnapshot, String> {
         for pasteboard_type in &*types {
             let data = item.dataForType(&pasteboard_type).ok_or_else(|| {
                 format!(
-                    "pasteboard item did not materialize type {}",
-                    pasteboard_type.to_string()
+                    "pasteboard item did not materialize type {pasteboard_type}"
                 )
             })?;
             total_bytes = total_bytes.saturating_add(data.len());
@@ -78,8 +77,7 @@ fn restore(pasteboard: &NSPasteboard, snapshot: PasteboardSnapshot) -> Result<()
             let data = NSData::with_bytes(&bytes);
             if !item.setData_forType(&data, &pasteboard_type) {
                 return Err(format!(
-                    "restore pasteboard type {} failed",
-                    pasteboard_type.to_string()
+                    "restore pasteboard type {pasteboard_type} failed"
                 ));
             }
         }

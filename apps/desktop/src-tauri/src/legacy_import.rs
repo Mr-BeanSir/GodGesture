@@ -24,6 +24,7 @@ impl LegacyImportError {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg(windows)]
 pub(crate) struct ApplyProgress {
     pub hotkey_attempted: bool,
     pub tray_attempted: bool,
@@ -32,6 +33,7 @@ pub(crate) struct ApplyProgress {
     pub startup_attempted: bool,
 }
 
+#[cfg(windows)]
 pub(crate) trait LegacyImportEffects {
     type Snapshot;
 
@@ -45,6 +47,7 @@ pub(crate) trait LegacyImportEffects {
     fn replace_engine_config(&mut self, document: ConfigDocument);
 }
 
+#[cfg(windows)]
 pub(crate) fn apply_legacy_import<E: LegacyImportEffects>(
     effects: &mut E,
     document: ConfigDocument,
@@ -105,6 +108,7 @@ pub(crate) fn apply_legacy_import<E: LegacyImportEffects>(
     Ok(())
 }
 
+#[cfg(windows)]
 fn rollback_failure<E: LegacyImportEffects>(
     effects: &mut E,
     snapshot: &E::Snapshot,
@@ -124,7 +128,7 @@ fn rollback_failure<E: LegacyImportEffects>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

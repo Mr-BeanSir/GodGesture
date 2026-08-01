@@ -536,6 +536,7 @@ pub struct ConfigStore {
 }
 
 pub(crate) struct ConfigFilesSnapshot {
+    #[cfg_attr(not(windows), allow(dead_code))]
     config: FileSnapshot,
     machine: FileSnapshot,
 }
@@ -631,6 +632,7 @@ impl ConfigStore {
         })
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn restore_config_snapshot(&self, snapshot: &ConfigFilesSnapshot) -> io::Result<()> {
         self.restore_file(&self.config_path(), &snapshot.config)
     }

@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
-    NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSImage, NSImageRep, NSPNGFileType, NSWorkspace,
+    NSBitmapImageFileType, NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSImage, NSWorkspace,
 };
 use objc2_foundation::{NSDictionary, NSString};
 
@@ -31,7 +31,9 @@ fn png_base64(image: &NSImage) -> Option<String> {
     let tiff = image.TIFFRepresentation()?;
     let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
     let properties = NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
-    let png = unsafe { bitmap.representationUsingType_properties(NSPNGFileType, &properties) }?;
+    let png = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
+    }?;
     Some(STANDARD.encode(png.to_vec()))
 }
 

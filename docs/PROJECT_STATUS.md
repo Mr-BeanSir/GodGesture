@@ -371,6 +371,14 @@ Node 性能 gate,也没有性能 artifact。workflow 已在依赖安装后增加
 失败时均保留旧命令并报告跳过数量;单条编辑器转换遵循相同门槛。Desktop `123/123`
 + typecheck、`git diff --check` 通过。
 
+2026-08-01 macOS CI Rust gate 复核:run `30705419543` 已确认 workflow 的 shared build
+与 Desktop frontend 均通过,但 `Test native Rust target` 在 macOS `-D warnings` 下因
+macOS 图标弃用 API/未使用导入、非 Windows 旧导入事务辅助、以及剪贴板 Clippy lint
+失败(12 个诊断,无测试失败);Node 性能 gate、双架构检查和性能 artifact 因此未执行。
+已改用 `NSBitmapImageFileType::PNG`,修正剪贴板默认值与格式化,并将仅 Windows 的旧导入
+事务辅助限制到 Windows、标注跨平台快照字段的真实使用边界。本地 Windows `cargo test`
+为 `205 passed + 3 ignored`,严格 Clippy 通过;待推送后重新取得 macOS runner 证据。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
