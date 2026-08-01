@@ -35,32 +35,36 @@ test("rejects unsupported targets before any download", () => {
   assert.throws(() => targetNames("linux-x64"), /Unsupported Node toolchain target/);
 });
 
-test("extracts Windows archives through PowerShell without positional args", async () => {
-  const root = await mkdtemp(join(tmpdir(), "godgesture-toolchain-test-"));
-  const archive = join(root, "archive.zip");
-  const destination = join(root, "output");
-  const source = join(root, "payload.txt");
-  try {
-    await writeFile(source, "toolchain smoke");
-    await execFileAsync(
-      "powershell",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Compress-Archive -LiteralPath $env:GODGESTURE_TOOLCHAIN_SOURCE -DestinationPath $env:GODGESTURE_TOOLCHAIN_ARCHIVE",
-      ],
-      {
-        env: {
-          ...process.env,
-          GODGESTURE_TOOLCHAIN_SOURCE: source,
-          GODGESTURE_TOOLCHAIN_ARCHIVE: archive,
+test(
+  "extracts Windows archives through PowerShell without positional args",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "godgesture-toolchain-test-"));
+    const archive = join(root, "archive.zip");
+    const destination = join(root, "output");
+    const source = join(root, "payload.txt");
+    try {
+      await writeFile(source, "toolchain smoke");
+      await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Compress-Archive -LiteralPath $env:GODGESTURE_TOOLCHAIN_SOURCE -DestinationPath $env:GODGESTURE_TOOLCHAIN_ARCHIVE",
+        ],
+        {
+          env: {
+            ...process.env,
+            GODGESTURE_TOOLCHAIN_SOURCE: source,
+            GODGESTURE_TOOLCHAIN_ARCHIVE: archive,
+          },
         },
-      },
-    );
-    await extractArchive(archive, "zip", destination);
-    assert.equal(await readFile(join(destination, "payload.txt"), "utf8"), "toolchain smoke");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+      );
+      await extractArchive(archive, "zip", destination);
+      assert.equal(await readFile(join(destination, "payload.txt"), "utf8"), "toolchain smoke");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
