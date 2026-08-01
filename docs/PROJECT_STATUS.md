@@ -379,6 +379,12 @@ macOS 图标弃用 API/未使用导入、非 Windows 旧导入事务辅助、以
 事务辅助限制到 Windows、标注跨平台快照字段的真实使用边界。本地 Windows `cargo test`
 为 `205 passed + 3 ignored`,严格 Clippy 通过;待推送后重新取得 macOS runner 证据。
 
+2026-08-01 macOS CI #4 复核:提交 `7b8fea1` 已通过依赖安装、shared build、Desktop 测试
+`123/123` 与 typecheck,但 Node `v24.18.1` arm64 在 `vite build` 阶段因默认 V8 堆上限
+耗尽而以 `Abort trap: 6` 退出;Rust 与 Node 性能 gate 未执行。workflow 已为 Desktop
+frontend 验证显式设置 `NODE_OPTIONS=--max-old-space-size=6144`,待新运行确认构建和后续
+macOS Node gate。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
