@@ -1,5 +1,10 @@
 import type { Command, ConfigDocument, NodePlugin, NodePluginCommand } from "@godgesture/shared";
-import { DEFAULT_NODE_PLUGIN_MANIFEST, MAX_NODE_PLUGINS } from "@godgesture/shared";
+import {
+  configDocumentSizeBytes,
+  DEFAULT_NODE_PLUGIN_MANIFEST,
+  MAX_CONFIG_DOCUMENT_BYTES,
+  MAX_NODE_PLUGINS,
+} from "@godgesture/shared";
 import { newId } from "./id";
 
 type ScriptCommand = Extract<Command, { type: "script" }>;
@@ -65,6 +70,7 @@ export interface LegacyScriptMigrationReport {
   converted: number;
   luaSkipped: number;
   capacitySkipped: number;
+  sizeSkipped: number;
   pluginIds: string[];
 }
 
@@ -87,6 +93,7 @@ export function migrateLegacyScriptsInDocument(
     converted: 0,
     luaSkipped: 0,
     capacitySkipped: 0,
+    sizeSkipped: 0,
     pluginIds: [],
   };
   const scopes = [
@@ -109,8 +116,15 @@ export function migrateLegacyScriptsInDocument(
         intent.command,
         nameFor(intent.name),
       );
+      const originalCommand = intent.command;
       document.nodePlugins.push(migration.plugin);
       intent.command = migration.command;
+      if (configDocumentSizeBytes(document) > MAX_CONFIG_DOCUMENT_BYTES) {
+        intent.command = originalCommand;
+        document.nodePlugins.pop();
+        report.sizeSkipped += 1;
+        continue;
+      }
       report.converted += 1;
       report.pluginIds.push(migration.plugin.id);
     }

@@ -210,7 +210,7 @@ export default {
       confirm: "将整库中的 {count} 个旧脚本命令转换为独立 Node.js 插件。Lua 脚本会保留原样，转换后仍可在插件编辑器中检查和测试。",
       pluginName: "已迁移：{name}",
       complete: "已转换 {converted} 个 JavaScript 脚本。",
-      skipped: "保留 {luaSkipped} 个 Lua 脚本；另有 {capacitySkipped} 个脚本因插件数量上限未转换。",
+      skipped: "保留 {luaSkipped} 个 Lua 脚本；另有 {capacitySkipped} 个脚本因插件数量上限、{sizeSkipped} 个脚本因配置容量上限未转换。",
     },
     appIcon: "{name} 的应用图标",
     appIconUnavailable: "无法获取 {name} 的应用图标",

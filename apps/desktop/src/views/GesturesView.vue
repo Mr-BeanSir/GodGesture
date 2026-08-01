@@ -138,10 +138,11 @@ async function migrateLegacyScripts() {
   if (report.converted) {
     ElMessage.success(t("gestures.scriptMigration.complete", { converted: report.converted }));
   }
-  if (report.luaSkipped || report.capacitySkipped) {
+  if (report.luaSkipped || report.capacitySkipped || report.sizeSkipped) {
     ElMessage.warning(t("gestures.scriptMigration.skipped", {
       luaSkipped: report.luaSkipped,
       capacitySkipped: report.capacitySkipped,
+      sizeSkipped: report.sizeSkipped,
     }));
   }
 }

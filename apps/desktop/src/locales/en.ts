@@ -210,7 +210,7 @@ export default {
       confirm: "Convert {count} legacy script commands in the configuration into separate Node.js plugins. Lua scripts remain unchanged, and converted plugins can still be reviewed and tested in the plugin editor.",
       pluginName: "Migrated: {name}",
       complete: "Converted {converted} JavaScript scripts.",
-      skipped: "Kept {luaSkipped} Lua scripts; {capacitySkipped} additional scripts could not be converted because the plugin limit was reached.",
+      skipped: "Kept {luaSkipped} Lua scripts; {capacitySkipped} additional scripts reached the plugin limit and {sizeSkipped} reached the configuration size limit.",
     },
     appIcon: "Application icon for {name}",
     appIconUnavailable: "Application icon unavailable for {name}",

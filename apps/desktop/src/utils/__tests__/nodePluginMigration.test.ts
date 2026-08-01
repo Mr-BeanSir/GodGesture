@@ -62,7 +62,7 @@ describe("legacy script migration", () => {
     });
     expect(countLegacyScriptCommands(document)).toBe(2);
     const report = migrateLegacyScriptsInDocument(document, (name) => `Migrated ${name}`);
-    expect(report).toMatchObject({ converted: 1, luaSkipped: 1, capacitySkipped: 0 });
+    expect(report).toMatchObject({ converted: 1, luaSkipped: 1, capacitySkipped: 0, sizeSkipped: 0 });
     expect(document.global.intents[0]!.command.type).toBe("nodePlugin");
     expect(document.apps[0]!.intents[0]!.command.type).toBe("script");
     expect(document.nodePlugins).toHaveLength(1);
@@ -84,7 +84,7 @@ describe("legacy script migration", () => {
       })),
     });
     const report = migrateLegacyScriptsInDocument(document, (name) => name);
-    expect(report).toMatchObject({ converted: 0, luaSkipped: 0, capacitySkipped: 1 });
+    expect(report).toMatchObject({ converted: 0, luaSkipped: 0, capacitySkipped: 1, sizeSkipped: 0 });
     expect(document.global.intents[0]!.command.type).toBe("script");
   });
 
