@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -143,7 +143,9 @@ async function copyTypeScript(target) {
     [join(sourceRoot, "@types", "node"), join(output, "node_modules", "@types", "node")],
     [join(sourceRoot, "undici-types"), join(output, "node_modules", "undici-types")],
   ]) {
-    await cp(source, destination, { recursive: true });
+    // pnpm exposes workspace dependencies as junctions on Windows. Resolve them
+    // before copying so a release resource contains real files, not new symlinks.
+    await cp(await realpath(source), destination, { recursive: true });
   }
 }
 

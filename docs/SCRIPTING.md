@@ -193,13 +193,16 @@ registry 网关固定 npm 官方 HTTPS origin，禁止重定向，并限制超�
 manifest 改动、依赖增删和版本更新都会清空旧 lockfile，必须重新准备。
 
 生命周期脚本默认关闭。只有信任插件及其依赖时才开启“允许包生命周期脚本”。原生
-addon 需要 npm 提供当前 OS/架构的预编译产物；应用不携带编译器工具链。
+addon 需要 npm 提供当前 OS/架构的预编译产物；应用不会在手势触发路径运行编译器。
+应用包同时携带固定版本的 TypeScript 编译器、Node/undici 类型和 GodGesture SDK 声明，
+用户点击“检查类型”时才在临时项目中执行有界的 `tsc` 检查。
 
 ## 测试、诊断和输出
 
 “测试处理函数”使用真实 Node 加载入口和处理函数，但把宿主动作替换成 dry-run
 记录器。Output 会显示处理结果、宿主调用和 console 日志；Problems 会显示 manifest、
-lockfile、registry、pnpm、入口 import 和处理函数错误。
+lockfile、registry、pnpm、入口 import 和处理函数错误。单独的“检查类型”会调用随包
+TypeScript 编译器；其结构化文件、行、列诊断进入 Problems，完整 `tsc` 输出进入 Output。
 
 dry-run 不会真实发送按键、操作窗口或写剪贴板，也不能替代 Windows/macOS 真机权限、
 窗口层级和输入注入 smoke。
@@ -252,7 +255,8 @@ const text = await context.clipboard.readText();
 Node-only 最终发布还需要以下证据，当前仓库尚未全部具备：
 
 - Windows release 性能 gate；
-- macOS CI release gate 的真实 runner artifact；
+- 物理 Mac 上的 Node 性能与宿主恢复验收（macOS CI release gate 已有 runner artifact，
+  但不替代真机证据）；
 - 物理 Mac 上的 Node、fetch、SDK、精确 lockfile 离线重建和首手势检查；
 - Worker 超时/崩溃和 supervisor 重启恢复；
 - 两个平台都通过后，才删除 QuickJS 和旧脚本宿主。

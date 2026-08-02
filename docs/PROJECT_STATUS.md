@@ -39,7 +39,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
 - `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
 - `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
-- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。release 只使用随应用分发的固定 Node/pnpm,debug 缺少内置工具链时才允许回退 PATH。
+- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。release 只使用随应用分发的固定 Node/pnpm/TypeScript 与类型声明,debug 缺少内置工具链时才允许回退 PATH。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -89,7 +89,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备和有界 Problems/Output 面板。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备、manifest/lockfile 结构化 diff、用户主动 `tsc` typecheck 和有界 Problems/Output 面板。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -430,6 +430,12 @@ SHA-256 为 `07f6629ff141a537bcaa0a1e9c19cc49a6ca919747710b1d30ba8675458ba766`�
 p95/p99 为 `0.122083/0.18425 ms`,宿主调用 p95/p99 为 `0.350167/0.614709 ms`。
 该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
 npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
+
+2026-08-02 Node 工具链资源复核:重新执行 `pnpm fetch:node-toolchain --target=windows-x64`,
+确认随包 `node v24.18.1`、`pnpm 10.34.5`、TypeScript `tsc`、Node/undici 类型和
+supervisor/worker 均写入忽略的 Windows 资源目录并可读取。修复 Windows pnpm junction
+复制时的 `EPERM`，复制前解析真实路径；工具链测试 `5/5` 通过。该资源是本机发布输入，
+不进入 Git；macOS 目标仍需在对应 runner/物理 Mac 环境分别生成和验收。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

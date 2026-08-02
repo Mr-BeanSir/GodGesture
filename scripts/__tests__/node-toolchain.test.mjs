@@ -27,6 +27,7 @@ test("ships the fixed TypeScript editor/runtime declarations with every target",
   assert.match(source, /copyTypeScript/);
   assert.match(source, /join\(sourceRoot, "@types", "node"\)/);
   assert.match(source, /undici-types/);
+  assert.match(source, /realpath\(source\)/);
 });
 
 test("maps supported release targets to exact Node archives", () => {
