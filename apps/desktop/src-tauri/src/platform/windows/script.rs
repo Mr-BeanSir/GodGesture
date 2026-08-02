@@ -1,9 +1,9 @@
-//! Windows implementation of the QuickJS host boundary.
+//! Windows implementation of the Node plugin host boundary.
 
 use super::{clipboard, commands, input};
 use crate::engine::config::WindowOperation;
 use crate::engine::runtime::GestureContext;
-use crate::engine::script::{ScriptHost, ScriptMouseButton};
+use crate::engine::script_host::{ScriptHost, ScriptMouseButton};
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use std::sync::Arc;

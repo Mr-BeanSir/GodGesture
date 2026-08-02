@@ -50,9 +50,7 @@ fn snapshot(pasteboard: &NSPasteboard) -> Result<PasteboardSnapshot, String> {
         let mut values = Vec::with_capacity(types.len());
         for pasteboard_type in &*types {
             let data = item.dataForType(&pasteboard_type).ok_or_else(|| {
-                format!(
-                    "pasteboard item did not materialize type {pasteboard_type}"
-                )
+                format!("pasteboard item did not materialize type {pasteboard_type}")
             })?;
             total_bytes = total_bytes.saturating_add(data.len());
             if total_bytes > MAX_SNAPSHOT_BYTES {
@@ -76,9 +74,7 @@ fn restore(pasteboard: &NSPasteboard, snapshot: PasteboardSnapshot) -> Result<()
             let pasteboard_type = NSString::from_str(&pasteboard_type);
             let data = NSData::with_bytes(&bytes);
             if !item.setData_forType(&data, &pasteboard_type) {
-                return Err(format!(
-                    "restore pasteboard type {pasteboard_type} failed"
-                ));
+                return Err(format!("restore pasteboard type {pasteboard_type} failed"));
             }
         }
         objects.push(ProtocolObject::from_retained(item));

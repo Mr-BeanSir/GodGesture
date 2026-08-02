@@ -132,8 +132,11 @@ fn typecheck_inner(
         },
         "include": ["**/*.mjs", "**/*.js", "**/*.ts"]
     });
-    fs::write(root.join("tsconfig.json"), serde_json::to_vec_pretty(&config).unwrap())
-        .map_err(|error| format!("write typecheck config: {error}"))?;
+    fs::write(
+        root.join("tsconfig.json"),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .map_err(|error| format!("write typecheck config: {error}"))?;
     let args: Vec<std::ffi::OsString> = vec![
         toolchain.typescript.as_os_str().to_owned(),
         "--project".into(),
@@ -153,7 +156,10 @@ fn typecheck_inner(
 }
 
 fn write_builtin_sdk_types(project_root: &Path) -> Result<(), String> {
-    let sdk_root = project_root.join("node_modules").join("@godgesture").join("sdk");
+    let sdk_root = project_root
+        .join("node_modules")
+        .join("@godgesture")
+        .join("sdk");
     fs::write(
         sdk_root.join("index.d.ts"),
         include_str!("../../../script-api/godgesture-sdk.d.ts"),
@@ -191,17 +197,36 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 fn parse_typecheck_diagnostics(output: &str) -> Vec<NodeTypecheckDiagnostic> {
-    output.lines().filter_map(|line| {
-        let (location, rest) = line.split_once(": error TS").or_else(|| line.split_once(": warning TS"))?;
-        let severity = if line.contains(": warning TS") { "warning" } else { "error" };
-        let (file, coordinates) = location.rsplit_once('(')?;
-        let coordinates = coordinates.strip_suffix(')')?;
-        let mut parts = coordinates.split(',');
-        let line_number = parts.next()?.parse().ok()?;
-        let column = parts.next()?.parse().ok()?;
-        let message = rest.split_once(": ").map(|(_, value)| value).unwrap_or(rest).to_string();
-        Some(NodeTypecheckDiagnostic { file: file.replace('\\', "/"), line: line_number, column, severity: severity.into(), message })
-    }).collect()
+    output
+        .lines()
+        .filter_map(|line| {
+            let (location, rest) = line
+                .split_once(": error TS")
+                .or_else(|| line.split_once(": warning TS"))?;
+            let severity = if line.contains(": warning TS") {
+                "warning"
+            } else {
+                "error"
+            };
+            let (file, coordinates) = location.rsplit_once('(')?;
+            let coordinates = coordinates.strip_suffix(')')?;
+            let mut parts = coordinates.split(',');
+            let line_number = parts.next()?.parse().ok()?;
+            let column = parts.next()?.parse().ok()?;
+            let message = rest
+                .split_once(": ")
+                .map(|(_, value)| value)
+                .unwrap_or(rest)
+                .to_string();
+            Some(NodeTypecheckDiagnostic {
+                file: file.replace('\\', "/"),
+                line: line_number,
+                column,
+                severity: severity.into(),
+                message,
+            })
+        })
+        .collect()
 }
 
 fn test_inner(

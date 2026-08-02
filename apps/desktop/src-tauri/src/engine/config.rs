@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 3;
+pub const CONFIG_FORMAT_VERSION: u32 = 4;
 
 // ---------------------------------------------------------------------------
 // 命令(执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
@@ -54,23 +54,6 @@ pub enum Command {
         auto_set_working_dir: bool,
     },
     #[serde(rename_all = "camelCase")]
-    Script {
-        #[serde(default = "default_js")]
-        language: String,
-        #[serde(default)]
-        init_script: String,
-        #[serde(default)]
-        script: String,
-        #[serde(default)]
-        handle_modifiers: bool,
-        #[serde(default)]
-        gesture_recognized_script: String,
-        #[serde(default)]
-        modifier_triggered_script: String,
-        #[serde(default)]
-        gesture_ended_script: String,
-    },
-    #[serde(rename_all = "camelCase")]
     NodePlugin {
         plugin_id: String,
         #[serde(default = "default_node_export")]
@@ -84,11 +67,26 @@ pub enum Command {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GestureInputButton {
+    Left,
+    Middle,
+    Right,
+    X1,
+    X2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum GestureInput {
+    Stroke { direction: Direction },
+    Button { button: GestureInputButton },
+    Wheel { direction: BoundaryWheelDirection },
+}
+
 fn default_true() -> bool {
     true
-}
-fn default_js() -> String {
-    "js".into()
 }
 fn default_delta() -> i32 {
     1
@@ -119,6 +117,57 @@ pub struct GestureSpecConfig {
     pub strokes: Vec<Direction>,
     #[serde(default = "default_modifier")]
     pub modifier: Modifier,
+    #[serde(default)]
+    pub inputs: Vec<GestureInput>,
+}
+
+impl GestureSpecConfig {
+    pub fn legacy_inputs(&self) -> Vec<GestureInput> {
+        let mut inputs = self
+            .strokes
+            .iter()
+            .copied()
+            .map(|direction| GestureInput::Stroke { direction })
+            .collect::<Vec<_>>();
+        let modifier = match self.modifier {
+            Modifier::None => None,
+            Modifier::WheelForward => Some(GestureInput::Wheel {
+                direction: BoundaryWheelDirection::Forward,
+            }),
+            Modifier::WheelBackward => Some(GestureInput::Wheel {
+                direction: BoundaryWheelDirection::Backward,
+            }),
+            Modifier::LeftButtonDown => Some(GestureInput::Button {
+                button: GestureInputButton::Left,
+            }),
+            Modifier::MiddleButtonDown => Some(GestureInput::Button {
+                button: GestureInputButton::Middle,
+            }),
+            Modifier::RightButtonDown => Some(GestureInput::Button {
+                button: GestureInputButton::Right,
+            }),
+            Modifier::X1Down => Some(GestureInput::Button {
+                button: GestureInputButton::X1,
+            }),
+            Modifier::X2Down => Some(GestureInput::Button {
+                button: GestureInputButton::X2,
+            }),
+        };
+        if let Some(modifier) = modifier {
+            inputs.push(modifier);
+        }
+        inputs
+    }
+
+    /// Return the ordered input sequence, normalizing pre-v4 configs that only
+    /// carried `strokes` plus a legacy modifier.
+    pub fn effective_inputs(&self) -> Vec<GestureInput> {
+        if self.inputs.is_empty() {
+            self.legacy_inputs()
+        } else {
+            self.inputs.clone()
+        }
+    }
 }
 
 fn default_modifier() -> Modifier {
@@ -188,7 +237,10 @@ pub struct GlobalApp {
 
 impl Default for GlobalApp {
     fn default() -> Self {
-        Self { gesturing_enabled: true, intents: Vec::new() }
+        Self {
+            gesturing_enabled: true,
+            intents: Vec::new(),
+        }
     }
 }
 
@@ -207,7 +259,10 @@ pub struct HotCornersConfig {
 
 impl Default for HotCornersConfig {
     fn default() -> Self {
-        Self { enabled: true, commands: Default::default() }
+        Self {
+            enabled: true,
+            commands: Default::default(),
+        }
     }
 }
 
@@ -278,7 +333,10 @@ pub struct BoundaryIntent {
 
 impl Default for RubEdgesConfig {
     fn default() -> Self {
-        Self { enabled: true, commands: Default::default() }
+        Self {
+            enabled: true,
+            commands: Default::default(),
+        }
     }
 }
 
@@ -304,7 +362,12 @@ pub struct PathTrackerPreferences {
 impl Default for PathTrackerPreferences {
     fn default() -> Self {
         Self {
-            trigger_buttons: vec![TriggerButton::Right, TriggerButton::Middle, TriggerButton::X1, TriggerButton::X2],
+            trigger_buttons: vec![
+                TriggerButton::Right,
+                TriggerButton::Middle,
+                TriggerButton::X1,
+                TriggerButton::X2,
+            ],
             enable_8_directions: true,
             enable_windows_key_gesturing: false,
             prefer_cursor_window: true,
@@ -353,7 +416,10 @@ pub struct PauseHotkey {
 
 impl Default for PauseHotkey {
     fn default() -> Self {
-        Self { modifiers: vec!["ctrl".into(), "shift".into(), "alt".into()], key: "w".into() }
+        Self {
+            modifiers: vec!["ctrl".into(), "shift".into(), "alt".into()],
+            key: "w".into(),
+        }
     }
 }
 
@@ -471,7 +537,11 @@ pub struct MachineLocalSettings {
 
 impl Default for MachineLocalSettings {
     fn default() -> Self {
-        Self { auto_start: false, run_as_admin: false, tray_icon_visible: true }
+        Self {
+            auto_start: false,
+            run_as_admin: false,
+            tray_icon_visible: true,
+        }
     }
 }
 
@@ -492,11 +562,19 @@ pub struct SyncMetadata {
 /// 首次启动的默认手势库(对齐 WGestures 出厂常用项;命令执行 M2 生效)
 pub fn default_seed() -> ConfigDocument {
     use super::types::{Direction as D, TriggerButton as T};
-    let intent = |name: &str, trigger: T, strokes: Vec<super::types::Direction>, command: Command| GestureIntent {
+    let intent = |name: &str,
+                  trigger: T,
+                  strokes: Vec<super::types::Direction>,
+                  command: Command| GestureIntent {
         id: uuid::Uuid::new_v4().to_string(),
         name: name.to_string(),
         enabled: true,
-        gesture: GestureSpecConfig { trigger, strokes, modifier: super::types::Modifier::None },
+        gesture: GestureSpecConfig {
+            trigger,
+            strokes,
+            modifier: super::types::Modifier::None,
+            inputs: Vec::new(),
+        },
         command,
         execute_on_modifier: false,
         order: 0,
@@ -512,20 +590,51 @@ pub fn default_seed() -> ConfigDocument {
             "关闭窗口",
             T::Right,
             vec![D::Down, D::Right],
-            Command::WindowControl { operation: WindowOperation::Close },
+            Command::WindowControl {
+                operation: WindowOperation::Close,
+            },
         ),
         intent(
             "最大化/还原",
             T::Right,
             vec![D::Up],
-            Command::WindowControl { operation: WindowOperation::MaximizeRestore },
+            Command::WindowControl {
+                operation: WindowOperation::MaximizeRestore,
+            },
         ),
-        intent("最小化", T::Right, vec![D::Down], Command::WindowControl { operation: WindowOperation::Minimize }),
+        intent(
+            "最小化",
+            T::Right,
+            vec![D::Down],
+            Command::WindowControl {
+                operation: WindowOperation::Minimize,
+            },
+        ),
         intent("后退", T::Right, vec![D::Left], hotkey(&["alt"], &["left"])),
-        intent("前进", T::Right, vec![D::Right], hotkey(&["alt"], &["right"])),
-        intent("复制", T::Right, vec![D::RightDown], hotkey(&["ctrl"], &["c"])),
-        intent("粘贴", T::Right, vec![D::RightUp], hotkey(&["ctrl"], &["v"])),
-        intent("任务切换", T::Right, vec![D::Down, D::Up], Command::TaskSwitcher),
+        intent(
+            "前进",
+            T::Right,
+            vec![D::Right],
+            hotkey(&["alt"], &["right"]),
+        ),
+        intent(
+            "复制",
+            T::Right,
+            vec![D::RightDown],
+            hotkey(&["ctrl"], &["c"]),
+        ),
+        intent(
+            "粘贴",
+            T::Right,
+            vec![D::RightUp],
+            hotkey(&["ctrl"], &["v"]),
+        ),
+        intent(
+            "任务切换",
+            T::Right,
+            vec![D::Down, D::Up],
+            Command::TaskSwitcher,
+        ),
         intent("刷新", T::Right, vec![D::Up, D::Down], hotkey(&[], &["f5"])),
     ];
     doc
@@ -578,8 +687,36 @@ impl ConfigStore {
                     document
                 }
                 Err(error) => {
-                    log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
-                    ConfigDocument::default()
+                    // Node-only 不再执行旧 script；中和这些已删除命令，避免一条旧命令
+                    // 让整份用户配置回退为默认值。其他字段仍按当前 schema 严格校验。
+                    let mut value = match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(value) => value,
+                        Err(_) => {
+                            log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
+                            return ConfigDocument::default();
+                        }
+                    };
+                    let removed = neutralize_removed_script_commands(&mut value);
+                    if removed == 0 {
+                        log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
+                        return ConfigDocument::default();
+                    }
+                    match serde_json::from_value::<ConfigDocument>(value) {
+                        Ok(mut document) => {
+                            document.migrate_legacy_boundaries();
+                            log::warn!(
+                                "配置包含 {removed} 个已删除的 script 命令,已降级为 doNothing: {path:?}"
+                            );
+                            if let Err(save_error) = self.save_config(&document) {
+                                log::warn!("修复后的配置写回失败: {path:?}: {save_error}");
+                            }
+                            document
+                        }
+                        Err(repair_error) => {
+                            log::warn!("配置文件损坏,修复后仍无法加载: {path:?}: {repair_error}");
+                            ConfigDocument::default()
+                        }
+                    }
                 }
             },
             Err(_) => ConfigDocument::default(),
@@ -637,7 +774,10 @@ impl ConfigStore {
         self.restore_file(&self.config_path(), &snapshot.config)
     }
 
-    pub(crate) fn restore_machine_snapshot(&self, snapshot: &ConfigFilesSnapshot) -> io::Result<()> {
+    pub(crate) fn restore_machine_snapshot(
+        &self,
+        snapshot: &ConfigFilesSnapshot,
+    ) -> io::Result<()> {
         self.restore_file(&self.machine_path(), &snapshot.machine)
     }
 
@@ -684,19 +824,86 @@ impl ConfigStore {
     }
 }
 
+/// 将已从 Node-only 协议删除的旧命令中和为安全的空操作,不保留或执行源码。
+fn neutralize_removed_script_commands(value: &mut serde_json::Value) -> usize {
+    let is_removed_script = value
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|kind| kind == "script");
+    if is_removed_script {
+        *value = serde_json::json!({ "type": "doNothing" });
+        return 1;
+    }
+    match value {
+        serde_json::Value::Array(items) => items
+            .iter_mut()
+            .map(neutralize_removed_script_commands)
+            .sum(),
+        serde_json::Value::Object(fields) => fields
+            .values_mut()
+            .map(neutralize_removed_script_commands)
+            .sum(),
+        _ => 0,
+    }
+}
+
 impl ConfigDocument {
     pub fn migrate_legacy_boundaries(&mut self) {
+        for intent in &mut self.global.intents {
+            if intent.gesture.inputs.is_empty() {
+                intent.gesture.inputs = intent.gesture.legacy_inputs();
+            }
+        }
+        for app in &mut self.apps {
+            for intent in &mut app.intents {
+                if intent.gesture.inputs.is_empty() {
+                    intent.gesture.inputs = intent.gesture.legacy_inputs();
+                }
+            }
+        }
         const CORNERS: [(&str, &str, &str); 4] = [
-            ("leftTop", "10000000-0000-4000-8000-000000000001", "Left top corner"),
-            ("rightTop", "10000000-0000-4000-8000-000000000002", "Right top corner"),
-            ("leftBottom", "10000000-0000-4000-8000-000000000003", "Left bottom corner"),
-            ("rightBottom", "10000000-0000-4000-8000-000000000004", "Right bottom corner"),
+            (
+                "leftTop",
+                "10000000-0000-4000-8000-000000000001",
+                "Left top corner",
+            ),
+            (
+                "rightTop",
+                "10000000-0000-4000-8000-000000000002",
+                "Right top corner",
+            ),
+            (
+                "leftBottom",
+                "10000000-0000-4000-8000-000000000003",
+                "Left bottom corner",
+            ),
+            (
+                "rightBottom",
+                "10000000-0000-4000-8000-000000000004",
+                "Right bottom corner",
+            ),
         ];
         const EDGES: [(&str, &str, &str); 4] = [
-            ("top", "10000000-0000-4000-8000-000000000005", "Top rub edge"),
-            ("right", "10000000-0000-4000-8000-000000000006", "Right rub edge"),
-            ("bottom", "10000000-0000-4000-8000-000000000007", "Bottom rub edge"),
-            ("left", "10000000-0000-4000-8000-000000000008", "Left rub edge"),
+            (
+                "top",
+                "10000000-0000-4000-8000-000000000005",
+                "Top rub edge",
+            ),
+            (
+                "right",
+                "10000000-0000-4000-8000-000000000006",
+                "Right rub edge",
+            ),
+            (
+                "bottom",
+                "10000000-0000-4000-8000-000000000007",
+                "Bottom rub edge",
+            ),
+            (
+                "left",
+                "10000000-0000-4000-8000-000000000008",
+                "Left rub edge",
+            ),
         ];
 
         let mut next_order = self.boundary_intents.len() as i32;
@@ -711,7 +918,9 @@ impl ConfigDocument {
                 id: id.into(),
                 name: name.into(),
                 enabled: true,
-                origin: BoundaryOrigin::HotCorner { corner: corner.into() },
+                origin: BoundaryOrigin::HotCorner {
+                    corner: corner.into(),
+                },
                 sequence: Vec::new(),
                 command,
                 order: next_order,
@@ -744,10 +953,20 @@ impl ConfigDocument {
 fn replace_file(source: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
 
-    let source = source.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
-    let target = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
     unsafe {
         MoveFileExW(
             PCWSTR(source.as_ptr()),
@@ -771,7 +990,8 @@ mod tests {
 
     impl TestDir {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("godgesture-config-test-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir()
+                .join(format!("godgesture-config-test-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -792,14 +1012,49 @@ mod tests {
     }
 
     #[test]
+    fn load_config_neutralizes_removed_scripts_without_resetting_other_settings() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+        std::fs::write(
+            store.config_path(),
+            serde_json::json!({
+                "formatVersion": 3,
+                "global": {
+                    "intents": [{
+                        "id": "30000000-0000-4000-8000-000000000001",
+                        "name": "Legacy script",
+                        "gesture": { "trigger": "right", "strokes": ["down"] },
+                        "command": { "type": "script", "language": "js", "script": "return 1" }
+                    }]
+                },
+                "preferences": { "autoCheckForUpdate": false }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let document = store.load_config();
+        assert_eq!(document.format_version, CONFIG_FORMAT_VERSION);
+        assert_eq!(document.global.intents.len(), 1);
+        assert_eq!(document.global.intents[0].command, Command::DoNothing);
+        assert!(!document.preferences.auto_check_for_update);
+        let saved = std::fs::read_to_string(store.config_path()).unwrap();
+        assert!(!saved.contains("\"script\""));
+    }
+
+    #[test]
     fn command_json_shape_matches_shared_schema() {
         // 与 shared zod 的 discriminatedUnion("type") 形状一致
-        let cmd = Command::HotKey { modifiers: vec!["ctrl".into()], keys: vec!["w".into()] };
+        let cmd = Command::HotKey {
+            modifiers: vec!["ctrl".into()],
+            keys: vec!["w".into()],
+        };
         let v = serde_json::to_value(&cmd).unwrap();
         assert_eq!(v["type"], "hotKey");
         assert_eq!(v["modifiers"][0], "ctrl");
 
-        let parsed: Command = serde_json::from_value(serde_json::json!({"type": "doNothing"})).unwrap();
+        let parsed: Command =
+            serde_json::from_value(serde_json::json!({"type": "doNothing"})).unwrap();
         assert_eq!(parsed, Command::DoNothing);
 
         let node: Command = serde_json::from_value(serde_json::json!({
@@ -814,6 +1069,13 @@ mod tests {
                 export_name: "execute".into(),
             }
         );
+
+        let removed = serde_json::from_value::<Command>(serde_json::json!({
+            "type": "script",
+            "language": "js",
+            "script": "return 1"
+        }));
+        assert!(removed.is_err());
 
         let plugin: NodePlugin = serde_json::from_value(serde_json::json!({
             "id": "30000000-0000-4000-8000-000000000001",
@@ -831,6 +1093,7 @@ mod tests {
             trigger: TriggerButton::Right,
             strokes: vec![Direction::RightUp, Direction::Down],
             modifier: Modifier::WheelForward,
+            inputs: Vec::new(),
         };
         let v = serde_json::to_value(&g).unwrap();
         assert_eq!(v["trigger"], "right");
@@ -855,13 +1118,21 @@ mod tests {
         .unwrap();
 
         document.migrate_legacy_boundaries();
-        assert_eq!(document.format_version, 3);
+        assert_eq!(document.format_version, 4);
         assert!(!document.hot_corners.enabled);
         assert!(document.hot_corners.commands.is_empty());
         assert!(document.rub_edges.commands.is_empty());
         assert_eq!(document.boundary_intents.len(), 2);
-        assert_eq!(document.boundary_intents[0].id, "10000000-0000-4000-8000-000000000001");
-        assert_eq!(document.boundary_intents[1].origin, BoundaryOrigin::RubEdge { edge: "bottom".into() });
+        assert_eq!(
+            document.boundary_intents[0].id,
+            "10000000-0000-4000-8000-000000000001"
+        );
+        assert_eq!(
+            document.boundary_intents[1].origin,
+            BoundaryOrigin::RubEdge {
+                edge: "bottom".into()
+            }
+        );
 
         let once = document.clone();
         document.migrate_legacy_boundaries();
@@ -893,7 +1164,12 @@ mod tests {
         let mut changed = original.clone();
         changed.preferences.auto_check_for_update = false;
         store.save_config(&changed).unwrap();
-        store.save_machine(&MachineLocalSettings { auto_start: true, ..MachineLocalSettings::default() }).unwrap();
+        store
+            .save_machine(&MachineLocalSettings {
+                auto_start: true,
+                ..MachineLocalSettings::default()
+            })
+            .unwrap();
 
         store.restore_config_snapshot(&snapshot).unwrap();
         store.restore_machine_snapshot(&snapshot).unwrap();
@@ -914,7 +1190,10 @@ mod tests {
         };
         let mut second = first.clone();
         second.server_version = 4;
-        second.last_synced_document.preferences.auto_check_for_update = false;
+        second
+            .last_synced_document
+            .preferences
+            .auto_check_for_update = false;
 
         store.save_sync_metadata(&first).unwrap();
         store.save_sync_metadata(&second).unwrap();

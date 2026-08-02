@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import apiDeclarations from "../../../script-api/godgesture.d.ts?raw";
 import sdkDeclarations from "../../../script-api/godgesture-sdk.d.ts?raw";
 import scriptingGuide from "../../../../../docs/SCRIPTING.md?raw";
 
-describe("GodGesture script API declarations", () => {
+describe("GodGesture Node plugin API declarations", () => {
   it("documents every runtime host surface", () => {
     for (const symbol of [
-      "declare const Input",
       "keyCombo(",
       "sendText(",
       "mouseClick(",
@@ -14,17 +12,14 @@ describe("GodGesture script API declarations", () => {
       "mouseUp(",
       "movePointer(",
       "wheel(",
-      "declare const Context",
-      "activateTargetWindow(",
-      "declare const Window",
+      "activateTarget(",
       "perform(",
-      "declare const Clipboard",
       "readText(",
       "writeText(",
       "selectedText(",
-      "declare function ReportStatus(",
+      "report(",
     ]) {
-      expect(apiDeclarations).toContain(symbol);
+      expect(sdkDeclarations).toContain(symbol);
     }
   });
 
@@ -42,7 +37,7 @@ describe("GodGesture script API declarations", () => {
       "dockLeft",
       "dockRight",
     ]) {
-      expect(apiDeclarations).toContain(`\"${literal}\"`);
+      expect(sdkDeclarations).toContain(`\"${literal}\"`);
     }
   });
 
@@ -84,7 +79,7 @@ describe("GodGesture script API declarations", () => {
     for (const limit of ["32", "64", "256 KiB", "1 MiB", "512 KiB", "4 MiB"]) {
       expect(scriptingGuide).toContain(limit);
     }
-    expect(scriptingGuide).toContain("QuickJS");
-    expect(scriptingGuide).toContain("迁移兼容路径");
+    expect(scriptingGuide).toContain("Node.js");
+    expect(scriptingGuide).toContain("唯一脚本运行时");
   });
 });

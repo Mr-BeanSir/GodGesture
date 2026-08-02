@@ -1,22 +1,47 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { GestureSpec } from "@godgesture/shared";
-import { TRIGGER_SYMBOLS, strokesMnemonic, MODIFIER_SYMBOLS } from "../utils/mnemonic";
+import { useI18n } from "vue-i18n";
+import type { GestureInput, GestureSpec } from "@godgesture/shared";
+import {
+  BUTTON_SYMBOLS,
+  DIRECTION_ARROWS,
+  TRIGGER_SYMBOLS,
+  gestureInputs,
+} from "../utils/mnemonic";
+import WheelModifierIcon from "./WheelModifierIcon.vue";
 
 const props = defineProps<{ gesture: GestureSpec }>();
+const { t } = useI18n();
 
 const triggerSymbol = computed(() => TRIGGER_SYMBOLS[props.gesture.trigger]);
-const arrows = computed(() => strokesMnemonic(props.gesture.strokes));
-const modifierSymbol = computed(() =>
-  props.gesture.modifier !== "none" ? MODIFIER_SYMBOLS[props.gesture.modifier] : "",
-);
+const inputs = computed(() => gestureInputs(props.gesture));
+
+function inputLabel(input: GestureInput): string {
+  if (input.type === "stroke") return input.direction;
+  if (input.type === "wheel") return t(`modifier.${input.direction === "forward" ? "wheelForward" : "wheelBackward"}`);
+  return t(`modifier.${input.button === "x1" ? "x1Down" : input.button === "x2" ? "x2Down" : `${input.button}ButtonDown`}`);
+}
 </script>
 
 <template>
   <span class="mnemonic">
     <span class="mnemonic__trigger">{{ triggerSymbol }}</span>
-    <span class="mnemonic__arrows">{{ arrows }}</span>
-    <span v-if="modifierSymbol" class="mnemonic__modifier">+{{ modifierSymbol }}</span>
+    <span v-for="(input, index) in inputs" :key="`${input.type}-${index}`" class="mnemonic__input">
+      <span v-if="input.type === 'stroke'" :aria-label="inputLabel(input)">
+        {{ DIRECTION_ARROWS[input.direction] }}
+      </span>
+      <WheelModifierIcon
+        v-else-if="input.type === 'wheel'"
+        :direction="input.direction === 'forward' ? 'up' : 'down'"
+        :label="inputLabel(input)"
+      />
+      <WheelModifierIcon
+        v-else-if="input.button === 'middle'"
+        pressed
+        :label="inputLabel(input)"
+      />
+      <span v-else :aria-label="inputLabel(input)">{{ BUTTON_SYMBOLS[input.button] }}</span>
+    </span>
   </span>
 </template>
 
@@ -26,17 +51,16 @@ const modifierSymbol = computed(() =>
   align-items: center;
   gap: 4px;
   font-weight: 600;
-  letter-spacing: 2px;
-  white-space: nowrap;
+  letter-spacing: 1px;
+  flex-wrap: wrap;
 }
 .mnemonic__trigger {
   color: var(--el-color-primary);
 }
-.mnemonic__arrows {
+.mnemonic__input {
+  display: inline-flex;
+  align-items: center;
   color: var(--el-text-color-primary);
-}
-.mnemonic__modifier {
-  color: var(--el-color-warning);
   letter-spacing: 0;
 }
 </style>

@@ -3,7 +3,7 @@
 //! 运行在 engine worker(消费)线程,可阻塞(取选中文本要合成 Ctrl+C 并轮询剪贴板);
 //! 绝不在钩子线程执行,以免拖慢"吞不吞事件"的同步裁决。
 //!
-//! Pause / Script 不在此处理:consumer 分别负责暂停切换与 QuickJS 生命周期;
+//! Pause / NodePlugin 不在此处理:consumer 分别负责暂停切换与 Node 生命周期;
 //! DoNothing 顾名思义。
 
 use super::{clipboard, hook::EXTRA_INFO_TAG, input, window};
@@ -42,7 +42,7 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
     match cmd {
         // 由 consumer 特判 / 无动作
         Command::Pause | Command::DoNothing => {}
-        Command::Script { .. } | Command::NodePlugin { .. } => {
+        Command::NodePlugin { .. } => {
             log::error!("脚本命令意外到达原生命令分发器");
         }
 

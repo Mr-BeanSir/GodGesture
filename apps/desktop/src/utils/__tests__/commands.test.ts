@@ -4,6 +4,7 @@ import { COMMAND_TYPES, createDefaultCommand } from "../commands";
 describe("command helpers", () => {
   it("offers Node plugins without creating an unbound command", () => {
     expect(COMMAND_TYPES).toContain("nodePlugin");
+    expect(COMMAND_TYPES).not.toContain("script");
     expect(() => createDefaultCommand("nodePlugin")).toThrow(
       "Node plugin commands require an existing plugin selection",
     );

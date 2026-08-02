@@ -1,33 +1,19 @@
 <script setup lang="ts">
 /**
- * 手势意图编辑器:名称、助记符(可重录)、修饰、修饰立即执行、命令。
+ * 手势意图编辑器:名称、助记符(可重录)、最后一个按键立即执行、命令。
  * 直接编辑传入的意图对象(来自配置 store,变更即触发防抖保存)。
  */
 import { useI18n } from "vue-i18n";
 import { Delete } from "@element-plus/icons-vue";
-import type { GestureIntent, GestureModifier } from "@godgesture/shared";
+import type { GestureIntent } from "@godgesture/shared";
 import MnemonicText from "./MnemonicText.vue";
 import CommandEditor from "./CommandEditor.vue";
 
-const props = defineProps<{ intent: GestureIntent }>();
+const { intent } = defineProps<{ intent: GestureIntent }>();
 const emit = defineEmits<{ (e: "reRecord"): void; (e: "delete"): void }>();
 
 const { t } = useI18n();
 
-const MODIFIERS: GestureModifier[] = [
-  "none",
-  "wheelForward",
-  "wheelBackward",
-  "leftButtonDown",
-  "middleButtonDown",
-  "rightButtonDown",
-  "x1Down",
-  "x2Down",
-];
-
-function onModifierChange(value: GestureModifier) {
-  if (value === "none") props.intent.executeOnModifier = false;
-}
 </script>
 
 <template>
@@ -57,20 +43,8 @@ function onModifierChange(value: GestureModifier) {
         </div>
       </div>
 
-      <div class="gg-field intent-editor__modifier-field">
-        <label class="gg-field-label">{{ t("gestures.modifier") }}</label>
-        <el-select v-model="intent.gesture.modifier" @change="onModifierChange">
-          <el-option
-            v-for="m in MODIFIERS"
-            :key="m"
-            :label="t(`modifier.${m}`)"
-            :value="m"
-          />
-        </el-select>
-      </div>
-
-      <label v-if="intent.gesture.modifier !== 'none'" class="intent-editor__execute">
-        <span>{{ t("gestures.executeOnModifier") }}</span>
+      <label class="intent-editor__execute">
+        <span>{{ t("gestures.executeOnLastInput") }}</span>
         <el-switch v-model="intent.executeOnModifier" />
       </label>
     </div>
@@ -107,10 +81,6 @@ function onModifierChange(value: GestureModifier) {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
-.intent-editor__modifier-field {
-  grid-column: 1;
-  max-width: 280px;
-}
 .intent-editor__trigger-stack {
   display: flex;
   min-width: 0;
@@ -145,7 +115,6 @@ function onModifierChange(value: GestureModifier) {
   }
   .intent-editor__name-field,
   .intent-editor__trigger-field,
-  .intent-editor__modifier-field,
   .intent-editor__execute {
     grid-column: 1;
     grid-row: auto;

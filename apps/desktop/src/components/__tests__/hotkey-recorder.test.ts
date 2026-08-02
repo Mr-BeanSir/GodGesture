@@ -36,6 +36,18 @@ describe("hotkey recorder", () => {
     });
   });
 
+  it("keeps Ctrl when recording Ctrl+W through release", () => {
+    const recording = createHotkeyRecording();
+    recordHotkeyKeydown(recording, { code: "ControlLeft", ctrlKey: true });
+    recordHotkeyKeydown(recording, { code: "KeyW", ctrlKey: true });
+
+    expect(recordHotkeyKeyup(recording, { code: "KeyW" })).toBeNull();
+    expect(recordHotkeyKeyup(recording, { code: "ControlLeft" })).toEqual({
+      modifiers: ["ctrl"],
+      keys: ["w"],
+    });
+  });
+
   it("deduplicates repeats and supports multiple main keys in one chord", () => {
     const recording = createHotkeyRecording();
     recordHotkeyKeydown(recording, { code: "ControlLeft", ctrlKey: true });

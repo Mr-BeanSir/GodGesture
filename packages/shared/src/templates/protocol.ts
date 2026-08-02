@@ -4,6 +4,7 @@ import {
   GestureIntent,
   MacBinding,
   WindowsBinding,
+  type GestureInput,
   type GestureSpec,
 } from "../config/gestures.js";
 import { MAX_URL_LENGTH } from "../config/limits.js";
@@ -66,8 +67,35 @@ export const GestureTemplateIntent = GestureIntent.omit({
 }).strict();
 export type GestureTemplateIntent = z.infer<typeof GestureTemplateIntent>;
 
+function effectiveGestureInputs(gesture: GestureSpec): GestureInput[] {
+  if (gesture.inputs !== undefined) return gesture.inputs;
+
+  const inputs: GestureInput[] = gesture.strokes.map((direction) => ({
+    type: "stroke",
+    direction,
+  }));
+  const modifierInput: GestureInput | undefined =
+    gesture.modifier === "wheelForward"
+      ? { type: "wheel", direction: "forward" }
+      : gesture.modifier === "wheelBackward"
+        ? { type: "wheel", direction: "backward" }
+        : gesture.modifier === "leftButtonDown"
+          ? { type: "button", button: "left" }
+          : gesture.modifier === "middleButtonDown"
+            ? { type: "button", button: "middle" }
+            : gesture.modifier === "rightButtonDown"
+              ? { type: "button", button: "right" }
+              : gesture.modifier === "x1Down"
+                ? { type: "button", button: "x1" }
+                : gesture.modifier === "x2Down"
+                  ? { type: "button", button: "x2" }
+                  : undefined;
+  if (modifierInput) inputs.push(modifierInput);
+  return inputs;
+}
+
 export function gestureIdentityKey(gesture: GestureSpec): string {
-  return `${gesture.trigger}:${gesture.strokes.join(",")}:${gesture.modifier}`;
+  return `${gesture.trigger}:${JSON.stringify(effectiveGestureInputs(gesture))}`;
 }
 
 function requireUniqueIntents(
@@ -304,7 +332,6 @@ export function parseGestureTemplatePackage(
 
 export function commandTemplateRisks(command: z.infer<typeof Command>) {
   switch (command.type) {
-    case "script":
     case "nodePlugin":
       return ["script"] as const;
     case "cmd":

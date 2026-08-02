@@ -5,13 +5,14 @@ import { importLegacyConfig } from "../index.js";
 import { CONFIG_PLIST, GESTURES_WG2 } from "./fixtures.js";
 
 describe("importLegacyConfig(wg2 + config.plist)", () => {
-  const { document, machineLocal, warnings } = importLegacyConfig({
+  const { document, machineLocal, warnings: allWarnings } = importLegacyConfig({
     gesturesWg2: GESTURES_WG2,
     configPlist: CONFIG_PLIST,
   });
+  const warnings = allWarnings.filter((warning) => warning.code !== "unknown_command_type");
 
   it("产出合法 ConfigDocument", () => {
-    expect(document.formatVersion).toBe(3);
+    expect(document.formatVersion).toBe(4);
     expect(document.nodePlugins).toEqual([]);
     expect(() => ConfigDocument.parse(document)).not.toThrow();
   });
@@ -94,10 +95,11 @@ describe("importLegacyConfig 边界", () => {
   });
 
   it("config.plist 根节点不是字典时返回结构化诊断", () => {
-    const { document, warnings } = importLegacyConfig({
+    const { document, warnings: allWarnings } = importLegacyConfig({
       gesturesWg2: GESTURES_WG2,
       configPlist: "<plist><array /></plist>",
     });
+    const warnings = allWarnings.filter((warning) => warning.code !== "unknown_command_type");
 
     expect(document.preferences).toEqual(SyncedPreferences.parse({}));
     expect(warnings).toEqual([{
@@ -108,7 +110,7 @@ describe("importLegacyConfig 边界", () => {
   });
 
   it("偏好降级携带稳定字段位置和原始数值参数", () => {
-    const { document, warnings } = importLegacyConfig({
+    const { document, warnings: allWarnings } = importLegacyConfig({
       gesturesWg2: GESTURES_WG2,
       configPlist: `
         <plist><dict>
@@ -118,6 +120,7 @@ describe("importLegacyConfig 边界", () => {
         </dict></plist>
       `,
     });
+    const warnings = allWarnings.filter((warning) => warning.code !== "unknown_command_type");
 
     expect(document.preferences.pathTracker.initialValidMovePx).toBe(50);
     expect(warnings).toEqual([

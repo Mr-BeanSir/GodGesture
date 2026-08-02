@@ -6,6 +6,7 @@ import {
   ConfigDocument,
   MachineLocalSettings,
   type Command,
+  type GestureInput,
   type GestureIntent,
   type GestureSpec,
   type StrokeDirection,
@@ -136,6 +137,7 @@ function seedDocument(): ConfigDocument {
 const CAPTURE_POOL: Array<{
   trigger: TriggerButton;
   strokes: StrokeDirection[];
+  inputs?: GestureInput[];
 }> = [
   { trigger: "right", strokes: ["up", "right"] },
   { trigger: "right", strokes: ["down", "left", "up"] },
@@ -143,6 +145,19 @@ const CAPTURE_POOL: Array<{
   { trigger: "right", strokes: ["rightUp", "down"] },
   { trigger: "x1", strokes: ["left"] },
   { trigger: "right", strokes: ["down", "right"] }, // 与演示配置冲突,用于测试覆盖提示
+  {
+    trigger: "right",
+    strokes: ["right"],
+    inputs: [
+      { type: "button", button: "middle" },
+      { type: "stroke", direction: "right" },
+    ],
+  },
+  {
+    trigger: "right",
+    strokes: [],
+    inputs: [{ type: "wheel", direction: "forward" }],
+  },
 ];
 
 export function createMockBackend(): Backend {
@@ -293,18 +308,41 @@ export function createMockBackend(): Backend {
       stopCapture();
       const pick =
         CAPTURE_POOL[Math.floor(Math.random() * CAPTURE_POOL.length)];
+      const captureInputs: GestureInput[] = pick.inputs ?? pick.strokes.map((direction) => ({
+        type: "stroke",
+        direction,
+      }));
       // 模拟"实时助记符":逐笔推送
-      for (let i = 1; i <= pick.strokes.length; i++) {
+      const initial: GestureSpec = {
+        trigger: pick.trigger,
+        strokes: [],
+        modifier: "none",
+        inputs: [],
+      };
+      emit({
+        trigger: initial.trigger,
+        strokes: [],
+        inputs: [],
+        modifier: initial.modifier,
+        mnemonic: gestureMnemonic(initial),
+      });
+      for (let i = 1; i <= captureInputs.length; i++) {
+        const partialInputs = captureInputs.slice(0, i);
         const partial: GestureSpec = {
           trigger: pick.trigger,
-          strokes: pick.strokes.slice(0, i),
+          strokes: partialInputs
+            .filter((input): input is Extract<GestureInput, { type: "stroke" }> => input.type === "stroke")
+            .map((input) => input.direction),
           modifier: "none",
+          inputs: partialInputs,
         };
         captureTimers.push(
           setTimeout(() => {
             emit({
               trigger: partial.trigger,
               strokes: [...partial.strokes],
+              inputs: [...partialInputs],
+              modifier: partial.modifier,
               mnemonic: gestureMnemonic(partial),
             });
           }, 500 * i),
@@ -313,6 +351,16 @@ export function createMockBackend(): Backend {
     },
     async captureCancel() {
       stopCapture();
+    },
+    async hotkeyCaptureStart() {
+      // Browser preview cannot install a process-wide keyboard hook. The
+      // HotkeyInput component falls back to WebView keyboard events here.
+    },
+    async hotkeyCaptureCancel() {
+      // No native capture to release in browser preview.
+    },
+    async onHotkeyCapture() {
+      return () => undefined;
     },
     async onGestureCaptured(handler) {
       listeners.add(handler);

@@ -6,7 +6,7 @@ import { loadMonaco } from "../script/monaco";
 const props = withDefaults(
   defineProps<{
     modelValue: string;
-    language?: "js" | "lua" | "json";
+    language?: "js" | "json";
     editorLabel: string;
     diagnosticKey?: string;
     modelPath?: string;
@@ -92,8 +92,8 @@ function releaseModel() {
   }
 }
 
-function editorLanguage(language: "js" | "lua" | "json") {
-  return language === "js" ? "javascript" : language;
+function editorLanguage(language: "js" | "json") {
+  return language === "js" ? "javascript" : "json";
 }
 
 function currentTheme() {
@@ -149,6 +149,7 @@ onMounted(async () => {
     model,
     ariaLabel: props.editorLabel,
     automaticLayout: false,
+    fixedOverflowWidgets: true,
     fontFamily: '"Cascadia Code", "Consolas", monospace',
     fontSize: 13,
     lineNumbersMinChars: 3,

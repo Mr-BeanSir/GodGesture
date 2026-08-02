@@ -315,26 +315,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -355,6 +335,22 @@ export interface components {
                     /** @default false */
                     executeOnModifier: boolean;
                     gesture: {
+                        inputs?: ({
+                            /** @enum {string} */
+                            direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                            /** @enum {string} */
+                            type: "stroke";
+                        } | {
+                            /** @enum {string} */
+                            button: "left" | "middle" | "right" | "x1" | "x2";
+                            /** @enum {string} */
+                            type: "button";
+                        } | {
+                            /** @enum {string} */
+                            direction: "forward" | "backward";
+                            /** @enum {string} */
+                            type: "wheel";
+                        })[];
                         /**
                          * @default none
                          * @enum {string}
@@ -430,26 +426,6 @@ export interface components {
                     /** @enum {string} */
                     type: "cmd";
                 } | {
-                    /** @default  */
-                    gestureEndedScript: string;
-                    /** @default  */
-                    gestureRecognizedScript: string;
-                    /** @default false */
-                    handleModifiers: boolean;
-                    /** @default  */
-                    initScript: string;
-                    /**
-                     * @default js
-                     * @enum {string}
-                     */
-                    language: "js" | "lua";
-                    /** @default  */
-                    modifierTriggeredScript: string;
-                    /** @default  */
-                    script: string;
-                    /** @enum {string} */
-                    type: "script";
-                } | {
                     /** @default execute */
                     exportName: string;
                     /** Format: uuid */
@@ -502,10 +478,10 @@ export interface components {
                 })[];
             }[];
             /**
-             * @default 3
+             * @default 4
              * @enum {number}
              */
-            formatVersion: 3;
+            formatVersion: 4;
             /** @default {} */
             global: {
                 /** @default true */
@@ -556,26 +532,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -596,6 +552,22 @@ export interface components {
                     /** @default false */
                     executeOnModifier: boolean;
                     gesture: {
+                        inputs?: ({
+                            /** @enum {string} */
+                            direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                            /** @enum {string} */
+                            type: "stroke";
+                        } | {
+                            /** @enum {string} */
+                            button: "left" | "middle" | "right" | "x1" | "x2";
+                            /** @enum {string} */
+                            type: "button";
+                        } | {
+                            /** @enum {string} */
+                            direction: "forward" | "backward";
+                            /** @enum {string} */
+                            type: "wheel";
+                        })[];
                         /**
                          * @default none
                          * @enum {string}
@@ -660,26 +632,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -738,26 +690,6 @@ export interface components {
                         showWindow: boolean;
                         /** @enum {string} */
                         type: "cmd";
-                    } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
                     } | {
                         /** @default execute */
                         exportName: string;
@@ -818,26 +750,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -896,26 +808,6 @@ export interface components {
                         showWindow: boolean;
                         /** @enum {string} */
                         type: "cmd";
-                    } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
                     } | {
                         /** @default execute */
                         exportName: string;
@@ -1081,26 +973,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -1159,26 +1031,6 @@ export interface components {
                         showWindow: boolean;
                         /** @enum {string} */
                         type: "cmd";
-                    } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
                     } | {
                         /** @default execute */
                         exportName: string;
@@ -1239,26 +1091,6 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
-                    } | {
                         /** @default execute */
                         exportName: string;
                         /** Format: uuid */
@@ -1317,26 +1149,6 @@ export interface components {
                         showWindow: boolean;
                         /** @enum {string} */
                         type: "cmd";
-                    } | {
-                        /** @default  */
-                        gestureEndedScript: string;
-                        /** @default  */
-                        gestureRecognizedScript: string;
-                        /** @default false */
-                        handleModifiers: boolean;
-                        /** @default  */
-                        initScript: string;
-                        /**
-                         * @default js
-                         * @enum {string}
-                         */
-                        language: "js" | "lua";
-                        /** @default  */
-                        modifierTriggeredScript: string;
-                        /** @default  */
-                        script: string;
-                        /** @enum {string} */
-                        type: "script";
                     } | {
                         /** @default execute */
                         exportName: string;

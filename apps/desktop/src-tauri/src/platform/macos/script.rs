@@ -1,8 +1,8 @@
-// macOS QuickJS host boundary.
+// macOS Node plugin host boundary.
 
 use crate::engine::config::WindowOperation;
 use crate::engine::runtime::GestureContext;
-use crate::engine::script::{ScriptHost, ScriptMouseButton};
+use crate::engine::script_host::{ScriptHost, ScriptMouseButton};
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use std::sync::Arc;

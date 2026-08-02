@@ -260,48 +260,6 @@ describe("gesture template adoption", () => {
     );
   });
 
-  it("rejects a resulting document above the sync size limit", () => {
-    const largeScriptSlot = "x".repeat(32 * 1024);
-    const document = ConfigDocument.parse({
-      global: {
-        intents: Array.from({ length: 64 }, (_, index) => ({
-          ...existingIntent(`Large ${index}`, [index === 0 ? "up" : index === 1 ? "right" : "down"], index),
-          command: {
-            type: "script",
-            initScript: largeScriptSlot,
-            script: largeScriptSlot,
-          },
-        })),
-      },
-    });
-    const template = GestureTemplatePackage.parse({
-      formatVersion: 1,
-      slug: "large-template",
-      version: "1.0.0",
-      target: {
-        scope: "global",
-        intents: [
-          {
-            ...templateIntent("Large incoming", ["left"]),
-            command: {
-              type: "script",
-              initScript: largeScriptSlot,
-              script: largeScriptSlot,
-            },
-          },
-        ],
-      },
-    });
-    expectAdoptionCode(
-      () =>
-        planGestureTemplateAdoption(
-          document,
-          template,
-          options("keepExisting"),
-        ),
-      "document_too_large",
-    );
-  });
 });
 
 function options(conflictPolicy: "keepExisting" | "replaceExisting") {

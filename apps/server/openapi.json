@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              3
+              4
             ],
-            "default": 3
+            "default": 4
           },
           "global": {
             "type": "object",
@@ -118,6 +118,89 @@
                             "x2Down"
                           ],
                           "default": "none"
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stroke"
+                                    ]
+                                  },
+                                  "direction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "up",
+                                      "rightUp",
+                                      "right",
+                                      "rightDown",
+                                      "down",
+                                      "leftDown",
+                                      "left",
+                                      "leftUp"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "direction"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "button"
+                                    ]
+                                  },
+                                  "button": {
+                                    "type": "string",
+                                    "enum": [
+                                      "left",
+                                      "middle",
+                                      "right",
+                                      "x1",
+                                      "x2"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "button"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "wheel"
+                                    ]
+                                  },
+                                  "direction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "forward",
+                                      "backward"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "direction"
+                                ]
+                              }
+                            ]
+                          },
+                          "maxItems": 12
                         }
                       },
                       "required": [
@@ -470,57 +553,6 @@
                             "type": {
                               "type": "string",
                               "enum": [
-                                "script"
-                              ]
-                            },
-                            "language": {
-                              "type": "string",
-                              "enum": [
-                                "js",
-                                "lua"
-                              ],
-                              "default": "js"
-                            },
-                            "initScript": {
-                              "type": "string",
-                              "maxLength": 32768,
-                              "default": ""
-                            },
-                            "script": {
-                              "type": "string",
-                              "maxLength": 32768,
-                              "default": ""
-                            },
-                            "handleModifiers": {
-                              "type": "boolean",
-                              "default": false
-                            },
-                            "gestureRecognizedScript": {
-                              "type": "string",
-                              "maxLength": 32768,
-                              "default": ""
-                            },
-                            "modifierTriggeredScript": {
-                              "type": "string",
-                              "maxLength": 32768,
-                              "default": ""
-                            },
-                            "gestureEndedScript": {
-                              "type": "string",
-                              "maxLength": 32768,
-                              "default": ""
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
                                 "nodePlugin"
                               ]
                             },
@@ -717,6 +749,89 @@
                               "x2Down"
                             ],
                             "default": "none"
+                          },
+                          "inputs": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "stroke"
+                                      ]
+                                    },
+                                    "direction": {
+                                      "type": "string",
+                                      "enum": [
+                                        "up",
+                                        "rightUp",
+                                        "right",
+                                        "rightDown",
+                                        "down",
+                                        "leftDown",
+                                        "left",
+                                        "leftUp"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "direction"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "button"
+                                      ]
+                                    },
+                                    "button": {
+                                      "type": "string",
+                                      "enum": [
+                                        "left",
+                                        "middle",
+                                        "right",
+                                        "x1",
+                                        "x2"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "button"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "wheel"
+                                      ]
+                                    },
+                                    "direction": {
+                                      "type": "string",
+                                      "enum": [
+                                        "forward",
+                                        "backward"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "direction"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 12
                           }
                         },
                         "required": [
@@ -1061,57 +1176,6 @@
                             "required": [
                               "type",
                               "code"
-                            ]
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string",
-                                "enum": [
-                                  "script"
-                                ]
-                              },
-                              "language": {
-                                "type": "string",
-                                "enum": [
-                                  "js",
-                                  "lua"
-                                ],
-                                "default": "js"
-                              },
-                              "initScript": {
-                                "type": "string",
-                                "maxLength": 32768,
-                                "default": ""
-                              },
-                              "script": {
-                                "type": "string",
-                                "maxLength": 32768,
-                                "default": ""
-                              },
-                              "handleModifiers": {
-                                "type": "boolean",
-                                "default": false
-                              },
-                              "gestureRecognizedScript": {
-                                "type": "string",
-                                "maxLength": 32768,
-                                "default": ""
-                              },
-                              "modifierTriggeredScript": {
-                                "type": "string",
-                                "maxLength": 32768,
-                                "default": ""
-                              },
-                              "gestureEndedScript": {
-                                "type": "string",
-                                "maxLength": 32768,
-                                "default": ""
-                              }
-                            },
-                            "required": [
-                              "type"
                             ]
                           },
                           {
@@ -1563,57 +1627,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "nodePlugin"
                             ]
                           },
@@ -2007,57 +2020,6 @@
                         "required": [
                           "type",
                           "code"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -2467,57 +2429,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "nodePlugin"
                             ]
                           },
@@ -2911,57 +2822,6 @@
                         "required": [
                           "type",
                           "code"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -3387,57 +3247,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "nodePlugin"
                             ]
                           },
@@ -3831,57 +3640,6 @@
                         "required": [
                           "type",
                           "code"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -4291,57 +4049,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "nodePlugin"
                             ]
                           },
@@ -4735,57 +4442,6 @@
                         "required": [
                           "type",
                           "code"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "script"
-                            ]
-                          },
-                          "language": {
-                            "type": "string",
-                            "enum": [
-                              "js",
-                              "lua"
-                            ],
-                            "default": "js"
-                          },
-                          "initScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "script": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "handleModifiers": {
-                            "type": "boolean",
-                            "default": false
-                          },
-                          "gestureRecognizedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "modifierTriggeredScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          },
-                          "gestureEndedScript": {
-                            "type": "string",
-                            "maxLength": 32768,
-                            "default": ""
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -5346,57 +5002,6 @@
                       "required": [
                         "type",
                         "code"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "script"
-                          ]
-                        },
-                        "language": {
-                          "type": "string",
-                          "enum": [
-                            "js",
-                            "lua"
-                          ],
-                          "default": "js"
-                        },
-                        "initScript": {
-                          "type": "string",
-                          "maxLength": 32768,
-                          "default": ""
-                        },
-                        "script": {
-                          "type": "string",
-                          "maxLength": 32768,
-                          "default": ""
-                        },
-                        "handleModifiers": {
-                          "type": "boolean",
-                          "default": false
-                        },
-                        "gestureRecognizedScript": {
-                          "type": "string",
-                          "maxLength": 32768,
-                          "default": ""
-                        },
-                        "modifierTriggeredScript": {
-                          "type": "string",
-                          "maxLength": 32768,
-                          "default": ""
-                        },
-                        "gestureEndedScript": {
-                          "type": "string",
-                          "maxLength": 32768,
-                          "default": ""
-                        }
-                      },
-                      "required": [
-                        "type"
                       ]
                     },
                     {

@@ -18,14 +18,9 @@ describe("importWg2", () => {
     expect(intent.command).toEqual({ type: "hotKey", modifiers: ["ctrl"], keys: ["c"] });
   });
 
-  it("Lua ScriptCommand:原文保留并标 language:\"lua\"", () => {
+  it("旧 ScriptCommand 不再进入 Node-only 配置", () => {
     const intent = result.global.intents[1]!;
-    expect(intent.command).toMatchObject({
-      type: "script",
-      language: "lua",
-      script: "os.execute('calc.exe')",
-      initScript: "-- init",
-    });
+    expect(intent.command).toEqual({ type: "doNothing" });
   });
 
   it("应用条目:notepad.exe → SendText", () => {
@@ -46,8 +41,10 @@ describe("importWg2", () => {
     expect(result.rubEdges.commands.left).toEqual({ type: "hotKey", modifiers: ["meta"], keys: ["d"] });
   });
 
-  it("无未知类型告警", () => {
-    expect(result.warnings).toEqual([]);
+  it("旧脚本导入会产生不支持告警", () => {
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: "unknown_command_type" }),
+    ]);
   });
 
   it("FileVersion 2:GestureButton 数值 +1 还原触发键", () => {

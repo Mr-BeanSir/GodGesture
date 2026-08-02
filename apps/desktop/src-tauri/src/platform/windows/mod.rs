@@ -16,13 +16,35 @@ use crate::engine::intents::ForegroundApp;
 use crate::engine::runtime::{EngineShared, PlatformServices};
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
-use hook::{ClickReplay, ClickReplayQueue, HookHandler, MouseHook};
+use crossbeam_channel::Receiver;
+use hook::{
+    ClickReplay, ClickReplayQueue, HookHandler, KeyboardCapture, KeyboardCaptureEvent, MouseHook,
+};
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Default)]
 pub struct WindowsPlatform {
     click_replays: Arc<ClickReplayQueue>,
+    keyboard_capture: Arc<KeyboardCapture>,
+}
+
+impl Default for WindowsPlatform {
+    fn default() -> Self {
+        Self {
+            click_replays: Arc::new(ClickReplayQueue::default()),
+            keyboard_capture: Arc::new(KeyboardCapture::default()),
+        }
+    }
+}
+
+impl WindowsPlatform {
+    pub fn keyboard_capture(&self) -> Arc<KeyboardCapture> {
+        Arc::clone(&self.keyboard_capture)
+    }
+
+    pub fn take_keyboard_events(&self) -> Option<Receiver<KeyboardCaptureEvent>> {
+        self.keyboard_capture.take_events()
+    }
 }
 
 impl PlatformServices for WindowsPlatform {
@@ -84,6 +106,7 @@ pub fn start(shared: Arc<EngineShared>, platform: Arc<WindowsPlatform>) -> Mouse
     MouseHook::install(
         Box::new(EngineHookHandler { shared }),
         Arc::clone(&platform.click_replays),
+        Arc::clone(&platform.keyboard_capture),
         |replay| input::synthesize_click(replay.button, replay.pos),
     )
 }

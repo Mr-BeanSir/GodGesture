@@ -59,7 +59,7 @@ export const CONFIG_PLIST = `<?xml version="1.0" encoding="utf-8"?>
 /**
  * 最小 gestures.wg2(FileVersion "3")。
  * - 全局意图 1:右键「上→右」→ Ctrl+C(HotKeyCommand,Modifiers 162 / Keys 67)
- * - 全局意图 2:右键「下」→ Lua ScriptCommand(原文保留)
+ * - 全局意图 2:右键「下」→ Lua ScriptCommand(告警并降级为什么也不做)
  * - 应用 notepad.exe:右键「左」→ SendText
  * - 触发角槽 0(leftBottom)= TaskSwitcher;摩擦边槽 4(left)= Win+D
  */

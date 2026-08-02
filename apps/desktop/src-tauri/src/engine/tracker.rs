@@ -4,7 +4,7 @@
 //! - 起始超时:按住不动超过阈值 → 放弃捕获,合成按下事件透传为普通拖拽;
 //! - 点击透传:按下后无有效位移即抬起 → 合成一次完整点击;
 //! - 停留超时:手势中途停留过久 → 取消,等待抬起并吞掉;
-//! - 修饰:手势期间滚轮(100ms 节流)与其它按键成为修饰事件;
+//! - 附加输入:手势期间滚轮(100ms 节流)与其它按键按实际顺序成为输入事件;
 //! - 手势结束后 300ms 内的滚轮事件吞掉(防止目标程序收到 Ctrl+滚轮之类)。
 //!
 //! 平台层职责:把钩子事件喂给 `handle`,按返回值决定是否吞事件,并执行 `Action`。
@@ -127,8 +127,10 @@ impl Default for TrackerParams {
 pub trait TrackerHost {
     /// 路径开始前的放行判定(黑名单/总开关/全屏禁用)——必须快
     fn is_gesturing_allowed(&mut self, pos: Point) -> bool;
-    /// 当前手势是否已识别出至少一笔或用过修饰(决定抬起时透传点击还是结束手势)
+    /// 当前手势是否已识别出至少一笔或收到额外输入(决定抬起时透传点击还是结束手势)
     fn has_path_content(&self) -> bool;
+    /// 是否处于设置页录制模式;录制时触发键按下即开始建立可视捕获。
+    fn is_recording(&self) -> bool;
 }
 
 const WHEEL_THROTTLE: Duration = Duration::from_millis(100);
@@ -272,6 +274,19 @@ impl PathTracker {
                 if !host.is_gesturing_allowed(pos) {
                     return Outcome::pass();
                 }
+                if host.is_recording() {
+                    self.state = State::Tracking {
+                        button: btn,
+                        modifier_used: false,
+                        last_wheel: None,
+                        last_activity: now,
+                        held_modifier_buttons: Vec::new(),
+                    };
+                    return Outcome::swallowed(vec![Action::PathStart {
+                        trigger,
+                        origin: pos,
+                    }]);
+                }
                 self.state = State::Pending {
                     button: btn,
                     trigger,
@@ -299,17 +314,29 @@ impl PathTracker {
                     pos,
                 }])
             }
-            // 待定期按下其它键:直接放弃捕获,透传(与"这不是手势"一致)
-            State::Pending { button, origin, .. } => {
-                let (button, origin) = (*button, *origin);
-                self.state = State::PassthroughDrag { button };
-                Outcome {
-                    swallow: false,
-                    actions: vec![Action::SynthesizeDown {
-                        button,
-                        pos: origin,
-                    }],
-                }
+            // 待定期收到另一鼠标键时,把它作为有序手势输入的第一步。
+            // 这允许“右键按住 -> 中键按下 -> 移动”这类手势在尚未移动时就建立捕获。
+            State::Pending {
+                button,
+                trigger,
+                origin,
+                ..
+            } => {
+                let (trigger, origin, primary) = (*trigger, *origin, *button);
+                self.state = State::Tracking {
+                    button: primary,
+                    modifier_used: true,
+                    last_wheel: None,
+                    last_activity: now,
+                    held_modifier_buttons: vec![btn],
+                };
+                Outcome::swallowed(vec![
+                    Action::PathStart { trigger, origin },
+                    Action::ModifierFired {
+                        modifier: btn.as_modifier(),
+                        pos,
+                    },
+                ])
             }
             State::PassthroughDrag { .. } | State::CancelledAwaitUp { .. } => Outcome::pass(),
         }
@@ -337,7 +364,8 @@ impl PathTracker {
             } => {
                 if btn == *button {
                     let button = *button;
-                    let had_content = host.has_path_content() || *modifier_used;
+                    let had_content =
+                        host.has_path_content() || *modifier_used || host.is_recording();
                     self.state = State::Idle;
                     self.last_gesture_end = Some(now);
                     if had_content {
@@ -425,6 +453,30 @@ impl PathTracker {
                 };
                 Outcome::swallowed(vec![Action::ModifierFired { modifier: m, pos }])
             }
+            State::Pending {
+                button,
+                trigger,
+                origin,
+                ..
+            } => {
+                let (trigger, origin, primary) = (*trigger, *origin, *button);
+                self.state = State::Tracking {
+                    button: primary,
+                    modifier_used: true,
+                    last_wheel: Some(now),
+                    last_activity: now,
+                    held_modifier_buttons: Vec::new(),
+                };
+                let m = if forward {
+                    Modifier::WheelForward
+                } else {
+                    Modifier::WheelBackward
+                };
+                Outcome::swallowed(vec![
+                    Action::PathStart { trigger, origin },
+                    Action::ModifierFired { modifier: m, pos },
+                ])
+            }
             // 手势刚结束的滚轮吞掉,防止目标程序收到意外的 Ctrl+滚轮等
             State::Idle
                 if self
@@ -445,6 +497,7 @@ mod tests {
     struct Host {
         allowed: bool,
         has_content: bool,
+        recording: bool,
     }
 
     impl TrackerHost for Host {
@@ -453,6 +506,9 @@ mod tests {
         }
         fn has_path_content(&self) -> bool {
             self.has_content
+        }
+        fn is_recording(&self) -> bool {
+            self.recording
         }
     }
 
@@ -466,6 +522,7 @@ mod tests {
             Host {
                 allowed: true,
                 has_content: false,
+                recording: false,
             },
             Instant::now(),
         )
@@ -491,6 +548,86 @@ mod tests {
         assert!(o.swallow);
         assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(60, 0) }]);
         assert!(!t.is_capturing());
+    }
+
+    #[test]
+    fn recording_starts_on_trigger_and_captures_wheel_without_move() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        h.recording = true;
+
+        let down = t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        assert_eq!(
+            down.actions,
+            vec![Action::PathStart {
+                trigger: TriggerButton::Right,
+                origin: pt(0, 0)
+            }]
+        );
+
+        let wheel = t.handle(
+            Input::Wheel {
+                forward: true,
+                pos: pt(0, 0),
+            },
+            t0 + Duration::from_millis(10),
+            &mut h,
+        );
+        assert_eq!(
+            wheel.actions,
+            vec![Action::ModifierFired {
+                modifier: Modifier::WheelForward,
+                pos: pt(0, 0),
+            }]
+        );
+
+        let up = t.handle(
+            Input::ButtonUp(MouseButton::Right, pt(0, 0)),
+            t0 + Duration::from_millis(20),
+            &mut h,
+        );
+        assert_eq!(up.actions, vec![Action::PathEnd { pos: pt(0, 0) }]);
+    }
+
+    #[test]
+    fn pending_accepts_ordered_button_and_wheel_inputs_before_move() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        let down = t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        assert!(down.swallow && down.actions.is_empty());
+
+        let middle = t.handle(
+            Input::ButtonDown(MouseButton::Middle, pt(0, 0)),
+            t0 + Duration::from_millis(10),
+            &mut h,
+        );
+        assert_eq!(
+            middle.actions,
+            vec![
+                Action::PathStart {
+                    trigger: TriggerButton::Right,
+                    origin: pt(0, 0),
+                },
+                Action::ModifierFired {
+                    modifier: Modifier::MiddleButtonDown,
+                    pos: pt(0, 0),
+                },
+            ]
+        );
+
+        let wheel = t.handle(
+            Input::Wheel {
+                forward: true,
+                pos: pt(0, 0),
+            },
+            t0 + Duration::from_millis(120),
+            &mut h,
+        );
+        assert_eq!(
+            wheel.actions,
+            vec![Action::ModifierFired {
+                modifier: Modifier::WheelForward,
+                pos: pt(0, 0),
+            }]
+        );
     }
 
     #[test]

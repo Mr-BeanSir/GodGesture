@@ -117,6 +117,43 @@ describe("gesture template protocol", () => {
     ).toThrow();
   });
 
+  it("uses the recorded input order for gesture identity", () => {
+    const value = packageValue();
+    const first = value.target.intents[0]!;
+    const second = {
+      ...first,
+      name: "Forward after middle button",
+      gesture: {
+        ...first.gesture,
+        strokes: ["right"],
+        inputs: [
+          { type: "button" as const, button: "middle" as const },
+          { type: "stroke" as const, direction: "right" as const },
+        ],
+      },
+    };
+    expect(() => GestureTemplatePackage.parse({
+      ...value,
+      target: { ...value.target, intents: [first, second] },
+    })).not.toThrow();
+
+    const reverse = {
+      ...second,
+      name: "Forward before middle button",
+      gesture: {
+        ...second.gesture,
+        inputs: [
+          { type: "stroke" as const, direction: "right" as const },
+          { type: "button" as const, button: "middle" as const },
+        ],
+      },
+    };
+    expect(() => GestureTemplatePackage.parse({
+      ...value,
+      target: { ...value.target, intents: [second, reverse] },
+    })).not.toThrow();
+  });
+
   it("derives executable command risks and rejects catalog drift", () => {
     const templatePackage = GestureTemplatePackage.parse({
       formatVersion: 1,
@@ -125,7 +162,7 @@ describe("gesture template protocol", () => {
       target: {
         scope: "global",
         intents: [
-          intent("Script", { type: "script", script: "ReportStatus('ok')" }),
+          intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001", exportName: "execute" }),
           intent("Shell", { type: "cmd", code: "echo ok" }),
           intent("File", { type: "openFile", path: "tool.exe" }),
           intent("URL", { type: "gotoUrl", url: "https://example.com" }),
@@ -184,7 +221,7 @@ function intent(name: string, command: Record<string, unknown>) {
     name,
     gesture: {
       trigger: "right",
-      strokes: [name === "Script" ? "up" : name === "Shell" ? "right" : name === "File" ? "down" : "left"],
+      strokes: [name === "Node plugin" ? "up" : name === "Shell" ? "right" : name === "File" ? "down" : "left"],
       modifier: "none",
     },
     command,

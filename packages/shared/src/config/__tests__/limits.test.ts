@@ -10,8 +10,6 @@ import {
   MAX_HOTKEY_KEYS,
   MAX_INTENTS_PER_SCOPE,
   MAX_PATH_LENGTH,
-  MAX_SCRIPT_SLOT_LENGTH,
-  MAX_SCRIPT_TOTAL_LENGTH,
   MAX_URL_LENGTH,
   configDocumentSizeBytes,
 } from "../../index.js";
@@ -127,31 +125,6 @@ describe("config capacity limits", () => {
         path: "x".repeat(MAX_PATH_LENGTH + 1),
       }),
     ).toThrow();
-  });
-
-  it("bounds each script slot and their combined content", () => {
-    expect(
-      Command.parse({
-        type: "script",
-        initScript: "x".repeat(MAX_SCRIPT_SLOT_LENGTH),
-        script: "x".repeat(MAX_SCRIPT_SLOT_LENGTH),
-      }).type,
-    ).toBe("script");
-    expect(() =>
-      Command.parse({
-        type: "script",
-        script: "x".repeat(MAX_SCRIPT_SLOT_LENGTH + 1),
-      }),
-    ).toThrow();
-    expect(() =>
-      Command.parse({
-        type: "script",
-        initScript: "x".repeat(MAX_SCRIPT_SLOT_LENGTH),
-        script: "x".repeat(MAX_SCRIPT_SLOT_LENGTH),
-        gestureEndedScript: "x",
-      }),
-    ).toThrow();
-    expect(MAX_SCRIPT_TOTAL_LENGTH).toBe(MAX_SCRIPT_SLOT_LENGTH * 2);
   });
 
   it("bounds intents inside application entries", () => {

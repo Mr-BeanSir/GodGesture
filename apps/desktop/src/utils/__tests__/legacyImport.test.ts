@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importLegacyConfig, MAX_CONFIG_DOCUMENT_BYTES } from "@godgesture/shared";
+import { importLegacyConfig } from "@godgesture/shared";
 import {
   MAX_LEGACY_IMPORT_FILE_BYTES,
   assertLegacyImportFileSize,
@@ -58,14 +58,14 @@ describe("legacy import preparation", () => {
   });
 
   it("blocks converted documents above the current sync limit", () => {
-    const scriptLength = 32_000;
-    const intentCount = Math.ceil(MAX_CONFIG_DOCUMENT_BYTES / scriptLength) + 1;
+    const commandLength = 16_384;
+    const intentCount = 256;
     const intents = Array.from({ length: intentCount }, (_, index) => ({
       Name: `Intent ${index}`,
       Gesture: { Dirs: [0] },
       Command: {
-        $type: "WGestures.Core.Commands.Impl.ScriptCommand, WGestures.Core",
-        Script: "x".repeat(scriptLength),
+        $type: "WGestures.Core.Commands.Impl.SendTextCommand, WGestures.Core",
+        Text: "x".repeat(commandLength),
       },
     }));
 

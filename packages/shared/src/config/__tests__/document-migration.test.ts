@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ConfigDocument, migrateConfigDocument } from "../document.js";
+import { GestureInput, GestureSpec } from "../gestures.js";
 
-describe("configuration v3 migration", () => {
+describe("configuration v4 migration", () => {
   it("migrates legacy corner and edge commands without losing enable flags", () => {
     const document = ConfigDocument.parse({
       formatVersion: 1,
@@ -12,7 +13,7 @@ describe("configuration v3 migration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(3);
+    expect(document.formatVersion).toBe(4);
     expect(document.nodePlugins).toEqual([]);
     expect(document.hotCorners).toEqual({ enabled: false, commands: {} });
     expect(document.rubEdges).toEqual({ enabled: true, commands: {} });
@@ -44,6 +45,112 @@ describe("configuration v3 migration", () => {
     expect(migrateConfigDocument(legacy)).toEqual(migrateConfigDocument(legacy));
   });
 
+  it("normalizes legacy stroke and modifier fields into ordered inputs", () => {
+    const document = ConfigDocument.parse({
+      formatVersion: 3,
+      global: {
+        intents: [
+          {
+            id: "30000000-0000-4000-8000-000000000001",
+            name: "Legacy wheel gesture",
+            gesture: {
+              trigger: "right",
+              strokes: ["right", "down"],
+              modifier: "wheelBackward",
+            },
+            command: { type: "pause" },
+          },
+        ],
+      },
+      apps: [
+        {
+          id: "30000000-0000-4000-8000-000000000002",
+          name: "Legacy app",
+          windows: { exeName: "legacy.exe" },
+          intents: [
+            {
+              id: "30000000-0000-4000-8000-000000000003",
+              name: "Legacy button gesture",
+              gesture: {
+                trigger: "right",
+                strokes: ["left"],
+                modifier: "middleButtonDown",
+              },
+              command: { type: "pause" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(document.global.intents[0]?.gesture.inputs).toEqual([
+      { type: "stroke", direction: "right" },
+      { type: "stroke", direction: "down" },
+      { type: "wheel", direction: "backward" },
+    ]);
+    expect(document.apps[0]?.intents[0]?.gesture.inputs).toEqual([
+      { type: "stroke", direction: "left" },
+      { type: "button", button: "middle" },
+    ]);
+  });
+
+  it("preserves an explicitly recorded input order", () => {
+    const inputOrder = [
+      { type: "button", button: "middle" } as const,
+      { type: "stroke", direction: "right" } as const,
+      { type: "wheel", direction: "forward" } as const,
+    ];
+    const document = ConfigDocument.parse({
+      formatVersion: 4,
+      global: {
+        intents: [
+          {
+            id: "40000000-0000-4000-8000-000000000001",
+            name: "Ordered gesture",
+            gesture: {
+              trigger: "right",
+              strokes: ["right"],
+              modifier: "none",
+              inputs: inputOrder,
+            },
+            command: { type: "pause" },
+          },
+        ],
+      },
+    });
+
+    expect(document.global.intents[0]?.gesture.inputs).toEqual(inputOrder);
+  });
+
+  it("validates input variants and the twelve-step limit", () => {
+    expect(GestureInput.parse({ type: "button", button: "x2" })).toEqual({
+      type: "button",
+      button: "x2",
+    });
+    expect(GestureInput.parse({ type: "wheel", direction: "forward" })).toEqual({
+      type: "wheel",
+      direction: "forward",
+    });
+    expect(() => GestureInput.parse({ type: "button", button: "keyboard" })).toThrow();
+
+    const twelveInputs = Array.from({ length: 12 }, () => ({
+      type: "stroke" as const,
+      direction: "right" as const,
+    }));
+    expect(GestureSpec.parse({
+      trigger: "right",
+      strokes: [],
+      modifier: "none",
+      inputs: twelveInputs,
+    }).inputs).toHaveLength(12);
+    expect(() => GestureSpec.parse({
+      trigger: "right",
+      strokes: [],
+      modifier: "none",
+      inputs: [...twelveInputs, { type: "wheel", direction: "forward" }],
+    })).toThrow();
+  });
+
   it("preserves version 2 boundary intents while adding the plugin collection", () => {
     const document = ConfigDocument.parse({
       formatVersion: 2,
@@ -57,8 +164,30 @@ describe("configuration v3 migration", () => {
       }],
     });
 
-    expect(document.formatVersion).toBe(3);
+    expect(document.formatVersion).toBe(4);
     expect(document.nodePlugins).toEqual([]);
     expect(document.boundaryIntents).toHaveLength(1);
+  });
+
+  it("rejects removed script commands instead of converting them", () => {
+    const result = ConfigDocument.safeParse({
+      formatVersion: 3,
+      global: {
+        intents: [
+          {
+            id: "30000000-0000-4000-8000-000000000001",
+            name: "Removed script",
+            gesture: { trigger: "right", strokes: ["down"], modifier: "none" },
+            command: {
+              type: "script",
+              language: "js",
+              script: "return 1",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 //! Framed client for the persistent Node plugin supervisor (ADR-0012).
 
 use super::config::WindowOperation;
-use super::script::{ScriptHost, ScriptInvocation, ScriptMouseButton, ScriptSlot};
+use super::script_host::{ScriptHost, ScriptInvocation, ScriptMouseButton, ScriptSlot};
 use super::types::{Modifier, TriggerButton};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -459,11 +459,7 @@ export async function hostCall(context) {
         fn activate_target(&self, _: GestureContext) -> Result<(), String> {
             Ok(())
         }
-        fn window_operation(
-            &self,
-            _: WindowOperation,
-            _: GestureContext,
-        ) -> Result<(), String> {
+        fn window_operation(&self, _: WindowOperation, _: GestureContext) -> Result<(), String> {
             Ok(())
         }
         fn clipboard_read_text(&self) -> Result<Option<String>, String> {
@@ -481,13 +477,14 @@ export async function hostCall(context) {
 
     impl TestProject {
         fn new(source: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "godgesture-node-project-{}",
-                uuid::Uuid::new_v4()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("godgesture-node-project-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&path).unwrap();
-            fs::write(path.join("package.json"), r#"{"private":true,"type":"module"}"#)
-                .unwrap();
+            fs::write(
+                path.join("package.json"),
+                r#"{"private":true,"type":"module"}"#,
+            )
+            .unwrap();
             fs::write(path.join("index.mjs"), source).unwrap();
             fs::write(path.join("helper.mjs"), "export const suffix = '!';").unwrap();
             Self(path)
@@ -575,7 +572,10 @@ export async function hostCall(context) {
         assert_eq!(result.value["count"], 2);
         assert_eq!(result.host_calls.len(), 3);
         assert_eq!(fake.text.lock().as_slice(), &["two!".to_string()]);
-        assert_eq!(result.status.as_deref(), Some("gestureRecognized:clipboard"));
+        assert_eq!(
+            result.status.as_deref(),
+            Some("gestureRecognized:clipboard")
+        );
     }
 
     #[test]
@@ -600,7 +600,8 @@ export async function hostCall(context) {
         let initialized = TestProject::new(
             "let value = 0; export function init() { value = 41; } export function read() { return ++value; }",
         );
-        host.load_plugin("initialized", &initialized.entry()).unwrap();
+        host.load_plugin("initialized", &initialized.entry())
+            .unwrap();
         assert_eq!(
             host.invoke(
                 "initialized",
@@ -621,9 +622,8 @@ export async function hostCall(context) {
 
     #[test]
     fn timeout_and_worker_crash_allow_a_clean_reload() {
-        let hung = TestProject::new(
-            "export async function execute() { await new Promise(() => {}); }",
-        );
+        let hung =
+            TestProject::new("export async function execute() { await new Promise(() => {}); }");
         let fake: Arc<dyn ScriptHost> = Arc::new(FakeHost::default());
         let mut timed = node_host(fake.clone());
         timed.load_plugin("hung", &hung.entry()).unwrap();

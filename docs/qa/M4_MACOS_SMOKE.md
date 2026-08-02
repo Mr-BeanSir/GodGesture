@@ -7,6 +7,12 @@ direct workflow logs and public payloads. All unchecked on-device items remain
 `DEFERRED (owner-approved)` until a physical Mac is available; runner evidence
 does not satisfy them.
 
+The maintainer authorized the Node-only transition on 2026-08-02 after the
+Windows gate and macOS CI gate passed. This authorization defers, rather than
+passes, the physical-Mac Node checks below. Keep this checklist as the single
+place to resume on-device acceptance when a Mac becomes available; Node-only
+must not be rolled back merely because these observations are pending.
+
 ## Permission Lifecycle
 
 - [ ] With Accessibility, Input Monitoring, and event-posting access absent, GodGesture opens its settings window without crashing and reports each missing permission.
@@ -36,15 +42,13 @@ does not satisfy them.
 - [ ] Global, inherited, overridden, and blacklisted application intentions match by Bundle ID.
 - [ ] Window minimize, close, zoom/restore, activate, dock left, and dock right work on the selected target. Toggle-topmost reports unsupported without crashing.
 
-## Commands And Script Runtimes
+## Commands And Node Runtime
 
 - [ ] Hotkey, Web search, selected-text capture, URL, open file, key sequence, command line (hidden and Terminal), Mission Control, pause, and volume commands are exercised.
 - [ ] Clipboard contents, items, and formats survive selected-text capture when no concurrent clipboard owner changes them.
-- [ ] QuickJS persistent context, all lifecycle slots, host input/window/clipboard calls, exception recovery, and the 200 ms infinite-loop interrupt are exercised.
 
-QuickJS remains a migration fallback until every Node plugin item below passes
-on a physical Mac. GitHub runner results are supporting CI evidence, not a
-substitute for these observations.
+GitHub runner results are supporting CI evidence, not a substitute for the
+physical-device observations below.
 
 - [x] Record the `macOS CI` workflow run and its `node-host-performance-macos-*` artifact. Run `30709559609` on commit `9881fe4` completed the release gate with 10,000 ordered no-op events and 10,000 ordered representative host-call events; artifact `node-host-performance-macos-ARM64` has SHA-256 `07f6629ff141a537bcaa0a1e9c19cc49a6ca919747710b1d30ba8675458ba766`. The runner reported macOS 15.7.7 arm64, Node `v24.18.1`, cold start `263.573375 ms`, no-op p95/p99 `0.122083/0.18425 ms`, and host-call p95/p99 `0.350167/0.614709 ms`. This is CI evidence only and does not check the physical-Mac items below.
 - [ ] On the physical Mac, run `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --release engine::node_host::tests::node_host_performance_gate -- --ignored --exact --nocapture`; record cold startup plus no-op and host-call p95/p99. No-op p95 is at most 5 ms, host-call p95 is at most 8 ms, and both p99 values are at most 16 ms.

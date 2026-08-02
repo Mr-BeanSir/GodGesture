@@ -8,9 +8,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type {
+  GestureInput,
   GestureIntent,
   GestureSpec,
-  StrokeDirection,
   TriggerButton,
 } from "@godgesture/shared";
 import { useBackend, type CapturedGesture } from "../api/backend";
@@ -37,7 +37,11 @@ const visible = computed({
   set: (v) => emit("update:modelValue", v),
 });
 
-const captured = ref<{ trigger: TriggerButton; strokes: StrokeDirection[] } | null>(null);
+const captured = ref<{
+  trigger: TriggerButton;
+  inputs: GestureInput[];
+  modifier: GestureSpec["modifier"];
+} | null>(null);
 const cancelError = ref<string | null>(null);
 const startError = ref<string | null>(null);
 const lifecycleBusy = ref(false);
@@ -50,7 +54,17 @@ let lifecycle = Promise.resolve();
 
 const capturedSpec = computed<GestureSpec | null>(() =>
   captured.value
-    ? { trigger: captured.value.trigger, strokes: captured.value.strokes, modifier: "none" }
+    ? {
+        trigger: captured.value.trigger,
+        strokes: captured.value.inputs
+          .filter(
+            (input): input is Extract<GestureInput, { type: "stroke" }> =>
+              input.type === "stroke",
+          )
+          .map((input) => input.direction),
+        modifier: captured.value.modifier,
+        inputs: captured.value.inputs,
+      }
     : null,
 );
 
@@ -68,9 +82,33 @@ const liveMnemonic = computed(() => (capturedSpec.value ? gestureMnemonic(captur
 
 function onCaptured(g: CapturedGesture, epoch: number) {
   if (unmounted || epoch !== generation || !props.modelValue) return;
+  const inputs: GestureInput[] = g.inputs
+    ? [...g.inputs]
+    : [
+        ...g.strokes.map((direction) => ({
+          type: "stroke" as const,
+          direction: direction as Extract<GestureInput, { type: "stroke" }>["direction"],
+        })),
+        ...(g.modifier === "wheelForward"
+          ? [{ type: "wheel" as const, direction: "forward" as const }]
+          : g.modifier === "wheelBackward"
+            ? [{ type: "wheel" as const, direction: "backward" as const }]
+            : g.modifier === "leftButtonDown"
+              ? [{ type: "button" as const, button: "left" as const }]
+              : g.modifier === "middleButtonDown"
+                ? [{ type: "button" as const, button: "middle" as const }]
+                : g.modifier === "rightButtonDown"
+                  ? [{ type: "button" as const, button: "right" as const }]
+                  : g.modifier === "x1Down"
+                    ? [{ type: "button" as const, button: "x1" as const }]
+                    : g.modifier === "x2Down"
+                      ? [{ type: "button" as const, button: "x2" as const }]
+                      : []),
+      ];
   captured.value = {
     trigger: g.trigger as TriggerButton,
-    strokes: g.strokes as StrokeDirection[],
+    inputs,
+    modifier: g.inputs ? "none" : (g.modifier as GestureSpec["modifier"]),
   };
 }
 

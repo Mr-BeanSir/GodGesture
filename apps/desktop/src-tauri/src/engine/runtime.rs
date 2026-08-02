@@ -11,7 +11,7 @@
 use super::boundary::{BoundaryMatcher, BoundaryReplay, BoundaryResult};
 use super::config::{
     BoundaryMouseButton, BoundaryToken, BoundaryWheelDirection, Command, ConfigDocument,
-    GestureIntent,
+    GestureInput, GestureInputButton, GestureIntent,
 };
 use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
 use super::intents::{ForegroundApp, IntentFinder};
@@ -68,6 +68,15 @@ pub enum EngineMsg {
     GestureCaptured {
         trigger: TriggerButton,
         strokes: Vec<Direction>,
+        modifier: Modifier,
+        inputs: Vec<GestureInput>,
+    },
+    /// 录制模式中的增量载荷(按下、笔画或修饰变化时推送)
+    CaptureUpdated {
+        trigger: TriggerButton,
+        strokes: Vec<Direction>,
+        modifier: Modifier,
+        inputs: Vec<GestureInput>,
     },
     /// 触发角 / 摩擦边命中,命令已按配置解析出来
     CornerEdgeFired {
@@ -79,10 +88,8 @@ pub enum EngineMsg {
     },
     /// 暂停状态由任意入口改变（设置、托盘、快捷键、和弦或命令）。
     PauseChanged(bool),
-    /// 配置替换后仍然存在的 Script 命令 key，用于裁剪惰性 Context 缓存。
-    ScriptConfigChanged {
-        live_keys: Vec<String>,
-    },
+    /// 配置替换后同步 Node 插件集合。
+    ScriptConfigChanged,
 }
 
 /// 平台服务:运行时需要但因平台而异的操作(由 platform 层注入)
@@ -106,6 +113,8 @@ struct Session {
     origin: Point,
     /// 手势期间最后一次触发的修饰(用于 PathEnd 时的意图键)
     active_modifier: Modifier,
+    /// 鼠标键/滚轮/笔画的实际发生顺序(不含触发键本身)。
+    inputs: Vec<GestureInput>,
     /// 是否已在修饰触发时执行过命令(execute_on_modifier);PathEnd 据此避免二次执行
     executed_on_modifier: bool,
     /// 上次增量识别的结果名(去重用)
@@ -228,14 +237,13 @@ impl EngineShared {
     /// 配置变更(设置界面保存/同步拉取后调用)
     pub fn replace_config(&self, config: ConfigDocument) {
         self.cancel_boundary_sequence();
-        let live_keys = super::script::live_script_keys(&config);
         self.tracker.lock().set_params(tracker_params_from(&config));
         self.corners_enabled
             .store(config.hot_corners.enabled, Ordering::Relaxed);
         self.edges_enabled
             .store(config.rub_edges.enabled, Ordering::Relaxed);
         self.finder.lock().replace_config(config);
-        let _ = self.tx.send(EngineMsg::ScriptConfigChanged { live_keys });
+        let _ = self.tx.send(EngineMsg::ScriptConfigChanged);
     }
 
     /// 暂停/继续快捷键 (修饰键列表, 主键)
@@ -632,21 +640,41 @@ impl EngineShared {
                         trigger,
                         origin,
                         active_modifier: Modifier::None,
+                        inputs: Vec::new(),
                         executed_on_modifier: false,
                         last_recognized: None,
                     });
                     let _ = self.tx.send(EngineMsg::PathStarted { trigger, origin });
+                    if self.is_recording() {
+                        let _ = self.tx.send(EngineMsg::CaptureUpdated {
+                            trigger,
+                            strokes: Vec::new(),
+                            modifier: Modifier::None,
+                            inputs: Vec::new(),
+                        });
+                    }
                 }
                 Action::PathGrow(pt) => {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         let grew = s.parser.feed(pt) == StrokeEvent::Grew;
+                        if grew {
+                            sync_stroke_inputs(s);
+                        }
                         let _ = self.tx.send(EngineMsg::PathGrown { point: pt });
+                        if grew && self.is_recording() {
+                            let _ = self.tx.send(EngineMsg::CaptureUpdated {
+                                trigger: s.trigger,
+                                strokes: s.parser.strokes().to_vec(),
+                                modifier: s.active_modifier,
+                                inputs: s.inputs.clone(),
+                            });
+                        }
                         if grew {
                             let recognized = self
                                 .finder
                                 .lock()
-                                .find(s.trigger, s.parser.strokes(), Modifier::None, &s.fg)
+                                .find_inputs(s.trigger, &s.inputs, &s.fg)
                                 .map(|intent| {
                                     (
                                         intent.name.clone(),
@@ -669,12 +697,15 @@ impl EngineShared {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         s.active_modifier = m;
+                        if let Some(input) = modifier_to_input(m) {
+                            s.inputs.push(input);
+                        }
                         let intent = if self.is_recording() {
                             None
                         } else {
                             self.finder
                                 .lock()
-                                .find(s.trigger, s.parser.strokes(), m, &s.fg)
+                                .find_inputs(s.trigger, &s.inputs, &s.fg)
                                 .cloned()
                         };
                         // 立即执行型意图(如滚轮调音量)在此触发;标记以免 PathEnd 二次执行
@@ -686,6 +717,14 @@ impl EngineShared {
                             endpoint: pos,
                             native_window: s.fg.native_window,
                         };
+                        if self.is_recording() {
+                            let _ = self.tx.send(EngineMsg::CaptureUpdated {
+                                trigger: s.trigger,
+                                strokes: s.parser.strokes().to_vec(),
+                                modifier: s.active_modifier,
+                                inputs: s.inputs.clone(),
+                            });
+                        }
                         let _ = self.tx.send(EngineMsg::ModifierFired {
                             intent,
                             trigger: s.trigger,
@@ -704,6 +743,8 @@ impl EngineShared {
                             let _ = self.tx.send(EngineMsg::GestureCaptured {
                                 trigger: s.trigger,
                                 strokes: s.parser.strokes().to_vec(),
+                                modifier: s.active_modifier,
+                                inputs: s.inputs.clone(),
                             });
                             continue;
                         }
@@ -718,16 +759,17 @@ impl EngineShared {
                         } else {
                             let finder = self.finder.lock();
                             finder
-                                .find(s.trigger, s.parser.strokes(), s.active_modifier, &s.fg)
+                                .find_inputs(s.trigger, &s.inputs, &s.fg)
                                 .or_else(|| {
-                                    // 带修饰未命中时回退无修饰意图(WGestures 语义:
-                                    // 修饰只在有对应意图时才有意义)
-                                    finder.find(
-                                        s.trigger,
-                                        s.parser.strokes(),
-                                        Modifier::None,
-                                        &s.fg,
-                                    )
+                                    // 带附加输入未命中时回退纯笔画意图。
+                                    let strokes = s
+                                        .parser
+                                        .strokes()
+                                        .iter()
+                                        .copied()
+                                        .map(|direction| GestureInput::Stroke { direction })
+                                        .collect::<Vec<_>>();
+                                    finder.find_inputs(s.trigger, &strokes, &s.fg)
                                 })
                                 .cloned()
                         };
@@ -806,6 +848,10 @@ impl TrackerHost for HostImpl<'_> {
             .as_ref()
             .is_some_and(|s| !s.parser.strokes().is_empty())
     }
+
+    fn is_recording(&self) -> bool {
+        self.shared.is_recording()
+    }
 }
 
 /// 鼠标键在 `buttons_down` 掩码里的位
@@ -826,6 +872,61 @@ fn boundary_button(button: MouseButton) -> BoundaryMouseButton {
         MouseButton::Right => BoundaryMouseButton::Right,
         MouseButton::X1 => BoundaryMouseButton::X1,
         MouseButton::X2 => BoundaryMouseButton::X2,
+    }
+}
+
+fn modifier_to_input(modifier: Modifier) -> Option<GestureInput> {
+    Some(match modifier {
+        Modifier::None => return None,
+        Modifier::WheelForward => GestureInput::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        },
+        Modifier::WheelBackward => GestureInput::Wheel {
+            direction: BoundaryWheelDirection::Backward,
+        },
+        Modifier::LeftButtonDown => GestureInput::Button {
+            button: GestureInputButton::Left,
+        },
+        Modifier::MiddleButtonDown => GestureInput::Button {
+            button: GestureInputButton::Middle,
+        },
+        Modifier::RightButtonDown => GestureInput::Button {
+            button: GestureInputButton::Right,
+        },
+        Modifier::X1Down => GestureInput::Button {
+            button: GestureInputButton::X1,
+        },
+        Modifier::X2Down => GestureInput::Button {
+            button: GestureInputButton::X2,
+        },
+    })
+}
+
+/// Keep the stroke portion of the ordered sequence aligned with the parser.
+/// The parser can rewrite a diagonal first stroke when the next direction is
+/// known, so blindly appending the latest direction would leave stale inputs.
+fn sync_stroke_inputs(session: &mut Session) {
+    let strokes = session.parser.strokes().to_vec();
+    let mut stroke_positions = Vec::new();
+    for (index, input) in session.inputs.iter().enumerate() {
+        if matches!(input, GestureInput::Stroke { .. }) {
+            stroke_positions.push(index);
+        }
+    }
+    for (position, direction) in stroke_positions
+        .iter()
+        .copied()
+        .zip(strokes.iter().copied())
+    {
+        session.inputs[position] = GestureInput::Stroke { direction };
+    }
+    if strokes.len() > stroke_positions.len() {
+        session.inputs.extend(
+            strokes[stroke_positions.len()..]
+                .iter()
+                .copied()
+                .map(|direction| GestureInput::Stroke { direction }),
+        );
     }
 }
 
@@ -889,6 +990,69 @@ mod tests {
         assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(true)));
         shared.set_paused(false);
         assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(false)));
+    }
+
+    #[test]
+    fn recording_preserves_button_then_stroke_input_order() {
+        let (shared, rx) = EngineShared::new(ConfigDocument::default(), Arc::new(StubPlatform));
+        shared.start_recording();
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Middle, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+
+        let mut captured = None;
+        for message in rx.try_iter() {
+            if let EngineMsg::GestureCaptured { inputs, .. } = message {
+                captured = Some(inputs);
+            }
+        }
+        assert_eq!(
+            captured,
+            Some(vec![
+                GestureInput::Button {
+                    button: GestureInputButton::Middle,
+                },
+                GestureInput::Stroke {
+                    direction: Direction::Right,
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn recording_rewrites_diagonal_stroke_in_ordered_inputs() {
+        let (shared, rx) = EngineShared::new(ConfigDocument::default(), Arc::new(StubPlatform));
+        shared.start_recording();
+        shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 }));
+        shared.on_hook_event(Input::Move(Point { x: 100, y: -100 }));
+        shared.on_hook_event(Input::Move(Point { x: 200, y: -100 }));
+        shared.on_hook_event(Input::ButtonUp(
+            MouseButton::Right,
+            Point { x: 200, y: -100 },
+        ));
+
+        let captured = rx.try_iter().find_map(|message| match message {
+            EngineMsg::GestureCaptured {
+                inputs, strokes, ..
+            } => Some((inputs, strokes)),
+            _ => None,
+        });
+        assert_eq!(
+            captured,
+            Some((
+                vec![
+                    GestureInput::Stroke {
+                        direction: Direction::Up,
+                    },
+                    GestureInput::Stroke {
+                        direction: Direction::Right,
+                    },
+                ],
+                vec![Direction::Up, Direction::Right],
+            ))
+        );
     }
 
     #[derive(Default)]

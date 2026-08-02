@@ -11,9 +11,7 @@ use objc2_foundation::{NSString, NSURL};
 pub fn execute(command: &Command, modifier: Modifier, context: &GestureContext) {
     let result = match command {
         Command::Pause | Command::DoNothing => Ok(()),
-        Command::Script { .. } | Command::NodePlugin { .. } => {
-            Err("Script reached the native command dispatcher".into())
-        }
+        Command::NodePlugin { .. } => Err("Script reached the native command dispatcher".into()),
         Command::HotKey { modifiers, keys } => {
             activate_best_effort(context);
             input::synthesize_key_combo(modifiers, keys)

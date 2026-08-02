@@ -5,13 +5,11 @@
  * - multiKeys=true :主键序列(用于 hotKey 命令的 keys[])
  * v-model: { modifiers: string[], keys: string[] }(跨平台键码名,小写)
  */
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import {
   HOTKEY_MODIFIERS,
-  type HotkeyKeyName,
-  type HotkeyModifier,
 } from "@godgesture/shared";
 import {
   createHotkeyRecording,
@@ -21,6 +19,7 @@ import {
   type HotkeyChord,
   type HotkeyRecording,
 } from "./hotkey-recorder";
+import { useBackend, type HotkeyCaptureEvent } from "../api/backend";
 
 const props = withDefaults(
   defineProps<{
@@ -31,15 +30,26 @@ const props = withDefaults(
   { multiKeys: false },
 );
 const emit = defineEmits<{
-  (e: "update:modifiers", value: HotkeyModifier[]): void;
-  (e: "update:keys", value: HotkeyKeyName[]): void;
+  /** 一次性提交完整和弦,避免父组件分别合并两个字段时丢失修饰键。 */
+  (e: "complete", value: HotkeyChord): void;
 }>();
 
 const { t } = useI18n();
+const backend = useBackend();
 const recording = ref(false);
 const boxRef = ref<HTMLElement | null>(null);
 const draft = ref<HotkeyChord | null>(null);
 let recordingState: HotkeyRecording | null = null;
+let nativeCaptureRequested = false;
+let nativeCaptureUnsubscribe: (() => void) | null = null;
+let nativeCaptureToken = 0;
+
+// WH_KEYBOARD_LL is currently implemented on Windows only. Browser preview
+// and macOS intentionally keep using the WebView keyboard events.
+const nativeCaptureSupported =
+  backend.isTauri &&
+  typeof navigator !== "undefined" &&
+  /Windows|Win32|Win64/i.test(`${navigator.platform} ${navigator.userAgent}`);
 
 const MOD_LABELS: Record<string, string> = {
   ctrl: "Ctrl",
@@ -52,6 +62,9 @@ function onKeydown(e: KeyboardEvent) {
   if (!recording.value || !recordingState) return;
   e.preventDefault();
   e.stopPropagation();
+  // The native hook is needed to beat Windows-reserved shortcuts, but the
+  // WebView path remains active as a fallback. The recorder de-duplicates
+  // repeated physical codes, so either path can safely deliver the same key.
   if (e.code === "Escape") {
     stopRecording();
     return;
@@ -69,9 +82,74 @@ function onKeyup(e: KeyboardEvent) {
   e.stopPropagation();
   const completed = recordHotkeyKeyup(recordingState, e);
   if (completed) {
-    emit("update:modifiers", completed.modifiers);
-    emit("update:keys", props.multiKeys ? completed.keys : completed.keys.slice(0, 1));
+    emit("complete", {
+      modifiers: completed.modifiers,
+      keys: props.multiKeys ? completed.keys : completed.keys.slice(0, 1),
+    });
     stopRecording();
+  }
+}
+
+function onNativeCaptureEvent(event: HotkeyCaptureEvent) {
+  if (!recording.value || !recordingState || !nativeCaptureRequested) return;
+  if (event.code === "Escape" && event.pressed) {
+    stopRecording();
+    return;
+  }
+  if (event.pressed) {
+    if (
+      recordHotkeyKeydown(recordingState, {
+        code: event.code,
+        repeat: event.repeat,
+      }) === "unsupported"
+    ) {
+      ElMessage.warning(t("hotkey.unsupportedKey"));
+      return;
+    }
+    draft.value = hotkeyRecordingDraft(recordingState);
+    return;
+  }
+
+  const completed = recordHotkeyKeyup(recordingState, {
+    code: event.code,
+    repeat: event.repeat,
+  });
+  if (!completed) return;
+  emit("complete", {
+    modifiers: completed.modifiers,
+    keys: props.multiKeys ? completed.keys : completed.keys.slice(0, 1),
+  });
+  stopRecording();
+}
+
+async function enableNativeCapture(token: number) {
+  if (!nativeCaptureSupported) return;
+  let unsubscribe: (() => void) | null = null;
+  try {
+    // Subscribe before enabling the hook so the first Win keydown cannot be
+    // swallowed without reaching the recorder.
+    unsubscribe = await backend.onHotkeyCapture(onNativeCaptureEvent);
+    if (token !== nativeCaptureToken || !recording.value) {
+      unsubscribe();
+      return;
+    }
+    nativeCaptureUnsubscribe = unsubscribe;
+    // Start accepting native events before the IPC round trip completes so a
+    // fast Win+W press cannot arrive in the gap between hook activation and
+    // the invoke response.
+    nativeCaptureRequested = true;
+    await backend.hotkeyCaptureStart();
+    if (token !== nativeCaptureToken || !recording.value) {
+      await backend.hotkeyCaptureCancel();
+    }
+  } catch (error) {
+    if (token !== nativeCaptureToken) return;
+    // If native capture is unavailable, restore the WebView path so recording
+    // remains usable in development builds and on systems without the hook.
+    nativeCaptureRequested = false;
+    nativeCaptureUnsubscribe?.();
+    nativeCaptureUnsubscribe = null;
+    console.warn("Native hotkey capture unavailable; falling back to WebView events", error);
   }
 }
 
@@ -80,8 +158,22 @@ function startRecording() {
   recordingState = createHotkeyRecording();
   draft.value = { modifiers: [], keys: [] };
   recording.value = true;
+  nativeCaptureRequested = false;
+  const token = ++nativeCaptureToken;
+  void enableNativeCapture(token);
 }
 function stopRecording() {
+  ++nativeCaptureToken;
+  const hadNativeCapture = nativeCaptureRequested || nativeCaptureUnsubscribe !== null;
+  nativeCaptureRequested = false;
+  const unsubscribe = nativeCaptureUnsubscribe;
+  nativeCaptureUnsubscribe = null;
+  if (hadNativeCapture) {
+    void backend.hotkeyCaptureCancel().catch((error) =>
+      console.warn("Failed to stop native hotkey capture", error),
+    );
+  }
+  unsubscribe?.();
   recording.value = false;
   recordingState = null;
   draft.value = null;
@@ -89,9 +181,14 @@ function stopRecording() {
 }
 
 function clearAll() {
-  emit("update:modifiers", []);
-  emit("update:keys", []);
+  emit("complete", { modifiers: [], keys: [] });
 }
+
+onBeforeUnmount(() => {
+  if (recording.value || nativeCaptureRequested || nativeCaptureUnsubscribe) {
+    stopRecording();
+  }
+});
 
 const display = computed(() => {
   const value = recording.value && draft.value

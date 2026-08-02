@@ -6,10 +6,11 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { InfoFilled, Loading, UploadFilled } from "@element-plus/icons-vue";
-import type { HotkeyKeyName, HotkeyModifier, MachineLocalSettings } from "@godgesture/shared";
+import type { HotkeyKeyName, MachineLocalSettings } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
+import type { HotkeyChord } from "../components/hotkey-recorder";
 import ArgbColorPicker from "../components/ArgbColorPicker.vue";
 
 const emit = defineEmits<{
@@ -88,11 +89,9 @@ function updateMachine<K extends keyof MachineLocalSettings>(key: K, value: Mach
 const pauseKeys = computed<HotkeyKeyName[]>(() =>
   prefs.value.pauseHotkey.key ? [prefs.value.pauseHotkey.key] : [],
 );
-function onPauseModifiers(mods: HotkeyModifier[]) {
-  prefs.value.pauseHotkey.modifiers = mods;
-}
-function onPauseKeys(keys: HotkeyKeyName[]) {
-  prefs.value.pauseHotkey.key = keys[0] ?? "";
+function onPauseChord(chord: HotkeyChord) {
+  prefs.value.pauseHotkey.modifiers = chord.modifiers;
+  prefs.value.pauseHotkey.key = chord.keys[0] ?? "";
 }
 
 type TrackerNumberKey = "initialValidMovePx" | "initialStayTimeoutMs" | "stayTimeoutMs";
@@ -192,8 +191,7 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
         <HotkeyInput
           :modifiers="prefs.pauseHotkey.modifiers"
           :keys="pauseKeys"
-          @update:modifiers="onPauseModifiers"
-          @update:keys="onPauseKeys"
+          @complete="onPauseChord"
         />
       </div>
       <p class="gg-hint">{{ t("options.general.currentVersion", { version }) }}</p>

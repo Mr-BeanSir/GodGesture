@@ -14,6 +14,8 @@ describe("Monaco configuration", () => {
     expect(monacoSource).toContain(
       'import("monaco-editor/languages/definitions/javascript/register")',
     );
+    expect(monacoSource).not.toContain("definitions/lua/register");
+    expect(monacoSource).not.toContain("godgesture.d.ts");
     expect(monacoSource).toContain("addExtraLib(");
     expect(monacoSource).toContain('import("./node-declarations")');
     expect(nodeDeclarationsSource).toContain("@types/node/**/*.d.ts");
@@ -29,6 +31,7 @@ describe("Monaco configuration", () => {
     expect(scriptEditorSource).toContain("items:");
     expect(scriptEditorSource).toContain("retainModel");
     expect(scriptEditorSource).toContain("modelPath");
+    expect(scriptEditorSource).toContain("fixedOverflowWidgets: true");
     expect(nodePluginEditorSource).toContain('@diagnostics="updateDiagnostics"');
     expect(nodePluginEditorSource).toContain('@diagnostics="updateManifestDiagnostics"');
     expect(nodePluginEditorSource).toContain("diagnostic.line");

@@ -15,12 +15,7 @@ use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 use engine::node_service::{NodeInvocationOutcome, NodeScriptService, OutcomeSink};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
-use engine::script::{
-    boundary_script_key, gesture_script_key, ScriptDefinition, ScriptEngine, ScriptInvocation,
-    ScriptSlot,
-};
-#[cfg(any(windows, target_os = "macos"))]
-use std::collections::HashSet;
+use engine::script_host::{ScriptInvocation, ScriptSlot};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -173,12 +168,6 @@ impl Drop for TaskSwitcherConsumer {
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-struct ActiveScript {
-    key: String,
-    definition: ScriptDefinition,
-    invocation: ScriptInvocation,
-}
-
 #[cfg(any(windows, target_os = "macos"))]
 struct ActiveNodeScript {
     key: String,
@@ -188,21 +177,14 @@ struct ActiveNodeScript {
 
 #[cfg(any(windows, target_os = "macos"))]
 enum IncomingLifecycleScript {
-    QuickJs {
-        key: String,
-        definition: ScriptDefinition,
-    },
-    Node {
-        key: String,
-        plugin_id: String,
-    },
+    Node { key: String, plugin_id: String },
 }
 
 #[cfg(any(windows, target_os = "macos"))]
 impl IncomingLifecycleScript {
     fn key(&self) -> &str {
         match self {
-            Self::QuickJs { key, .. } | Self::Node { key, .. } => key,
+            Self::Node { key, .. } => key,
         }
     }
 }
@@ -235,94 +217,6 @@ fn modifier_script_transition(
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-fn run_script_slot(
-    engine: &mut Option<ScriptEngine>,
-    overlay: &platform::current::overlay::Overlay,
-    key: &str,
-    definition: &ScriptDefinition,
-    slot: ScriptSlot,
-    invocation: ScriptInvocation,
-) -> bool {
-    let Some(engine) = engine.as_mut() else {
-        log::error!("QuickJS runtime is unavailable; script '{key}' was skipped");
-        return false;
-    };
-    match engine.run(key, definition, slot, invocation) {
-        Ok(status) => {
-            if let Some(status) = status {
-                if invocation.trigger.is_some() {
-                    overlay.send(platform::current::overlay::OverlayCmd::Recognized(Some(
-                        status,
-                    )));
-                } else {
-                    log::info!("script '{key}' status: {status}");
-                }
-            }
-            true
-        }
-        Err(error) => {
-            log::error!("{error}");
-            false
-        }
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-fn end_active_script(
-    active_script: &mut Option<ActiveScript>,
-    engine: &mut Option<ScriptEngine>,
-    overlay: &platform::current::overlay::Overlay,
-    invocation: Option<ScriptInvocation>,
-) {
-    let Some(mut active) = active_script.take() else {
-        return;
-    };
-    if let Some(invocation) = invocation {
-        active.invocation = invocation;
-    }
-    run_script_slot(
-        engine,
-        overlay,
-        &active.key,
-        &active.definition,
-        ScriptSlot::GestureEnded,
-        active.invocation,
-    );
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-fn start_active_script(
-    active_script: &mut Option<ActiveScript>,
-    engine: &mut Option<ScriptEngine>,
-    overlay: &platform::current::overlay::Overlay,
-    key: String,
-    definition: ScriptDefinition,
-    invocation: ScriptInvocation,
-) {
-    if run_script_slot(
-        engine,
-        overlay,
-        &key,
-        &definition,
-        ScriptSlot::GestureRecognized,
-        invocation,
-    ) {
-        run_script_slot(
-            engine,
-            overlay,
-            &key,
-            &definition,
-            ScriptSlot::ModifierTriggered,
-            invocation,
-        );
-        *active_script = Some(ActiveScript {
-            key,
-            definition,
-            invocation,
-        });
-    }
-}
-
 #[cfg(any(windows, target_os = "macos"))]
 fn run_node_slot(
     service: Option<&NodeScriptService>,
@@ -361,38 +255,21 @@ fn end_active_node_script(
 
 #[cfg(any(windows, target_os = "macos"))]
 fn end_active_lifecycle(
-    active_script: &mut Option<ActiveScript>,
     active_node: &mut Option<ActiveNodeScript>,
-    script_engine: &mut Option<ScriptEngine>,
     node_service: Option<&NodeScriptService>,
-    overlay: &platform::current::overlay::Overlay,
     invocation: Option<ScriptInvocation>,
 ) {
-    end_active_script(active_script, script_engine, overlay, invocation);
     end_active_node_script(active_node, node_service, invocation);
 }
 
 #[cfg(any(windows, target_os = "macos"))]
 fn start_incoming_lifecycle(
     incoming: IncomingLifecycleScript,
-    active_script: &mut Option<ActiveScript>,
     active_node: &mut Option<ActiveNodeScript>,
-    script_engine: &mut Option<ScriptEngine>,
     node_service: Option<&NodeScriptService>,
-    overlay: &platform::current::overlay::Overlay,
     invocation: ScriptInvocation,
 ) {
     match incoming {
-        IncomingLifecycleScript::QuickJs { key, definition } => {
-            start_active_script(
-                active_script,
-                script_engine,
-                overlay,
-                key,
-                definition,
-                invocation,
-            );
-        }
         IncomingLifecycleScript::Node { key, plugin_id } => {
             if run_node_slot(
                 node_service,
@@ -419,28 +296,6 @@ fn start_incoming_lifecycle(
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-fn script_key_for_intent(intent_id: &str) -> String {
-    gesture_script_key(intent_id)
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-fn retain_live_script_contexts(
-    engine: &mut Option<ScriptEngine>,
-    live_keys: Option<&HashSet<String>>,
-    active_key: Option<&str>,
-) {
-    let (Some(engine), Some(live_keys)) = (engine.as_mut(), live_keys) else {
-        return;
-    };
-    if let Some(active_key) = active_key {
-        let mut retained = live_keys.clone();
-        retained.insert(active_key.to_string());
-        engine.retain_keys(&retained);
-    } else {
-        engine.retain_keys(live_keys);
-    }
-}
-
 /// 引擎产物消费线程:驱动轨迹覆盖层;命令执行器(M2)也从这里接出去。
 #[cfg(any(windows, target_os = "macos"))]
 fn spawn_engine_consumer(
@@ -455,13 +310,6 @@ fn spawn_engine_consumer(
         .spawn(move || {
             let mut task_switcher = TaskSwitcherConsumer::default();
             let script_host = platform::current::script::create_host(&app);
-            let mut script_engine = match ScriptEngine::new(Arc::clone(&script_host)) {
-                Ok(engine) => Some(engine),
-                Err(error) => {
-                    log::error!("QuickJS runtime initialization failed: {error}");
-                    None
-                }
-            };
             let outcome_overlay = overlay.clone();
             let outcome_sink: OutcomeSink =
                 Arc::new(move |outcome: NodeInvocationOutcome| match outcome.result {
@@ -509,20 +357,12 @@ fn spawn_engine_consumer(
                     None
                 }
             };
-            let mut active_script: Option<ActiveScript> = None;
             let mut active_node_script: Option<ActiveNodeScript> = None;
-            let mut live_script_keys: Option<HashSet<String>> = None;
             for msg in rx {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         task_switcher.finish();
-                        active_script = None;
                         active_node_script = None;
-                        retain_live_script_contexts(
-                            &mut script_engine,
-                            live_script_keys.as_ref(),
-                            None,
-                        );
                         log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
                         let (main, unrecognized, show_path, show_label, fade_out) =
                             shared.trail_style_for(trigger);
@@ -568,17 +408,8 @@ fn spawn_engine_consumer(
                             };
                             let immediate_intent =
                                 intent.as_ref().filter(|intent| intent.execute_on_modifier);
-                            let lifecycle_script = immediate_intent.and_then(|intent| {
-                                if let Some(definition) =
-                                    ScriptDefinition::from_command(&intent.command)
-                                        .filter(|definition| definition.handle_modifiers)
-                                {
-                                    return Some(IncomingLifecycleScript::QuickJs {
-                                        key: script_key_for_intent(&intent.id),
-                                        definition,
-                                    });
-                                }
-                                match &intent.command {
+                            let lifecycle_script =
+                                immediate_intent.and_then(|intent| match &intent.command {
                                     engine::config::Command::NodePlugin { plugin_id, .. } => {
                                         Some(IncomingLifecycleScript::Node {
                                             key: format!("node:{}:{plugin_id}", intent.id),
@@ -586,16 +417,10 @@ fn spawn_engine_consumer(
                                         })
                                     }
                                     _ => None,
-                                }
-                            });
-                            let active_lifecycle_key = active_script
-                                .as_ref()
-                                .map(|active| active.key.as_str())
-                                .or_else(|| {
-                                    active_node_script
-                                        .as_ref()
-                                        .map(|active| active.key.as_str())
                                 });
+                            let active_lifecycle_key = active_node_script
+                                .as_ref()
+                                .map(|active| active.key.as_str());
                             let transition = modifier_script_transition(
                                 active_lifecycle_key,
                                 lifecycle_script.as_ref().map(IncomingLifecycleScript::key),
@@ -605,17 +430,7 @@ fn spawn_engine_consumer(
 
                             match transition {
                                 ModifierScriptTransition::Continue => {
-                                    if let Some(active) = active_script.as_mut() {
-                                        active.invocation = invocation;
-                                        run_script_slot(
-                                            &mut script_engine,
-                                            &overlay,
-                                            &active.key,
-                                            &active.definition,
-                                            ScriptSlot::ModifierTriggered,
-                                            invocation,
-                                        );
-                                    } else if let Some(active) = active_node_script.as_mut() {
+                                    if let Some(active) = active_node_script.as_mut() {
                                         active.invocation = invocation;
                                         run_node_slot(
                                             node_service.as_ref(),
@@ -631,42 +446,30 @@ fn spawn_engine_consumer(
                                         .expect("start requires an incoming lifecycle script");
                                     start_incoming_lifecycle(
                                         incoming,
-                                        &mut active_script,
                                         &mut active_node_script,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                         invocation,
                                     );
                                 }
                                 ModifierScriptTransition::Replace => {
                                     end_active_lifecycle(
-                                        &mut active_script,
                                         &mut active_node_script,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                         Some(invocation),
                                     );
                                     let incoming = lifecycle_script
                                         .expect("replace requires an incoming lifecycle script");
                                     start_incoming_lifecycle(
                                         incoming,
-                                        &mut active_script,
                                         &mut active_node_script,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                         invocation,
                                     );
                                 }
                                 ModifierScriptTransition::Finish => {
                                     end_active_lifecycle(
-                                        &mut active_script,
                                         &mut active_node_script,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                         Some(invocation),
                                     );
                                 }
@@ -675,15 +478,11 @@ fn spawn_engine_consumer(
 
                             if !has_lifecycle_script {
                                 if let Some(intent) = immediate_intent {
-                                    let key = script_key_for_intent(&intent.id);
                                     execute_intent(
-                                        &key,
                                         &intent.command,
                                         invocation,
                                         &shared,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                     );
                                 }
                             }
@@ -696,21 +495,13 @@ fn spawn_engine_consumer(
                         context,
                     } => {
                         end_active_lifecycle(
-                            &mut active_script,
                             &mut active_node_script,
-                            &mut script_engine,
                             node_service.as_ref(),
-                            &overlay,
                             Some(ScriptInvocation {
                                 gesture: context,
                                 trigger: Some(trigger),
                                 modifier,
                             }),
-                        );
-                        retain_live_script_contexts(
-                            &mut script_engine,
-                            live_script_keys.as_ref(),
-                            None,
                         );
                         let final_is_task_switcher = intent.as_ref().is_some_and(|intent| {
                             matches!(&intent.command, engine::config::Command::TaskSwitcher)
@@ -733,15 +524,11 @@ fn spawn_engine_consumer(
                                     log::debug!(
                                         "TaskSwitcher 已在增量识别时执行,PathEnd 仅释放 Alt"
                                     );
-                                } else if ScriptDefinition::from_command(&intent.command).is_some()
-                                    || matches!(
-                                        &intent.command,
-                                        engine::config::Command::NodePlugin { .. }
-                                    )
-                                {
-                                    let key = script_key_for_intent(&intent.id);
+                                } else if matches!(
+                                    &intent.command,
+                                    engine::config::Command::NodePlugin { .. }
+                                ) {
                                     execute_intent(
-                                        &key,
                                         &intent.command,
                                         ScriptInvocation {
                                             gesture: context,
@@ -749,9 +536,7 @@ fn spawn_engine_consumer(
                                             modifier,
                                         },
                                         &shared,
-                                        &mut script_engine,
                                         node_service.as_ref(),
-                                        &overlay,
                                     );
                                 } else {
                                     deferred_intent = Some(intent);
@@ -761,9 +546,7 @@ fn spawn_engine_consumer(
                         }
                         overlay.send(OverlayCmd::End);
                         if let Some(intent) = deferred_intent {
-                            let key = script_key_for_intent(&intent.id);
                             execute_intent(
-                                &key,
                                 &intent.command,
                                 ScriptInvocation {
                                     gesture: context,
@@ -771,26 +554,48 @@ fn spawn_engine_consumer(
                                     modifier,
                                 },
                                 &shared,
-                                &mut script_engine,
                                 node_service.as_ref(),
-                                &overlay,
                             );
                         }
                     }
-                    EngineMsg::GestureCaptured { trigger, strokes } => {
+                    EngineMsg::CaptureUpdated {
+                        trigger,
+                        strokes,
+                        modifier,
+                        inputs,
+                    } => {
+                        let payload = CapturedGesture {
+                            trigger,
+                            mnemonic: captured_mnemonic(trigger, &inputs, &strokes, modifier),
+                            strokes,
+                            modifier,
+                            inputs,
+                        };
+                        if let Err(e) = app.emit("gesture-captured", payload) {
+                            log::warn!("手势录制增量事件发送失败: {e}");
+                        }
+                    }
+                    EngineMsg::GestureCaptured {
+                        trigger,
+                        strokes,
+                        modifier,
+                        inputs,
+                    } => {
                         task_switcher.finish();
                         overlay.send(OverlayCmd::End);
                         let payload = CapturedGesture {
                             trigger,
-                            mnemonic: trigger.mnemonic_dirs(&strokes),
+                            mnemonic: captured_mnemonic(trigger, &inputs, &strokes, modifier),
                             strokes,
+                            modifier,
+                            inputs,
                         };
                         if let Err(e) = app.emit("gesture-captured", payload) {
                             log::warn!("手势录制事件发送失败: {e}");
                         }
                     }
                     EngineMsg::CornerEdgeFired {
-                        intent_id,
+                        intent_id: _,
                         hit,
                         command,
                         origin,
@@ -805,7 +610,6 @@ fn spawn_engine_consumer(
                             native_window: fg.native_window,
                         };
                         execute_intent(
-                            &boundary_script_key(&intent_id),
                             &command,
                             ScriptInvocation {
                                 gesture: context,
@@ -813,20 +617,12 @@ fn spawn_engine_consumer(
                                 modifier: engine::types::Modifier::None,
                             },
                             &shared,
-                            &mut script_engine,
                             node_service.as_ref(),
-                            &overlay,
                         );
                     }
                     EngineMsg::PathCancelled => {
                         task_switcher.finish();
-                        active_script = None;
                         active_node_script = None;
-                        retain_live_script_contexts(
-                            &mut script_engine,
-                            live_script_keys.as_ref(),
-                            None,
-                        );
                         log::debug!("手势取消");
                         overlay.send(OverlayCmd::Cancel);
                     }
@@ -834,18 +630,12 @@ fn spawn_engine_consumer(
                         task_switcher.finish();
                         publish_pause_state(&app, paused);
                     }
-                    EngineMsg::ScriptConfigChanged { live_keys } => {
+                    EngineMsg::ScriptConfigChanged => {
                         if let Some(service) = node_service.as_ref() {
                             service.sync_plugins(
                                 app.state::<Arc<ConfigStore>>().load_config().node_plugins,
                             );
                         }
-                        live_script_keys = Some(live_keys.into_iter().collect());
-                        retain_live_script_contexts(
-                            &mut script_engine,
-                            live_script_keys.as_ref(),
-                            active_script.as_ref().map(|active| active.key.as_str()),
-                        );
                     }
                 }
             }
@@ -859,30 +649,20 @@ struct CapturedGesture {
     trigger: engine::types::TriggerButton,
     strokes: Vec<engine::types::Direction>,
     mnemonic: String,
+    modifier: engine::types::Modifier,
+    inputs: Vec<engine::config::GestureInput>,
 }
 
 #[cfg(any(windows, target_os = "macos"))]
 fn execute_intent(
-    key: &str,
     command: &engine::config::Command,
     invocation: ScriptInvocation,
     shared: &Arc<EngineShared>,
-    script_engine: &mut Option<ScriptEngine>,
     node_service: Option<&NodeScriptService>,
-    overlay: &platform::current::overlay::Overlay,
 ) {
     if matches!(command, engine::config::Command::Pause) {
         let paused = shared.toggle_paused();
         log::info!("命令: 手势{}", if paused { "已暂停" } else { "已继续" });
-    } else if let Some(definition) = ScriptDefinition::from_command(command) {
-        run_script_slot(
-            script_engine,
-            overlay,
-            key,
-            &definition,
-            ScriptSlot::Execute,
-            invocation,
-        );
     } else if let engine::config::Command::NodePlugin {
         plugin_id,
         export_name,
@@ -908,6 +688,47 @@ fn execute_intent(
 
 trait TriggerMnemonic {
     fn mnemonic_dirs(&self, strokes: &[engine::types::Direction]) -> String;
+}
+
+fn captured_mnemonic(
+    trigger: engine::types::TriggerButton,
+    inputs: &[engine::config::GestureInput],
+    strokes: &[engine::types::Direction],
+    modifier: engine::types::Modifier,
+) -> String {
+    if inputs.is_empty() {
+        let mut mnemonic = trigger.mnemonic_dirs(strokes);
+        let modifier_symbol = modifier.mnemonic();
+        if !modifier_symbol.is_empty() {
+            mnemonic.push_str(" +");
+            mnemonic.push_str(modifier_symbol);
+        }
+        return mnemonic;
+    }
+    let mut mnemonic = trigger.mnemonic_dirs(&[]);
+    for input in inputs {
+        match input {
+            engine::config::GestureInput::Stroke { direction } => {
+                mnemonic.push_str(direction.mnemonic());
+            }
+            engine::config::GestureInput::Button { button } => {
+                mnemonic.push_str(match button {
+                    engine::config::GestureInputButton::Left => "◐",
+                    engine::config::GestureInputButton::Middle => "●",
+                    engine::config::GestureInputButton::Right => "◑",
+                    engine::config::GestureInputButton::X1 => "X1",
+                    engine::config::GestureInputButton::X2 => "X2",
+                });
+            }
+            engine::config::GestureInput::Wheel { direction } => {
+                mnemonic.push_str(match direction {
+                    engine::config::BoundaryWheelDirection::Forward => "▲",
+                    engine::config::BoundaryWheelDirection::Backward => "▼",
+                });
+            }
+        }
+    }
+    mnemonic
 }
 
 impl TriggerMnemonic for engine::types::TriggerButton {
@@ -1536,6 +1357,26 @@ fn capture_cancel(engine: tauri::State<Arc<EngineShared>>) {
     engine.cancel_recording();
 }
 
+#[cfg(windows)]
+#[tauri::command]
+fn hotkey_capture_start(capture: tauri::State<Arc<platform::windows::hook::KeyboardCapture>>) {
+    capture.start();
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn hotkey_capture_start() {}
+
+#[cfg(windows)]
+#[tauri::command]
+fn hotkey_capture_cancel(capture: tauri::State<Arc<platform::windows::hook::KeyboardCapture>>) {
+    capture.stop();
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn hotkey_capture_cancel() {}
+
 #[tauri::command]
 async fn pick_window() -> Option<app_acquisition::PickedWindow> {
     tauri::async_runtime::spawn_blocking(app_acquisition::pick_window)
@@ -2067,6 +1908,24 @@ pub fn run() {
 
                 #[cfg(windows)]
                 {
+                    let keyboard_capture = platform.keyboard_capture();
+                    app.manage(keyboard_capture);
+                    if let Some(events) = platform.take_keyboard_events() {
+                        let event_app = app.handle().clone();
+                        if let Err(error) = std::thread::Builder::new()
+                            .name("gg-hotkey-capture-events".into())
+                            .spawn(move || {
+                                while let Ok(event) = events.recv() {
+                                    if let Err(error) = event_app.emit("hotkey-capture", event) {
+                                        log::warn!("快捷键录制事件发送失败: {error}");
+                                        break;
+                                    }
+                                }
+                            })
+                        {
+                            log::warn!("无法启动快捷键录制事件转发线程: {error}");
+                        }
+                    }
                     let hook = platform::windows::start(Arc::clone(&shared), platform);
                     app.manage(hook);
                     if setup_mode == EarlyMode::Interactive {
@@ -2126,6 +1985,8 @@ pub fn run() {
             engine_is_paused,
             capture_start,
             capture_cancel,
+            hotkey_capture_start,
+            hotkey_capture_cancel,
             pick_window,
             resolve_app_file,
             app_icon,
@@ -2183,11 +2044,21 @@ mod tests {
             trigger,
             mnemonic: trigger.mnemonic_dirs(&strokes),
             strokes,
+            modifier: engine::types::Modifier::None,
+            inputs: vec![
+                engine::config::GestureInput::Stroke {
+                    direction: Direction::Up,
+                },
+                engine::config::GestureInput::Stroke {
+                    direction: Direction::RightDown,
+                },
+            ],
         };
         let json = serde_json::to_value(payload).unwrap();
         assert_eq!(json["trigger"], "right");
         assert_eq!(json["strokes"], serde_json::json!(["up", "rightDown"]));
         assert_eq!(json["mnemonic"], "◑↑↘");
+        assert_eq!(json["modifier"], "none");
     }
 
     #[cfg(windows)]

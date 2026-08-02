@@ -4,15 +4,9 @@
 
 ## 当前运行时状态
 
-GodGesture 的长期方向是使用随应用分发的 Node.js LTS 作为唯一脚本运行时。当前
-版本处于迁移阶段：
-
-- 新脚本推荐使用 Node 插件（`nodePlugin` 命令）。Node 插件使用 ESM、完整 Node
-  API、全局 `fetch`、npm 依赖和 `@godgesture/sdk`。
-- 旧的 `script` 命令仍由 QuickJS 承接，用于兼容已有配置。迁移期不会继续为
-  QuickJS 增加 Node 或浏览器标准库能力。
-- QuickJS 只有在 Windows 与 macOS 都完成热态延迟、顺序、Worker/宿主恢复和真机
-  验收后才会移除。
+GodGesture 使用随应用分发的 Node.js LTS 作为唯一脚本运行时。脚本以 Node 插件
+（`nodePlugin` 命令）保存和执行,支持 ESM、完整 Node API、全局 `fetch`、npm 依赖
+和 `@godgesture/sdk`。应用不再包含 QuickJS、旧 `script` 命令或旧脚本转换工具。
 
 Node 插件源码、`package.json` 和精确 `pnpm-lock.yaml` 属于用户配置，会参与整库
 同步；安装后的 `node_modules` 和 pnpm store 是本机缓存，不会同步。缓存路径按插件
@@ -68,7 +62,7 @@ my-plugin/
 | `init` | 插件 Worker 加载后；每次 Worker 重建后重新运行 | 是 |
 | `execute` | 手势识别并释放后执行的主处理函数 | 否（普通命令） |
 | `gestureRecognized` | 手势已识别但尚未结束 | 是 |
-| `modifierTriggered` | 配置为立即执行的修饰动作发生时 | 是 |
+| `modifierTriggered` | 配置为“最后一个按键触发时立即执行”且最后一个输入步骤发生时 | 是 |
 | `gestureEnded` | 手势生命周期结束 | 是 |
 
 每个处理函数接收一个 `PluginContext`，可以同步返回，也可以返回 Promise。每个插件
@@ -216,27 +210,6 @@ Node supervisor 常驻运行，每个插件使用独立 Worker。插件超时或
 宿主调用和插件事件使用有界队列；队列满时会丢弃新的插件事件并记录错误，避免输入
 钩子无限积压。插件不应依赖每个事件都必达来维护不可恢复的外部状态。
 
-## 旧脚本迁移
-
-JavaScript 旧命令可以一键转换为 Node 插件：
-
-- 五个旧脚本槽保存到 `legacy/`；
-- 生成入口使用一个 Node `vm` context，尽量保持跨槽全局状态；
-- `handleModifiers` 语义保留；
-- Lua 只保留原文，不会自动转换或执行。
-
-转换后必须检查同步宿主调用：
-
-```js
-// 旧 QuickJS 同步写法
-const text = Clipboard.readText();
-
-// Node 插件异步写法
-const text = await context.clipboard.readText();
-```
-
-依赖宿主 API 同步返回值、未声明全局变量或平台特定副作用的旧脚本可能需要手工调整。
-
 ## 分发和信任
 
 插件同步和分发的是明文源码、manifest 和锁文件，不是安装缓存。发布插件时应提供：
@@ -250,18 +223,13 @@ const text = await context.clipboard.readText();
 不要把 token、密码、refresh token、私钥或机器专属绝对路径写进插件。未经用户明确
 知情，不要上传配置、剪贴板内容或本地文件。
 
-## 发布前检查
+## 平台验收状态
 
-Node-only 最终发布还需要以下证据，当前仓库尚未全部具备：
-
-- Windows release 性能 gate；
-- 物理 Mac 上的 Node 性能与宿主恢复验收（macOS CI release gate 已有 runner artifact，
-  但不替代真机证据）；
-- 物理 Mac 上的 Node、fetch、SDK、精确 lockfile 离线重建和首手势检查；
-- Worker 超时/崩溃和 supervisor 重启恢复；
-- 两个平台都通过后，才删除 QuickJS 和旧脚本宿主。
-
-在这些条件满足前，Node 插件是推荐开发路径，旧 QuickJS 脚本仍是迁移兼容路径。
+Windows release 性能、顺序、Worker 恢复和随包工具链已完成验证;macOS CI runner
+也已通过同一 release 性能门槛。物理 Mac 上的首手势、Node/fetch/SDK、精确 lockfile
+离线重建、Worker/supervisor 恢复及原生桌面交互仍待设备验收。维护者已授权这些项目
+延期,不会阻塞 Node-only;未完成项与记录要求集中在
+[macOS 真机 smoke 清单](qa/M4_MACOS_SMOKE.md),不能把 CI 结果解释成真机通过。
 
 ## 相关文档
 
@@ -269,4 +237,3 @@ Node-only 最终发布还需要以下证据，当前仓库尚未全部具备：
 - [当前项目状态](PROJECT_STATUS.md)
 - [Node-only 架构决策](adr/0012-node-only-script-runtime.md)
 - [macOS 真机 smoke 清单](qa/M4_MACOS_SMOKE.md)
-- [Node-only 设计](superpowers/specs/2026-07-31-node-only-script-runtime-design.md)

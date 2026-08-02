@@ -3,7 +3,7 @@
 use super::config::NodePlugin;
 use super::node_host::{default_supervisor_path, InvocationResult, NodeHost};
 use super::node_packages::write_builtin_sdk;
-use super::script::{ScriptHost, ScriptInvocation, ScriptSlot};
+use super::script_host::{ScriptHost, ScriptInvocation, ScriptSlot};
 use crossbeam_channel::{bounded, Sender, TrySendError};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -576,7 +576,7 @@ mod tests {
     use super::*;
     use crate::engine::config::WindowOperation;
     use crate::engine::runtime::GestureContext;
-    use crate::engine::script::ScriptMouseButton;
+    use crate::engine::script_host::ScriptMouseButton;
     use std::sync::mpsc;
 
     #[derive(Default)]

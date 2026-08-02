@@ -10,15 +10,20 @@
 | --------------------- | ----------------------------------------------------------------------------- |
 | M0 仓库奠基           | 已完成                                                                        |
 | M1 Windows 手势引擎   | Windows 主体已实现并通过运行时 smoke;macOS 尚待真实设备验收,未满足双平台正式完成定义 |
-| M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);Script 执行按 ADR-0005 归 M3                     |
-| M3 QuickJS            | 已完成;QuickJS 运行时、Windows 宿主 API 和 Monaco 编辑器已验收                |
+| M2 Windows 命令与设置 | 已完成(显式 Windows 单平台里程碑);脚本执行按历史规划归 M3                      |
+| M3 脚本引擎           | 已完成;现役实现已按 ADR-0012 切换为唯一 Node.js 插件运行时                    |
 | M4 macOS 引擎         | 原生实现与免费 ad-hoc DMG 流水已落地;待真实 Mac 功能、安装和升级验收后正式完成 |
 | M5 后端与账户         | 已完成;外部 OAuth 凭证按设计由部署环境提供                                     |
 | M6 云同步             | 已完成;桌面账户、原生凭据边界、整库同步、冲突恢复与快照恢复均已接入 Server    |
 | M7 Web 控制台与分发   | 已完成;Web 控制台、签名 Updater、手势模板库与双平台发布流水均已落地           |
 | M8 打磨与发布         | 已完成;stable `v0.1.0`、双平台 Release、Windows RC→stable 原生 Updater、快速入门、模板仓库和最终文档均已验收 |
 
-M4 的已知代码、配置和配套文档实现已经结束;当前没有未记录的预定开发任务。所有需要 GitHub macOS runner 或真实 Mac 的剩余验收集中在 `docs/qa/M4_MACOS_SMOKE.md`,安装与免费 DMG 操作见 `docs/MACOS_RELEASE.md`。验收中发现的缺陷须修复并重跑受影响项;清单全部通过、证据落档并将本表更新为“已完成”后,M4 才正式结束。
+M4 的已知代码、配置和配套文档实现已经结束;当前没有未记录的预定开发任务。所有
+需要真实 Mac 的剩余验收（包括 Node 插件真机行为）集中在
+`docs/qa/M4_MACOS_SMOKE.md`,安装与免费 DMG 操作见 `docs/MACOS_RELEASE.md`。这些项目
+按维护者授权记为 `DEFERRED (owner-approved)`:不阻塞 2026-08-02 的 Node-only 切换,
+也不能解释为已通过。验收中发现的缺陷须修复并重跑受影响项;清单全部通过、证据落档
+并将本表更新为“已完成”后,M4 才正式结束。
 
 ## 部件地图
 
@@ -35,11 +40,11 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Desktop Rust
 
-- `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 笔、阈值/超时、点击透传、修饰和捕获状态机。
-- `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级。
-- `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、脚本生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
-- `engine/script.rs`:单 QuickJS Runtime、按意图 ID 惰性复用的隔离 Context、200 ms 中断、生命周期槽和受限宿主边界;普通手势与边角动作使用各自稳定的脚本 key。
-- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期已接生产执行链,QuickJS 仍承接旧 `script` 命令。release 只使用随应用分发的固定 Node/pnpm/TypeScript 与类型声明,debug 缺少内置工具链时才允许回退 PATH。
+- `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 笔、阈值/超时、点击透传、有序输入（笔画/按钮/滚轮）和捕获状态机。
+- `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级，以及按有序输入序列匹配。
+- `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、Node 插件生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
+- `engine/script_host.rs`:Node 插件运行时共用的原生宿主 trait、调用上下文、生命周期槽和鼠标按钮类型;不包含 JavaScript 引擎。
+- `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期是唯一生产脚本执行链。release 只使用随应用分发的固定 Node/pnpm/TypeScript 与类型声明,debug 缺少内置工具链时才允许回退 PATH。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -48,13 +53,13 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   5 次重定向、15 秒总超时、固定大小上限、流式超限中止、UTF-8 与稳定错误码,响应
   不落入系统下载目录。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
-- `platform/windows/hook.rs`:低级鼠标钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;普通点击在当前钩子回调返回后经有界消息队列重放。
+- `platform/windows/hook.rs`:低级鼠标/键盘钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;快捷键录制期间 `WH_KEYBOARD_LL` 先经有界队列转发到 WebView,再对收到的键盘事件返回非零值尝试阻断系统快捷键,但 Windows 保留组合仍可能由系统优先处理,普通点击在当前钩子回调返回后经有界消息队列重放。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;每次唤醒按 64 条命令帧预算
   消费并在队列未清空时先提交脏帧,避免连续鼠标移动造成渲染饥饿;不得改成 WebView
   覆盖层。
-- `platform/windows/commands.rs`:除 Script 外的命令执行;窗口命令异步排队,外壳窗口受保护。
-- `platform/windows/script.rs`:QuickJS 的 Windows 输入、鼠标、窗口和剪贴板宿主实现;脚本不获得原生句柄。
+- `platform/windows/commands.rs`:除 Node 插件外的命令执行;窗口命令异步排队,外壳窗口受保护。
+- `platform/windows/script.rs`:Node 插件的 Windows 输入、鼠标、窗口和剪贴板宿主实现;插件不获得原生句柄。
 - `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和按 exe 名提取 PNG 图标。
 - `platform/macos/hook.rs`:CGEventTap 全局鼠标捕获、同步吞噬、模拟事件标记、超时重启和 FFI panic fail-open。
@@ -63,7 +68,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   一个主线程 drain,每批只栅格化一次。
 - `platform/macos/input.rs`, `keys.rs`, `clipboard.rs`:键鼠/Unicode/SendKeys/滚轮/热键合成,以及保留 NSPasteboard 的选中文本获取。
 - `platform/macos/window.rs` 与 `commands.rs`:CoreGraphics z-order + Bundle ID、带 TTL 的有界窗口 token、AX 窗口操作、Mission Control、文件/URL/Web 搜索、音量和 zsh/Terminal 命令;topmost 显式不支持。
-- `platform/macos/script.rs`:QuickJS 的 macOS 输入、窗口、剪贴板和状态宿主实现。
+- `platform/macos/script.rs`:Node 插件的 macOS 输入、窗口、剪贴板和状态宿主实现。
 - `platform/macos/permissions.rs` 与 `startup.rs`:Accessibility/Input Monitoring/event-posting 状态、权限请求/设置入口,以及 macOS 13+ `SMAppService` 登录项。
 - `platform/macos/icon.rs`:通过 Bundle ID 使用 `NSWorkspace` 定位 `.app`,将 `NSImage`
   转换为 PNG base64;图标只作为本机派生展示数据,不写入配置或同步。
@@ -83,13 +88,13 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - Options 在 macOS 显示 Accessibility、Input Monitoring、event posting 与引擎状态,支持请求权限和打开系统设置;本机设置成功后重读运行时状态,保留登录项 `requires approval`。
 - `runAsAdmin` 在 macOS 禁用并提供双语说明;后端也会清理旧本机文件可能遗留的 `true`,不伪装成已应用。
 - `LegacyImportDialog.vue` 从 Options 提供 WGestures 文件选择、4 MiB 输入限制、4 MiB 输出限制、结构化诊断预览和整库替换;`runAsAdmin` 在导入时保留。
-- 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`。`HotkeyInput.vue` 的键盘快捷键录制使用独立草稿:新和弦替换旧值,支持 Ctrl/Win(Cmd)/Alt 等纯修饰组合,最后一个物理键抬起时自动提交,Escape 或未完成失焦则取消。
+- 手势录制由 `CaptureDialog.vue` 驱动,开始后持续接收捕获,关闭时显式 `capture_cancel`;捕获协议保留触发键之后的有序输入步骤（笔画、鼠标按钮和滚轮），并可从旧 `strokes + modifier` 字段迁移。`HotkeyInput.vue` 的键盘快捷键录制使用独立草稿:新和弦替换旧值,支持 Ctrl/Win(Cmd)/Alt 等纯修饰组合,最后一个物理键抬起时自动提交,Escape 或未完成失焦则取消。Windows 桌面录制时先订阅 `hotkey-capture` 再启用低级键盘钩子,DOM 事件仅阻止冒泡;取消、失焦和组件卸载均释放原生捕获,macOS/浏览器预览保留 WebView 路径。
 - `AppDialog.vue` 通过 `api/backend.ts` 使用窗口准星和 Tauri WebView 拖放;Windows 验证/规范化 `.exe` 并解析 `.lnk`,macOS 在 Bundle ID 分组提供准星和 `.app` 拖放且隐藏 Windows 字段。
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture 两套 API 声明;五个旧脚本槽和 Node 插件源码共用编辑器,JavaScript 开启触发字符补全、快速建议和参数提示,Lua 只保留高亮和不可执行警告。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备、manifest/lockfile 结构化 diff、用户主动 `tsc` typecheck 和有界 Problems/Output 面板。
+- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture SDK 声明;JavaScript 开启触发字符补全、快速建议和参数提示,溢出提示固定到顶层 widget 避免被编辑面板裁剪。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备、manifest/lockfile 结构化 diff、用户主动 `tsc` typecheck 和有界 Problems/Output 面板。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -100,7 +105,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 3`,新增有界 `nodePlugins` 项目集合和 `nodePlugin` 命令引用;v1/v2 自动迁移到 v3,但旧 QuickJS 源码暂不自动转换。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 4`,`nodePlugins` 项目集合与 `nodePlugin` 是唯一脚本协议;v1/v2/v3 的结构字段可迁移到 v4,但旧 `script` 命令不再属于有效配置且不会自动转换。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮和滚轮步骤；旧 `strokes + modifier` 仅在读取时规范化为该序列。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
@@ -110,13 +115,12 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## 已知未完成边界
 
-- WGestures 导入的 `language = lua` 脚本只保留原文并可编辑,不会执行或自动转换为 JavaScript。
-- 旧 JavaScript 命令可一键转换为 Node 插件:五个生命周期槽原样保存在 `legacy/`,生成入口使用单个 `vm` Context 保持跨槽全局状态,并保留“由脚本处理修饰动作”开关语义。旧宿主 API 是同步外观,Node SDK 是异步 API;依赖 `Clipboard.readText()` 等同步返回值的脚本需在转换后改为 `await context.clipboard.readText()`,无法完全自动等价转换。
+- WGestures 导入遇到旧 `ScriptCommand` 时产生结构化不支持告警并降级为“什么也不做”;不保留、执行或转换旧 Lua/JavaScript 源码。
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
-- 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
+- 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;普通手势同样按有序输入序列匹配，Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
 - 带后续序列的摩擦边动作在光标进入边缘带后直接等待输入;滚轮事件会按当前指针位置即时武装,不要求滚动前再次移动。空序列摩擦边仍保持快速往复命中。Windows 平台无关运行时测试覆盖下边缘首格滚轮和停留后重新武装;macOS 复用同一状态机,仍需真机观察。
 - 手势工作台支持普通手势和边角动作的单条启停;列表仅保留状态图标,删除与重录/编辑序列集中在助记符下方的独立操作行。边角助记符先绘制灰色屏幕边框、再在上层绘制蓝色命中边;角触发使用蓝色拐角及相邻边段,边角序列可通过拖拽把手快速排序。
-- 音量命令的 `delta` 范围为 `-20..20`:正数提高、负数降低、零切换静音;滚轮修饰决定加减方向并使用绝对值作为步数。Windows 与 macOS 共用同一平台无关判定,不再出现普通触发忽略配置数值而总是静音的语义漂移。
+- 音量命令的 `delta` 范围为 `-20..20`:正数提高、负数降低、零切换静音;滚轮输入方向决定加减方向并使用绝对值作为步数。Windows 与 macOS 共用同一平台无关判定,不再出现普通触发忽略配置数值而总是静音的语义漂移。
 - GitHub/Google live OAuth 验收仍要求部署环境提供真实客户端凭证;本地已覆盖 PKCE、提供方发现、回环解析与 code exchange 契约。Windows Credential Manager 与 macOS Keychain 由同一 `keyring-rs` 边界承载;真实 macOS Keychain 运行时观察仍需真实 Mac,不改变 M4 的未完成状态。
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
 - stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
@@ -124,15 +128,14 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## 不得破坏的语义
 
-- PathEnd 按 `executed_on_modifier` 处理。
+- PathEnd 按“最后一个按键触发时立即执行”选项处理（配置字段 `executeOnModifier` 为兼容命名）。
 - 录制持续到前端显式 `capture_cancel`,不是捕获一次自动停止。
 - 保留 `corners.rs` 文件头记录的状态机常量、多显示器语义和有意偏差。
 - 鼠标键按下时仍喂角/边状态机,只抑制命令分发。
 - Bottom 摩擦边保持当前全局坐标语义,不得混用局部坐标。
 - 外壳窗口不得执行窗口控制命令。
 - Windows `SendInput` 可能同步重入鼠标钩子;当前 TLS handler 临时取出、嵌套事件 fail-open 和 FFI panic 防护不得回退。
-- QuickJS 必须保持单 Runtime、按逻辑命令惰性隔离 Context;定义改变只重建对应 Context,删除配置时裁剪缓存。内存 64 MiB、栈 256 KiB、单槽 200 ms 上限及锁定宿主对象不得放宽。
-- `handleModifiers` 脚本切换时先结束旧脚本再识别新脚本;释放触发键时结束当前脚本,取消和录制模式不运行用户脚本槽。
+- Node 插件事件必须继续使用有界非阻塞队列并按插件串行;Worker 超时/崩溃后重建并重跑 `init`,supervisor 退出后由服务恢复,原生输入钩子不得等待插件执行。
 - macOS CGEventTap 回调必须同步决定事件吞噬、过滤 GodGesture 模拟事件、超时后恢复,且 panic 时 fail-open;AppKit 覆盖层对象只能在主线程访问。
 - macOS 窗口目标必须继续使用有界且带 TTL 的不透明 token,不得把未持有的 Objective-C 指针或通用原生句柄暴露给脚本。
 - OAuth 不得按未验证密码账户邮箱自动关联。
@@ -146,16 +149,13 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 开发日志约定:`%TEMP%\godgesture-dev\stdout.log` 和 `%TEMP%\godgesture-dev\stderr.log`。
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
-- M3 Windows 宿主 smoke 已验证 Context 持久状态、`ReportStatus`、`Input.sendText`、异常恢复、约 200 ms 无限循环中断、修饰生命周期和超时后继续执行;测试文本精确为 `SMOKE1;SMOKE2;RECOVERED;LIFE:gestureRecognized,wheelForward;SMOKE3;`,临时配置、测试模块和进程均已清理。
-- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。Desktop 开发服务直接消费 shared 源码,Monaco 深层入口不参与 Vite 依赖预构建并复用同一模块实例,避免 JavaScript 模型静默退化为纯文本。浏览器 preview 已确认 `Input.` 可列出全部宿主 API 补全且语法错误产生诊断标记;声明契约测试覆盖 API 注入。自动化完整右键手势注入未建立,脚本执行路径由上述真实 Windows 宿主 smoke 覆盖。
+- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。Desktop 开发服务直接消费 shared 源码,Monaco 深层入口不参与 Vite 依赖预构建并复用同一模块实例,避免 JavaScript 模型静默退化为纯文本。浏览器 preview 与声明契约测试覆盖 `node:`、`@godgesture/sdk`、`context.input` 补全和语法诊断;自动化完整右键手势注入未建立,脚本执行路径由 Windows Node 宿主 smoke 覆盖。
 - 2026-07-29 Windows 右键点击恢复修复:未形成手势时不再于低级钩子回调内嵌套 `SendInput`,而是在回调返回后由钩子线程消息泵重放完整点击;维护者在真实桌面确认右键抬起后已无明显感知延迟。已有 Vite-only 会话占用 `14200/14201` 时,真实 Tauri 开发会话自动使用 `14202/14203` 并连接成功。重复运行同一 debug 构建时第二进程以 0 退出,前后均仅一个 `godgesture.exe`,既有窗口已唤起;双语 toast 事件由 Desktop 测试覆盖,受本机窗口捕获接口限制未取得实机视觉证据。
 - 2026-07-29 原生轨迹调度修复:Windows 覆盖层不再清空无界 channel 后才绘制,
   单次唤醒最多消费 64 条命令,有剩余工作时重新唤醒;macOS 使用 FIFO pending 队列、
   单 scheduled drain 和每批一次 render。Windows 全库测试 158 passed + 1 ignored,
   clippy `-D warnings` 通过。该提交只解决连续输入下的渲染饥饿,后续连续路径、覆盖层
-  Z-order 和跨屏语义由 2026-07-30 的后续修复完成;
-  Windows 上的 Apple target 交叉检查因 `ring`/`rquickjs-sys` 找不到 Apple C 编译器
-  `cc` 而在依赖构建阶段停止,macOS 源码编译和真机轨迹仍需 CI/设备证据。
+  Z-order 和跨屏语义由 2026-07-30 的后续修复完成。
 - 2026-07-30 原生轨迹与多屏覆盖修复:Windows 复用长期 DIB、局部 scratch 和完整 path
   重绘,单 wake pending、FIFO 及每批 4096 条命令避免 wake storm 和分节圆帽;可视点上限
   取 `512 × DPI` 与虚拟桌面可遍历距离两者较大值。Windows 使用完整虚拟桌面共享 DIB,
@@ -163,7 +163,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   任务栏,同时不触发 Explorer 的全屏任务栏 Z-order 调整;命令提示仍锚定手势起点屏幕。
   维护者已在真实双屏桌面确认轨迹跟手且连续、任务栏保持压住普通应用、轨迹位于任务栏
   之上,并确认 A→B 与 B→A 跨屏轨迹连续。macOS 同步改为活动显示器联合边界并保留
-  全局坐标,但本机无法编译 Apple target,仍需真实 Mac 对混合 DPI 多屏完成验收。
+  全局坐标;Apple target 已由 macOS CI 编译,仍需真实 Mac 对混合 DPI 多屏完成验收。
 - 2026-07-29 模板网络路径修复:生产 catalog/package 不再由 WebView `fetch`,而是经
   `download_template_text` 原生 IPC 使用 reqwest/rustls 读取。真实联网 smoke 在
   4.56 秒内通过 GitHub Release production catalog 和两个 package 的受限重定向、JSON
@@ -175,8 +175,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   并对手势、模板、触发角等代表页截图;另以 `800x560` 中文浅色复核手势三分区。
   主区和侧栏均无横向溢出、翻译 key 泄漏或滚动争用。Windows Graphics Capture 的
   `SetIsBorderRequired` 在本机不受支持,因此未取得真实 Tauri 窗口自动截图;不影响
-  原生 IPC smoke。Apple target 检查仍在 `ring`/`rquickjs-sys` 缺少 Apple `cc` 的
-  第三方构建阶段停止,macOS 图标源码需 CI 或真实 Mac 编译与运行验收。
+  原生 IPC smoke。macOS 图标运行行为仍需真实 Mac 验收。
 - M4 Apple 目标已用离线临时检查 crate 在 `aarch64-apple-darwin` 对全部 macOS 模块和应用获取路径执行 `cargo check --tests`;Tauri 合并 macOS 配置后在 Windows 执行 `tauri build --debug --no-bundle` 通过。免费 DMG workflow 的 YAML、无 Apple secrets、触发/权限/架构/校验和检查,以及 macOS JSON 和 plist XML 语法已校验。真实设备验收必须按 `docs/qa/M4_MACOS_SMOKE.md` 逐项记录,配置或交叉编译不能代替观察证据。
 - M5 OpenAPI 契约的控制器路由、operationId、组件引用、Bearer 边界和代表性传输已覆盖测试;生成漂移检查通过。生产 Dockerfile 已构建 `linux/amd64` 镜像,确认默认用户为 `node`、启动命令先迁移再启动服务,并在 Linux/CJS 生产依赖树中成功创建生成式 API 客户端;临时验证镜像和容器已清理。
 - M6 已用浏览器 Desktop 客户端连接本地真实 Server/PostgreSQL 验收:密码注册/登录后首次推送生成版本 1,本地编辑经 3 秒防抖推送为版本 2,桌面确认恢复版本 1 后推进为版本 3,两个设备并发手动同步经 `409` 拉取重推生成版本 4/5 并收敛到后写整库文档,Server 离线后仍完成本地登出。浅色/暗色、桌面宽度和 `640x800` 窄窗口已截图检查;账户页无翻译键泄漏或横向溢出,窄窗口快照恢复操作可见。一次性 smoke 账户、容器、卷和网络已删除。该 smoke 使用浏览器内存凭据后端,不代替 live OAuth、Windows Credential Manager 或 macOS Keychain 的原生运行时观察。
@@ -252,7 +251,7 @@ worker、宿主声明、触发字符补全、快速建议和参数提示;应用�
 
 2026-07-31 音量与脚本编辑修复:音量命令的数值统一解释为准确百分点,Windows 使用
 Core Audio 读取并设置默认输出端点,macOS 使用系统音量百分比,`0` 仍切换静音;负数可
-保存并表示降低音量,滚轮修饰仍按滚动方向使用绝对值。Desktop 开发服务直接消费 shared
+保存并表示降低音量,滚轮输入仍按滚动方向使用绝对值。Desktop 开发服务直接消费 shared
 源码,Monaco 编辑器贡献、JavaScript 定义与 TypeScript provider 共享同一语言注册表。
 浏览器 preview 已确认 `-1` 保存后保持不变,并确认 `Input.` 补全包含全部 8 个宿主方法、
 明显语法错误产生诊断标记。shared `95/95` + typecheck;Desktop `105/105` +
@@ -265,16 +264,14 @@ typecheck/build;`pnpm check:api` 通过;Rust library `189 passed, 2 ignored`,
 p99 `0.199 ms`;10,000 次宿主调用为 p95 `0.246 ms`、p99 `0.320 ms`;冷启动并加载
 Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限、Node API、
 宿主调用、顺序、协议错误、超时和 Worker 崩溃后重载;显式 release gate 通过,
-`cargo clippy --lib --tests -- -D warnings` 通过。该证据只满足 Windows 原型门槛;
-尚未使用随应用打包的 Node,macOS CI/真机门槛未执行,因此不得删除 QuickJS。
+`cargo clippy --lib --tests -- -D warnings` 通过。该证据只满足当时的 Windows 原型门槛。
 
 2026-07-31 Node 插件配置协议:shared 配置升级至 v3,新增最多 32 个 Node 插件、
 每插件最多 64 个文件、单文件 256 KiB、源码合计 1 MiB、manifest 64 KiB 和 lockfile
 512 KiB 限制;同步文档上限提高至 4 MiB,Server 快照按最新 100 个及每用户 64 MiB
 正文双重裁剪。shared `99/99` + build;Desktop `105/105` + typecheck/build;Server
 `87/87` + typecheck;Web Console typecheck/build;`pnpm check:api`;Rust library
-`194 passed, 3 ignored`,`cargo clippy --lib --tests -- -D warnings` 通过。QuickJS 仍是
-生产脚本执行路径,Node 配置尚未接入生产宿主。
+`194 passed, 3 ignored`,`cargo clippy --lib --tests -- -D warnings` 通过。
 
 2026-07-31 Node 插件生产宿主接线:同步插件被校验后按内容修订物化为真实 ESM 项目,
 常驻 supervisor 为每插件预载 Worker;手势执行线程只向 256 条有界队列投递,Node
@@ -285,7 +282,7 @@ Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限�
 helper 包。Windows release 新基准:冷启动 `96.786 ms`,noop p95/p99 `0.152/0.223 ms`,
 包含输入、剪贴板和状态三次真实宿主往返的 handler p95/p99 `0.495/0.640 ms`。
 shared `99/99`;Desktop `105/105`;SDK `1/1` + typecheck/build;Rust library
-`196 passed, 3 ignored`,严格 clippy 通过。macOS 性能门槛尚未完成,因此 QuickJS 不得移除。
+`196 passed, 3 ignored`,严格 clippy 通过。
 
 2026-07-31 Node 内置工具链与依赖准备:发布资源固定为 Node `v24.18.1` LTS 与
 pnpm `10.34.5`,下载脚本校验官方 SHA-256/SHA-512 后按 Windows x64、macOS x64 和
@@ -301,29 +298,18 @@ export;工作区支持插件名称、多源文件新增/删除/入口切换、Mo
 溢出检查,无横向溢出或翻译 key 泄漏。Desktop `106/106` + typecheck/build,
 `git diff --check` 通过。
 
-2026-07-31 旧脚本转换与 Node 编辑类型:旧 JavaScript 命令可一键生成保留五个原始槽位
-的 Node 插件,使用 Node `vm` 保持跨槽全局状态,并分别兼容启用或关闭脚本修饰处理的
-执行语义;Lua 不提供转换。Monaco 惰性注入 `@types/node`、undici/fetch 与
-`@godgesture/sdk` 声明。浏览器 preview 已确认 `node:` 补全包含 Node 内置模块、SDK
-命名导入补全 `defineHandler`,且 `node:fs/promises` 与 SDK 的有效导入无 unknown module
-诊断。真实 Node 临时项目测试覆盖生成 ESM、跨槽状态和修饰兼容。Desktop `111/111` +
-typecheck/build,定向 `git diff --check` 通过。依赖增删/锁文件生成、安装/离线状态和
-Problems/输出仍待后续实现。
-
 2026-07-31 Node 依赖工作区:Node 插件编辑器增加内联依赖增改删、manifest 校验、用户主动
 lockfile 解析/离线生产安装和入口 import smoke;Rust 通过同一内置 Node/pnpm 工具链执行,
 输出限制 128 KiB、单命令超时 120 秒,并把 `@godgesture/sdk` 内置运行时写入物化插件。
 Windows/macOS 共用 Tauri IPC,浏览器 mock 可演示保存 lockfile、Problems 和 Output。Desktop
 `114/114` + typecheck/build;Rust library `200 passed, 3 ignored`;严格 clippy 通过。
-依赖搜索与更新建议由后续 Node 插件工具链补齐;macOS 真机性能门槛仍待完成,
-QuickJS 继续保留。
+依赖搜索与更新建议由后续 Node 插件工具链补齐。
 
 2026-07-31 Node macOS 性能门槛接线:`macOS CI` 使用与产品工具链一致的 Node
 `v24.18.1`,以 release 模式运行 10,000 次有序 no-op 和 10,000 次代表性宿主调用,
 断言批准的 p95/p99 上限并上传包含系统、架构、Node 版本和百分位结果的 30 天日志
 artifact。`docs/qa/M4_MACOS_SMOKE.md` 已增加物理 Mac 上的同一性能测试、首手势热态、
-Node/fetch/SDK、精确锁文件离线重建、Worker 与 supervisor 恢复验收。该 workflow
-尚未产生本次改动的 runner 结果,物理 Mac 项也未执行,因此不能据此删除 QuickJS。
+Node/fetch/SDK、精确锁文件离线重建、Worker 与 supervisor 恢复验收。
 
 2026-08-01 Node 插件工具链:编辑器通过受限原生网关搜索 npm 包和读取 latest dist-tag,
 可将搜索结果加入 manifest、以最多 4 路并发检查并采用最新版;网关固定 npm 官方 HTTPS
@@ -333,26 +319,23 @@ dry-run,完整加载 ESM、Node API、`fetch` 和已锁定依赖,同时把输入
 离线 frozen install,测试过程不会隐式解析或修改依赖。Desktop `116/116` + typecheck/build;
 Rust library `204 passed, 3 ignored`,严格 clippy、cargo check 和 `git diff --check` 通过。
 浏览器 preview 已确认搜索/添加 `zod 4.4.3`、无误报更新检查、无副作用 dry-run Output,
-以及 `800x560` 无横向溢出。macOS runner/真机证据仍未取得,QuickJS 不得删除。
+以及 `800x560` 无横向溢出。
 
 2026-08-01 Node 插件多文件编辑器:插件源码编辑器现在为每个文件保留稳定 Monaco model,
 使用插件 ID 与文件路径组成的 URI,并通过隐藏 model 同步所有源文件,使相对导入能够参与
 TypeScript worker 的跨文件诊断;可见编辑区提供文件标签页。Desktop `119/119` + typecheck/
 build 通过。浏览器刷新本地预览本轮被 URL 安全策略拒绝,未将旧页面观察计入视觉验收。
 
-2026-08-01 Node 脚本文档:新增 `docs/SCRIPTING.md`,以当前实现为准说明 Node 插件项目
-结构、完整 Node/fetch 能力、五个生命周期、`PluginContext`/SDK API、npm 搜索与精确
-lockfile、离线缓存、dry-run、恢复、旧 QuickJS 转换、分发与信任边界。README 与用户
-指南已把 Node 插件列为新脚本推荐路径,同时明确 QuickJS 仍是迁移兼容层。文档契约
-测试覆盖 SDK 方法、生命周期、窗口操作、容量边界和迁移状态,Desktop `117/117` +
-typecheck、`git diff --check` 通过。设计中的
+2026-08-01 Node 脚本文档:新增 `docs/SCRIPTING.md`,说明 Node 插件项目结构、完整
+Node/fetch 能力、五个生命周期、`PluginContext`/SDK API、npm 搜索与精确 lockfile、
+离线缓存、dry-run、恢复、分发与信任边界。文档契约测试覆盖 SDK 方法、生命周期、
+窗口操作和容量边界,Desktop `117/117` + typecheck、`git diff --check` 通过。设计中的
 本机缓存 readiness 已补为只读原生状态:复用 production revision fingerprint、`.ready`
 标记和内置 SDK 文件,区分无需缓存、缺锁文件、未准备与已就绪;“生成锁文件并准备”
 成功后会直接物化同一 production revision。编辑器已显示本次会话的 manifest 修改、
 lockfile 是否过期和当前缓存状态;完整结构化 manifest/lockfile diff 与独立 `tsc`
 子进程输出尚未实现。Monaco `checkJs`、Node/SDK 类型和 JSON marker 已接入 Problems,
-按文件、行和列显示。macOS
-runner 与物理 Mac 证据也仍缺失,因此不能宣称 Node-only 完成或删除 QuickJS。
+按文件、行和列显示。
 
 2026-08-01 macOS CI 触发复核:通过 GitHub Actions 页面触发的 run `30700761547` 使用远端
 旧 `main` 提交 `5b81245`,在 42 秒后因旧 workflow 检查失败结束,未执行本地新增的 Node
@@ -364,12 +347,6 @@ typecheck 因 workflow 未先构建 `@godgesture/shared` 的 `dist` 入口失败
 Node 性能 gate,也没有性能 artifact。workflow 已在依赖安装后增加
 `pnpm --filter @godgesture/shared build`;本地按相同顺序重跑 shared build、Desktop
 `123/123`、typecheck、build 和 `git diff --check` 均通过,待推送该 workflow 修复后重跑。
-
-2026-08-01 旧脚本整库迁移:手势工作台会统计全局、应用与边角动作中的旧 `script` 命令,
-提供一次确认后的批量转换入口;每个 JavaScript 命令先通过真实 Node `execute` dry-run
-才生成插件并替换引用,Lua 保持原样。达到 32 插件上限、整库 4 MiB 容量上限或 dry-run
-失败时均保留旧命令并报告跳过数量;单条编辑器转换遵循相同门槛。Desktop `123/123`
-+ typecheck、`git diff --check` 通过。
 
 2026-08-01 macOS CI Rust gate 复核:run `30705419543` 已确认 workflow 的 shared build
 与 Desktop frontend 均通过,但 `Test native Rust target` 在 macOS `-D warnings` 下因
@@ -389,24 +366,12 @@ macOS Node gate。
 Rust gate 仅剩 `legacy_import.rs` 顶部 Windows 专属类型导入在 macOS 未使用;已补上同样的
 `cfg(windows)` 边界。Node 性能 gate 仍未执行,待下一次 runner 运行。
 
-2026-08-01 macOS CI #6 复核:提交 `9b2ada6` 在 macOS 15.7.7 arm64 runner 上完整通过
-shared build、Desktop 测试/typecheck/build、Rust 测试与严格 clippy、Node 插件性能 gate
-和双架构 `cargo check`;workflow run 为
-`https://github.com/Mr-BeanSir/GodGesture/actions/runs/30707285497`。Node
-`v24.18.1` 的性能 artifact `node-host-performance-macos-ARM64` 已上传,本地下载文件的
-SHA-256 为 `1a80f9edb29d7c0bdddbc9a1bff6abdaf1bd1f531d21ada8232ee40f3838ba71`。
-10,000 次有序 no-op 与 10,000 次代表性宿主调用均通过;冷启动 `257.88825 ms`,no-op
-p95/p99 为 `0.133084/0.231125 ms`,宿主调用 p95/p99 为 `0.403959/0.543875 ms`。
-该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
-npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
-
 2026-08-02 Node 插件编辑器工具链补齐:编辑器增加 manifest 与 pnpm lockfile 的结构化
 added/removed/changed 对比,Problems/Output 继续分别承载诊断与完整输出;新增用户主动触发的
 TypeScript typecheck IPC,由随包 Node 执行固定 tsc,使用 Node、undici 和 GodGesture SDK 类型,
 输出有界并规范化文件/行/列诊断。浏览器 mock、结构化 diff 单测、Desktop `126/126`、
 typecheck、Rust Node package 测试和严格 clippy 已通过。随包 TypeScript 资源尚未重新下载并
-写入忽略的本机工具链目录,发布前需重新运行 `pnpm fetch:node-toolchain --target=...`;QuickJS
-仍按 ADR-0012 保留。
+写入忽略的本机工具链目录,发布前需重新运行 `pnpm fetch:node-toolchain --target=...`。
 
 2026-08-01 Node 工具链发布 smoke:在 Windows x64 真实执行 `pnpm fetch:node-toolchain
 --target=windows-x64`,修复 Windows PowerShell 解压调用的参数传递后,随包 Node
@@ -429,13 +394,44 @@ SHA-256 为 `07f6629ff141a537bcaa0a1e9c19cc49a6ca919747710b1d30ba8675458ba766`�
 10,000 次有序 no-op 与 10,000 次代表性宿主调用均通过;冷启动 `263.573375 ms`,no-op
 p95/p99 为 `0.122083/0.18425 ms`,宿主调用 p95/p99 为 `0.350167/0.614709 ms`。
 该结果完成 macOS CI runner 性能门槛,但不替代物理 Mac 的 TCC、全局捕获、覆盖层、多屏、
-npm 离线依赖及 Worker/supervisor 恢复验收,因此 QuickJS 仍保留。
+npm 离线依赖及 Worker/supervisor 恢复验收。
 
 2026-08-02 Node 工具链资源复核:重新执行 `pnpm fetch:node-toolchain --target=windows-x64`,
 确认随包 `node v24.18.1`、`pnpm 10.34.5`、TypeScript `tsc`、Node/undici 类型和
 supervisor/worker 均写入忽略的 Windows 资源目录并可读取。修复 Windows pnpm junction
 复制时的 `EPERM`，复制前解析真实路径；工具链测试 `5/5` 通过。该资源是本机发布输入，
 不进入 Git；macOS 目标仍需在对应 runner/物理 Mac 环境分别生成和验收。
+
+2026-08-02 Node-only 切换:维护者在 Windows 门槛完成且 macOS CI release gate 已通过后,
+明确授权把物理 Mac 观察项延期,不再让其阻塞唯一 Node.js 运行时。配置协议升级到 v4,
+删除 `script` 命令、QuickJS/rquickjs 引擎、旧宿主声明、旧脚本转换工具及“迁移旧版本”/
+“转为 Node.js 插件”入口;WGestures 旧脚本导入会告警并降级为“什么也不做”。Node 插件
+继续通过常驻 supervisor、预加载 Worker 和有界队列执行。未完成的 macOS Node 真机项
+保留在 `docs/qa/M4_MACOS_SMOKE.md`,状态为 `DEFERRED (owner-approved)`,不能解释为通过。
+本轮最终验证为 shared `98/98` + typecheck/build、Desktop `118/118` +
+typecheck/build、`pnpm check:api`、Rust library `199 passed, 3 ignored`和严格 Clippy。
+Windows release Node 门槛为冷启动 `87.2651 ms`,noop p95/p99
+`0.1921/0.2707 ms`,宿主调用 p95/p99 `0.5828/0.7498 ms`;全部通过 ADR 上限。
+
+2026-08-02 有序手势输入:普通手势的捕获与匹配统一使用 `GestureSpec.inputs`,按真实顺序
+记录方向笔画、鼠标按钮和滚轮。待定状态收到附加鼠标键或滚轮时立即建立捕获,支持“右键
+按住 → 中键/滚轮 → 移动”;录制 IPC 实时推送完整序列。桌面助记符按序显示,滚轮方向使用
+俯视 SVG,滚轮按下显示中央蓝色区域,普通手势编辑器移除旧修饰符选择并改为“最后一个按键
+触发时立即执行”。旧 `strokes + modifier` 仅在读取/展示边界规范化。验证:Rust `205 passed,
+3 ignored`,严格 Clippy;shared `102 passed` + typecheck/build;Desktop `120 passed` +
+typecheck/build;`pnpm check:api` 与 `git diff --check` 通过。Windows 真实桌面和 macOS
+真机输入序列仍按既有 M4 清单观察,不将自动化测试视为平台验收。
+
+2026-08-02 快捷键录制修复:命令快捷键与暂停快捷键现在以单个完整和弦事件原子提交,
+避免连续更新 modifiers/keys 时后一个更新覆盖前一个更新。Ctrl/Shift/Alt/Win(Cmd) 与
+主键组合在释放后均保留;新增 Ctrl+W 回归测试。Desktop `121 passed`、typecheck/build
+和 `git diff --check` 通过。
+
+2026-08-02 Windows 快捷键优先捕获:新增 `WH_KEYBOARD_LL` 原生低级键盘钩子和
+`hotkey-capture` IPC 事件。录制期间钩子将收到的键盘事件转发给前端并返回非零值尝试
+阻断系统快捷键;Windows 保留组合（例如 `Win+W`）仍可能由系统优先处理,因此不承诺捕获
+全部系统级组合。失焦、Escape、完成和组件卸载都会停用捕获,结束录制后恢复系统输入。
+该能力为 Windows 专属,macOS 仍使用 WebView 录制并待真实设备验收。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

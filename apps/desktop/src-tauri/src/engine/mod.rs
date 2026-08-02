@@ -13,6 +13,6 @@ pub mod node_service;
 pub mod node_toolchain;
 pub mod parser;
 pub mod runtime;
-pub mod script;
+pub mod script_host;
 pub mod tracker;
 pub mod types;

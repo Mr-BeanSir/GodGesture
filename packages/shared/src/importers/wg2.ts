@@ -252,17 +252,8 @@ class Wg2Importer {
           autoSetWorkingDir: asBool(raw["AutoSetWorkingDir"], true),
         };
       case "ScriptCommand":
-        // 老版为 Lua 脚本:原文保留、标记 language:"lua",待用户手动改写为 JS
-        return {
-          type: "script",
-          language: "lua",
-          initScript: asString(raw["InitScript"]),
-          script: asString(raw["Script"]),
-          handleModifiers: asBool(raw["HandleModifiers"], false),
-          gestureRecognizedScript: asString(raw["GestureRecognizedScript"]),
-          modifierTriggeredScript: asString(raw["ModifierTriggeredScript"]),
-          gestureEndedScript: asString(raw["GestureEndedScript"]),
-        };
+        this.warn("unknown_command_type", { ...location, field: "$type" }, { value: "ScriptCommand" });
+        return { type: "doNothing" };
       case "PauseWGesturesCommand":
         return { type: "pause" };
       case "ChangeAudioVolumeCommand": {

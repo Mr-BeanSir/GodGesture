@@ -15,7 +15,7 @@
  * - engine_toggle_pause(): boolean
  *     + Tauri event "pause-changed", payload: boolean
  * - capture_start() / capture_cancel()
- *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, mnemonic}
+ *     + tauri 事件 "gesture-captured",payload: {trigger, strokes, inputs, modifier, mnemonic}
  * - pick_window(): {exeName, exePath, appName, aumid, bundleId} | null
  * - resolve_app_file(path): {exeName, exePath, appName, aumid, bundleId}
  * - app_icon(request): string | null             // base64 png
@@ -26,6 +26,7 @@
 import type {
   ConfigDocument,
   DevicePlatform,
+  GestureInput,
   MachineLocalSettings,
   NodePlugin,
 } from "@godgesture/shared";
@@ -35,7 +36,17 @@ import { createMockBackend } from "./mock";
 export interface CapturedGesture {
   trigger: string;
   strokes: string[];
+  /** 按实际捕获顺序推送的输入步骤。旧运行时可能不提供。 */
+  inputs?: GestureInput[];
   mnemonic: string;
+  modifier: string;
+}
+
+/** 原生低级键盘钩子在快捷键录制期间转发的事件。 */
+export interface HotkeyCaptureEvent {
+  code: string;
+  pressed: boolean;
+  repeat: boolean;
 }
 
 export interface PickedWindow {
@@ -196,6 +207,10 @@ export interface Backend {
 
   captureStart(): Promise<void>;
   captureCancel(): Promise<void>;
+  /** Windows 录制期间抢在系统快捷键前启用/停用原生键盘捕获。 */
+  hotkeyCaptureStart(): Promise<void>;
+  hotkeyCaptureCancel(): Promise<void>;
+  onHotkeyCapture(handler: (event: HotkeyCaptureEvent) => void): Promise<() => void>;
   /** 订阅 "gesture-captured" 事件;返回退订函数 */
   onGestureCaptured(
     handler: (gesture: CapturedGesture) => void,
@@ -392,6 +407,20 @@ function createTauriBackend(): Backend {
     async captureCancel() {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("capture_cancel");
+    },
+    async hotkeyCaptureStart() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("hotkey_capture_start");
+    },
+    async hotkeyCaptureCancel() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("hotkey_capture_cancel");
+    },
+    async onHotkeyCapture(handler) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<HotkeyCaptureEvent>("hotkey-capture", (event) =>
+        handler(event.payload),
+      );
     },
     async onGestureCaptured(handler) {
       const { listen } = await import("@tauri-apps/api/event");

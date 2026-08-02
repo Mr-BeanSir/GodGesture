@@ -4,7 +4,7 @@
 //! - 全局开关是总开关，关闭后所有应用都禁止手势;
 //! - 应用黑名单(gesturing_enabled=false)在路径开始前进一步拦截。
 
-use super::config::{AppEntry, Command, ConfigDocument, GestureIntent};
+use super::config::{AppEntry, Command, ConfigDocument, GestureInput, GestureIntent};
 use super::types::{Direction, Modifier, TriggerButton};
 
 /// 前台程序的平台标识(由平台层解析)
@@ -98,19 +98,17 @@ impl IntentFinder {
         }
     }
 
-    /// 按 (触发键, 笔画, 修饰) 查找意图
-    pub fn find(
+    /// 按有序输入序列查找意图。
+    pub fn find_inputs(
         &self,
         trigger: TriggerButton,
-        strokes: &[Direction],
-        modifier: Modifier,
+        inputs: &[GestureInput],
         fg: &ForegroundApp,
     ) -> Option<&GestureIntent> {
         let matches = |i: &&GestureIntent| {
             i.enabled
                 && i.gesture.trigger == trigger
-                && i.gesture.strokes == strokes
-                && i.gesture.modifier == modifier
+                && i.gesture.effective_inputs().as_slice() == inputs
         };
         if let Some(app) = self.match_app(fg) {
             if let Some(intent) = app.intents.iter().find(matches) {
@@ -123,6 +121,25 @@ impl IntentFinder {
         self.config.global.intents.iter().find(matches)
     }
 
+    /// 兼容旧调用方的 (触发键, 笔画, 修饰) 查找接口。
+    pub fn find(
+        &self,
+        trigger: TriggerButton,
+        strokes: &[Direction],
+        modifier: Modifier,
+        fg: &ForegroundApp,
+    ) -> Option<&GestureIntent> {
+        let mut inputs = strokes
+            .iter()
+            .copied()
+            .map(|direction| GestureInput::Stroke { direction })
+            .collect::<Vec<_>>();
+        if let Some(input) = modifier_to_input(modifier) {
+            inputs.push(input);
+        }
+        self.find_inputs(trigger, &inputs, fg)
+    }
+
     /// 该 (触发键, 前缀笔画) 下是否存在任何以此为前缀的意图 —— 供增量识别提示
     pub fn any_with_prefix(
         &self,
@@ -130,8 +147,15 @@ impl IntentFinder {
         prefix: &[Direction],
         fg: &ForegroundApp,
     ) -> bool {
+        let expected_prefix = prefix
+            .iter()
+            .copied()
+            .map(|direction| GestureInput::Stroke { direction })
+            .collect::<Vec<_>>();
         let starts = |i: &GestureIntent| {
-            i.enabled && i.gesture.trigger == trigger && i.gesture.strokes.starts_with(prefix)
+            i.enabled
+                && i.gesture.trigger == trigger
+                && i.gesture.effective_inputs().starts_with(&expected_prefix)
         };
         let in_global = || self.config.global.intents.iter().any(starts);
         match self.match_app(fg) {
@@ -141,6 +165,34 @@ impl IntentFinder {
             None => in_global(),
         }
     }
+}
+
+fn modifier_to_input(modifier: Modifier) -> Option<GestureInput> {
+    use super::config::{BoundaryWheelDirection, GestureInputButton};
+    Some(match modifier {
+        Modifier::None => return None,
+        Modifier::WheelForward => GestureInput::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        },
+        Modifier::WheelBackward => GestureInput::Wheel {
+            direction: BoundaryWheelDirection::Backward,
+        },
+        Modifier::LeftButtonDown => GestureInput::Button {
+            button: GestureInputButton::Left,
+        },
+        Modifier::MiddleButtonDown => GestureInput::Button {
+            button: GestureInputButton::Middle,
+        },
+        Modifier::RightButtonDown => GestureInput::Button {
+            button: GestureInputButton::Right,
+        },
+        Modifier::X1Down => GestureInput::Button {
+            button: GestureInputButton::X1,
+        },
+        Modifier::X2Down => GestureInput::Button {
+            button: GestureInputButton::X2,
+        },
+    })
 }
 
 /// 触发角/摩擦边命令查找(键: leftTop/rightTop/... 与 left/top/right/bottom)
@@ -177,7 +229,9 @@ pub fn rub_edge_command<'c>(config: &'c ConfigDocument, edge: &str) -> Option<&'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::config::{GestureSpecConfig, WindowsBinding};
+    use crate::engine::config::{
+        GestureInput, GestureInputButton, GestureSpecConfig, WindowsBinding,
+    };
 
     fn intent(name: &str, trigger: TriggerButton, strokes: Vec<Direction>) -> GestureIntent {
         GestureIntent {
@@ -188,6 +242,7 @@ mod tests {
                 trigger,
                 strokes,
                 modifier: Modifier::None,
+                inputs: Vec::new(),
             },
             command: Command::DoNothing,
             execute_on_modifier: false,
@@ -225,6 +280,46 @@ mod tests {
             order: 0,
         });
         doc
+    }
+
+    #[test]
+    fn ordered_inputs_distinguish_button_before_stroke() {
+        let mut doc = ConfigDocument::default();
+        let mut i = intent("middle-right", TriggerButton::Right, vec![Direction::Right]);
+        i.gesture.inputs = vec![
+            GestureInput::Button {
+                button: GestureInputButton::Middle,
+            },
+            GestureInput::Stroke {
+                direction: Direction::Right,
+            },
+        ];
+        doc.global.intents.push(i);
+        let finder = IntentFinder::new(doc);
+        let fg = ForegroundApp::default();
+        assert!(finder
+            .find_inputs(
+                TriggerButton::Right,
+                &[
+                    GestureInput::Button {
+                        button: GestureInputButton::Middle,
+                    },
+                    GestureInput::Stroke {
+                        direction: Direction::Right,
+                    },
+                ],
+                &fg,
+            )
+            .is_some());
+        assert!(finder
+            .find_inputs(
+                TriggerButton::Right,
+                &[GestureInput::Stroke {
+                    direction: Direction::Right,
+                }],
+                &fg,
+            )
+            .is_none());
     }
 
     #[test]

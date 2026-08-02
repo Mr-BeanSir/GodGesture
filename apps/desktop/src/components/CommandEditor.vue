@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * 命令编辑器:编辑一条 Command(12 类判别联合)。
+ * 命令编辑器:编辑一条 Command 判别联合。
  * 对外 v-model 为 Command;切换类型时用 createDefaultCommand 生成默认值。
  * 被「手势」区(手势意图)与「触发角 & 摩擦边」区共用。
  */
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Command } from "@godgesture/shared";
 import {
@@ -15,28 +15,16 @@ import {
   type CommandOfType,
 } from "../utils/commands";
 import HotkeyInput from "./HotkeyInput.vue";
-import ScriptEditor from "./ScriptEditor.vue";
 import NodePluginEditor from "./NodePluginEditor.vue";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
-import {
-  configDocumentSizeBytes,
-  DEFAULT_NODE_PLUGIN_MANIFEST,
-  DEFAULT_NODE_PLUGIN_SOURCE,
-  MAX_CONFIG_DOCUMENT_BYTES,
-  MAX_NODE_PLUGINS,
-} from "@godgesture/shared";
-import { convertScriptCommandToNodePlugin } from "../utils/nodePluginMigration";
-import { useBackend } from "../api/backend";
-import { ElMessage } from "element-plus";
+import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
 
 const { t } = useI18n();
 const configStore = useConfigStore();
-const backend = useBackend();
-const migrationRunning = ref(false);
 
 /** 局部字段写入:合并补丁后整体 emit(判别联合下用 Record 逃逸类型约束) */
 function patch(partial: Record<string, unknown>) {
@@ -62,39 +50,6 @@ function ensureNodePlugin() {
   return created;
 }
 
-async function convertScriptToNodePlugin() {
-  if (asScript.value.language !== "js" || !configStore.doc) return;
-  const migration = convertScriptCommandToNodePlugin(
-    asScript.value,
-    t("command.nodePlugin.convertedName"),
-  );
-  if (configStore.doc.nodePlugins.length >= MAX_NODE_PLUGINS) {
-    ElMessage.error(t("command.script.convertCapacityFailed"));
-    return;
-  }
-  configStore.doc.nodePlugins.push(migration.plugin);
-  const exceedsSizeLimit = configDocumentSizeBytes(configStore.doc) > MAX_CONFIG_DOCUMENT_BYTES;
-  configStore.doc.nodePlugins.pop();
-  if (exceedsSizeLimit) {
-    ElMessage.error(t("command.script.convertSizeFailed"));
-    return;
-  }
-  migrationRunning.value = true;
-  try {
-    const result = await backend.nodePluginTest(migration.plugin, "execute");
-    if (!result.ready) {
-      ElMessage.error(t("command.script.convertTestFailed"));
-      return;
-    }
-    configStore.doc.nodePlugins.push(migration.plugin);
-    emit("update:modelValue", migration.command);
-  } catch (error) {
-    ElMessage.error(`${t("command.script.convertTestFailed")}: ${String(error)}`);
-  } finally {
-    migrationRunning.value = false;
-  }
-}
-
 const type = computed<CommandType>({
   get: () => props.modelValue.type,
   set: (next) => {
@@ -117,7 +72,6 @@ const asOpenFile = computed(() => props.modelValue as CommandOfType<"openFile">)
 const asSendText = computed(() => props.modelValue as CommandOfType<"sendText">);
 const asGotoUrl = computed(() => props.modelValue as CommandOfType<"gotoUrl">);
 const asCmd = computed(() => props.modelValue as CommandOfType<"cmd">);
-const asScript = computed(() => props.modelValue as CommandOfType<"script">);
 const asVolume = computed(() => props.modelValue as CommandOfType<"audioVolume">);
 
 const useDefaultBrowser = computed<boolean>({
@@ -170,8 +124,7 @@ function updateVolumeDelta(value: unknown) {
           multi-keys
           :modifiers="asHotKey.modifiers"
           :keys="asHotKey.keys"
-          @update:modifiers="patch({ modifiers: $event })"
-          @update:keys="patch({ keys: $event })"
+          @complete="patch({ modifiers: $event.modifiers, keys: $event.keys })"
         />
         <p class="gg-hint">{{ t("command.hotKey.hint") }}</p>
       </div>
@@ -307,91 +260,6 @@ function updateVolumeDelta(value: unknown) {
       </div>
     </template>
 
-    <!-- 脚本 -->
-    <template v-else-if="type === 'script'">
-      <el-alert
-        v-if="asScript.language === 'lua'"
-        type="warning"
-        :closable="false"
-        show-icon
-        :title="t('command.script.luaWarning')"
-      />
-      <div class="gg-field">
-        <label class="gg-field-label">{{ t("command.script.language") }}</label>
-        <el-select
-          :model-value="asScript.language"
-          class="cmd-editor__lang"
-          @update:model-value="patch({ language: $event })"
-        >
-          <el-option label="JavaScript" value="js" />
-          <el-option label="Lua" value="lua" />
-        </el-select>
-      </div>
-      <div class="gg-field">
-        <label class="gg-field-label">{{ t("command.script.main") }}</label>
-        <ScriptEditor
-          :model-value="asScript.script"
-          :language="asScript.language"
-          :editor-label="t('command.script.main')"
-          :height="220"
-          @update:model-value="patch({ script: $event })"
-        />
-      </div>
-      <div v-if="asScript.language === 'js'" class="cmd-editor__migration">
-        <el-button size="small" :loading="migrationRunning" @click="convertScriptToNodePlugin">
-          {{ t("command.script.convertToNodePlugin") }}
-        </el-button>
-        <span class="gg-hint">{{ t("command.script.convertHint") }}</span>
-      </div>
-      <el-collapse class="cmd-editor__advanced">
-        <el-collapse-item :title="t('command.script.advanced')" name="advanced">
-          <div class="gg-switch-row">
-            <el-switch
-              :model-value="asScript.handleModifiers"
-              @update:model-value="patch({ handleModifiers: $event })"
-            />
-            <span>{{ t("command.script.handleModifiers") }}</span>
-          </div>
-          <div class="gg-field">
-            <label class="gg-field-label">{{ t("command.script.initScript") }}</label>
-            <ScriptEditor
-              :model-value="asScript.initScript"
-              :language="asScript.language"
-              :editor-label="t('command.script.initScript')"
-              @update:model-value="patch({ initScript: $event })"
-            />
-          </div>
-          <div class="gg-field">
-            <label class="gg-field-label">{{ t("command.script.gestureRecognizedScript") }}</label>
-            <ScriptEditor
-              :model-value="asScript.gestureRecognizedScript"
-              :language="asScript.language"
-              :editor-label="t('command.script.gestureRecognizedScript')"
-              @update:model-value="patch({ gestureRecognizedScript: $event })"
-            />
-          </div>
-          <div class="gg-field">
-            <label class="gg-field-label">{{ t("command.script.modifierTriggeredScript") }}</label>
-            <ScriptEditor
-              :model-value="asScript.modifierTriggeredScript"
-              :language="asScript.language"
-              :editor-label="t('command.script.modifierTriggeredScript')"
-              @update:model-value="patch({ modifierTriggeredScript: $event })"
-            />
-          </div>
-          <div class="gg-field">
-            <label class="gg-field-label">{{ t("command.script.gestureEndedScript") }}</label>
-            <ScriptEditor
-              :model-value="asScript.gestureEndedScript"
-              :language="asScript.language"
-              :editor-label="t('command.script.gestureEndedScript')"
-              @update:model-value="patch({ gestureEndedScript: $event })"
-            />
-          </div>
-        </el-collapse-item>
-      </el-collapse>
-    </template>
-
     <!-- Node 插件 -->
     <NodePluginEditor
       v-else-if="type === 'nodePlugin'"
@@ -428,22 +296,12 @@ function updateVolumeDelta(value: unknown) {
 .cmd-editor > .gg-field {
   min-width: 0;
 }
-.cmd-editor__type,
-.cmd-editor__lang {
+.cmd-editor__type {
   max-width: 260px;
 }
 .cmd-editor__presets {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.cmd-editor__migration {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.cmd-editor__advanced {
-  border-top: none;
 }
 </style>

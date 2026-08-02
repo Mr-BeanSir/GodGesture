@@ -12,8 +12,6 @@ import {
   MAX_HOTKEY_MODIFIERS,
   MAX_INTENTS_PER_SCOPE,
   MAX_PATH_LENGTH,
-  MAX_SCRIPT_SLOT_LENGTH,
-  MAX_SCRIPT_TOTAL_LENGTH,
   MAX_URL_LENGTH,
 } from "./limits.js";
 import { NodePluginCommand } from "./plugins.js";
@@ -48,16 +46,31 @@ export const GestureModifier = z.enum([
 ]);
 export type GestureModifier = z.infer<typeof GestureModifier>;
 
-/** 手势 = 触发键 + 笔画序列 + 修饰,三者共同决定唯一性 */
+/** 手势输入步骤:保留用户实际输入的时序。 */
+export const GestureInput = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("stroke"), direction: StrokeDirection }),
+  z.object({
+    type: z.literal("button"),
+    button: z.enum(["left", "middle", "right", "x1", "x2"]),
+  }),
+  z.object({
+    type: z.literal("wheel"),
+    direction: z.enum(["forward", "backward"]),
+  }),
+]);
+export type GestureInput = z.infer<typeof GestureInput>;
+
+/** 手势 = 触发键 + 有序输入步骤。modifier 仅作为旧配置读取字段保留。 */
 export const GestureSpec = z.object({
   trigger: TriggerButton,
   strokes: z.array(StrokeDirection).max(12),
   modifier: GestureModifier.default("none"),
+  inputs: z.array(GestureInput).max(12).optional(),
 });
 export type GestureSpec = z.infer<typeof GestureSpec>;
 
 // ---------------------------------------------------------------------------
-// 命令(12 类,对齐 WGestures 出厂行为;窗口控制额外含贴靠左/右)
+// 命令(12 类;窗口控制含贴靠左/右)
 // ---------------------------------------------------------------------------
 
 const base = <T extends string>(type: T) => ({ type: z.literal(type) });
@@ -121,19 +134,6 @@ export const CmdCommand = z.object({
   autoSetWorkingDir: z.boolean().default(true),
 });
 
-/** 脚本命令:JavaScript(QuickJS),四脚本槽模型 */
-export const ScriptCommand = z.object({
-  ...base("script"),
-  /** 语言标记:导入的老 WGestures Lua 脚本保留原文并标 "lua"(不可执行,待手动改写) */
-  language: z.enum(["js", "lua"]).default("js"),
-  initScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
-  script: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
-  handleModifiers: z.boolean().default(false),
-  gestureRecognizedScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
-  modifierTriggeredScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
-  gestureEndedScript: z.string().max(MAX_SCRIPT_SLOT_LENGTH).default(""),
-});
-
 export const PauseCommand = z.object(base("pause"));
 
 export const AudioVolumeCommand = z.object({
@@ -142,8 +142,7 @@ export const AudioVolumeCommand = z.object({
   delta: z.number().int().min(-20).max(20).default(1),
 });
 
-export const Command = z
-  .discriminatedUnion("type", [
+export const Command = z.discriminatedUnion("type", [
     DoNothingCommand,
     HotKeyCommand,
     WebSearchCommand,
@@ -153,30 +152,10 @@ export const Command = z
     SendTextCommand,
     GotoUrlCommand,
     CmdCommand,
-    ScriptCommand,
     NodePluginCommand,
     PauseCommand,
     AudioVolumeCommand,
-  ])
-  .superRefine((command, ctx) => {
-    if (command.type !== "script") return;
-    const total =
-      command.initScript.length +
-      command.script.length +
-      command.gestureRecognizedScript.length +
-      command.modifierTriggeredScript.length +
-      command.gestureEndedScript.length;
-    if (total > MAX_SCRIPT_TOTAL_LENGTH) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        maximum: MAX_SCRIPT_TOTAL_LENGTH,
-        inclusive: true,
-        type: "string",
-        path: ["script"],
-        message: `Combined script content must be at most ${MAX_SCRIPT_TOTAL_LENGTH} characters`,
-      });
-    }
-  });
+  ]);
 export type Command = z.infer<typeof Command>;
 
 // ---------------------------------------------------------------------------

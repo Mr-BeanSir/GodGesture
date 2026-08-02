@@ -20,7 +20,6 @@ export const COMMAND_TYPES: CommandType[] = [
   "sendText",
   "gotoUrl",
   "cmd",
-  "script",
   "nodePlugin",
   "pause",
   "audioVolume",
@@ -61,17 +60,6 @@ export function createDefaultCommand(type: CommandType): Command {
       return { type: "gotoUrl", url: "" };
     case "cmd":
       return { type: "cmd", code: "", showWindow: true, autoSetWorkingDir: true };
-    case "script":
-      return {
-        type: "script",
-        language: "js",
-        initScript: "",
-        script: "",
-        handleModifiers: false,
-        gestureRecognizedScript: "",
-        modifierTriggeredScript: "",
-        gestureEndedScript: "",
-      };
     case "nodePlugin":
       throw new Error("Node plugin commands require an existing plugin selection");
     case "pause":
@@ -79,4 +67,5 @@ export function createDefaultCommand(type: CommandType): Command {
     case "audioVolume":
       return { type: "audioVolume", delta: 1 };
   }
+  throw new Error(`Unsupported command type: ${type}`);
 }
