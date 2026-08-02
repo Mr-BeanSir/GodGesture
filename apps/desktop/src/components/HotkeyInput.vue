@@ -62,9 +62,9 @@ function onKeydown(e: KeyboardEvent) {
   if (!recording.value || !recordingState) return;
   e.preventDefault();
   e.stopPropagation();
-  // The native hook is needed to beat Windows-reserved shortcuts, but the
-  // WebView path remains active as a fallback. The recorder de-duplicates
-  // repeated physical codes, so either path can safely deliver the same key.
+  // The native hook is attempted before Windows-reserved shortcuts, while the
+  // WebView path remains active as a fallback. Some system combinations may
+  // still be handled by Windows before the application can retain focus.
   if (e.code === "Escape") {
     stopRecording();
     return;

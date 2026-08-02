@@ -39,7 +39,7 @@ pub trait HookHandler: Send {
     fn on_event(&mut self, input: Input) -> bool;
 }
 
-/// 原生快捷键录制事件。录制期间由低级键盘钩子优先于系统快捷键吞掉,
+/// 原生快捷键录制事件。录制期间由低级键盘钩子尝试阻断系统快捷键,
 /// 再通过有界通道转发给 WebView 中的同一套和弦解析器。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

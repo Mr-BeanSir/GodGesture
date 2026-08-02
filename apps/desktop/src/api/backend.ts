@@ -207,7 +207,7 @@ export interface Backend {
 
   captureStart(): Promise<void>;
   captureCancel(): Promise<void>;
-  /** Windows 录制期间抢在系统快捷键前启用/停用原生键盘捕获。 */
+  /** Windows 录制期间尝试阻断系统快捷键的原生键盘捕获。 */
   hotkeyCaptureStart(): Promise<void>;
   hotkeyCaptureCancel(): Promise<void>;
   onHotkeyCapture(handler: (event: HotkeyCaptureEvent) => void): Promise<() => void>;
