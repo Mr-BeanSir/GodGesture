@@ -127,8 +127,6 @@ impl Default for TrackerParams {
 pub trait TrackerHost {
     /// 路径开始前的放行判定(黑名单/总开关/全屏禁用)——必须快
     fn is_gesturing_allowed(&mut self, pos: Point) -> bool;
-    /// 当前手势是否已识别出至少一笔或收到额外输入(决定抬起时透传点击还是结束手势)
-    fn has_path_content(&self) -> bool;
     /// 是否处于设置页录制模式;录制时触发键按下即开始建立可视捕获。
     fn is_recording(&self) -> bool;
 }
@@ -347,7 +345,7 @@ impl PathTracker {
         btn: MouseButton,
         pos: Point,
         now: Instant,
-        host: &mut dyn TrackerHost,
+        _host: &mut dyn TrackerHost,
     ) -> Outcome {
         match &mut self.state {
             State::Pending { button, .. } if btn == *button => {
@@ -358,21 +356,16 @@ impl PathTracker {
             }
             State::Tracking {
                 button,
-                modifier_used,
                 held_modifier_buttons,
                 ..
             } => {
                 if btn == *button {
-                    let button = *button;
-                    let had_content =
-                        host.has_path_content() || *modifier_used || host.is_recording();
                     self.state = State::Idle;
                     self.last_gesture_end = Some(now);
-                    if had_content {
-                        Outcome::swallowed(vec![Action::PathEnd { pos }])
-                    } else {
-                        Outcome::swallowed(vec![Action::SynthesizeClick { button, pos }])
-                    }
+                    // Entering Tracking has already consumed the trigger click. Even when
+                    // the movement did not form a stroke, end the gesture so the overlay is
+                    // cleared and the original button event is never replayed.
+                    Outcome::swallowed(vec![Action::PathEnd { pos }])
                 } else if let Some(i) = held_modifier_buttons.iter().position(|b| *b == btn) {
                     held_modifier_buttons.remove(i);
                     Outcome::swallowed(Vec::new())
@@ -496,16 +489,12 @@ mod tests {
 
     struct Host {
         allowed: bool,
-        has_content: bool,
         recording: bool,
     }
 
     impl TrackerHost for Host {
         fn is_gesturing_allowed(&mut self, _pos: Point) -> bool {
             self.allowed
-        }
-        fn has_path_content(&self) -> bool {
-            self.has_content
         }
         fn is_recording(&self) -> bool {
             self.recording
@@ -521,7 +510,6 @@ mod tests {
             PathTracker::new(params),
             Host {
                 allowed: true,
-                has_content: false,
                 recording: false,
             },
             Instant::now(),
@@ -543,7 +531,6 @@ mod tests {
             }
         );
 
-        h.has_content = true;
         let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(60, 0)), t0, &mut h);
         assert!(o.swallow);
         assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(60, 0) }]);
@@ -646,19 +633,24 @@ mod tests {
     }
 
     #[test]
-    fn click_passthrough_when_moved_but_no_strokes() {
+    fn moved_capture_ends_without_click_when_no_strokes() {
         let (mut t, mut h, t0) = setup(TrackerParams::default());
         t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
         t.handle(Input::Move(pt(30, 0)), t0, &mut h);
-        h.has_content = false; // 引擎:未长出笔画
         let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
-        assert_eq!(
-            o.actions,
-            vec![Action::SynthesizeClick {
-                button: MouseButton::Right,
-                pos: pt(30, 0)
-            }]
-        );
+        assert!(o.swallow);
+        assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(30, 0) }]);
+    }
+
+    #[test]
+    fn moved_capture_stays_consumed_after_direction_reversal() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(5, 0)), t0, &mut h);
+        t.handle(Input::Move(pt(1, 0)), t0, &mut h);
+        let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(1, 0)), t0, &mut h);
+        assert!(o.swallow);
+        assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(1, 0) }]);
     }
 
     #[test]
@@ -819,7 +811,6 @@ mod tests {
         assert!(o.swallow && o.actions.is_empty());
 
         // 修饰用过后,即使无笔画,抬起也按 PathEnd 处理(引擎决定执行与否)
-        h.has_content = false;
         let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
         assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(30, 0) }]);
     }
@@ -829,7 +820,6 @@ mod tests {
         let (mut t, mut h, t0) = setup(TrackerParams::default());
         t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
         t.handle(Input::Move(pt(30, 0)), t0, &mut h);
-        h.has_content = true;
         t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
 
         let o = t.handle(

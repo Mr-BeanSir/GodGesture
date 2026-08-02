@@ -841,14 +841,6 @@ impl TrackerHost for HostImpl<'_> {
         shared.finder.lock().is_gesturing_enabled_for(&fg)
     }
 
-    fn has_path_content(&self) -> bool {
-        self.shared
-            .session
-            .lock()
-            .as_ref()
-            .is_some_and(|s| !s.parser.strokes().is_empty())
-    }
-
     fn is_recording(&self) -> bool {
         self.shared.is_recording()
     }
@@ -1053,6 +1045,25 @@ mod tests {
                 vec![Direction::Up, Direction::Right],
             ))
         );
+    }
+
+    #[test]
+    fn moved_capture_ends_without_replaying_unmatched_click() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let (shared, rx) = EngineShared::new(ConfigDocument::default(), platform.clone());
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 5, y: 0 })));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 1, y: 0 },)));
+
+        assert!(platform.clicks.lock().is_empty());
+        let messages = rx.try_iter().collect::<Vec<_>>();
+        assert!(messages
+            .iter()
+            .any(|message| matches!(message, EngineMsg::PathStarted { .. })));
+        assert!(messages
+            .iter()
+            .any(|message| matches!(message, EngineMsg::PathEnded { intent: None, .. })));
     }
 
     #[derive(Default)]

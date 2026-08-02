@@ -433,6 +433,12 @@ typecheck/build;`pnpm check:api` 与 `git diff --check` 通过。Windows 真实�
 全部系统级组合。失焦、Escape、完成和组件卸载都会停用捕获,结束录制后恢复系统输入。
 该能力为 Windows 专属,macOS 仍使用 WebView 录制并待真实设备验收。
 
+2026-08-03 轨迹收尾与右键消费修复:触发键一旦跨过 `initialValidMovePx` 进入 Tracking,
+释放时统一产生 `PathEnd`,不再因为尚未形成笔画而合成原始点击。这样无匹配手势也会走统一
+覆盖层收尾流程,轨迹按设置清除或淡出,目标应用不会收到右键;仍处于 Pending 且未达到阈值
+的普通点击保持原有透传。新增方向折返与跨 runtime 无匹配回归测试;Rust library
+`209 passed, 3 ignored`,严格 Clippy 和 `git diff --check` 通过。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
