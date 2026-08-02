@@ -423,7 +423,10 @@ mod tests {
         ];
 
         for (error, phase, expected) in cases {
-            assert_eq!(UpdaterCommandError::from_native(error, phase).code, expected);
+            assert_eq!(
+                UpdaterCommandError::from_native(error, phase).code,
+                expected
+            );
         }
     }
 }

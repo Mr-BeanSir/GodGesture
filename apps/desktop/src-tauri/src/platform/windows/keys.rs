@@ -8,10 +8,19 @@ use windows::Win32::UI::Input::KeyboardAndMouse::*;
 pub fn is_modifier_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "ctrl" | "control" | "ctl"
+        "ctrl"
+            | "control"
+            | "ctl"
             | "shift"
-            | "alt" | "option" | "menu"
-            | "win" | "windows" | "meta" | "super" | "command" | "cmd"
+            | "alt"
+            | "option"
+            | "menu"
+            | "win"
+            | "windows"
+            | "meta"
+            | "super"
+            | "command"
+            | "cmd"
     )
 }
 
@@ -25,11 +34,16 @@ pub fn name_to_vk(name: &str) -> Option<VIRTUAL_KEY> {
         "win" | "windows" | "meta" | "super" | "command" | "cmd" => VK_LWIN,
         // 旧版 UI 按 KeyboardEvent.key 保存了布局后的字符。迁移为同一物理键,
         // 修饰状态仍由 modifiers 数组表达。
-        "!" => VIRTUAL_KEY(b'1' as u16), "@" => VIRTUAL_KEY(b'2' as u16),
-        "#" => VIRTUAL_KEY(b'3' as u16), "$" => VIRTUAL_KEY(b'4' as u16),
-        "%" => VIRTUAL_KEY(b'5' as u16), "^" => VIRTUAL_KEY(b'6' as u16),
-        "&" => VIRTUAL_KEY(b'7' as u16), "*" => VIRTUAL_KEY(b'8' as u16),
-        "(" => VIRTUAL_KEY(b'9' as u16), ")" => VIRTUAL_KEY(b'0' as u16),
+        "!" => VIRTUAL_KEY(b'1' as u16),
+        "@" => VIRTUAL_KEY(b'2' as u16),
+        "#" => VIRTUAL_KEY(b'3' as u16),
+        "$" => VIRTUAL_KEY(b'4' as u16),
+        "%" => VIRTUAL_KEY(b'5' as u16),
+        "^" => VIRTUAL_KEY(b'6' as u16),
+        "&" => VIRTUAL_KEY(b'7' as u16),
+        "*" => VIRTUAL_KEY(b'8' as u16),
+        "(" => VIRTUAL_KEY(b'9' as u16),
+        ")" => VIRTUAL_KEY(b'0' as u16),
         // 字母
         c if c.len() == 1 && c.as_bytes()[0].is_ascii_lowercase() => {
             VIRTUAL_KEY(c.as_bytes()[0].to_ascii_uppercase() as u16)
@@ -39,14 +53,35 @@ pub fn name_to_vk(name: &str) -> Option<VIRTUAL_KEY> {
             VIRTUAL_KEY(d.as_bytes()[0] as u16)
         }
         // 功能键
-        "f1" => VK_F1, "f2" => VK_F2, "f3" => VK_F3, "f4" => VK_F4,
-        "f5" => VK_F5, "f6" => VK_F6, "f7" => VK_F7, "f8" => VK_F8,
-        "f9" => VK_F9, "f10" => VK_F10, "f11" => VK_F11, "f12" => VK_F12,
-        "f13" => VK_F13, "f14" => VK_F14, "f15" => VK_F15, "f16" => VK_F16,
-        "f17" => VK_F17, "f18" => VK_F18, "f19" => VK_F19, "f20" => VK_F20,
-        "f21" => VK_F21, "f22" => VK_F22, "f23" => VK_F23, "f24" => VK_F24,
+        "f1" => VK_F1,
+        "f2" => VK_F2,
+        "f3" => VK_F3,
+        "f4" => VK_F4,
+        "f5" => VK_F5,
+        "f6" => VK_F6,
+        "f7" => VK_F7,
+        "f8" => VK_F8,
+        "f9" => VK_F9,
+        "f10" => VK_F10,
+        "f11" => VK_F11,
+        "f12" => VK_F12,
+        "f13" => VK_F13,
+        "f14" => VK_F14,
+        "f15" => VK_F15,
+        "f16" => VK_F16,
+        "f17" => VK_F17,
+        "f18" => VK_F18,
+        "f19" => VK_F19,
+        "f20" => VK_F20,
+        "f21" => VK_F21,
+        "f22" => VK_F22,
+        "f23" => VK_F23,
+        "f24" => VK_F24,
         // 导航与编辑
-        "left" => VK_LEFT, "right" => VK_RIGHT, "up" => VK_UP, "down" => VK_DOWN,
+        "left" => VK_LEFT,
+        "right" => VK_RIGHT,
+        "up" => VK_UP,
+        "down" => VK_DOWN,
         "enter" | "return" => VK_RETURN,
         "esc" | "escape" => VK_ESCAPE,
         "space" => VK_SPACE,
@@ -127,12 +162,24 @@ pub fn name_to_vk(name: &str) -> Option<VIRTUAL_KEY> {
 pub fn is_extended(vk: VIRTUAL_KEY) -> bool {
     matches!(
         vk,
-        VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN
-            | VK_HOME | VK_END | VK_PRIOR | VK_NEXT
-            | VK_INSERT | VK_DELETE
-            | VK_RCONTROL | VK_RMENU
-            | VK_LWIN | VK_RWIN | VK_APPS
-            | VK_SNAPSHOT | VK_DIVIDE | VK_NUMLOCK
+        VK_LEFT
+            | VK_RIGHT
+            | VK_UP
+            | VK_DOWN
+            | VK_HOME
+            | VK_END
+            | VK_PRIOR
+            | VK_NEXT
+            | VK_INSERT
+            | VK_DELETE
+            | VK_RCONTROL
+            | VK_RMENU
+            | VK_LWIN
+            | VK_RWIN
+            | VK_APPS
+            | VK_SNAPSHOT
+            | VK_DIVIDE
+            | VK_NUMLOCK
     )
 }
 
@@ -143,17 +190,67 @@ mod tests {
     #[test]
     fn every_shared_canonical_key_name_maps_to_a_vk() {
         let fixed = [
-            "backspace", "tab", "clear", "enter", "pauseBreak", "capsLock", "esc", "space",
-            "pageUp", "pageDown", "end", "home", "left", "up", "right", "down",
-            "printScreen", "insert", "delete", "contextMenu", "sleep", "numpadMultiply",
-            "numpadAdd", "numpadSeparator", "numpadSubtract", "numpadDecimal",
-            "numpadDivide", "numpadEnter", "numpadEqual", "numLock", "scrollLock",
-            "browserBack", "browserForward", "browserRefresh", "browserStop", "browserSearch",
-            "browserFavorites", "browserHome", "volumeMute", "volumeDown", "volumeUp",
-            "mediaNextTrack", "mediaPrevTrack", "mediaStop", "mediaPlayPause", "launchMail",
-            "launchMediaSelect", "launchApp1", "launchApp2", "semicolon", "equals", "comma",
-            "minus", "period", "slash", "backquote", "bracketLeft", "backslash",
-            "bracketRight", "quote", "intlBackslash",
+            "backspace",
+            "tab",
+            "clear",
+            "enter",
+            "pauseBreak",
+            "capsLock",
+            "esc",
+            "space",
+            "pageUp",
+            "pageDown",
+            "end",
+            "home",
+            "left",
+            "up",
+            "right",
+            "down",
+            "printScreen",
+            "insert",
+            "delete",
+            "contextMenu",
+            "sleep",
+            "numpadMultiply",
+            "numpadAdd",
+            "numpadSeparator",
+            "numpadSubtract",
+            "numpadDecimal",
+            "numpadDivide",
+            "numpadEnter",
+            "numpadEqual",
+            "numLock",
+            "scrollLock",
+            "browserBack",
+            "browserForward",
+            "browserRefresh",
+            "browserStop",
+            "browserSearch",
+            "browserFavorites",
+            "browserHome",
+            "volumeMute",
+            "volumeDown",
+            "volumeUp",
+            "mediaNextTrack",
+            "mediaPrevTrack",
+            "mediaStop",
+            "mediaPlayPause",
+            "launchMail",
+            "launchMediaSelect",
+            "launchApp1",
+            "launchApp2",
+            "semicolon",
+            "equals",
+            "comma",
+            "minus",
+            "period",
+            "slash",
+            "backquote",
+            "bracketLeft",
+            "backslash",
+            "bracketRight",
+            "quote",
+            "intlBackslash",
         ];
         for name in fixed {
             assert!(name_to_vk(name).is_some(), "missing canonical key {name}");

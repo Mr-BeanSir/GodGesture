@@ -438,7 +438,10 @@ mod tests {
     #[test]
     fn normalize_exe_name_takes_file_name_and_lowercases() {
         assert_eq!(normalize_exe_name("Chrome.exe").unwrap(), "chrome.exe");
-        assert_eq!(normalize_exe_name("  notepad.exe  ").unwrap(), "notepad.exe");
+        assert_eq!(
+            normalize_exe_name("  notepad.exe  ").unwrap(),
+            "notepad.exe"
+        );
         assert_eq!(
             normalize_exe_name(r#""C:\Program Files\App\App.exe""#).unwrap(),
             "app.exe"
@@ -507,7 +510,10 @@ mod tests {
             vec![30, 20, 10, 255]
         );
         // 全透明像素预乘后是 0,不会留下黑边
-        assert_eq!(bgra_to_rgba_premultiplied(&[10, 20, 30, 0]), vec![0, 0, 0, 0]);
+        assert_eq!(
+            bgra_to_rgba_premultiplied(&[10, 20, 30, 0]),
+            vec![0, 0, 0, 0]
+        );
         // 半透明:颜色按 alpha 缩放,且不超过 alpha(Pixmap 的预乘不变式)
         let half = bgra_to_rgba_premultiplied(&[0, 0, 200, 128]);
         assert_eq!(half[3], 128);
@@ -586,7 +592,10 @@ mod tests {
             (255, 0, 0, 255),
             "掩码清零处应是不透明原色"
         );
-        assert_eq!(pixels.iter().filter(|p| p.alpha() == 255).count(), W * H / 2);
+        assert_eq!(
+            pixels.iter().filter(|p| p.alpha() == 255).count(),
+            W * H / 2
+        );
     }
 
     #[test]

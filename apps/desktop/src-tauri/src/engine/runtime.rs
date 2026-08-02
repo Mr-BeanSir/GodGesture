@@ -452,12 +452,9 @@ impl EngineShared {
             {
                 return;
             }
-            self.boundary.lock().activate(
-                config,
-                CornerEdgeHit::Edge(edge),
-                pos,
-                now,
-            )
+            self.boundary
+                .lock()
+                .activate(config, CornerEdgeHit::Edge(edge), pos, now)
         };
         if matches!(result, BoundaryResult::Pending) {
             let (effective, enable_8) = {
@@ -854,8 +851,8 @@ fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::corners::ScreenEdge;
     use crate::engine::config::{BoundaryIntent, BoundaryOrigin};
+    use crate::engine::corners::ScreenEdge;
     use crate::engine::corners::{ScreenCorner, ScreenRect};
 
     struct StubPlatform;

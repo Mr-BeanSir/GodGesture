@@ -295,10 +295,7 @@ impl CornerEdgeDetector {
         let mut hit = None;
         for corner in ScreenCorner::ALL {
             let dist = int_distance(corner.point(bounds), pos);
-            if !self.corner_armed
-                && self.last_corner == Some(corner)
-                && dist > CORNER_REARM_DIST
-            {
+            if !self.corner_armed && self.last_corner == Some(corner) && dist > CORNER_REARM_DIST {
                 self.corner_armed = true;
             } else if dist <= CORNER_TRIGGER_DIST && self.corner_armed {
                 self.corner_armed = false;
@@ -498,7 +495,11 @@ mod tests {
         ];
         for (x, y, want) in cases {
             let mut s = Sim::new();
-            assert_eq!(s.mv(x, y), Some(CornerEdgeHit::Corner(want)), "corner {want:?}");
+            assert_eq!(
+                s.mv(x, y),
+                Some(CornerEdgeHit::Corner(want)),
+                "corner {want:?}"
+            );
         }
     }
 
@@ -776,9 +777,15 @@ mod tests {
     #[test]
     fn closed_interval_right_and_bottom_boundaries() {
         // 边带:右侧最外 17px 在带内,再往里一格就出带
-        assert_eq!(active_edge(p(W - 1 - 16, 500), W, H, 16), Some(ScreenEdge::Right));
+        assert_eq!(
+            active_edge(p(W - 1 - 16, 500), W, H, 16),
+            Some(ScreenEdge::Right)
+        );
         assert_eq!(active_edge(p(W - 1 - 17, 500), W, H, 16), None);
-        assert_eq!(active_edge(p(500, H - 1 - 16), W, H, 16), Some(ScreenEdge::Bottom));
+        assert_eq!(
+            active_edge(p(500, H - 1 - 16), W, H, 16),
+            Some(ScreenEdge::Bottom)
+        );
         assert_eq!(active_edge(p(500, H - 1 - 17), W, H, 16), None);
 
         // 角:到角点距离 2 触发、3 不触发(右下与左上一致的 3×3)

@@ -49,13 +49,19 @@ pub enum Input {
     ButtonUp(MouseButton, Point),
     Move(Point),
     /// forward = 滚轮向前(远离使用者)
-    Wheel { forward: bool, pos: Point },
+    Wheel {
+        forward: bool,
+        pos: Point,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// 手势正式开始(已越过起始阈值)
-    PathStart { trigger: TriggerButton, origin: Point },
+    PathStart {
+        trigger: TriggerButton,
+        origin: Point,
+    },
     /// 路径生长(渲染与识别都从这里喂)
     PathGrow(Point),
     /// 修饰触发
@@ -148,9 +154,13 @@ enum State {
         held_modifier_buttons: Vec<MouseButton>,
     },
     /// 起始超时后转普通拖拽:一切透传,等触发键抬起
-    PassthroughDrag { button: MouseButton },
+    PassthroughDrag {
+        button: MouseButton,
+    },
     /// 已取消(停留超时),吞掉即将到来的触发键抬起
-    CancelledAwaitUp { button: MouseButton },
+    CancelledAwaitUp {
+        button: MouseButton,
+    },
 }
 
 pub struct PathTracker {
@@ -553,7 +563,11 @@ mod tests {
             }]
         );
         // 之后一切透传,真实抬起也不吞
-        let o = t.handle(Input::Move(pt(50, 50)), t0 + Duration::from_millis(250), &mut h);
+        let o = t.handle(
+            Input::Move(pt(50, 50)),
+            t0 + Duration::from_millis(250),
+            &mut h,
+        );
         assert!(!o.swallow && o.actions.is_empty());
         let o = t.handle(
             Input::ButtonUp(MouseButton::Right, pt(50, 50)),
@@ -607,7 +621,14 @@ mod tests {
         t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
         t.handle(Input::Move(pt(30, 0)), t0, &mut h);
 
-        let o = t.handle(Input::Wheel { forward: true, pos: pt(30, 0) }, t0, &mut h);
+        let o = t.handle(
+            Input::Wheel {
+                forward: true,
+                pos: pt(30, 0),
+            },
+            t0,
+            &mut h,
+        );
         assert_eq!(
             o.actions,
             vec![Action::ModifierFired {
@@ -617,14 +638,20 @@ mod tests {
         );
         // 100ms 内的第二次被节流(但仍吞)
         let o = t.handle(
-            Input::Wheel { forward: true, pos: pt(30, 0) },
+            Input::Wheel {
+                forward: true,
+                pos: pt(30, 0),
+            },
             t0 + Duration::from_millis(50),
             &mut h,
         );
         assert!(o.swallow && o.actions.is_empty());
         // 100ms 后恢复
         let o = t.handle(
-            Input::Wheel { forward: false, pos: pt(30, 0) },
+            Input::Wheel {
+                forward: false,
+                pos: pt(30, 0),
+            },
             t0 + Duration::from_millis(200),
             &mut h,
         );
@@ -669,13 +696,19 @@ mod tests {
         t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
 
         let o = t.handle(
-            Input::Wheel { forward: true, pos: pt(30, 0) },
+            Input::Wheel {
+                forward: true,
+                pos: pt(30, 0),
+            },
             t0 + Duration::from_millis(100),
             &mut h,
         );
         assert!(o.swallow);
         let o = t.handle(
-            Input::Wheel { forward: true, pos: pt(30, 0) },
+            Input::Wheel {
+                forward: true,
+                pos: pt(30, 0),
+            },
             t0 + Duration::from_millis(400),
             &mut h,
         );

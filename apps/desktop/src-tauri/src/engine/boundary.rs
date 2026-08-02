@@ -352,9 +352,13 @@ mod tests {
 
     #[test]
     fn disabled_boundary_intent_does_not_arm() {
-        let mut disabled = intent("disabled", vec![BoundaryToken::Wheel {
-            direction: BoundaryWheelDirection::Forward,
-        }], 0);
+        let mut disabled = intent(
+            "disabled",
+            vec![BoundaryToken::Wheel {
+                direction: BoundaryWheelDirection::Forward,
+            }],
+            0,
+        );
         disabled.enabled = false;
         let config = config_with(vec![disabled]);
         let mut matcher = BoundaryMatcher::default();
