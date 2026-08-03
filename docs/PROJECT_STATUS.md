@@ -80,7 +80,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 页面:`OptionsView`, `GesturesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。触发角与摩擦边已并入手势页,不再有独立页面。
 - `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、手势模板、账户与同步、设置、
   关于;默认页仍为设置。主区不承担页面滚动,五页各自声明唯一
-  主滚动区或明确的分区滚动责任。
+  主滚动区或明确的分区滚动责任。Windows 主窗口在首次显示前移除系统 decorations,
+  现有 48px 顶栏提供独立拖动区、最小化和关闭到托盘按钮；macOS 保留原生标题栏。
 - `QuickStartDialog.vue` 与 `onboarding/quick-guide.ts` 提供版本化的本机首次引导、平台就绪检查、默认手势试用和既有配置入口;About 可重开,浏览器 `?guide=1` 可强制展示。
 - `api/backend.ts` 是唯一 Tauri IPC 网关;浏览器运行时自动使用 `api/mock.ts`。
 - `stores/config.ts` 负责加载、可取消防抖、串行保存、导入/远端应用 barrier 和即时生效;同步推送前可显式 flush,远端应用期间的新本地编辑不会被覆盖;协议变更必须同步核对 Rust `engine/config.rs`。
@@ -454,6 +455,16 @@ typecheck/build,Server `87/87` + typecheck/build,Web Console typecheck/build,`pn
 一致,仅在触发键释放产生 `PathEnd` 后执行；配置独立修饰符时仍由每次 `ModifierFired` 立即
 执行,释放触发键不重复。Windows `Alt+Tab` 与 macOS Mission Control 共用该时机语义。
 新增两条 runtime 回归测试,Rust library `212 passed, 3 ignored`。
+
+2026-08-03 Windows 自定义标题栏与图标:Windows 主窗口在 Rust setup 中于首次显示前
+移除系统 decorations,现有 48px 顶栏增加不覆盖交互控件的拖动区、最小化和关闭到托盘
+按钮；macOS 原生标题栏与 `icon.icns` 保持不变。桌面 `favicon-transparent.png` 已生成
+包含 16/24/32/48/64/256px 六帧 32-bit 的 Windows `icon.ico`,并同步 32px 顶栏图标。
+Tauri capability 显式授权 close/minimize/start-dragging。Desktop `125/125`、typecheck/build、
+Rust 严格 Clippy、定向格式、capability JSON、ICO 帧与 `git diff --check` 通过。Windows
+Tauri dev 窗口已启动且 UIA 确认自定义控制组与 drag-resize 层；Computer Use 对 borderless
+WebView2 截图返回 `SetIsBorderRequired (0x80004002)`,随后检测到用户输入而停止自动点击,
+拖动、最小化与关闭到托盘仍由维护者实际体验确认。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 

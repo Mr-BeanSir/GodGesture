@@ -18,6 +18,9 @@ export default {
     theme: "深浅色切换",
     language: "界面语言",
     languageAuto: "跟随系统",
+    windowControls: "窗口控制",
+    minimize: "最小化",
+    close: "关闭到托盘",
   },
   load: {
     title: "无法载入配置",

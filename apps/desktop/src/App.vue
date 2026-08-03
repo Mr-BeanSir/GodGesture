@@ -33,6 +33,7 @@ import {
 } from "./onboarding/quick-guide";
 import LegacyImportDialog from "./components/LegacyImportDialog.vue";
 import QuickStartDialog from "./components/QuickStartDialog.vue";
+import WindowControls from "./components/WindowControls.vue";
 import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
 import AccountView from "./views/AccountView.vue";
@@ -91,6 +92,12 @@ const localeSetting = computed<LocaleSetting>({
 });
 
 const isTauri = computed(() => store.backend.isTauri);
+const isWindowsDesktop = computed(
+  () =>
+    isTauri.value &&
+    typeof navigator !== "undefined" &&
+    /Windows|Win32|Win64/i.test(`${navigator.platform} ${navigator.userAgent}`),
+);
 const elementLocale = computed(() => (locale.value === "zh-CN" ? zhCn : en));
 
 function onSelectSection(index: string) {
@@ -179,11 +186,18 @@ onUnmounted(() => unlistenSingleInstance?.());
 <template>
   <el-config-provider :locale="elementLocale">
     <el-container class="app">
-    <el-header class="app__header">
+    <el-header
+      class="app__header"
+      :class="{ 'app__header--custom': isWindowsDesktop }"
+    >
       <div class="app__brand">
         <img src="../src-tauri/icons/32x32.png" alt="" />
         <span>{{ t("app.title") }}</span>
       </div>
+      <div
+        class="app__header-spacer"
+        :data-tauri-drag-region="isWindowsDesktop ? '' : undefined"
+      />
       <div class="app__actions">
         <el-tooltip :content="t('header.pauseTooltip')" placement="bottom">
           <el-button
@@ -208,6 +222,7 @@ onUnmounted(() => unlistenSingleInstance?.());
           <el-option label="English" value="en" />
         </el-select>
       </div>
+      <WindowControls v-if="isWindowsDesktop" />
     </el-header>
 
     <el-container class="app__body">
@@ -280,12 +295,14 @@ onUnmounted(() => unlistenSingleInstance?.());
 .app__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex: 0 0 48px;
   height: 48px;
   padding: 0 16px;
   border-bottom: 1px solid var(--gg-border);
   background: var(--gg-surface);
+}
+.app__header--custom {
+  padding-right: 0;
 }
 .app__brand {
   display: inline-flex;
@@ -297,6 +314,11 @@ onUnmounted(() => unlistenSingleInstance?.());
 .app__brand img {
   width: 22px;
   height: 22px;
+}
+.app__header-spacer {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 12px;
 }
 .app__actions {
   display: flex;
@@ -389,6 +411,11 @@ body,
   --gg-sidebar: #fafafa;
   --gg-border: #dfe2e6;
   --gg-panel-muted: #f8f9fa;
+  --gg-title-control-hover: #edf0f3;
+  --gg-title-control-active: #dfe3e7;
+  --gg-window-close-foreground: #ffffff;
+  --gg-window-close-hover: #c42b1c;
+  --gg-window-close-active: #a52318;
 }
 html.dark {
   --gg-canvas: #17191c;
@@ -396,6 +423,8 @@ html.dark {
   --gg-sidebar: #1c1f23;
   --gg-border: #34383f;
   --gg-panel-muted: #25292e;
+  --gg-title-control-hover: #2c3036;
+  --gg-title-control-active: #363b42;
 }
 .gg-page {
   display: grid;

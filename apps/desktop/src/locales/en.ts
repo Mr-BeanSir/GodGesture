@@ -18,6 +18,9 @@ export default {
     theme: "Toggle dark mode",
     language: "Language",
     languageAuto: "Follow system",
+    windowControls: "Window controls",
+    minimize: "Minimize",
+    close: "Close to tray",
   },
   load: {
     title: "Could not load settings",

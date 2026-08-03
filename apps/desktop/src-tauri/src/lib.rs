@@ -1689,6 +1689,11 @@ pub fn run() {
             }
         }))
         .setup(move |app| {
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_decorations(false)?;
+            }
+
             let config_dir = app
                 .path()
                 .app_config_dir()
