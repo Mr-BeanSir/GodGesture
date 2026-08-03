@@ -466,6 +466,13 @@ Tauri dev 窗口已启动且 UIA 确认自定义控制组与 drag-resize 层；C
 WebView2 截图返回 `SetIsBorderRequired (0x80004002)`,随后检测到用户输入而停止自动点击,
 拖动、最小化与关闭到托盘仍由维护者实际体验确认。
 
+2026-08-03 账户与模板工作台视觉收尾:Desktop 未登录账户页改为工作台内身份区,宽窗口使用
+登录/注册与第三方登录双列,窄窗口自动堆叠;OAuth 不可用状态改为内联重试提示。手势模板
+列表行浅色主题使用纯白表面,暗色主题跟随 `--gg-surface`。Desktop `125/125`、typecheck/
+build、账户 locale parity 与 `git diff --check` 通过。浏览器 preview 已在 `980x700` 与
+`800x560` 中文浅色/深色状态检查账户登录、注册、OAuth 不可用和模板行背景,无横向溢出；
+英文视觉验收尚未单独完成,当前仅由双语 locale 编译与 key parity 测试覆盖。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程
