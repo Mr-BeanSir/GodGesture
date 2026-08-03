@@ -45,11 +45,9 @@ pub enum EngineMsg {
     PathGrown {
         point: Point,
     },
-    /// 增量识别结果变化(None=无匹配);TaskSwitcher 需要消费线程在识别期间
-    /// 保持 Alt,因此连同命令类型一起传递,不能只按可能重复的意图名判断。
+    /// 增量识别结果变化(None=无匹配),仅用于更新覆盖层提示。
     RecognitionChanged {
         name: Option<String>,
-        task_switcher: bool,
     },
     PathEnded {
         intent: Option<GestureIntent>,
@@ -116,7 +114,7 @@ struct Session {
     /// 鼠标键/滚轮/笔画的实际发生顺序(不含触发键本身)。
     inputs: Vec<GestureInput>,
     /// 上次增量识别的结果名(去重用)
-    last_recognized: Option<(String, bool)>,
+    last_recognized: Option<String>,
 }
 
 /// 左键+中键和弦(暂停/继续)的检测状态
@@ -672,20 +670,12 @@ impl EngineShared {
                                 .finder
                                 .lock()
                                 .find_inputs(s.trigger, &s.inputs, &s.fg)
-                                .map(|intent| {
-                                    (
-                                        intent.name.clone(),
-                                        matches!(&intent.command, Command::TaskSwitcher),
-                                    )
-                                });
+                                .map(|intent| intent.name.clone());
                             if recognized != s.last_recognized {
                                 s.last_recognized = recognized.clone();
-                                let (name, task_switcher) = recognized
-                                    .map_or((None, false), |(name, task)| (Some(name), task));
-                                let _ = self.tx.send(EngineMsg::RecognitionChanged {
-                                    name,
-                                    task_switcher,
-                                });
+                                let _ = self
+                                    .tx
+                                    .send(EngineMsg::RecognitionChanged { name: recognized });
                             }
                         }
                     }
@@ -1064,6 +1054,94 @@ mod tests {
             .any(|message| matches!(message, EngineMsg::PathStarted { .. })));
         assert!(messages
             .iter()
+            .any(|message| matches!(message, EngineMsg::PathEnded { intent: None, .. })));
+    }
+
+    #[test]
+    fn task_switcher_without_modifier_is_deferred_until_path_end() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = ConfigDocument::default();
+        config.global.intents = vec![GestureIntent {
+            id: "50000000-0000-4000-8000-000000000002".into(),
+            name: "Deferred task switcher".into(),
+            enabled: true,
+            gesture: GestureSpecConfig {
+                trigger: TriggerButton::Right,
+                strokes: vec![Direction::Right],
+                modifier: Modifier::None,
+                inputs: vec![GestureInput::Stroke {
+                    direction: Direction::Right,
+                }],
+            },
+            command: Command::TaskSwitcher,
+            order: 0,
+        }];
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+
+        let before_release = rx.try_iter().collect::<Vec<_>>();
+        assert!(before_release.iter().any(|message| matches!(
+            message,
+            EngineMsg::RecognitionChanged { name: Some(name) }
+                if name == "Deferred task switcher"
+        )));
+        assert!(!before_release
+            .iter()
+            .any(|message| matches!(message, EngineMsg::PathEnded { .. })));
+
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+        assert!(rx.try_iter().any(|message| matches!(
+            message,
+            EngineMsg::PathEnded {
+                intent: Some(intent),
+                modifier: Modifier::None,
+                ..
+            } if matches!(intent.command, Command::TaskSwitcher)
+        )));
+    }
+
+    #[test]
+    fn task_switcher_with_modifier_fires_immediately_without_path_end_repeat() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = ConfigDocument::default();
+        config.global.intents = vec![GestureIntent {
+            id: "50000000-0000-4000-8000-000000000003".into(),
+            name: "Immediate task switcher".into(),
+            enabled: true,
+            gesture: GestureSpecConfig {
+                trigger: TriggerButton::Right,
+                strokes: vec![Direction::Right],
+                modifier: Modifier::WheelBackward,
+                inputs: vec![GestureInput::Stroke {
+                    direction: Direction::Right,
+                }],
+            },
+            command: Command::TaskSwitcher,
+            order: 0,
+        }];
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        assert!(shared.on_hook_event(Input::Wheel {
+            forward: false,
+            pos: Point { x: 120, y: 0 },
+        }));
+
+        assert!(rx.try_iter().any(|message| matches!(
+            message,
+            EngineMsg::ModifierFired {
+                intent: Some(intent),
+                modifier: Modifier::WheelBackward,
+                ..
+            } if matches!(intent.command, Command::TaskSwitcher)
+        )));
+
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+        assert!(rx
+            .try_iter()
             .any(|message| matches!(message, EngineMsg::PathEnded { intent: None, .. })));
     }
 

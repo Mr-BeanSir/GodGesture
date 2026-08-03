@@ -53,18 +53,6 @@ fn mission_control() -> Result<(), String> {
     input::synthesize_key_combo(&["ctrl".into()], &["up".into()])
 }
 
-pub fn task_switcher_begin() -> bool {
-    match mission_control() {
-        Ok(()) => true,
-        Err(error) => {
-            log::error!("open Mission Control failed: {error}");
-            false
-        }
-    }
-}
-
-pub fn task_switcher_end() {}
-
 fn open_file(path: &str) -> Result<(), String> {
     let path = path.trim();
     if path.is_empty() {

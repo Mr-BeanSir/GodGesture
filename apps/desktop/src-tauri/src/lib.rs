@@ -71,103 +71,6 @@ struct PlatformRuntimeStatus {
 struct PauseMenuItem(tauri::menu::MenuItem<tauri::Wry>);
 
 #[cfg(any(windows, target_os = "macos"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TaskSwitcherEvent {
-    Recognition(bool),
-    Finish,
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TaskSwitcherEffect {
-    None,
-    Begin,
-    End,
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-#[derive(Default)]
-struct TaskSwitcherLifecycle {
-    active: bool,
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-impl TaskSwitcherLifecycle {
-    fn reduce(&mut self, event: TaskSwitcherEvent) -> TaskSwitcherEffect {
-        match (self.active, event) {
-            (false, TaskSwitcherEvent::Recognition(true)) => {
-                self.active = true;
-                TaskSwitcherEffect::Begin
-            }
-            (true, TaskSwitcherEvent::Recognition(false) | TaskSwitcherEvent::Finish) => {
-                self.active = false;
-                TaskSwitcherEffect::End
-            }
-            _ => TaskSwitcherEffect::None,
-        }
-    }
-
-    fn finish_path(&mut self, final_is_task_switcher: bool) -> (TaskSwitcherEffect, bool) {
-        let already_executed = self.active && final_is_task_switcher;
-        (self.reduce(TaskSwitcherEvent::Finish), already_executed)
-    }
-
-    fn force_inactive(&mut self) {
-        self.active = false;
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-#[derive(Default)]
-struct TaskSwitcherConsumer {
-    lifecycle: TaskSwitcherLifecycle,
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-impl TaskSwitcherConsumer {
-    fn apply(&mut self, effect: TaskSwitcherEffect) {
-        match effect {
-            TaskSwitcherEffect::Begin => {
-                if !platform::current::commands::task_switcher_begin() {
-                    self.lifecycle.force_inactive();
-                }
-            }
-            TaskSwitcherEffect::End => platform::current::commands::task_switcher_end(),
-            TaskSwitcherEffect::None => {}
-        }
-    }
-
-    fn recognition_changed(&mut self, task_switcher: bool) {
-        let effect = self
-            .lifecycle
-            .reduce(TaskSwitcherEvent::Recognition(task_switcher));
-        self.apply(effect);
-    }
-
-    fn finish(&mut self) {
-        let effect = self.lifecycle.reduce(TaskSwitcherEvent::Finish);
-        self.apply(effect);
-    }
-
-    fn finish_path(&mut self, final_is_task_switcher: bool) -> bool {
-        let (effect, already_executed) = self.lifecycle.finish_path(final_is_task_switcher);
-        self.apply(effect);
-        already_executed
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-impl Drop for TaskSwitcherConsumer {
-    fn drop(&mut self) {
-        if self.lifecycle.active {
-            // Channel 关闭、consumer 提前返回或 panic unwind 都必须释放 Alt。
-            platform::current::commands::task_switcher_end();
-            self.lifecycle.force_inactive();
-        }
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
 #[cfg(any(windows, target_os = "macos"))]
 struct ActiveNodeScript {
     key: String,
@@ -308,7 +211,6 @@ fn spawn_engine_consumer(
     std::thread::Builder::new()
         .name("gg-engine-consumer".into())
         .spawn(move || {
-            let mut task_switcher = TaskSwitcherConsumer::default();
             let script_host = platform::current::script::create_host(&app);
             let outcome_overlay = overlay.clone();
             let outcome_sink: OutcomeSink =
@@ -361,7 +263,6 @@ fn spawn_engine_consumer(
             for msg in rx {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
-                        task_switcher.finish();
                         active_node_script = None;
                         log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
                         let (main, unrecognized, show_path, show_label, fade_out) =
@@ -377,15 +278,9 @@ fn spawn_engine_consumer(
                     EngineMsg::PathGrown { point } => {
                         overlay.send(OverlayCmd::Grow(point));
                     }
-                    EngineMsg::RecognitionChanged {
-                        name,
-                        task_switcher: recognized_task_switcher,
-                    } => {
+                    EngineMsg::RecognitionChanged { name } => {
                         log::debug!("识别变化: {name:?}");
                         overlay.send(OverlayCmd::Recognized(name));
-                        task_switcher.recognition_changed(
-                            recognized_task_switcher && !shared.is_recording(),
-                        );
                     }
                     EngineMsg::ModifierFired {
                         intent,
@@ -393,9 +288,6 @@ fn spawn_engine_consumer(
                         modifier,
                         context,
                     } => {
-                        // 修饰会把查找切到另一条意图；先结束增量 TaskSwitcher，
-                        // 避免随后执行的命令意外继承仍按住的 Alt。
-                        task_switcher.finish();
                         log::info!(
                             "修饰触发: {modifier:?} → {:?}",
                             intent.as_ref().map(|i| &i.name)
@@ -504,11 +396,6 @@ fn spawn_engine_consumer(
                                 modifier,
                             }),
                         );
-                        let final_is_task_switcher = intent.as_ref().is_some_and(|intent| {
-                            matches!(&intent.command, engine::config::Command::TaskSwitcher)
-                        });
-                        let task_switcher_already_executed =
-                            task_switcher.finish_path(final_is_task_switcher);
                         let mut deferred_intent = None;
                         match intent {
                             Some(intent) => {
@@ -521,11 +408,7 @@ fn spawn_engine_consumer(
                                     intent.name,
                                     intent.command
                                 );
-                                if task_switcher_already_executed {
-                                    log::debug!(
-                                        "TaskSwitcher 已在增量识别时执行,PathEnd 仅释放 Alt"
-                                    );
-                                } else if matches!(
+                                if matches!(
                                     &intent.command,
                                     engine::config::Command::NodePlugin { .. }
                                 ) {
@@ -582,7 +465,6 @@ fn spawn_engine_consumer(
                         modifier,
                         inputs,
                     } => {
-                        task_switcher.finish();
                         overlay.send(OverlayCmd::End);
                         let payload = CapturedGesture {
                             trigger,
@@ -622,13 +504,11 @@ fn spawn_engine_consumer(
                         );
                     }
                     EngineMsg::PathCancelled => {
-                        task_switcher.finish();
                         active_node_script = None;
                         log::debug!("手势取消");
                         overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::PauseChanged(paused) => {
-                        task_switcher.finish();
                         publish_pause_state(&app, paused);
                     }
                     EngineMsg::ScriptConfigChanged => {
@@ -2068,71 +1948,6 @@ mod tests {
         );
         assert_eq!(format_pause_hotkey(&[], "f12").as_deref(), Some("f12"));
         assert_eq!(format_pause_hotkey(&["ctrl".into()], ""), None);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn task_switcher_lifecycle_begins_once_and_ends_when_recognition_changes() {
-        let mut lifecycle = TaskSwitcherLifecycle::default();
-
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(true)),
-            TaskSwitcherEffect::Begin
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(true)),
-            TaskSwitcherEffect::None
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(false)),
-            TaskSwitcherEffect::End
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(false)),
-            TaskSwitcherEffect::None
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(true)),
-            TaskSwitcherEffect::Begin
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn task_switcher_lifecycle_finish_is_idempotent() {
-        let mut lifecycle = TaskSwitcherLifecycle::default();
-
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Recognition(true)),
-            TaskSwitcherEffect::Begin
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Finish),
-            TaskSwitcherEffect::End
-        );
-        assert_eq!(
-            lifecycle.reduce(TaskSwitcherEvent::Finish),
-            TaskSwitcherEffect::None
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn task_switcher_path_end_skips_only_an_active_matching_command() {
-        let mut lifecycle = TaskSwitcherLifecycle::default();
-
-        lifecycle.reduce(TaskSwitcherEvent::Recognition(true));
-        assert_eq!(lifecycle.finish_path(true), (TaskSwitcherEffect::End, true));
-        assert_eq!(
-            lifecycle.finish_path(true),
-            (TaskSwitcherEffect::None, false)
-        );
-
-        lifecycle.reduce(TaskSwitcherEvent::Recognition(true));
-        assert_eq!(
-            lifecycle.finish_path(false),
-            (TaskSwitcherEffect::End, false)
-        );
     }
 
     #[cfg(windows)]

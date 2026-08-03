@@ -449,6 +449,12 @@ typecheck/build,Server `87/87` + typecheck/build,Web Console typecheck/build,`pn
 在 `800x560` 中文/英文下确认独立修饰符 8 个选项、同触发键禁用、问号提示的双语绑定、
 命令类型只剩 11 项且无横向溢出；真实 Windows/macOS 重复输入仍按平台 QA 观察。
 
+2026-08-03 任务切换执行时机修复:删除任务切换在增量识别阶段启动并保持按键的特殊生命周期,
+`RecognitionChanged` 现在只更新原生覆盖层提示。未配置独立修饰符时,任务切换与其他普通命令
+一致,仅在触发键释放产生 `PathEnd` 后执行；配置独立修饰符时仍由每次 `ModifierFired` 立即
+执行,释放触发键不重复。Windows `Alt+Tab` 与 macOS Mission Control 共用该时机语义。
+新增两条 runtime 回归测试,Rust library `212 passed, 3 ignored`。
+
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
 ## 新任务接手流程

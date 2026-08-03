@@ -6,7 +6,7 @@
 //! Pause / NodePlugin 不在此处理:consumer 分别负责暂停切换与 Node 生命周期;
 //! DoNothing 顾名思义。
 
-use super::{clipboard, hook::EXTRA_INFO_TAG, input, window};
+use super::{clipboard, input, window};
 use crate::engine::audio::{audio_volume_action, target_volume_scalar, AudioVolumeAction};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
@@ -23,10 +23,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Shutdown::LockWorkStation;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VK_MENU, VK_TAB,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_MENU, VK_TAB};
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, SHGetKnownFolderPath, ShellExecuteW, KF_FLAG_DEFAULT,
 };
@@ -61,7 +58,6 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             input::type_text_with_sleeps(text);
         }
         Command::TaskSwitcher => {
-            // 非手势增量识别路径(触发角、直接执行等)的合理 fallback。
             input::tap_with_modifiers(&[VK_MENU], VK_TAB);
         }
         Command::WindowControl { operation } => window_control(*operation, ctx),
@@ -93,69 +89,6 @@ fn is_lock_workstation_hotkey(modifiers: &[String], keys: &[String]) -> bool {
         && keys.len() == 1
         && modifiers[0].eq_ignore_ascii_case("meta")
         && keys[0].eq_ignore_ascii_case("l")
-}
-
-fn task_switcher_key_input(
-    vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY,
-    down: bool,
-) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: if down {
-                    KEYBD_EVENT_FLAGS(0)
-                } else {
-                    KEYEVENTF_KEYUP
-                },
-                time: 0,
-                dwExtraInfo: EXTRA_INFO_TAG,
-            },
-        },
-    }
-}
-
-fn send_task_switcher_inputs(inputs: &[INPUT]) -> usize {
-    unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) as usize }
-}
-
-/// 增量识别首次命中 TaskSwitcher:Alt down + Tab tap,成功后保持 Alt。
-/// 返回 false 表示 SendInput 短写;失败路径已 best-effort 释放 Tab/Alt。
-pub fn task_switcher_begin() -> bool {
-    let inputs = [
-        task_switcher_key_input(VK_MENU, true),
-        task_switcher_key_input(VK_TAB, true),
-        task_switcher_key_input(VK_TAB, false),
-    ];
-    let inserted = send_task_switcher_inputs(&inputs);
-    if inserted == inputs.len() {
-        return true;
-    }
-
-    log::error!(
-        "TaskSwitcher SendInput 短写:仅插入 {inserted}/{} 个输入事件",
-        inputs.len()
-    );
-    // 若 Tab-down 已经进入系统,先释放 Tab；Alt-up 无论 Alt-down 是否成功都补发,
-    // 避免 UIPI/短写边界把系统留在修饰键按下状态。
-    if inserted >= 2 {
-        let recovered = send_task_switcher_inputs(&[task_switcher_key_input(VK_TAB, false)]);
-        if recovered != 1 {
-            log::error!("TaskSwitcher Tab-up 恢复失败:插入 {recovered}/1 个输入事件");
-        }
-    }
-    task_switcher_end();
-    false
-}
-
-/// 结束 TaskSwitcher 生命周期。重复 Alt-up 是安全的,所有收尾路径都可调用。
-pub fn task_switcher_end() {
-    let inserted = send_task_switcher_inputs(&[task_switcher_key_input(VK_MENU, false)]);
-    if inserted != 1 {
-        log::error!("TaskSwitcher Alt-up SendInput 失败:插入 {inserted}/1 个输入事件");
-    }
 }
 
 /// i64 句柄 → HWND(0 视为无)
