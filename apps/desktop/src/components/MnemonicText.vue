@@ -15,10 +15,10 @@ const props = defineProps<{ gesture: GestureSpec }>();
 const { t } = useI18n();
 
 const triggerSymbol = computed(() => TRIGGER_SYMBOLS[props.gesture.trigger]);
+const baseInputs = computed(() => gestureInputs(props.gesture));
+const modifierInput = computed(() => gestureModifierInput(props.gesture.modifier));
 const inputs = computed(() => {
-  const base = gestureInputs(props.gesture);
-  const modifier = gestureModifierInput(props.gesture.modifier);
-  return modifier ? [...base, modifier] : base;
+  return modifierInput.value ? [...baseInputs.value, modifierInput.value] : baseInputs.value;
 });
 
 function inputLabel(input: GestureInput): string {
@@ -31,7 +31,12 @@ function inputLabel(input: GestureInput): string {
 <template>
   <span class="mnemonic">
     <span class="mnemonic__trigger">{{ triggerSymbol }}</span>
-    <span v-for="(input, index) in inputs" :key="`${input.type}-${index}`" class="mnemonic__input">
+    <span
+      v-for="(input, index) in inputs"
+      :key="`${input.type}-${index}`"
+      class="mnemonic__input"
+      :class="{ 'mnemonic__input--modifier': index >= baseInputs.length }"
+    >
       <span v-if="input.type === 'stroke'" :aria-label="inputLabel(input)">
         {{ DIRECTION_ARROWS[input.direction] }}
       </span>
@@ -67,5 +72,8 @@ function inputLabel(input: GestureInput): string {
   align-items: center;
   color: var(--el-text-color-primary);
   letter-spacing: 0;
+}
+.mnemonic__input--modifier {
+  --wheel-modifier-accent: var(--el-color-warning);
 }
 </style>

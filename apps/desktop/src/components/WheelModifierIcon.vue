@@ -17,23 +17,15 @@ defineProps<{
   >
     <rect class="wheel-modifier-icon__body" x="6" y="2" width="20" height="44" rx="10" />
     <path class="wheel-modifier-icon__groove" d="M16 15v18" />
-    <rect
+    <path
       v-if="direction === 'up'"
       class="wheel-modifier-icon__active"
-      x="7.5"
-      y="6"
-      width="17"
-      height="5"
-      rx="2.5"
+      d="M16 3a9 9 0 0 1 9 9H7a9 9 0 0 1 9-9Z"
     />
-    <rect
+    <path
       v-else-if="direction === 'down'"
       class="wheel-modifier-icon__active"
-      x="7.5"
-      y="37"
-      width="17"
-      height="5"
-      rx="2.5"
+      d="M7 36h18v1a9 9 0 0 1-18 0Z"
     />
     <rect
       v-if="pressed"
@@ -70,12 +62,12 @@ defineProps<{
 }
 
 .wheel-modifier-icon__active {
-  fill: var(--el-color-primary);
+  fill: var(--wheel-modifier-accent, var(--el-color-primary));
 }
 
 .wheel-modifier-icon__pressed {
-  fill: var(--el-color-primary);
-  stroke: var(--el-color-primary);
+  fill: var(--wheel-modifier-accent, var(--el-color-primary));
+  stroke: var(--wheel-modifier-accent, var(--el-color-primary));
   stroke-width: 0.75;
 }
 </style>
