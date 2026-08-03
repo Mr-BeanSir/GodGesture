@@ -3,7 +3,13 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useMediaQuery } from "@vueuse/core";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Refresh, RefreshLeft, SwitchButton } from "@element-plus/icons-vue";
+import {
+  InfoFilled,
+  Refresh,
+  RefreshLeft,
+  SwitchButton,
+  User,
+} from "@element-plus/icons-vue";
 import type { OAuthProvider } from "@godgesture/shared";
 import { useAccountStore } from "../stores/account";
 
@@ -207,96 +213,106 @@ function providerLabel(provider: OAuthProvider): string {
       v-else-if="account.phase === 'signedOut'"
       class="gg-section account__login"
     >
-      <div>
-        <h3 class="gg-section-title">{{ t("account.loginTitle") }}</h3>
-        <p class="gg-hint account__subtitle">
-          {{ t("account.loginSubtitle") }}
-        </p>
-      </div>
-
-      <el-segmented
-        v-model="authMode"
-        :options="authModeOptions"
-        class="account__mode"
-      />
-
-      <div class="account__form">
-        <div class="gg-field">
-          <label class="gg-field-label" for="account-email">{{
-            t("account.email")
-          }}</label>
-          <el-input
-            id="account-email"
-            v-model="email"
-            autocomplete="email"
-            :placeholder="t('account.emailPlaceholder')"
-          />
-        </div>
-        <div class="gg-field">
-          <label class="gg-field-label" for="account-password">{{
-            t("account.password")
-          }}</label>
-          <el-input
-            id="account-password"
-            v-model="password"
-            type="password"
-            show-password
-            :autocomplete="
-              authMode === 'login' ? 'current-password' : 'new-password'
-            "
-            :placeholder="t('account.passwordPlaceholder')"
-            @keyup.enter="onSubmit"
-          />
-          <p v-if="authMode === 'register'" class="gg-hint">
-            {{ t("account.passwordRequirement") }}
+      <div class="account__login-head">
+        <span class="account__identity-icon" aria-hidden="true">
+          <el-icon><User /></el-icon>
+        </span>
+        <div>
+          <h3 class="gg-section-title">{{ t("account.loginTitle") }}</h3>
+          <p class="gg-hint account__subtitle">
+            {{ t("account.loginSubtitle") }}
           </p>
         </div>
-        <el-button type="primary" :loading="account.authBusy" @click="onSubmit">
-          {{ t(authMode === "login" ? "account.login" : "account.register") }}
-        </el-button>
       </div>
 
       <el-alert
         v-if="account.authErrorCode"
+        class="account__auth-error"
         type="error"
         :closable="false"
         show-icon
         :title="errorText(account.authErrorCode)"
       />
 
-      <template
-        v-if="
-          account.providersLoading ||
-          account.providers.length ||
-          account.providersError
-        "
-      >
-        <el-divider>{{ t("account.or") }}</el-divider>
-        <el-skeleton v-if="account.providersLoading" :rows="1" animated />
-        <div v-else-if="account.providers.length" class="account__oauth">
-          <el-button
-            v-for="provider in account.providers"
-            :key="provider"
-            :loading="account.authBusy"
-            @click="onOAuth(provider)"
-          >
-            {{ providerLabel(provider) }}
-          </el-button>
+      <div class="account__login-grid">
+        <div class="account__credentials">
+          <el-segmented
+            v-model="authMode"
+            :options="authModeOptions"
+            class="account__mode"
+          />
+
+          <div class="account__form">
+            <div class="gg-field">
+              <label class="gg-field-label" for="account-email">{{
+                t("account.email")
+              }}</label>
+              <el-input
+                id="account-email"
+                v-model="email"
+                autocomplete="email"
+                :placeholder="t('account.emailPlaceholder')"
+              />
+            </div>
+            <div class="gg-field">
+              <label class="gg-field-label" for="account-password">{{
+                t("account.password")
+              }}</label>
+              <el-input
+                id="account-password"
+                v-model="password"
+                type="password"
+                show-password
+                :autocomplete="
+                  authMode === 'login' ? 'current-password' : 'new-password'
+                "
+                :placeholder="t('account.passwordPlaceholder')"
+                @keyup.enter="onSubmit"
+              />
+              <p v-if="authMode === 'register'" class="gg-hint">
+                {{ t("account.passwordRequirement") }}
+              </p>
+            </div>
+            <el-button
+              class="account__submit"
+              type="primary"
+              :loading="account.authBusy"
+              @click="onSubmit"
+            >
+              {{ t(authMode === "login" ? "account.login" : "account.register") }}
+            </el-button>
+          </div>
         </div>
-        <el-alert
-          v-else
-          type="info"
-          :closable="false"
-          show-icon
-          :title="t('account.providersUnavailable')"
+
+        <div
+          v-if="
+            account.providersLoading ||
+            account.providers.length ||
+            account.providersError
+          "
+          class="account__oauth-panel"
         >
-          <template #default>
+          <p class="account__oauth-title">{{ t("account.or") }}</p>
+          <el-skeleton v-if="account.providersLoading" :rows="2" animated />
+          <div v-else-if="account.providers.length" class="account__oauth">
+            <el-button
+              v-for="provider in account.providers"
+              :key="provider"
+              :loading="account.authBusy"
+              @click="onOAuth(provider)"
+            >
+              {{ providerLabel(provider) }}
+            </el-button>
+          </div>
+          <div v-else class="account__provider-status" role="status">
+            <el-icon aria-hidden="true"><InfoFilled /></el-icon>
+            <span>{{ t("account.providersUnavailable") }}</span>
             <el-button link type="primary" @click="account.loadProviders()">
               {{ t("common.retry") }}
             </el-button>
-          </template>
-        </el-alert>
-      </template>
+          </div>
+        </div>
+      </div>
     </section>
 
     <template v-else>
@@ -462,10 +478,38 @@ function providerLabel(provider: OAuthProvider): string {
   min-height: 280px;
 }
 .account__login {
-  max-width: 520px;
+  width: 100%;
+}
+.account__login-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account__identity-icon {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-size: 17px;
 }
 .account__subtitle {
   margin-top: 5px;
+}
+.account__auth-error {
+  margin-top: -2px;
+}
+.account__login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 26px;
+}
+.account__credentials {
+  min-width: 0;
 }
 .account__mode {
   width: 100%;
@@ -473,12 +517,57 @@ function providerLabel(provider: OAuthProvider): string {
 .account__form {
   display: grid;
   gap: 14px;
+  margin-top: 14px;
 }
-.account__oauth,
+.account__submit {
+  width: 100%;
+}
 .account__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+.account__oauth-panel {
+  min-width: 0;
+  padding-left: 26px;
+  border-left: 1px solid var(--el-border-color-lighter);
+}
+.account__oauth-title {
+  margin: 2px 0 14px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  font-weight: 500;
+}
+.account__oauth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.account__oauth .el-button {
+  width: 100%;
+  margin: 0;
+}
+.account__provider-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.account__provider-status .el-icon {
+  flex: 0 0 auto;
+  color: var(--el-color-info);
+}
+.account__provider-status span {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+.account__provider-status .el-button {
+  margin-left: auto;
 }
 .account__actions--center {
   justify-content: center;
@@ -524,6 +613,19 @@ function providerLabel(provider: OAuthProvider): string {
   overflow-wrap: anywhere;
 }
 @media (max-width: 640px) {
+  .account__login-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .account__oauth-panel {
+    padding-top: 18px;
+    padding-left: 0;
+    border-top: 1px solid var(--el-border-color-lighter);
+    border-left: 0;
+  }
+  .account__oauth-title {
+    margin-top: 0;
+  }
   .account__row {
     grid-template-columns: 1fr;
     gap: 2px;

@@ -386,7 +386,7 @@ async function confirmAdoption() {
   padding: 13px 8px;
   border: 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: transparent;
+  background: var(--gg-surface);
   color: var(--el-text-color-primary);
   text-align: left;
   cursor: pointer;
