@@ -1,18 +1,34 @@
 <script setup lang="ts">
 /**
- * 手势意图编辑器:名称、助记符(可重录)、最后一个按键立即执行、命令。
+ * 手势意图编辑器:名称、助记符(可重录)、独立修饰符、命令。
  * 直接编辑传入的意图对象(来自配置 store,变更即触发防抖保存)。
  */
 import { useI18n } from "vue-i18n";
-import { Delete } from "@element-plus/icons-vue";
-import type { GestureIntent } from "@godgesture/shared";
+import { Delete, QuestionFilled } from "@element-plus/icons-vue";
+import type { GestureIntent, GestureModifier } from "@godgesture/shared";
 import MnemonicText from "./MnemonicText.vue";
 import CommandEditor from "./CommandEditor.vue";
+import { isModifierForTrigger } from "../utils/mnemonic";
 
 const { intent } = defineProps<{ intent: GestureIntent }>();
 const emit = defineEmits<{ (e: "reRecord"): void; (e: "delete"): void }>();
 
 const { t } = useI18n();
+
+const modifierOptions: GestureModifier[] = [
+  "none",
+  "wheelForward",
+  "wheelBackward",
+  "leftButtonDown",
+  "middleButtonDown",
+  "rightButtonDown",
+  "x1Down",
+  "x2Down",
+];
+
+function isModifierDisabled(modifier: GestureModifier): boolean {
+  return isModifierForTrigger(intent.gesture.trigger, modifier);
+}
 
 </script>
 
@@ -43,10 +59,23 @@ const { t } = useI18n();
         </div>
       </div>
 
-      <label class="intent-editor__execute">
-        <span>{{ t("gestures.executeOnLastInput") }}</span>
-        <el-switch v-model="intent.executeOnModifier" />
-      </label>
+      <div class="gg-field intent-editor__modifier-field">
+        <div class="intent-editor__modifier-label">
+          <label class="gg-field-label" for="gesture-modifier">{{ t("gestures.modifier") }}</label>
+          <el-tooltip :content="t('gestures.modifierTooltip')" placement="top">
+            <el-icon :aria-label="t('gestures.modifierTooltip')"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <el-select id="gesture-modifier" v-model="intent.gesture.modifier" class="intent-editor__modifier-select">
+          <el-option
+            v-for="modifier in modifierOptions"
+            :key="modifier"
+            :label="t(`modifier.${modifier}`)"
+            :value="modifier"
+            :disabled="isModifierDisabled(modifier)"
+          />
+        </el-select>
+      </div>
     </div>
 
     <div class="gg-field intent-editor__command">
@@ -99,15 +128,21 @@ const { t } = useI18n();
   align-items: center;
   gap: 6px;
 }
-.intent-editor__execute {
+.intent-editor__modifier-field {
+  max-width: 280px;
+}
+.intent-editor__modifier-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  grid-column: 1;
-  max-width: 280px;
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  gap: 5px;
+}
+.intent-editor__modifier-label .el-icon {
+  color: var(--el-text-color-placeholder);
+  cursor: help;
+}
+.intent-editor__modifier-select {
+  width: 100%;
 }
 @media (max-width: 760px) {
   .intent-editor__summary {
@@ -115,7 +150,7 @@ const { t } = useI18n();
   }
   .intent-editor__name-field,
   .intent-editor__trigger-field,
-  .intent-editor__execute {
+  .intent-editor__modifier-field {
     grid-column: 1;
     grid-row: auto;
     max-width: none;

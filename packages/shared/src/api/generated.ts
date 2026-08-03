@@ -322,9 +322,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -332,8 +329,6 @@ export interface components {
                     };
                     /** @default true */
                     enabled: boolean;
-                    /** @default false */
-                    executeOnModifier: boolean;
                     gesture: {
                         inputs?: ({
                             /** @enum {string} */
@@ -433,9 +428,6 @@ export interface components {
                     /** @enum {string} */
                     type: "nodePlugin";
                 } | {
-                    /** @enum {string} */
-                    type: "pause";
-                } | {
                     /** @default 1 */
                     delta: number;
                     /** @enum {string} */
@@ -478,10 +470,10 @@ export interface components {
                 })[];
             }[];
             /**
-             * @default 4
+             * @default 5
              * @enum {number}
              */
-            formatVersion: 4;
+            formatVersion: 5;
             /** @default {} */
             global: {
                 /** @default true */
@@ -539,9 +531,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -549,8 +538,6 @@ export interface components {
                     };
                     /** @default true */
                     enabled: boolean;
-                    /** @default false */
-                    executeOnModifier: boolean;
                     gesture: {
                         inputs?: ({
                             /** @enum {string} */
@@ -639,9 +626,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -697,9 +681,6 @@ export interface components {
                         pluginId: string;
                         /** @enum {string} */
                         type: "nodePlugin";
-                    } | {
-                        /** @enum {string} */
-                        type: "pause";
                     } | {
                         /** @default 1 */
                         delta: number;
@@ -757,9 +738,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -815,9 +793,6 @@ export interface components {
                         pluginId: string;
                         /** @enum {string} */
                         type: "nodePlugin";
-                    } | {
-                        /** @enum {string} */
-                        type: "pause";
                     } | {
                         /** @default 1 */
                         delta: number;
@@ -980,9 +955,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -1038,9 +1010,6 @@ export interface components {
                         pluginId: string;
                         /** @enum {string} */
                         type: "nodePlugin";
-                    } | {
-                        /** @enum {string} */
-                        type: "pause";
                     } | {
                         /** @default 1 */
                         delta: number;
@@ -1098,9 +1067,6 @@ export interface components {
                         /** @enum {string} */
                         type: "nodePlugin";
                     } | {
-                        /** @enum {string} */
-                        type: "pause";
-                    } | {
                         /** @default 1 */
                         delta: number;
                         /** @enum {string} */
@@ -1156,9 +1122,6 @@ export interface components {
                         pluginId: string;
                         /** @enum {string} */
                         type: "nodePlugin";
-                    } | {
-                        /** @enum {string} */
-                        type: "pause";
                     } | {
                         /** @default 1 */
                         delta: number;

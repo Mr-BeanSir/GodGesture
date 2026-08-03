@@ -267,9 +267,6 @@ function updateVolumeDelta(value: unknown) {
       @update:model-value="emit('update:modelValue', $event)"
     />
 
-    <!-- 暂停 -->
-    <p v-else-if="type === 'pause'" class="gg-hint">{{ t("command.pause.desc") }}</p>
-
     <!-- 音量控制 -->
     <template v-else-if="type === 'audioVolume'">
       <div class="gg-field">

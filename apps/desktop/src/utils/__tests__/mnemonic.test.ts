@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { GestureSpec } from "@godgesture/shared";
-import { gestureInputs, gestureMnemonic, sameGesture } from "../mnemonic";
+import {
+  gestureInputs,
+  gestureMnemonic,
+  isModifierForTrigger,
+  sameGesture,
+} from "../mnemonic";
 
 function gesture(inputs: GestureSpec["inputs"]): GestureSpec {
   return {
@@ -33,5 +38,24 @@ describe("gesture mnemonic input sequence", () => {
     ]);
 
     expect(sameGesture(buttonThenStroke, strokeThenButton)).toBe(false);
+  });
+
+  it("includes the independent modifier in display and identity", () => {
+    const plain = gesture([{ type: "stroke", direction: "right" }]);
+    const repeated = {
+      ...plain,
+      modifier: "wheelBackward" as const,
+    };
+
+    expect(gestureInputs(repeated)).toEqual([
+      { type: "stroke", direction: "right" },
+    ]);
+    expect(gestureMnemonic(repeated)).toBe("◑→⇊");
+    expect(sameGesture(plain, repeated)).toBe(false);
+  });
+
+  it("identifies the trigger button's invalid modifier option", () => {
+    expect(isModifierForTrigger("right", "rightButtonDown")).toBe(true);
+    expect(isModifierForTrigger("right", "middleButtonDown")).toBe(false);
   });
 });

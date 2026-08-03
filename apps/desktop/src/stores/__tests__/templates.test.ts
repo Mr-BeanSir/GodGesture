@@ -71,7 +71,6 @@ function fixture() {
             modifier: "none",
           },
           command: { type: "doNothing" },
-          executeOnModifier: false,
         },
       ],
     },

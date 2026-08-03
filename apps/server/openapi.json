@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              4
+              5
             ],
-            "default": 4
+            "default": 5
           },
           "global": {
             "type": "object",
@@ -579,20 +579,6 @@
                             "type": {
                               "type": "string",
                               "enum": [
-                                "pause"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
                                 "audioVolume"
                               ]
                             },
@@ -608,10 +594,6 @@
                           ]
                         }
                       ]
-                    },
-                    "executeOnModifier": {
-                      "type": "boolean",
-                      "default": false
                     },
                     "order": {
                       "type": "integer",
@@ -1210,20 +1192,6 @@
                               "type": {
                                 "type": "string",
                                 "enum": [
-                                  "pause"
-                                ]
-                              }
-                            },
-                            "required": [
-                              "type"
-                            ]
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string",
-                                "enum": [
                                   "audioVolume"
                                 ]
                               },
@@ -1239,10 +1207,6 @@
                             ]
                           }
                         ]
-                      },
-                      "executeOnModifier": {
-                        "type": "boolean",
-                        "default": false
                       },
                       "order": {
                         "type": "integer",
@@ -1653,20 +1617,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "audioVolume"
                             ]
                           },
@@ -2046,20 +1996,6 @@
                         "required": [
                           "type",
                           "pluginId"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -2455,20 +2391,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "audioVolume"
                             ]
                           },
@@ -2848,20 +2770,6 @@
                         "required": [
                           "type",
                           "pluginId"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -3273,20 +3181,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "audioVolume"
                             ]
                           },
@@ -3666,20 +3560,6 @@
                         "required": [
                           "type",
                           "pluginId"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -4075,20 +3955,6 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
                               "audioVolume"
                             ]
                           },
@@ -4468,20 +4334,6 @@
                         "required": [
                           "type",
                           "pluginId"
-                        ]
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "pause"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "type"
                         ]
                       },
                       {
@@ -5028,20 +4880,6 @@
                       "required": [
                         "type",
                         "pluginId"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "pause"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "type"
                       ]
                     },
                     {

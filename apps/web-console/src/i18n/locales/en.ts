@@ -148,7 +148,6 @@ export default {
     gotoUrl: "Open URL",
     cmd: "Command line",
     script: "Script (JavaScript)",
-    pause: "Pause",
     audioVolume: "Audio volume",
   },
   platform: {

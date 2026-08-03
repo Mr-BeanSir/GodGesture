@@ -5,6 +5,7 @@ import type { GestureInput, GestureSpec } from "@godgesture/shared";
 import {
   BUTTON_SYMBOLS,
   DIRECTION_ARROWS,
+  gestureModifierInput,
   TRIGGER_SYMBOLS,
   gestureInputs,
 } from "../utils/mnemonic";
@@ -14,7 +15,11 @@ const props = defineProps<{ gesture: GestureSpec }>();
 const { t } = useI18n();
 
 const triggerSymbol = computed(() => TRIGGER_SYMBOLS[props.gesture.trigger]);
-const inputs = computed(() => gestureInputs(props.gesture));
+const inputs = computed(() => {
+  const base = gestureInputs(props.gesture);
+  const modifier = gestureModifierInput(props.gesture.modifier);
+  return modifier ? [...base, modifier] : base;
+});
 
 function inputLabel(input: GestureInput): string {
   if (input.type === "stroke") return input.direction;

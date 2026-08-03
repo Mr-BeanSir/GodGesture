@@ -38,7 +38,7 @@ describe("Node plugin configuration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(4);
+    expect(document.formatVersion).toBe(5);
     expect(document.nodePlugins[0]).toMatchObject({
       id: PLUGIN_ID,
       lockfile: null,

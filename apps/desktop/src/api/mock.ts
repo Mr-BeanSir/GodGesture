@@ -33,7 +33,6 @@ function intent(
     enabled: true,
     gesture: { trigger, strokes, modifier: "none" },
     command,
-    executeOnModifier: false,
     order,
   };
 }
@@ -91,7 +90,7 @@ function seedDocument(): ConfigDocument {
           { type: "hotKey", modifiers: ["ctrl"], keys: ["c"] },
           5,
         ),
-        intent("暂停手势", "right", ["leftUp"], { type: "pause" }, 6),
+        intent("静默手势", "right", ["leftUp"], { type: "doNothing" }, 6),
       ],
     },
     apps: [

@@ -35,7 +35,7 @@ describe("gesture template adoption", () => {
       expect.objectContaining({
         origin: { kind: "hotCorner", corner: "leftTop" },
         sequence: [],
-        command: { type: "pause" },
+        command: { type: "doNothing" },
       }),
     );
     expect(document.global.intents).toHaveLength(0);
@@ -272,7 +272,6 @@ function templateIntent(name: string, strokes: string[]) {
     name,
     gesture: { trigger: "right", strokes, modifier: "none" },
     command: { type: "doNothing" },
-    executeOnModifier: false,
   };
 }
 

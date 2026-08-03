@@ -60,17 +60,18 @@ export const GestureInput = z.discriminatedUnion("type", [
 ]);
 export type GestureInput = z.infer<typeof GestureInput>;
 
-/** 手势 = 触发键 + 有序输入步骤。modifier 仅作为旧配置读取字段保留。 */
+/** 手势 = 触发键 + 基础有序输入 + 独立修饰符。 */
 export const GestureSpec = z.object({
   trigger: TriggerButton,
   strokes: z.array(StrokeDirection).max(12),
+  /** v5 独立修饰符;不加入基础 inputs,每次触发都可重复执行。 */
   modifier: GestureModifier.default("none"),
   inputs: z.array(GestureInput).max(12).optional(),
 });
 export type GestureSpec = z.infer<typeof GestureSpec>;
 
 // ---------------------------------------------------------------------------
-// 命令(12 类;窗口控制含贴靠左/右)
+// 命令(11 类;窗口控制含贴靠左/右)
 // ---------------------------------------------------------------------------
 
 const base = <T extends string>(type: T) => ({ type: z.literal(type) });
@@ -134,8 +135,6 @@ export const CmdCommand = z.object({
   autoSetWorkingDir: z.boolean().default(true),
 });
 
-export const PauseCommand = z.object(base("pause"));
-
 export const AudioVolumeCommand = z.object({
   ...base("audioVolume"),
   /** 正数提高、负数降低、0 切换静音;绝对值是音量百分点 */
@@ -153,7 +152,6 @@ export const Command = z.discriminatedUnion("type", [
     GotoUrlCommand,
     CmdCommand,
     NodePluginCommand,
-    PauseCommand,
     AudioVolumeCommand,
   ]);
 export type Command = z.infer<typeof Command>;
@@ -170,8 +168,6 @@ export const GestureIntent = z.object({
   enabled: z.boolean().default(true),
   gesture: GestureSpec,
   command: Command,
-  /** 带修饰的手势:修饰触发时立即执行 */
-  executeOnModifier: z.boolean().default(false),
   /** UI 排序 */
   order: z.number().int().default(0),
 });

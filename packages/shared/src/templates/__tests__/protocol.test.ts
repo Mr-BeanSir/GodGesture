@@ -29,7 +29,6 @@ const packageValue = () =>
             modifier: "none",
           },
           command: { type: "hotKey", modifiers: ["alt"], keys: ["left"] },
-          executeOnModifier: false,
         },
       ],
     },
@@ -152,6 +151,16 @@ describe("gesture template protocol", () => {
       ...value,
       target: { ...value.target, intents: [second, reverse] },
     })).not.toThrow();
+
+    const repeated = {
+      ...first,
+      name: "Back on wheel",
+      gesture: { ...first.gesture, modifier: "wheelBackward" as const },
+    };
+    expect(() => GestureTemplatePackage.parse({
+      ...value,
+      target: { ...value.target, intents: [first, repeated] },
+    })).not.toThrow();
   });
 
   it("derives executable command risks and rejects catalog drift", () => {
@@ -225,7 +234,6 @@ function intent(name: string, command: Record<string, unknown>) {
       modifier: "none",
     },
     command,
-    executeOnModifier: false,
   };
 }
 

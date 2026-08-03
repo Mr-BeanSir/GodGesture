@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConfigDocument, migrateConfigDocument } from "../document.js";
 import { GestureInput, GestureSpec } from "../gestures.js";
 
-describe("configuration v4 migration", () => {
+describe("configuration v5 migration", () => {
   it("migrates legacy corner and edge commands without losing enable flags", () => {
     const document = ConfigDocument.parse({
       formatVersion: 1,
@@ -13,7 +13,7 @@ describe("configuration v4 migration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(4);
+    expect(document.formatVersion).toBe(5);
     expect(document.nodePlugins).toEqual([]);
     expect(document.hotCorners).toEqual({ enabled: false, commands: {} });
     expect(document.rubEdges).toEqual({ enabled: true, commands: {} });
@@ -23,7 +23,7 @@ describe("configuration v4 migration", () => {
         id: "10000000-0000-4000-8000-000000000001",
         origin: { kind: "hotCorner", corner: "leftTop" },
         sequence: [],
-        command: { type: "pause" },
+        command: { type: "doNothing" },
       }),
       expect.objectContaining({
         id: "10000000-0000-4000-8000-000000000007",
@@ -88,10 +88,44 @@ describe("configuration v4 migration", () => {
       { type: "stroke", direction: "down" },
       { type: "wheel", direction: "backward" },
     ]);
+    expect(document.global.intents[0]?.gesture.modifier).toBe("none");
+    expect(document.global.intents[0]).not.toHaveProperty("executeOnModifier");
     expect(document.apps[0]?.intents[0]?.gesture.inputs).toEqual([
       { type: "stroke", direction: "left" },
       { type: "button", button: "middle" },
     ]);
+    expect(document.apps[0]?.intents[0]?.command).toEqual({ type: "doNothing" });
+  });
+
+  it("migrates an old immediate final input into an independent modifier", () => {
+    const document = ConfigDocument.parse({
+      formatVersion: 4,
+      global: {
+        intents: [
+          {
+            id: "40000000-0000-4000-8000-000000000010",
+            name: "Repeat wheel",
+            gesture: {
+              trigger: "right",
+              strokes: ["right"],
+              modifier: "none",
+              inputs: [
+                { type: "stroke", direction: "right" },
+                { type: "wheel", direction: "backward" },
+              ],
+            },
+            command: { type: "audioVolume", delta: -1 },
+            executeOnModifier: true,
+          },
+        ],
+      },
+    });
+
+    expect(document.global.intents[0]?.gesture).toMatchObject({
+      modifier: "wheelBackward",
+      inputs: [{ type: "stroke", direction: "right" }],
+    });
+    expect(document.global.intents[0]).not.toHaveProperty("executeOnModifier");
   });
 
   it("preserves an explicitly recorded input order", () => {
@@ -164,9 +198,24 @@ describe("configuration v4 migration", () => {
       }],
     });
 
-    expect(document.formatVersion).toBe(4);
+    expect(document.formatVersion).toBe(5);
     expect(document.nodePlugins).toEqual([]);
     expect(document.boundaryIntents).toHaveLength(1);
+    expect(document.boundaryIntents[0]?.command).toEqual({ type: "doNothing" });
+  });
+
+  it("rejects removed pause commands in an already-current document", () => {
+    expect(() => ConfigDocument.parse({
+      formatVersion: 5,
+      global: {
+        intents: [{
+          id: "50000000-0000-4000-8000-000000000001",
+          name: "Invalid pause",
+          gesture: { trigger: "right", strokes: ["down"], modifier: "none" },
+          command: { type: "pause" },
+        }],
+      },
+    })).toThrow();
   });
 
   it("rejects removed script commands instead of converting them", () => {

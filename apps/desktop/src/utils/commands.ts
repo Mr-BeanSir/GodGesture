@@ -21,7 +21,6 @@ export const COMMAND_TYPES: CommandType[] = [
   "gotoUrl",
   "cmd",
   "nodePlugin",
-  "pause",
   "audioVolume",
 ];
 
@@ -62,8 +61,6 @@ export function createDefaultCommand(type: CommandType): Command {
       return { type: "cmd", code: "", showWindow: true, autoSetWorkingDir: true };
     case "nodePlugin":
       throw new Error("Node plugin commands require an existing plugin selection");
-    case "pause":
-      return { type: "pause" };
     case "audioVolume":
       return { type: "audioVolume", delta: 1 };
   }

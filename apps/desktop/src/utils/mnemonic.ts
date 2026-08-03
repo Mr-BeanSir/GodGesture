@@ -40,6 +40,20 @@ export const MODIFIER_SYMBOLS: Record<GestureModifier, string> = {
   x2Down: "X2",
 };
 
+const TRIGGER_MODIFIERS: Record<TriggerButton, GestureModifier> = {
+  right: "rightButtonDown",
+  middle: "middleButtonDown",
+  x1: "x1Down",
+  x2: "x2Down",
+};
+
+export function isModifierForTrigger(
+  trigger: TriggerButton,
+  modifier: GestureModifier,
+): boolean {
+  return TRIGGER_MODIFIERS[trigger] === modifier;
+}
+
 export function strokesMnemonic(strokes: readonly StrokeDirection[]): string {
   return strokes.map((s) => DIRECTION_ARROWS[s]).join("");
 }
@@ -52,38 +66,35 @@ export const BUTTON_SYMBOLS: Record<Extract<GestureInput, { type: "button" }>["b
   x2: "X2",
 };
 
-/** 将旧字段或新输入序列规范化为显示顺序。触发键不包含在序列内。 */
+/** 基础有序输入。独立修饰符不加入此序列。 */
 export function gestureInputs(gesture: GestureSpec): GestureInput[] {
   if (gesture.inputs !== undefined) return gesture.inputs;
-
-  const inputs: GestureInput[] = gesture.strokes.map((direction) => ({
+  return gesture.strokes.map((direction) => ({
     type: "stroke",
     direction,
   }));
-  switch (gesture.modifier) {
+}
+
+/** 将独立修饰符转换为仅供助记符展示的输入图标。 */
+export function gestureModifierInput(modifier: GestureModifier): GestureInput | null {
+  switch (modifier) {
     case "wheelForward":
-      inputs.push({ type: "wheel", direction: "forward" });
-      break;
+      return { type: "wheel", direction: "forward" };
     case "wheelBackward":
-      inputs.push({ type: "wheel", direction: "backward" });
-      break;
+      return { type: "wheel", direction: "backward" };
     case "leftButtonDown":
-      inputs.push({ type: "button", button: "left" });
-      break;
+      return { type: "button", button: "left" };
     case "middleButtonDown":
-      inputs.push({ type: "button", button: "middle" });
-      break;
+      return { type: "button", button: "middle" };
     case "rightButtonDown":
-      inputs.push({ type: "button", button: "right" });
-      break;
+      return { type: "button", button: "right" };
     case "x1Down":
-      inputs.push({ type: "button", button: "x1" });
-      break;
+      return { type: "button", button: "x1" };
     case "x2Down":
-      inputs.push({ type: "button", button: "x2" });
-      break;
+      return { type: "button", button: "x2" };
+    default:
+      return null;
   }
-  return inputs;
 }
 
 function inputMnemonic(input: GestureInput): string {
@@ -94,11 +105,15 @@ function inputMnemonic(input: GestureInput): string {
 
 /** 完整助记符,如 "◑→↓" 或 "◑→●"。 */
 export function gestureMnemonic(gesture: GestureSpec): string {
-  return `${TRIGGER_SYMBOLS[gesture.trigger]}${gestureInputs(gesture).map(inputMnemonic).join("")}`;
+  const modifier = gestureModifierInput(gesture.modifier);
+  return `${TRIGGER_SYMBOLS[gesture.trigger]}${gestureInputs(gesture)
+    .map(inputMnemonic)
+    .join("")}${modifier ? inputMnemonic(modifier) : ""}`;
 }
 
-/** 手势唯一性:触发键 + 有序输入序列共同决定。 */
+/** 手势唯一性:触发键 + 基础有序输入 + 独立修饰符。 */
 export function sameGesture(a: GestureSpec, b: GestureSpec): boolean {
+  if (a.modifier !== b.modifier) return false;
   const aInputs = gestureInputs(a);
   const bInputs = gestureInputs(b);
   return (

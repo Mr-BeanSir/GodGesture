@@ -15,6 +15,7 @@ import {
   AppEntry,
   Command,
   GestureIntent,
+  GestureInput,
   GestureModifier,
   GestureSpec,
   GlobalApp,
@@ -255,7 +256,7 @@ class Wg2Importer {
         this.warn("unknown_command_type", { ...location, field: "$type" }, { value: "ScriptCommand" });
         return { type: "doNothing" };
       case "PauseWGesturesCommand":
-        return { type: "pause" };
+        return { type: "doNothing" };
       case "ChangeAudioVolumeCommand": {
         const delta = asInt(raw["Delta"]) ?? 1;
         return { type: "audioVolume", delta: Math.min(20, Math.max(-20, delta)) };
@@ -360,13 +361,46 @@ class Wg2Importer {
         intentName: name,
         index: i,
       };
+      const gesture = this.mapGesture(raw["Gesture"], buttonShift, intentLocation);
+      const inputs: GestureInput[] = [
+        ...gesture.strokes.map((direction) => ({ type: "stroke" as const, direction })),
+      ];
+      if (gesture.modifier !== "none") {
+        const modifierInput =
+          gesture.modifier === "wheelForward"
+            ? { type: "wheel" as const, direction: "forward" as const }
+            : gesture.modifier === "wheelBackward"
+              ? { type: "wheel" as const, direction: "backward" as const }
+              : {
+                  type: "button" as const,
+                  button: gesture.modifier.replace("ButtonDown", "") as
+                    | "left"
+                    | "middle"
+                    | "right"
+                    | "x1"
+                    | "x2",
+                };
+        inputs.push(modifierInput);
+      }
+      const executeOnModifier = asBool(raw["ExecuteOnModifier"], false);
+      let independentModifier: GestureModifier = "none";
+      if (executeOnModifier) {
+        const last = inputs.at(-1);
+        if (last?.type === "wheel") {
+          independentModifier =
+            last.direction === "forward" ? "wheelForward" : "wheelBackward";
+          inputs.pop();
+        } else if (last?.type === "button") {
+          independentModifier = `${last.button}ButtonDown` as GestureModifier;
+          inputs.pop();
+        }
+      }
       intents.push({
         id: deterministicUuid(`intent:${idScope}:${i}:${name}`),
         name,
         enabled: true,
-        gesture: this.mapGesture(raw["Gesture"], buttonShift, intentLocation),
+        gesture: { ...gesture, modifier: independentModifier, inputs },
         command: this.mapCommand(raw["Command"], intentLocation),
-        executeOnModifier: asBool(raw["ExecuteOnModifier"], false),
         order: asInt(raw["Order"]) ?? i,
       });
     }

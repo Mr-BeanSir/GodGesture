@@ -98,7 +98,7 @@ impl IntentFinder {
         }
     }
 
-    /// 按有序输入序列查找意图。
+    /// 查找无独立修饰符的普通完成意图。
     pub fn find_inputs(
         &self,
         trigger: TriggerButton,
@@ -108,6 +108,35 @@ impl IntentFinder {
         let matches = |i: &&GestureIntent| {
             i.enabled
                 && i.gesture.trigger == trigger
+                && i.gesture.modifier == Modifier::None
+                && i.gesture.effective_inputs().as_slice() == inputs
+        };
+        if let Some(app) = self.match_app(fg) {
+            if let Some(intent) = app.intents.iter().find(matches) {
+                return Some(intent);
+            }
+            if !app.inherit_global_gestures {
+                return None;
+            }
+        }
+        self.config.global.intents.iter().find(matches)
+    }
+
+    /// 按触发键、基础输入和独立修饰符精确查找可重复执行意图。
+    pub fn find_modifier(
+        &self,
+        trigger: TriggerButton,
+        inputs: &[GestureInput],
+        modifier: Modifier,
+        fg: &ForegroundApp,
+    ) -> Option<&GestureIntent> {
+        if modifier == Modifier::None {
+            return None;
+        }
+        let matches = |i: &&GestureIntent| {
+            i.enabled
+                && i.gesture.trigger == trigger
+                && i.gesture.modifier == modifier
                 && i.gesture.effective_inputs().as_slice() == inputs
         };
         if let Some(app) = self.match_app(fg) {
@@ -129,15 +158,16 @@ impl IntentFinder {
         modifier: Modifier,
         fg: &ForegroundApp,
     ) -> Option<&GestureIntent> {
-        let mut inputs = strokes
+        let inputs = strokes
             .iter()
             .copied()
             .map(|direction| GestureInput::Stroke { direction })
             .collect::<Vec<_>>();
-        if let Some(input) = modifier_to_input(modifier) {
-            inputs.push(input);
+        if modifier == Modifier::None {
+            self.find_inputs(trigger, &inputs, fg)
+        } else {
+            self.find_modifier(trigger, &inputs, modifier, fg)
         }
-        self.find_inputs(trigger, &inputs, fg)
     }
 
     /// 该 (触发键, 前缀笔画) 下是否存在任何以此为前缀的意图 —— 供增量识别提示
@@ -165,34 +195,6 @@ impl IntentFinder {
             None => in_global(),
         }
     }
-}
-
-fn modifier_to_input(modifier: Modifier) -> Option<GestureInput> {
-    use super::config::{BoundaryWheelDirection, GestureInputButton};
-    Some(match modifier {
-        Modifier::None => return None,
-        Modifier::WheelForward => GestureInput::Wheel {
-            direction: BoundaryWheelDirection::Forward,
-        },
-        Modifier::WheelBackward => GestureInput::Wheel {
-            direction: BoundaryWheelDirection::Backward,
-        },
-        Modifier::LeftButtonDown => GestureInput::Button {
-            button: GestureInputButton::Left,
-        },
-        Modifier::MiddleButtonDown => GestureInput::Button {
-            button: GestureInputButton::Middle,
-        },
-        Modifier::RightButtonDown => GestureInput::Button {
-            button: GestureInputButton::Right,
-        },
-        Modifier::X1Down => GestureInput::Button {
-            button: GestureInputButton::X1,
-        },
-        Modifier::X2Down => GestureInput::Button {
-            button: GestureInputButton::X2,
-        },
-    })
 }
 
 /// 触发角/摩擦边命令查找(键: leftTop/rightTop/... 与 left/top/right/bottom)
@@ -245,7 +247,6 @@ mod tests {
                 inputs: Vec::new(),
             },
             command: Command::DoNothing,
-            execute_on_modifier: false,
             order: 0,
         }
     }
@@ -319,6 +320,32 @@ mod tests {
                 }],
                 &fg,
             )
+            .is_none());
+    }
+
+    #[test]
+    fn independent_modifier_matches_separately_from_path_end() {
+        let mut doc = ConfigDocument::default();
+        let mut repeated = intent("repeat", TriggerButton::Right, vec![Direction::Right]);
+        repeated.gesture.modifier = Modifier::WheelBackward;
+        doc.global.intents.push(repeated);
+        let finder = IntentFinder::new(doc);
+        let fg = ForegroundApp::default();
+        let inputs = [GestureInput::Stroke {
+            direction: Direction::Right,
+        }];
+
+        assert!(finder
+            .find_inputs(TriggerButton::Right, &inputs, &fg)
+            .is_none());
+        assert_eq!(
+            finder
+                .find_modifier(TriggerButton::Right, &inputs, Modifier::WheelBackward, &fg,)
+                .map(|intent| intent.name.as_str()),
+            Some("repeat")
+        );
+        assert!(finder
+            .find_modifier(TriggerButton::Right, &inputs, Modifier::WheelForward, &fg,)
             .is_none());
     }
 

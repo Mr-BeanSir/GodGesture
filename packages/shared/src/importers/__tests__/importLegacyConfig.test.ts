@@ -12,7 +12,7 @@ describe("importLegacyConfig(wg2 + config.plist)", () => {
   const warnings = allWarnings.filter((warning) => warning.code !== "unknown_command_type");
 
   it("产出合法 ConfigDocument", () => {
-    expect(document.formatVersion).toBe(4);
+    expect(document.formatVersion).toBe(5);
     expect(document.nodePlugins).toEqual([]);
     expect(() => ConfigDocument.parse(document)).not.toThrow();
   });

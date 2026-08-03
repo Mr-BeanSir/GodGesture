@@ -143,7 +143,6 @@ export default {
     gotoUrl: "打开网址",
     cmd: "命令行",
     script: "脚本(JavaScript)",
-    pause: "暂停",
     audioVolume: "音量控制",
   },
   platform: {

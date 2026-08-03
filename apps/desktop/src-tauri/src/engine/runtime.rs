@@ -111,12 +111,10 @@ struct Session {
     trigger: TriggerButton,
     /// 手势起点(命令执行上下文用)
     origin: Point,
-    /// 手势期间最后一次触发的修饰(用于 PathEnd 时的意图键)
+    /// 手势期间最后一次触发的修饰(用于命令上下文)
     active_modifier: Modifier,
     /// 鼠标键/滚轮/笔画的实际发生顺序(不含触发键本身)。
     inputs: Vec<GestureInput>,
-    /// 是否已在修饰触发时执行过命令(execute_on_modifier);PathEnd 据此避免二次执行
-    executed_on_modifier: bool,
     /// 上次增量识别的结果名(去重用)
     last_recognized: Option<(String, bool)>,
 }
@@ -641,7 +639,6 @@ impl EngineShared {
                         origin,
                         active_modifier: Modifier::None,
                         inputs: Vec::new(),
-                        executed_on_modifier: false,
                         last_recognized: None,
                     });
                     let _ = self.tx.send(EngineMsg::PathStarted { trigger, origin });
@@ -697,21 +694,30 @@ impl EngineShared {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         s.active_modifier = m;
-                        if let Some(input) = modifier_to_input(m) {
-                            s.inputs.push(input);
-                        }
-                        let intent = if self.is_recording() {
-                            None
-                        } else {
-                            self.finder
+                        let mut independent_intent = None;
+                        if !self.is_recording() {
+                            independent_intent = self
+                                .finder
                                 .lock()
-                                .find_inputs(s.trigger, &s.inputs, &s.fg)
-                                .cloned()
-                        };
-                        // 立即执行型意图(如滚轮调音量)在此触发;标记以免 PathEnd 二次执行
-                        if intent.as_ref().is_some_and(|i| i.execute_on_modifier) {
-                            s.executed_on_modifier = true;
+                                .find_modifier(s.trigger, &s.inputs, m, &s.fg)
+                                .cloned();
                         }
+                        let intent = if independent_intent.is_some() {
+                            // 独立修饰符不进入基础输入,因此下一次相同事件仍可命中。
+                            independent_intent
+                        } else {
+                            if let Some(input) = modifier_to_input(m) {
+                                s.inputs.push(input);
+                            }
+                            if self.is_recording() {
+                                None
+                            } else {
+                                self.finder
+                                    .lock()
+                                    .find_inputs(s.trigger, &s.inputs, &s.fg)
+                                    .cloned()
+                            }
+                        };
                         let context = GestureContext {
                             origin: s.origin,
                             endpoint: pos,
@@ -753,26 +759,21 @@ impl EngineShared {
                             endpoint: pos,
                             native_window: s.fg.native_window,
                         };
-                        let intent = if s.executed_on_modifier {
-                            // 已在修饰触发时执行,避免二次执行
-                            None
-                        } else {
-                            let finder = self.finder.lock();
-                            finder
-                                .find_inputs(s.trigger, &s.inputs, &s.fg)
-                                .or_else(|| {
-                                    // 带附加输入未命中时回退纯笔画意图。
-                                    let strokes = s
-                                        .parser
-                                        .strokes()
-                                        .iter()
-                                        .copied()
-                                        .map(|direction| GestureInput::Stroke { direction })
-                                        .collect::<Vec<_>>();
-                                    finder.find_inputs(s.trigger, &strokes, &s.fg)
-                                })
-                                .cloned()
-                        };
+                        let finder = self.finder.lock();
+                        let intent = finder
+                            .find_inputs(s.trigger, &s.inputs, &s.fg)
+                            .or_else(|| {
+                                // 带附加输入未命中时回退纯笔画意图。
+                                let strokes = s
+                                    .parser
+                                    .strokes()
+                                    .iter()
+                                    .copied()
+                                    .map(|direction| GestureInput::Stroke { direction })
+                                    .collect::<Vec<_>>();
+                                finder.find_inputs(s.trigger, &strokes, &s.fg)
+                            })
+                            .cloned();
                         let _ = self.tx.send(EngineMsg::PathEnded {
                             intent,
                             trigger: s.trigger,
@@ -944,7 +945,7 @@ fn tracker_params_from(config: &ConfigDocument) -> TrackerParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::config::{BoundaryIntent, BoundaryOrigin};
+    use crate::engine::config::{BoundaryIntent, BoundaryOrigin, GestureIntent, GestureSpecConfig};
     use crate::engine::corners::ScreenEdge;
     use crate::engine::corners::{ScreenCorner, ScreenRect};
 
@@ -1066,6 +1067,57 @@ mod tests {
             .any(|message| matches!(message, EngineMsg::PathEnded { intent: None, .. })));
     }
 
+    #[test]
+    fn independent_button_modifier_repeats_without_growing_base_inputs() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = ConfigDocument::default();
+        config.global.intents.push(GestureIntent {
+            id: "50000000-0000-4000-8000-000000000001".into(),
+            name: "Repeat middle".into(),
+            enabled: true,
+            gesture: GestureSpecConfig {
+                trigger: TriggerButton::Right,
+                strokes: vec![Direction::Right],
+                modifier: Modifier::MiddleButtonDown,
+                inputs: vec![GestureInput::Stroke {
+                    direction: Direction::Right,
+                }],
+            },
+            command: Command::DoNothing,
+            order: 0,
+        });
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        for _ in 0..2 {
+            assert!(shared.on_hook_event(Input::ButtonDown(
+                MouseButton::Middle,
+                Point { x: 120, y: 0 },
+            )));
+            assert!(
+                shared.on_hook_event(Input::ButtonUp(MouseButton::Middle, Point { x: 120, y: 0 },))
+            );
+        }
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+
+        let messages = rx.try_iter().collect::<Vec<_>>();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| matches!(
+                    message,
+                    EngineMsg::ModifierFired { intent: Some(intent), .. }
+                        if intent.name == "Repeat middle"
+                ))
+                .count(),
+            2
+        );
+        assert!(messages
+            .iter()
+            .any(|message| matches!(message, EngineMsg::PathEnded { intent: None, .. })));
+    }
+
     #[derive(Default)]
     struct BoundaryPlatform {
         clicks: Mutex<Vec<(MouseButton, Point)>>,
@@ -1118,7 +1170,7 @@ mod tests {
                 corner: "leftTop".into(),
             },
             sequence,
-            command: Command::Pause,
+            command: Command::DoNothing,
             order: 0,
         });
         config
@@ -1188,7 +1240,7 @@ mod tests {
             EngineMsg::CornerEdgeFired {
                 intent_id,
                 hit: CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-                command: Command::Pause,
+                command: Command::DoNothing,
                 ..
             } if intent_id == "20000000-0000-4000-8000-000000000001"
         ));
@@ -1236,7 +1288,7 @@ mod tests {
         assert!(matches!(
             rx.recv().unwrap(),
             EngineMsg::CornerEdgeFired {
-                command: Command::Pause,
+                command: Command::DoNothing,
                 ..
             }
         ));

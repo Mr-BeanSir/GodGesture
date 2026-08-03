@@ -21,6 +21,7 @@ import type {
   BoundaryToken,
   GestureIntent,
   GestureSpec,
+  GestureModifier,
 } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
@@ -226,7 +227,6 @@ function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; over
       enabled: true,
       gesture,
       command: createDefaultCommand("doNothing"),
-      executeOnModifier: false,
       order,
     };
     arr.push(created);
@@ -346,6 +346,10 @@ async function deleteSelectedAction() {
 /** 冲突检测用:排除重录目标自身 */
 const captureExisting = computed(() => intentsArray());
 const captureExcludeId = computed(() => reRecordId.value ?? undefined);
+const capturePreservedModifier = computed<GestureModifier>(() => {
+  if (!reRecordId.value) return "none";
+  return intentsArray().find((intent) => intent.id === reRecordId.value)?.gesture.modifier ?? "none";
+});
 
 onMounted(() => selectApp(GLOBAL));
 </script>
@@ -514,6 +518,7 @@ onMounted(() => selectApp(GLOBAL));
       v-model="captureVisible"
       :existing-intents="captureExisting"
       :exclude-id="captureExcludeId"
+      :preserve-modifier="capturePreservedModifier"
       @confirm="onCaptureConfirm"
     />
     <AddActionDialog

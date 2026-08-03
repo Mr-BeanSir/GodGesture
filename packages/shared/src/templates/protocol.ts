@@ -70,32 +70,14 @@ export type GestureTemplateIntent = z.infer<typeof GestureTemplateIntent>;
 function effectiveGestureInputs(gesture: GestureSpec): GestureInput[] {
   if (gesture.inputs !== undefined) return gesture.inputs;
 
-  const inputs: GestureInput[] = gesture.strokes.map((direction) => ({
+  return gesture.strokes.map((direction) => ({
     type: "stroke",
     direction,
   }));
-  const modifierInput: GestureInput | undefined =
-    gesture.modifier === "wheelForward"
-      ? { type: "wheel", direction: "forward" }
-      : gesture.modifier === "wheelBackward"
-        ? { type: "wheel", direction: "backward" }
-        : gesture.modifier === "leftButtonDown"
-          ? { type: "button", button: "left" }
-          : gesture.modifier === "middleButtonDown"
-            ? { type: "button", button: "middle" }
-            : gesture.modifier === "rightButtonDown"
-              ? { type: "button", button: "right" }
-              : gesture.modifier === "x1Down"
-                ? { type: "button", button: "x1" }
-                : gesture.modifier === "x2Down"
-                  ? { type: "button", button: "x2" }
-                  : undefined;
-  if (modifierInput) inputs.push(modifierInput);
-  return inputs;
 }
 
 export function gestureIdentityKey(gesture: GestureSpec): string {
-  return `${gesture.trigger}:${JSON.stringify(effectiveGestureInputs(gesture))}`;
+  return `${gesture.trigger}:${JSON.stringify(effectiveGestureInputs(gesture))}:${gesture.modifier}`;
 }
 
 function requireUniqueIntents(

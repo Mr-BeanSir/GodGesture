@@ -406,8 +406,9 @@ fn spawn_engine_consumer(
                                 trigger: Some(trigger),
                                 modifier,
                             };
-                            let immediate_intent =
-                                intent.as_ref().filter(|intent| intent.execute_on_modifier);
+                            let immediate_intent = intent.as_ref().filter(|intent| {
+                                intent.gesture.modifier != engine::types::Modifier::None
+                            });
                             let lifecycle_script =
                                 immediate_intent.and_then(|intent| match &intent.command {
                                     engine::config::Command::NodePlugin { plugin_id, .. } => {
@@ -657,13 +658,10 @@ struct CapturedGesture {
 fn execute_intent(
     command: &engine::config::Command,
     invocation: ScriptInvocation,
-    shared: &Arc<EngineShared>,
+    _shared: &Arc<EngineShared>,
     node_service: Option<&NodeScriptService>,
 ) {
-    if matches!(command, engine::config::Command::Pause) {
-        let paused = shared.toggle_paused();
-        log::info!("命令: 手势{}", if paused { "已暂停" } else { "已继续" });
-    } else if let engine::config::Command::NodePlugin {
+    if let engine::config::Command::NodePlugin {
         plugin_id,
         export_name,
     } = command

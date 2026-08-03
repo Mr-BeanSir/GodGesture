@@ -12,15 +12,46 @@ describe("importWg2", () => {
     const intent = result.global.intents[0]!;
     expect(intent.name).toBe("复制");
     expect(UUID_RE.test(intent.id)).toBe(true);
-    expect(intent.executeOnModifier).toBe(false);
     expect(intent.order).toBe(0);
-    expect(intent.gesture).toEqual({ trigger: "right", strokes: ["up", "right"], modifier: "none" });
+    expect(intent.gesture).toEqual({
+      trigger: "right",
+      strokes: ["up", "right"],
+      modifier: "none",
+      inputs: [
+        { type: "stroke", direction: "up" },
+        { type: "stroke", direction: "right" },
+      ],
+    });
     expect(intent.command).toEqual({ type: "hotKey", modifiers: ["ctrl"], keys: ["c"] });
   });
 
   it("旧 ScriptCommand 不再进入 Node-only 配置", () => {
     const intent = result.global.intents[1]!;
     expect(intent.command).toEqual({ type: "doNothing" });
+  });
+
+  it("旧立即执行修饰符迁移为独立可重复修饰符", () => {
+    const imported = importWg2(JSON.stringify({
+      FileVersion: "3",
+      Global: {
+        GestureIntents: [{
+          Name: "滚轮音量",
+          Gesture: { GestureButton: 1, Dirs: [2], Modifier: 2 },
+          ExecuteOnModifier: true,
+          Command: {
+            $type: "WGestures.Core.Commands.Impl.ChangeAudioVolumeCommand, WGestures.Core",
+            Delta: -1,
+          },
+        }],
+      },
+      Apps: {},
+      HotCornerCommands: [],
+    }));
+
+    expect(imported.global.intents[0]!.gesture).toMatchObject({
+      modifier: "wheelBackward",
+      inputs: [{ type: "stroke", direction: "right" }],
+    });
   });
 
   it("应用条目:notepad.exe → SendText", () => {

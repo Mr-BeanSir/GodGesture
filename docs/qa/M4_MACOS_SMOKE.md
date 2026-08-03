@@ -24,9 +24,9 @@ must not be rolled back merely because these observations are pending.
 
 - [ ] Right, middle, X1, and X2 trigger buttons enter and leave gesture capture correctly.
 - [ ] A recognized gesture suppresses the physical trigger click. A normal click and cancelled gesture pass through exactly once.
-- [ ] Wheel-forward/backward and button modifiers execute once according to configuration.
+- [ ] After the base gesture matches, each configured wheel-forward/backward or button modifier trigger executes immediately, can repeat while the trigger button remains held, and is not executed again on release.
 - [ ] Synthetic input does not re-enter the gesture tracker. A forced tap timeout recovers without duplicate input.
-- [ ] Pause works from the tray, configured global hotkey, left+middle chord, and Pause command.
+- [ ] Pause works from the settings-window header, tray, configured global hotkey, and left+middle chord.
 
 ## Overlay And Displays
 
@@ -44,7 +44,7 @@ must not be rolled back merely because these observations are pending.
 
 ## Commands And Node Runtime
 
-- [ ] Hotkey, Web search, selected-text capture, URL, open file, key sequence, command line (hidden and Terminal), Mission Control, pause, and volume commands are exercised.
+- [ ] Hotkey, Web search, selected-text capture, URL, open file, key sequence, command line (hidden and Terminal), Mission Control, and volume commands are exercised.
 - [ ] Clipboard contents, items, and formats survive selected-text capture when no concurrent clipboard owner changes them.
 
 GitHub runner results are supporting CI evidence, not a substitute for the

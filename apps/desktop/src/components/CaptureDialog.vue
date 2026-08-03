@@ -23,6 +23,8 @@ const props = defineProps<{
   existingIntents: GestureIntent[];
   /** 重新录制时排除自身 */
   excludeId?: string;
+  /** 重新录制基础输入时保留已有独立修饰符 */
+  preserveModifier?: GestureSpec["modifier"];
 }>();
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
@@ -108,7 +110,7 @@ function onCaptured(g: CapturedGesture, epoch: number) {
   captured.value = {
     trigger: g.trigger as TriggerButton,
     inputs,
-    modifier: g.inputs ? "none" : (g.modifier as GestureSpec["modifier"]),
+    modifier: props.preserveModifier ?? "none",
   };
 }
 

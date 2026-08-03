@@ -2,11 +2,11 @@
 //! 本机专属设置(MachineLocalSettings)单独存放,不进同步载荷(ADR-0010)。
 
 use super::types::{Direction, Modifier, TriggerButton};
-use serde::{Deserialize, Serialize};
+use serde::{de::Deserializer, Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 4;
+pub const CONFIG_FORMAT_VERSION: u32 = 5;
 
 // ---------------------------------------------------------------------------
 // 命令(执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
@@ -59,7 +59,6 @@ pub enum Command {
         #[serde(default = "default_node_export")]
         export_name: String,
     },
-    Pause,
     #[serde(rename_all = "camelCase")]
     AudioVolume {
         #[serde(default = "default_delta")]
@@ -159,11 +158,15 @@ impl GestureSpecConfig {
         inputs
     }
 
-    /// Return the ordered input sequence, normalizing pre-v4 configs that only
-    /// carried `strokes` plus a legacy modifier.
+    /// Return the ordered base input sequence. The v5 modifier is independent
+    /// and is intentionally excluded from this sequence.
     pub fn effective_inputs(&self) -> Vec<GestureInput> {
         if self.inputs.is_empty() {
-            self.legacy_inputs()
+            self.strokes
+                .iter()
+                .copied()
+                .map(|direction| GestureInput::Stroke { direction })
+                .collect()
         } else {
             self.inputs.clone()
         }
@@ -183,8 +186,6 @@ pub struct GestureIntent {
     pub enabled: bool,
     pub gesture: GestureSpecConfig,
     pub command: Command,
-    #[serde(default)]
-    pub execute_on_modifier: bool,
     #[serde(default)]
     pub order: i32,
 }
@@ -499,7 +500,7 @@ fn default_node_manifest() -> String {
     "{\n  \"private\": true,\n  \"type\": \"module\"\n}".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ConfigDocument {
     pub format_version: u32,
@@ -510,6 +511,205 @@ pub struct ConfigDocument {
     pub boundary_intents: Vec<BoundaryIntent>,
     pub node_plugins: Vec<NodePlugin>,
     pub preferences: SyncedPreferences,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ConfigDocumentWire {
+    format_version: u32,
+    global: GlobalApp,
+    apps: Vec<AppEntry>,
+    hot_corners: HotCornersConfig,
+    rub_edges: RubEdgesConfig,
+    boundary_intents: Vec<BoundaryIntent>,
+    node_plugins: Vec<NodePlugin>,
+    preferences: SyncedPreferences,
+}
+
+impl Default for ConfigDocumentWire {
+    fn default() -> Self {
+        let defaults = ConfigDocument::default();
+        Self {
+            format_version: defaults.format_version,
+            global: defaults.global,
+            apps: defaults.apps,
+            hot_corners: defaults.hot_corners,
+            rub_edges: defaults.rub_edges,
+            boundary_intents: defaults.boundary_intents,
+            node_plugins: defaults.node_plugins,
+            preferences: defaults.preferences,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfigDocument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        migrate_config_value(&mut value);
+        let wire: ConfigDocumentWire =
+            serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        let mut document = Self {
+            format_version: wire.format_version,
+            global: wire.global,
+            apps: wire.apps,
+            hot_corners: wire.hot_corners,
+            rub_edges: wire.rub_edges,
+            boundary_intents: wire.boundary_intents,
+            node_plugins: wire.node_plugins,
+            preferences: wire.preferences,
+        };
+        document.migrate_legacy_boundaries();
+        Ok(document)
+    }
+}
+
+fn legacy_modifier_input(modifier: &str) -> Option<serde_json::Value> {
+    let value = match modifier {
+        "wheelForward" => serde_json::json!({ "type": "wheel", "direction": "forward" }),
+        "wheelBackward" => serde_json::json!({ "type": "wheel", "direction": "backward" }),
+        "leftButtonDown" => serde_json::json!({ "type": "button", "button": "left" }),
+        "middleButtonDown" => serde_json::json!({ "type": "button", "button": "middle" }),
+        "rightButtonDown" => serde_json::json!({ "type": "button", "button": "right" }),
+        "x1Down" => serde_json::json!({ "type": "button", "button": "x1" }),
+        "x2Down" => serde_json::json!({ "type": "button", "button": "x2" }),
+        _ => return None,
+    };
+    Some(value)
+}
+
+fn input_modifier(input: &serde_json::Value) -> Option<&'static str> {
+    let object = input.as_object()?;
+    match object.get("type")?.as_str()? {
+        "wheel" => match object.get("direction")?.as_str()? {
+            "forward" => Some("wheelForward"),
+            "backward" => Some("wheelBackward"),
+            _ => None,
+        },
+        "button" => match object.get("button")?.as_str()? {
+            "left" => Some("leftButtonDown"),
+            "middle" => Some("middleButtonDown"),
+            "right" => Some("rightButtonDown"),
+            "x1" => Some("x1Down"),
+            "x2" => Some("x2Down"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn migrate_gesture_value(value: &mut serde_json::Value, legacy: bool, execute_on_modifier: bool) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let mut inputs = object
+        .get("inputs")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_else(|| {
+            let mut strokes = object
+                .get("strokes")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|direction| serde_json::json!({ "type": "stroke", "direction": direction }))
+                .collect::<Vec<_>>();
+            if legacy {
+                if let Some(modifier) = object
+                    .get("modifier")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(legacy_modifier_input)
+                {
+                    strokes.push(modifier);
+                }
+            }
+            strokes
+        });
+
+    let mut modifier = if legacy {
+        "none".to_string()
+    } else {
+        object
+            .get("modifier")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("none")
+            .to_string()
+    };
+    if legacy && execute_on_modifier {
+        if let Some(last) = inputs.last().and_then(input_modifier) {
+            modifier = last.to_string();
+            inputs.pop();
+        }
+    }
+    object.insert("inputs".into(), serde_json::Value::Array(inputs));
+    object.insert("modifier".into(), serde_json::Value::String(modifier));
+}
+
+fn migrate_scope_value(value: &mut serde_json::Value, legacy: bool) {
+    let Some(intents) = value
+        .as_object_mut()
+        .and_then(|object| object.get_mut("intents"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for intent in intents {
+        let Some(object) = intent.as_object_mut() else {
+            continue;
+        };
+        let execute_on_modifier = object
+            .get("executeOnModifier")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
+        if let Some(gesture) = object.get_mut("gesture") {
+            migrate_gesture_value(gesture, legacy, execute_on_modifier);
+        }
+        object.remove("executeOnModifier");
+    }
+}
+
+/// Normalize removed commands and pre-v5 gesture fields before strict serde
+/// decoding. This is shared by local files, sync payloads and Tauri IPC.
+fn migrate_config_value(value: &mut serde_json::Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let version = object
+        .get("formatVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(1);
+    if !(1..=CONFIG_FORMAT_VERSION as u64).contains(&version) {
+        return;
+    }
+    let legacy = version < CONFIG_FORMAT_VERSION as u64;
+    if legacy {
+        neutralize_removed_commands(value);
+    }
+    if let Some(global) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("global"))
+    {
+        migrate_scope_value(global, legacy);
+    }
+    if let Some(apps) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("apps"))
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for app in apps {
+            migrate_scope_value(app, legacy);
+        }
+    }
+    value
+        .as_object_mut()
+        .expect("configuration remains an object")
+        .insert(
+            "formatVersion".into(),
+            serde_json::Value::Number(CONFIG_FORMAT_VERSION.into()),
+        );
 }
 
 impl Default for ConfigDocument {
@@ -576,7 +776,6 @@ pub fn default_seed() -> ConfigDocument {
             inputs: Vec::new(),
         },
         command,
-        execute_on_modifier: false,
         order: 0,
     };
     let hotkey = |mods: &[&str], keys: &[&str]| Command::HotKey {
@@ -681,44 +880,27 @@ impl ConfigStore {
             return seed;
         }
         match std::fs::read_to_string(&path) {
-            Ok(text) => match serde_json::from_str::<ConfigDocument>(&text) {
-                Ok(mut document) => {
-                    document.migrate_legacy_boundaries();
-                    document
-                }
-                Err(error) => {
-                    // Node-only 不再执行旧 script；中和这些已删除命令，避免一条旧命令
-                    // 让整份用户配置回退为默认值。其他字段仍按当前 schema 严格校验。
-                    let mut value = match serde_json::from_str::<serde_json::Value>(&text) {
-                        Ok(value) => value,
-                        Err(_) => {
-                            log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
-                            return ConfigDocument::default();
-                        }
-                    };
-                    let removed = neutralize_removed_script_commands(&mut value);
-                    if removed == 0 {
-                        log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
-                        return ConfigDocument::default();
-                    }
-                    match serde_json::from_value::<ConfigDocument>(value) {
-                        Ok(mut document) => {
-                            document.migrate_legacy_boundaries();
-                            log::warn!(
-                                "配置包含 {removed} 个已删除的 script 命令,已降级为 doNothing: {path:?}"
-                            );
-                            if let Err(save_error) = self.save_config(&document) {
-                                log::warn!("修复后的配置写回失败: {path:?}: {save_error}");
+            Ok(text) => {
+                let original_version = serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("formatVersion")
+                            .and_then(serde_json::Value::as_u64)
+                    });
+                serde_json::from_str::<ConfigDocument>(&text)
+                    .inspect(|document| {
+                        if original_version != Some(CONFIG_FORMAT_VERSION as u64) {
+                            if let Err(error) = self.save_config(document) {
+                                log::warn!("迁移后的配置写回失败: {path:?}: {error}");
                             }
-                            document
                         }
-                        Err(repair_error) => {
-                            log::warn!("配置文件损坏,修复后仍无法加载: {path:?}: {repair_error}");
-                            ConfigDocument::default()
-                        }
-                    }
-                }
-            },
+                    })
+                    .unwrap_or_else(|error| {
+                        log::warn!("配置文件损坏,使用默认值: {path:?}: {error}");
+                        ConfigDocument::default()
+                    })
+            }
             Err(_) => ConfigDocument::default(),
         }
     }
@@ -824,25 +1006,21 @@ impl ConfigStore {
     }
 }
 
-/// 将已从 Node-only 协议删除的旧命令中和为安全的空操作,不保留或执行源码。
-fn neutralize_removed_script_commands(value: &mut serde_json::Value) -> usize {
+/// 将已从协议删除的旧命令中和为安全的空操作,不保留或执行源码。
+fn neutralize_removed_commands(value: &mut serde_json::Value) -> usize {
     let is_removed_script = value
         .get("type")
         .and_then(serde_json::Value::as_str)
-        .is_some_and(|kind| kind == "script");
+        .is_some_and(|kind| kind == "script" || kind == "pause");
     if is_removed_script {
         *value = serde_json::json!({ "type": "doNothing" });
         return 1;
     }
     match value {
-        serde_json::Value::Array(items) => items
-            .iter_mut()
-            .map(neutralize_removed_script_commands)
-            .sum(),
-        serde_json::Value::Object(fields) => fields
-            .values_mut()
-            .map(neutralize_removed_script_commands)
-            .sum(),
+        serde_json::Value::Array(items) => items.iter_mut().map(neutralize_removed_commands).sum(),
+        serde_json::Value::Object(fields) => {
+            fields.values_mut().map(neutralize_removed_commands).sum()
+        }
         _ => 0,
     }
 }
@@ -851,13 +1029,13 @@ impl ConfigDocument {
     pub fn migrate_legacy_boundaries(&mut self) {
         for intent in &mut self.global.intents {
             if intent.gesture.inputs.is_empty() {
-                intent.gesture.inputs = intent.gesture.legacy_inputs();
+                intent.gesture.inputs = intent.gesture.effective_inputs();
             }
         }
         for app in &mut self.apps {
             for intent in &mut app.intents {
                 if intent.gesture.inputs.is_empty() {
-                    intent.gesture.inputs = intent.gesture.legacy_inputs();
+                    intent.gesture.inputs = intent.gesture.effective_inputs();
                 }
             }
         }
@@ -1118,7 +1296,7 @@ mod tests {
         .unwrap();
 
         document.migrate_legacy_boundaries();
-        assert_eq!(document.format_version, 4);
+        assert_eq!(document.format_version, 5);
         assert!(!document.hot_corners.enabled);
         assert!(document.hot_corners.commands.is_empty());
         assert!(document.rub_edges.commands.is_empty());
@@ -1127,6 +1305,7 @@ mod tests {
             document.boundary_intents[0].id,
             "10000000-0000-4000-8000-000000000001"
         );
+        assert_eq!(document.boundary_intents[0].command, Command::DoNothing);
         assert_eq!(
             document.boundary_intents[1].origin,
             BoundaryOrigin::RubEdge {
@@ -1137,6 +1316,56 @@ mod tests {
         let once = document.clone();
         document.migrate_legacy_boundaries();
         assert_eq!(document, once);
+    }
+
+    #[test]
+    fn legacy_immediate_input_migrates_to_an_independent_modifier() {
+        let document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "formatVersion": 4,
+            "global": {
+                "intents": [{
+                    "id": "40000000-0000-4000-8000-000000000001",
+                    "name": "Repeat wheel",
+                    "gesture": {
+                        "trigger": "right",
+                        "strokes": ["right"],
+                        "modifier": "none",
+                        "inputs": [
+                            { "type": "stroke", "direction": "right" },
+                            { "type": "wheel", "direction": "backward" }
+                        ]
+                    },
+                    "command": { "type": "doNothing" },
+                    "executeOnModifier": true
+                }]
+            }
+        }))
+        .unwrap();
+
+        let gesture = &document.global.intents[0].gesture;
+        assert_eq!(gesture.modifier, Modifier::WheelBackward);
+        assert_eq!(
+            gesture.inputs,
+            vec![GestureInput::Stroke {
+                direction: Direction::Right
+            }]
+        );
+    }
+
+    #[test]
+    fn current_config_rejects_removed_pause_commands() {
+        let result = serde_json::from_value::<ConfigDocument>(serde_json::json!({
+            "formatVersion": 5,
+            "global": {
+                "intents": [{
+                    "id": "50000000-0000-4000-8000-000000000001",
+                    "name": "Invalid pause",
+                    "gesture": { "trigger": "right", "strokes": ["down"] },
+                    "command": { "type": "pause" }
+                }]
+            }
+        }));
+        assert!(result.is_err());
     }
 
     #[test]

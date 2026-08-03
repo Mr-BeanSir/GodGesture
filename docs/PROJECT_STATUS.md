@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-08-02。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-08-03。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -93,7 +93,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
-- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
+- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。普通手势编辑器提供独立修饰符选择器与帮助提示,禁用和触发键相同的按钮,重新录制基础输入时保留修饰符。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
 - `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture SDK 声明;JavaScript 开启触发字符补全、快速建议和参数提示,溢出提示固定到顶层 widget 避免被编辑面板裁剪。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备、manifest/lockfile 结构化 diff、用户主动 `tsc` typecheck 和有界 Problems/Output 面板。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
@@ -105,7 +105,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 4`,`nodePlugins` 项目集合与 `nodePlugin` 是唯一脚本协议;v1/v2/v3 的结构字段可迁移到 v4,但旧 `script` 命令不再属于有效配置且不会自动转换。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮和滚轮步骤；旧 `strokes + modifier` 仅在读取时规范化为该序列。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 5`,`nodePlugins` 项目集合与 `nodePlugin` 是唯一脚本协议;v1-v4 的结构字段可迁移到 v5,但旧 `script` 和 Pause 命令不再属于有效配置且不会自动执行。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮和滚轮步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
@@ -128,7 +128,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## 不得破坏的语义
 
-- PathEnd 按“最后一个按键触发时立即执行”选项处理（配置字段 `executeOnModifier` 为兼容命名）。
+- PathEnd 只匹配未配置独立修饰符的手势。基础输入匹配后,每次独立修饰符触发立即执行且保持捕获；触发键释放只结束捕获,不再次执行该修饰符动作。未命中的按钮或滚轮继续作为基础有序输入处理,滚轮保持 100 ms 节流。
 - 录制持续到前端显式 `capture_cancel`,不是捕获一次自动停止。
 - 保留 `corners.rs` 文件头记录的状态机常量、多显示器语义和有意偏差。
 - 鼠标键按下时仍喂角/边状态机,只抑制命令分发。
@@ -438,6 +438,16 @@ typecheck/build;`pnpm check:api` 与 `git diff --check` 通过。Windows 真实�
 覆盖层收尾流程,轨迹按设置清除或淡出,目标应用不会收到右键;仍处于 Pending 且未达到阈值
 的普通点击保持原有透传。新增方向折返与跨 runtime 无匹配回归测试;Rust library
 `209 passed, 3 ignored`,严格 Clippy 和 `git diff --check` 通过。
+
+2026-08-03 Pause 命令移除与可重复修饰符:配置协议升级至 v5,命令类型删除 Pause,旧配置
+中的 Pause 稳定降级为“什么也不做”,当前 v5 文档严格拒绝该已删除命令；设置窗口顶栏、
+托盘、全局快捷键、左键+中键和弦及暂停状态机继续保留。普通手势新增独立修饰符,基础输入匹配后每次按钮或滚轮
+修饰符触发都立即执行且继续监听,释放触发键不二次执行；未命中的附加输入继续进入基础有序
+输入链,滚轮保持 100 ms 节流。Shared `105/105` + typecheck/build,Desktop `123/123` +
+typecheck/build,Server `87/87` + typecheck/build,Web Console typecheck/build,`pnpm check:api`,
+2 个模板种子验证,Rust library `213 passed, 3 ignored` 与严格 Clippy 全部通过。应用内浏览器
+在 `800x560` 中文/英文下确认独立修饰符 8 个选项、同触发键禁用、问号提示的双语绑定、
+命令类型只剩 11 项且无横向溢出；真实 Windows/macOS 重复输入仍按平台 QA 观察。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
 
