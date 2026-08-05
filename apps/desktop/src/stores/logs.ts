@@ -14,12 +14,24 @@ export const useLogsStore = defineStore("logs", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const lastExportPath = ref<string | null>(null);
-  const live = ref(false);
+  const live = ref(true);
   let initialized = false;
   let requestPromise: Promise<void> | null = null;
   let unlisten: (() => void) | undefined;
 
   const hasEntries = computed(() => entries.value.length > 0);
+
+  function newestFirst(next: LogEntry[]): LogEntry[] {
+    return next
+      .map((entry, index) => ({ entry, index, timestamp: Date.parse(entry.timestamp) }))
+      .sort(
+        (left, right) =>
+          (Number.isNaN(right.timestamp) ? 0 : right.timestamp) -
+            (Number.isNaN(left.timestamp) ? 0 : left.timestamp) ||
+          left.index - right.index,
+      )
+      .map(({ entry }) => entry);
+  }
 
   function request(): LogsQueryRequest {
     return {
@@ -43,7 +55,7 @@ export const useLogsStore = defineStore("logs", () => {
     error.value = null;
     try {
       const result = await backend.logsQuery(request());
-      entries.value = result.entries;
+      entries.value = newestFirst(result.entries).slice(0, 2000);
       total.value = result.total ?? result.entries.length;
       if (result.level) level.value = result.level;
     } catch (cause) {
@@ -62,9 +74,8 @@ export const useLogsStore = defineStore("logs", () => {
         level.value = await backend.logLevelGet();
         unlisten = await backend.onLogEvent((entry) => {
           if (!matches(entry)) return;
-          entries.value = [...entries.value, entry].slice(-2000);
+          entries.value = [entry, ...entries.value].slice(0, 2000);
           total.value += 1;
-          live.value = true;
         });
         await refresh();
         initialized = true;
@@ -119,10 +130,14 @@ export const useLogsStore = defineStore("logs", () => {
     levelFilter.value = "all";
   }
 
+  function toggleLive(): void {
+    live.value = !live.value;
+  }
+
   onScopeDispose(() => unlisten?.());
   return {
     level, entries, total, target, keyword, levelFilter, loading, error,
     hasEntries, live, lastExportPath, initialize, refresh, setLevel,
-    exportLogs, clear, resetFilters,
+    exportLogs, clear, resetFilters, toggleLive,
   };
 });

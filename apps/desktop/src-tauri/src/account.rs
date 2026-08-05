@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, OnceLock};
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -13,6 +13,8 @@ const CREDENTIAL_SERVICE: &str = "com.godgesture.app.cloud";
 const CALLBACK_PATH: &str = "/oauth/callback";
 const OAUTH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_HTTP_HEADER_BYTES: usize = 8 * 1024;
+
+static CREDENTIAL_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -105,7 +107,12 @@ fn credential_entry(api_origin: &str) -> Result<keyring::Entry, NativeAccountErr
     })
 }
 
+fn credential_store_lock() -> parking_lot::MutexGuard<'static, ()> {
+    CREDENTIAL_STORE_LOCK.get_or_init(|| Mutex::new(())).lock()
+}
+
 fn credential_get_inner(api_origin: &str) -> Result<Option<String>, NativeAccountError> {
+    let _store_guard = credential_store_lock();
     let entry = credential_entry(api_origin)?;
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
@@ -124,6 +131,7 @@ fn credential_set_inner(api_origin: &str, refresh_token: &str) -> Result<(), Nat
             "refusing to store an empty session credential",
         ));
     }
+    let _store_guard = credential_store_lock();
     credential_entry(api_origin)?
         .set_password(refresh_token)
         .map_err(|err| {
@@ -135,6 +143,7 @@ fn credential_set_inner(api_origin: &str, refresh_token: &str) -> Result<(), Nat
 }
 
 fn credential_delete_inner(api_origin: &str) -> Result<(), NativeAccountError> {
+    let _store_guard = credential_store_lock();
     let entry = credential_entry(api_origin)?;
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),

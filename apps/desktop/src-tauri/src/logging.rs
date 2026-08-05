@@ -46,12 +46,37 @@ mod tests {
     #[test]
     fn rust_redaction_removes_secrets_and_jsonl_control_breaks() {
         let value = sanitize_message(
-            "password=secret Bearer abcdefghijklmnopqrstuvwxyz123456\nclipboard=private",
+            "password=secret Bearer abcdefghijklmnopqrstuvwxyz123456\r\nclipboard=private",
         );
         assert!(!value.contains("secret"));
         assert!(!value.contains("abcdefghijklmnopqrstuvwxyz123456"));
-        assert!(!value.contains('\n'));
+        assert!(value.contains('\n'));
+        assert!(!value.contains('\r'));
         assert!(value.contains("[redacted]"));
+    }
+
+    #[test]
+    fn queries_newest_entries_first_and_limits_from_the_newest_end() {
+        let dir = TempDir::new();
+        let service = LoggingService::for_test(dir.logs()).unwrap();
+        service.set_level(LogLevel::Info).unwrap();
+        service
+            .write_user(LogEntryLevel::Info, "logs", "first")
+            .unwrap();
+        service
+            .write_user(LogEntryLevel::Info, "logs", "second")
+            .unwrap();
+        service.flush_for_test();
+
+        let response = service
+            .query(&LogsQueryRequest {
+                limit: Some(1),
+                ..LogsQueryRequest::default()
+            })
+            .unwrap();
+        assert_eq!(response.total, 2);
+        assert_eq!(response.entries.len(), 1);
+        assert_eq!(response.entries[0].message, "second");
     }
 
     #[test]
@@ -206,20 +231,15 @@ const WRITE_QUEUE_CAPACITY: usize = 4_096;
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 static EXPORT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
+    #[default]
     Off,
     Error,
     Warn,
     Info,
     Debug,
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 impl LogLevel {
@@ -481,9 +501,8 @@ impl WriterState {
         }
         let total = entries.len();
         let limit = request.limit.unwrap_or(1_000).clamp(1, MAX_QUERY_LIMIT);
-        if entries.len() > limit {
-            entries = entries.split_off(entries.len() - limit);
-        }
+        entries.reverse();
+        entries.truncate(limit);
         Ok(LogsQueryResponse {
             entries,
             total,
@@ -942,12 +961,13 @@ fn sanitize_target(target: &str) -> String {
 }
 
 fn sanitize_message(message: &str) -> String {
-    let clean = message
+    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
+    let clean = normalized
         .chars()
         .map(|character| {
-            if character == '\t' {
+            if character == '\t' || character == '\n' {
                 character
-            } else if character.is_control() || character == '\n' || character == '\r' {
+            } else if character.is_control() {
                 ' '
             } else {
                 character

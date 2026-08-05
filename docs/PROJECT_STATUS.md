@@ -83,7 +83,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 - 页面:`OptionsView`, `GesturesView`, `TemplatesView`, `PluginsView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。触发角与摩擦边已并入手势页,不再有独立页面。
 - `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、手势模板、插件、账户与同步、设置、
-  关于;默认页仍为设置。主区不承担页面滚动,六页各自声明唯一
+  关于;默认页为手势,浏览器 preview 仍可用 `section` 参数覆盖。主区不承担页面滚动,六页各自声明唯一
   主滚动区或明确的分区滚动责任。Windows 主窗口在首次显示前移除系统 decorations,
   现有 48px 顶栏提供独立拖动区、最小化和关闭到托盘按钮；macOS 保留原生标题栏。
 - `QuickStartDialog.vue` 与 `onboarding/quick-guide.ts` 提供版本化的本机首次引导、平台就绪检查、默认手势试用和既有配置入口;About 可重开,浏览器 `?guide=1` 可强制展示。
@@ -98,11 +98,11 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `AppIcon.vue` 通过平台中立 `app_icon` IPC 显示本机应用图标;全局应用使用打包的
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
-- `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。普通手势编辑器提供独立修饰符选择器与帮助提示,禁用和触发键相同的按钮,重新录制基础输入时保留修饰符。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
+- `GesturesView.vue` 使用主题表面应用分组列表 + 动作表格 + 编辑器工作台;全局应用固定置顶且不属于分组,默认分组可重命名但不可删除,自定义分组可新增、重命名、排序和删除迁移。应用和分组仅从 hover/focus 的 3x3 点阵把手启动拖拽,应用移动只改变 `groupId` 与组内顺序。全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。普通手势编辑器提供独立修饰符选择器与帮助提示,禁用和触发键相同的按钮,重新录制基础输入时保留修饰符。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
 - `PluginsView.vue` 与 `stores/plugins.ts` 提供 ready/error/empty 项目列表、manifest 元数据、动作导出、最近重载、打开根目录/项目目录及重新扫描；不包含源码编辑器，也不支持注册任意外部目录。
 - `NodePluginPicker.vue` 在命令编辑器中选择 `pluginId/actionId`，并提供打开目录和重新扫描入口；失效的插件或动作引用会明确提示且保留原值。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
-- `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
+- `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;refresh token 仅由 Windows Credential Manager/macOS Keychain 保存,原生 keyring 读写使用进程内串行锁,启动时自动轮换恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
   GitHub catalog/package 执行 shared Schema、身份、目标和风险校验;浏览器 preview 继续
   使用 fixture。模板详情提供冲突策略、风险确认和纯规划,再经 `stores/config.ts` 整库
@@ -111,7 +111,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 6`;`nodePlugin` 命令只保存 `pluginId/actionId`,`nodePlugins` 已从 v6 `ConfigDocument` 与同步载荷移除。Rust 仅在读取旧 v5 本地配置时暂存内嵌项目，启动后一次性导出至插件工作区并以 v6 重写；旧 `script` 和 Pause 命令仍按既有迁移边界移除。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮、滚轮和 `KeyboardEvent.code` 键盘步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；同一鼠标输入既是更长有序序列前缀时优先按有序序列等待,不被独立修饰符抢占。`sendText` 新配置使用按顺序排列的 `steps`，每步选择文字或一个带修饰键的按键,旧 `text` 字段仍可读取执行。旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 7`;`AppGroup`、固定默认组和 `AppEntry.groupId` 属于同步配置,旧 v1-v6 文档与非法/未知归属会迁移到默认组,新手势模板应用进入默认组而命中已有应用保留原组。`nodePlugin` 命令只保存 `pluginId/actionId`,`nodePlugins` 已从 v6 `ConfigDocument` 与同步载荷移除。Rust 仅在读取旧 v5 本地配置时暂存内嵌项目，启动后一次性导出至插件工作区并以 v7 重写；旧 `script` 和 Pause 命令仍按既有迁移边界移除。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮、滚轮和 `KeyboardEvent.code` 键盘步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；同一鼠标输入既是更长有序序列前缀时优先按有序序列等待,不被独立修饰符抢占。`sendText` 新配置使用按顺序排列的 `steps`，每步选择文字或一个带修饰键的按键,旧 `text` 字段仍可读取执行。旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 插件源码、`package.json`、锁文件、依赖和缓存均是本机工作区文件，不进入整库同步；跨设备部署由用户使用 Git、复制或克隆 `gesture-demo` 完成。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
@@ -490,7 +490,7 @@ typecheck/build,Server `87/87` + typecheck/build,Web Console typecheck/build,`pn
 2026-08-03 任务切换执行时机修复:删除任务切换在增量识别阶段启动并保持按键的特殊生命周期,
 `RecognitionChanged` 现在只更新原生覆盖层提示。未配置独立修饰符时,任务切换与其他普通命令
 一致,仅在触发键释放产生 `PathEnd` 后执行；配置独立修饰符时仍由每次 `ModifierFired` 立即
-执行,释放触发键不重复。Windows `Alt+Tab` 与 macOS Mission Control 共用该时机语义。
+执行,释放触发键不重复。Windows `Ctrl+Alt+Tab` 与 macOS Mission Control 共用该时机语义。
 新增两条 runtime 回归测试,Rust library `212 passed, 3 ignored`。
 
 2026-08-03 Windows 自定义标题栏与图标:Windows 主窗口在 Rust setup 中于首次显示前
@@ -577,7 +577,9 @@ manifest、入口、动作导出和锁文件校验仍由插件工作区候选版
 
 本地日志系统代码已完成；真实 Windows/macOS 日志目录、轮转、重启后级别持久化、Node 崩溃回退、
 文件权限和热更新日志仍按 `docs/superpowers/specs/2026-08-04-local-desktop-logging-design.md`
-标记 pending，不能以自动化测试或浏览器 mock 代替平台验收。
+标记 pending，不能以自动化测试或浏览器 mock 代替平台验收。Desktop 日志页已补齐最新记录置顶、
+error/warn 多行 trace 默认折叠、每条记录分隔线、右侧自动跟随点击开关和浅/深主题表面；查询、
+导出与浏览器 mock 均使用最新优先顺序。
 
 2026-08-05 有序手势键盘与按键/文字序列:修复同一基础手势下有序左键步骤被独立左键修饰符
 抢占的问题;右键触发键保持按下时,左键按下会继续进入有序序列并在触发键释放时匹配。录制
@@ -599,6 +601,14 @@ Q”录制,均收到 `KeyQ` 按下/抬起并最终保存为 1 个键盘输入步
 `raw_input_received` → `engine_input_received` → `key_fired` → `capture_payload_emit`。
 最新定向验证: `cargo check`、`cargo fmt -- --check`、Windows hook `8/8`、Desktop typecheck、
 日志前端测试 `2/2`、`git diff --check` 均通过。macOS 交叉编译/真机验收仍 pending。
+
+2026-08-05 手势分组、账户会话与日志工作台:同步配置 v7 的 OpenAPI 文档和 shared 生成类型已刷新;
+Desktop 手势页支持默认/自定义应用分组、重命名、删除迁移、分组排序和应用拖拽归组,全局应用保持置顶;
+账户 refresh token 由原生凭据存储恢复并以进程内锁串行读写;日志页使用最新置顶、trace 折叠、明确分隔线、
+浅/深主题表面和可点击自动跟随。验证:shared `114/114` + build,Desktop `132/132` + typecheck/build,
+Rust library `232 passed, 3 ignored`,`pnpm check:api`、严格 Clippy、定向 cargo fmt 和 `git diff --check`
+全部通过。真实 Windows/macOS keyring、日志文件轮转/权限/重启恢复和 macOS 输入链路仍按既有平台 QA
+清单 pending,不以浏览器 mock 或自动化测试代替双平台验收。
 
 ## 新任务接手流程
 
