@@ -64,6 +64,7 @@ const collapsedGroups = ref<Record<string, boolean>>({});
 type DragState = { kind: "app" | "group"; id: string } | null;
 type GroupCommand = { action: "rename" | "delete"; groupId: string };
 const dragState = ref<DragState>(null);
+const dragOverGroupId = ref<string | null>(null);
 
 type ActionRow =
   | { kind: "gesture"; key: string; id: string; name: string; intent: GestureIntent }
@@ -285,6 +286,7 @@ function onGroupCommand(command: GroupCommand) {
 
 function startDrag(kind: "app" | "group", id: string, event: DragEvent) {
   dragState.value = { kind, id };
+  dragOverGroupId.value = null;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", `${kind}:${id}`);
@@ -293,11 +295,32 @@ function startDrag(kind: "app" | "group", id: string, event: DragEvent) {
 
 function clearDrag() {
   dragState.value = null;
+  dragOverGroupId.value = null;
+}
+
+function onGroupDragOver(groupId: string) {
+  if (dragState.value) dragOverGroupId.value = groupId;
+}
+
+function onGroupDragLeave(groupId: string, event: DragEvent) {
+  const currentTarget = event.currentTarget;
+  const relatedTarget = event.relatedTarget;
+  if (
+    currentTarget instanceof Node &&
+    relatedTarget instanceof Node &&
+    currentTarget.contains(relatedTarget)
+  ) {
+    return;
+  }
+  if (dragOverGroupId.value === groupId) dragOverGroupId.value = null;
 }
 
 function dropOnGroup(targetGroupId: string) {
   const current = dragState.value;
-  if (!current) return;
+  if (!current) {
+    clearDrag();
+    return;
+  }
   if (current.kind === "app") {
     moveAppToGroup(doc.value.apps, doc.value.groups, current.id, targetGroupId);
   } else {
@@ -503,8 +526,9 @@ onMounted(() => selectApp(GLOBAL));
           v-for="group in sortedGroups"
           :key="group.id"
           class="gestures__group"
-          :class="{ 'is-drop-target': dragState?.kind === 'app' || dragState?.kind === 'group' }"
-          @dragover.prevent.stop
+          :class="{ 'is-drop-target': dragOverGroupId === group.id }"
+          @dragover.prevent.stop="onGroupDragOver(group.id)"
+          @dragleave.stop="onGroupDragLeave(group.id, $event)"
           @drop.prevent.stop="dropOnGroup(group.id)"
         >
           <div class="gestures__group-head">
@@ -907,8 +931,8 @@ onMounted(() => selectApp(GLOBAL));
 }
 .gestures__drag-grip:active { cursor: grabbing; }
 .gestures__drag-grip svg { width: 12px; height: 12px; fill: currentColor; }
-.gestures__group:hover .gestures__group-grip,
-.gestures__group:focus-within .gestures__group-grip,
+.gestures__group-head:hover .gestures__group-grip,
+.gestures__group-head:focus-within .gestures__group-grip,
 .gestures__app-item:hover .gestures__app-grip,
 .gestures__app-item:focus-within .gestures__app-grip,
 .gestures__drag-grip:focus-visible {

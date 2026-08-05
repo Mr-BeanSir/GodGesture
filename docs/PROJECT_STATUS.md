@@ -610,6 +610,11 @@ Rust library `232 passed, 3 ignored`,`pnpm check:api`、严格 Clippy、定向 c
 全部通过。真实 Windows/macOS keyring、日志文件轮转/权限/重启恢复和 macOS 输入链路仍按既有平台 QA
 清单 pending,不以浏览器 mock 或自动化测试代替双平台验收。
 
+2026-08-05 Desktop 界面收尾:账户页配置快照增加客户端分页,支持 10/20/50 条每页并在快照
+数量变化后校正当前页;手势页将应用分组拖拽高亮限定为当前目标组,离开、放下和拖拽结束时清理状态,
+且分组拖拽把手只在分组标题 hover/focus 时显示。分组与应用操作按钮文案分别简化为“分组”和“应用”。
+验证:Desktop `134/134` + typecheck/build、`git diff --check` 通过。
+
 ## 新任务接手流程
 
 1. 从 `AGENTS.md` 进入,完整读取 `CONTEXT.md` 和本文,再检查 Git 状态与近期提交。

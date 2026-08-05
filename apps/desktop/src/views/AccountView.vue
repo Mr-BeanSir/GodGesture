@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useMediaQuery } from "@vueuse/core";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -13,6 +13,7 @@ import {
 import type { OAuthProvider } from "@godgesture/shared";
 import { useBackend } from "../api/backend";
 import { useAccountStore } from "../stores/account";
+import { getPageCount, getPageItems } from "../utils/pagination";
 
 const { t, locale } = useI18n();
 const account = useAccountStore();
@@ -22,6 +23,8 @@ const password = ref("");
 const endpointChoice = ref(account.endpointMode);
 const customEndpointDraft = ref(account.customApiOrigin);
 const narrowLayout = useMediaQuery("(max-width: 640px)");
+const snapshotPage = ref(1);
+const snapshotPageSize = ref(10);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const endpointOptions = computed(() => [
@@ -61,6 +64,17 @@ const syncStatusText = computed(() => {
     return t("account.syncStates.currentAt", { time: lastSyncText.value });
   }
   return t(`account.syncStates.${account.syncStatus.phase}`);
+});
+
+const snapshotPageCount = computed(() =>
+  getPageCount(account.snapshots.length, snapshotPageSize.value),
+);
+const pagedSnapshots = computed(() =>
+  getPageItems(account.snapshots, snapshotPage.value, snapshotPageSize.value),
+);
+
+watch(snapshotPageCount, (pageCount) => {
+  if (snapshotPage.value > pageCount) snapshotPage.value = pageCount;
 });
 
 function errorText(code: string | null): string {
@@ -189,6 +203,15 @@ function formatBytes(value: number): string {
       maximumFractionDigits: 1,
     }).format(value / 1024),
   });
+}
+
+function onSnapshotPageChange(page: number): void {
+  snapshotPage.value = page;
+}
+
+function onSnapshotPageSizeChange(pageSize: number): void {
+  snapshotPageSize.value = pageSize;
+  snapshotPage.value = 1;
 }
 
 function providerLabel(provider: OAuthProvider): string {
@@ -453,7 +476,7 @@ function providerLabel(provider: OAuthProvider): string {
         />
 
         <el-table
-          :data="account.snapshots"
+          :data="pagedSnapshots"
           :empty-text="t('account.snapshots.empty')"
           size="small"
           v-loading="account.snapshotsLoading"
@@ -530,6 +553,18 @@ function providerLabel(provider: OAuthProvider): string {
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="account.snapshots.length > 0"
+          class="account__snapshots-pagination"
+          background
+          layout="total, sizes, prev, pager, next"
+          :current-page="snapshotPage"
+          :page-size="snapshotPageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="account.snapshots.length"
+          @current-change="onSnapshotPageChange"
+          @size-change="onSnapshotPageSizeChange"
+        />
       </section>
         </template>
       </div>
@@ -690,6 +725,10 @@ function providerLabel(provider: OAuthProvider): string {
 .account__snapshots :deep(.el-table) {
   width: 100%;
 }
+.account__snapshots-pagination {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
 .account__snapshot-meta {
   color: var(--el-text-color-secondary);
   font-size: 12px;
@@ -733,6 +772,11 @@ function providerLabel(provider: OAuthProvider): string {
     grid-template-columns: 1fr;
     gap: 2px;
     padding: 7px 0;
+  }
+  .account__snapshots-pagination {
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 }
 </style>
