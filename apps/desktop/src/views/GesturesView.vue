@@ -3,7 +3,7 @@
  * 「手势」区:左侧应用列表(全局 + 各应用),右侧手势意图表 + 意图编辑器。
  * 手势录制走 captureStart() + onGestureCaptured();支持增删改意图、绑定 12 类命令。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -33,6 +33,12 @@ import {
   moveGroupBefore,
   removeCustomGroup,
 } from "../utils/app-groups";
+import {
+  getDragPreviewOffset,
+  groupIdFromDropTarget,
+  isActivePointerDrag,
+  type PointerDrag,
+} from "../utils/group-drag";
 import { createDefaultCommand } from "../utils/commands";
 import { findBoundaryConflict } from "../utils/boundary-actions";
 import MnemonicText from "../components/MnemonicText.vue";
@@ -65,6 +71,11 @@ type DragState = { kind: "app" | "group"; id: string } | null;
 type GroupCommand = { action: "rename" | "delete"; groupId: string };
 const dragState = ref<DragState>(null);
 const dragOverGroupId = ref<string | null>(null);
+const pointerDrag = ref<PointerDrag | null>(null);
+const pointerDragElement = ref<HTMLElement | null>(null);
+const dragSourceElement = ref<HTMLElement | null>(null);
+const dragPreviewElement = ref<HTMLElement | null>(null);
+const dragPreviewOffset = ref<{ x: number; y: number } | null>(null);
 
 type ActionRow =
   | { kind: "gesture"; key: string; id: string; name: string; intent: GestureIntent }
@@ -284,35 +295,117 @@ function onGroupCommand(command: GroupCommand) {
   else void deleteGroup(group);
 }
 
-function startDrag(kind: "app" | "group", id: string, event: DragEvent) {
+function isDragging(kind: "app" | "group", id: string): boolean {
+  return dragState.value?.kind === kind && dragState.value.id === id;
+}
+
+function dragSourceFromEvent(event: PointerEvent): HTMLElement | null {
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLElement)) return null;
+  return target.closest<HTMLElement>(".gestures__app-item, .gestures__group") ?? target;
+}
+
+function updateDragPreview(event: PointerEvent) {
+  const preview = dragPreviewElement.value;
+  const offset = dragPreviewOffset.value;
+  if (!preview || !offset) return;
+  preview.style.left = `${event.clientX - offset.x}px`;
+  preview.style.top = `${event.clientY - offset.y}px`;
+}
+
+function createDragPreview(source: HTMLElement, event: PointerEvent) {
+  const preview = source.cloneNode(true) as HTMLElement;
+  const rect = source.getBoundingClientRect();
+  const offset = getDragPreviewOffset(rect, event.clientX, event.clientY);
+
+  preview.classList.add("gestures__drag-preview");
+  preview.classList.remove("is-active", "is-dragging", "is-drop-target");
+  preview.removeAttribute("data-group-id");
+  preview.querySelectorAll(".is-active, .is-dragging, .is-drop-target").forEach((element) => {
+    element.classList.remove("is-active", "is-dragging", "is-drop-target");
+  });
+  preview.setAttribute("aria-hidden", "true");
+  preview.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [tabindex]").forEach((element) => {
+    element.setAttribute("tabindex", "-1");
+  });
+  preview.style.width = `${rect.width}px`;
+  preview.style.left = `${rect.left}px`;
+  preview.style.top = `${rect.top}px`;
+  document.body.appendChild(preview);
+
+  dragPreviewOffset.value = offset;
+  dragPreviewElement.value = preview;
+  updateDragPreview(event);
+}
+
+function startDrag(kind: "app" | "group", id: string, event: PointerEvent) {
+  if (event.button !== 0 || pointerDrag.value) return;
+  event.preventDefault();
+  event.stopPropagation();
   dragState.value = { kind, id };
   dragOverGroupId.value = null;
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
+  dragSourceElement.value = dragSourceFromEvent(event);
+  pointerDrag.value = { kind, id, pointerId: event.pointerId };
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", clearDrag);
+  window.addEventListener("blur", clearDrag);
+  const element = event.currentTarget;
+  if (element instanceof HTMLElement) {
+    pointerDragElement.value = element;
+    try {
+      element.setPointerCapture(event.pointerId);
+    } catch {
+      // The window listeners still receive the drag when pointer capture is unavailable.
+    }
   }
+  if (dragSourceElement.value) createDragPreview(dragSourceElement.value, event);
 }
 
 function clearDrag() {
+  window.removeEventListener("pointermove", onPointerMove);
+  window.removeEventListener("pointerup", onPointerUp);
+  window.removeEventListener("pointercancel", clearDrag);
+  window.removeEventListener("blur", clearDrag);
+  const currentPointerDrag = pointerDrag.value;
+  const element = pointerDragElement.value;
+  if (
+    currentPointerDrag &&
+    element?.hasPointerCapture(currentPointerDrag.pointerId)
+  ) {
+    element.releasePointerCapture(currentPointerDrag.pointerId);
+  }
+  pointerDrag.value = null;
+  pointerDragElement.value = null;
+  dragSourceElement.value = null;
+  dragPreviewElement.value?.remove();
+  dragPreviewElement.value = null;
+  dragPreviewOffset.value = null;
   dragState.value = null;
   dragOverGroupId.value = null;
 }
 
-function onGroupDragOver(groupId: string) {
-  if (dragState.value) dragOverGroupId.value = groupId;
+function onPointerMove(event: PointerEvent) {
+  if (!isActivePointerDrag(pointerDrag.value, event.pointerId)) return;
+  event.preventDefault();
+  updateDragPreview(event);
+  dragOverGroupId.value = groupIdFromDropTarget(
+    document.elementFromPoint(event.clientX, event.clientY),
+  );
 }
 
-function onGroupDragLeave(groupId: string, event: DragEvent) {
-  const currentTarget = event.currentTarget;
-  const relatedTarget = event.relatedTarget;
-  if (
-    currentTarget instanceof Node &&
-    relatedTarget instanceof Node &&
-    currentTarget.contains(relatedTarget)
-  ) {
-    return;
-  }
-  if (dragOverGroupId.value === groupId) dragOverGroupId.value = null;
+onBeforeUnmount(clearDrag);
+
+function onPointerUp(event: PointerEvent) {
+  if (!isActivePointerDrag(pointerDrag.value, event.pointerId)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  updateDragPreview(event);
+  const targetGroupId =
+    groupIdFromDropTarget(document.elementFromPoint(event.clientX, event.clientY)) ??
+    dragOverGroupId.value;
+  if (targetGroupId) dropOnGroup(targetGroupId);
+  else clearDrag();
 }
 
 function dropOnGroup(targetGroupId: string) {
@@ -526,20 +619,19 @@ onMounted(() => selectApp(GLOBAL));
           v-for="group in sortedGroups"
           :key="group.id"
           class="gestures__group"
-          :class="{ 'is-drop-target': dragOverGroupId === group.id }"
-          @dragover.prevent.stop="onGroupDragOver(group.id)"
-          @dragleave.stop="onGroupDragLeave(group.id, $event)"
-          @drop.prevent.stop="dropOnGroup(group.id)"
+          :data-group-id="group.id"
+          :class="{
+            'is-drop-target': dragOverGroupId === group.id,
+            'is-dragging': isDragging('group', group.id),
+          }"
         >
           <div class="gestures__group-head">
             <button
               class="gestures__drag-grip gestures__group-grip"
               type="button"
-              draggable="true"
               :aria-label="t('gestures.dragGroup', { name: group.name })"
               @click.stop
-              @dragstart="startDrag('group', group.id, $event)"
-              @dragend="clearDrag"
+              @pointerdown="startDrag('group', group.id, $event)"
             >
               <svg viewBox="0 0 12 12" aria-hidden="true">
                 <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" /><circle cx="10" cy="2" r="1" />
@@ -586,17 +678,18 @@ onMounted(() => selectApp(GLOBAL));
               v-for="app in appsInGroup(group.id)"
               :key="app.id"
               class="gestures__app-item"
-              :class="{ 'is-active': app.id === selectedAppId }"
+              :class="{
+                'is-active': app.id === selectedAppId,
+                'is-dragging': isDragging('app', app.id),
+              }"
               @click="selectApp(app.id)"
             >
               <button
                 class="gestures__drag-grip gestures__app-grip"
                 type="button"
-                draggable="true"
                 :aria-label="t('gestures.dragApp', { name: app.name })"
                 @click.stop
-                @dragstart="startDrag('app', app.id, $event)"
-                @dragend="clearDrag"
+                @pointerdown="startDrag('app', app.id, $event)"
               >
                 <svg viewBox="0 0 12 12" aria-hidden="true">
                   <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" /><circle cx="10" cy="2" r="1" />
@@ -808,6 +901,21 @@ onMounted(() => selectApp(GLOBAL));
 .gestures__group.is-drop-target {
   background: var(--el-color-primary-light-9);
 }
+.gestures__group.is-dragging,
+.gestures__app-item.is-dragging {
+  outline: 1px dashed var(--el-color-primary);
+  outline-offset: -1px;
+  background: var(--el-fill-color-light);
+  opacity: 0.58;
+}
+.gestures__drag-preview {
+  position: fixed;
+  z-index: 3000;
+  box-sizing: border-box;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: var(--el-box-shadow-light);
+}
 .gestures__group-head {
   display: flex;
   align-items: center;
@@ -927,6 +1035,8 @@ onMounted(() => selectApp(GLOBAL));
   color: var(--el-text-color-placeholder);
   cursor: grab;
   opacity: 0;
+  touch-action: none;
+  user-select: none;
   transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
 }
 .gestures__drag-grip:active { cursor: grabbing; }

@@ -615,6 +615,12 @@ Rust library `232 passed, 3 ignored`,`pnpm check:api`、严格 Clippy、定向 c
 且分组拖拽把手只在分组标题 hover/focus 时显示。分组与应用操作按钮文案分别简化为“分组”和“应用”。
 验证:Desktop `134/134` + typecheck/build、`git diff --check` 通过。
 
+2026-08-06 应用分组拖拽修复:手势页不再依赖 WebView/浏览器的 HTML5 `dragstart`/`drop` 链路,
+改用 Pointer Events、pointer capture 和窗口级移动/释放兜底;应用与分组仍复用既有归组和排序逻辑,
+拖拽取消、失焦和组件卸载均清理状态;拖拽中源条目显示虚线轮廓,并创建不拦截命中的副本跟随光标。
+Chrome `http://127.0.0.1:14204/` 已用实际鼠标事件验证源条目、副本、目标高亮和释放后的清理行为。
+验证:Desktop `137/137` + typecheck/build、`git diff --check` 通过。
+
 ## 新任务接手流程
 
 1. 从 `AGENTS.md` 进入,完整读取 `CONTEXT.md` 和本文,再检查 Git 状态与近期提交。
