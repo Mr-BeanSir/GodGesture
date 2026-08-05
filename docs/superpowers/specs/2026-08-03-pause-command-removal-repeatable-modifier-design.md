@@ -2,6 +2,10 @@
 
 日期: 2026-08-03
 
+说明：本文是已完成的历史设计记录。文中 Node 生命周期的旧名称仅保留为历史上下文；现役名称
+为 `onInit`、`onExecute`、`onGestureRecognized`、`onModifierTriggered` 和 `onEnd`，以
+`CONTEXT.md`、`docs/SCRIPTING.md` 和 ADR-0012 为准。
+
 ## 范围
 
 本次包含两项相互关联的配置与手势运行时变更:

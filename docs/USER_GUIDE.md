@@ -88,14 +88,39 @@ TCC 权限是三件不同的事；不要使用 `sudo` 启动 GUI，也不要移�
 触发键释放；没有配置修饰符时,命令在触发键释放后执行。
 
 GodGesture 支持 11 类命令：什么也不做、快捷键、Web 搜索、窗口控制、任务切换、
-打开文件、按键序列、打开网址、命令行、Node.js 插件和音量控制。暂停是全局识别状态,
+打开文件、按键/文字序列、打开网址、命令行、Node.js 插件和音量控制。暂停是全局识别状态,
 不属于命令类型；可由顶栏、托盘、暂停快捷键或左键+中键和弦切换。
 
 脚本使用“Node.js 插件”：支持随应用分发的 Node.js、ESM、`fetch`、Node 内置模块、
 npm 依赖和 `@godgesture/sdk`。GodGesture 不包含旧 QuickJS 运行时或旧脚本转换入口。
 WGestures 导入遇到旧脚本命令时会显示不支持告警,并将该命令降级为“什么也不做”；
-不会保留、执行或自动转换旧脚本。开发者 API、项目结构和依赖管理见
-[脚本开发指南](SCRIPTING.md)。
+不会保留、执行或自动转换旧脚本。插件源码在 VS Code、WebStorm 等外部 IDE 中维护,
+App 只提供侧边栏“插件”管理页,不提供内置源码编辑器。开发者 API、项目结构和依赖管理见
+[脚本开发指南](SCRIPTING.md)，仓库中的中文模板见
+[gesture-demo](../plugins/gesture-demo/README.md)。
+
+### 安装与开发插件
+
+首次启动时 App 会在系统应用配置目录创建 `plugins` 根目录,空目录会自动生成
+`gesture-demo`。也可从“插件”页点击“打开插件目录”。每个直接子目录是一个项目;
+不支持注册任意外部目录,插件也不应放到程序安装目录。
+
+| 平台 | 插件目录 |
+| --- | --- |
+| Windows | `%APPDATA%\com.godgesture.app\plugins` |
+| macOS | `~/Library/Application Support/com.godgesture.desktop/plugins` |
+
+在插件根目录打开终端,把仓库中的 `plugins/gesture-demo` 复制为自己的项目,随后安装 SDK:
+
+```powershell
+Copy-Item -Recurse plugins/gesture-demo my-plugin
+cd my-plugin
+npm install --save-dev @godgesture/sdk
+```
+
+再使用 VS Code 或 WebStorm 修改 `index.mjs`、`package.json` 中的插件 ID 和动作。App 会自动扫描
+并热更新文件,候选版本准备失败时保留最后一份可用版本,插件页显示错误状态。完整依赖准备需要精确
+`pnpm-lock.yaml`;`node_modules` 由本机缓存管理,不要提交。
 
 ## 模板与 WGestures 导入
 
@@ -135,12 +160,14 @@ Windows 的“以管理员身份运行”使用当前用户专属的任务计划
 
 ## 账户、同步与快照
 
-账户不是使用前提。登录后，配置作为一个完整文档同步：本地改动防抖后推送，
+账户不是使用前提。登录后,手势配置作为一个完整文档同步：本地改动防抖后推送,
 启动和约 30 分钟周期拉取，“账户与同步”页也可立即同步。
 
 多设备并发采用整库版本和后写胜出；每次成功推送保留服务端快照。恢复前会先
 保存当前配置，设备也可从 Web 控制台改名或撤销。服务离线时本地功能和本地登出
-仍可工作。
+仍可工作。Node 插件源码、`package.json`、锁文件和本机依赖缓存不参与云同步;
+同步中的 Node 插件命令只包含 `pluginId` 与 `actionId`。另一台设备需要单独把相同插件
+项目放入其本机 `plugins` 目录,否则命令会保留引用但无法执行。
 
 ## 更新
 

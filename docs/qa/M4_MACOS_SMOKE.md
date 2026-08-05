@@ -44,7 +44,7 @@ must not be rolled back merely because these observations are pending.
 
 ## Commands And Node Runtime
 
-- [ ] Hotkey, Web search, selected-text capture, URL, open file, key sequence, command line (hidden and Terminal), Mission Control, and volume commands are exercised.
+- [ ] Hotkey, Web search, selected-text capture, URL, open file, key/text sequence, command line (hidden and Terminal), Mission Control, and volume commands are exercised.
 - [ ] Clipboard contents, items, and formats survive selected-text capture when no concurrent clipboard owner changes them.
 
 GitHub runner results are supporting CI evidence, not a substitute for the

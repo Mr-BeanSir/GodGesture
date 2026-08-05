@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-08-03。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-08-05。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -35,16 +35,20 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 | `apps/server`            | NestJS REST API、Prisma/PostgreSQL、认证、设备、同步、快照                           | `src/app.module.ts`, `src/auth/`, `src/devices/`, `src/sync/`, `prisma/schema.prisma` |
 | `apps/web-console`       | 浏览器账户控制台;只读配置、设备、快照、安全                                          | `src/router/index.ts`, `src/api/`, `src/views/`                                       |
 | `apps/server` 部署       | 1Panel 手动部署、PostgreSQL、Docker 构建与迁移                                       | `README-DEPLOY.md`, `Dockerfile`, `docker-compose.*.yml`, `.env.example`              |
+| `packages/sdk`           | `@godgesture/sdk` 可公开发布的开发包、类型与 `defineHandler`                          | `packages/sdk/src/index.ts`                                                            |
+| `plugins/gesture-demo`   | 中文五生命周期模板及首次启动种子来源                                                   | `plugins/gesture-demo/package.json`                                                    |
 | `distribution/gesture-templates` | 独立手势模板仓库种子;当前含 2 个低风险模板,生产客户端不读取此目录              | `catalog.json`, `packages/`, `README.md`, `scripts/validate-template-seed.mjs`         |
 | Desktop 发布            | Windows x64 NSIS、macOS universal ad-hoc DMG/Updater、确定性 `latest.json`            | `.github/workflows/desktop-release.yml`, `scripts/desktop-release.mjs`, `docs/DESKTOP_RELEASE.md` |
 
 ## Desktop Rust
 
-- `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 笔、阈值/超时、点击透传、有序输入（笔画/按钮/滚轮）和捕获状态机。
+- `engine/parser.rs` 和 `engine/tracker.rs`:8 向首笔、后续 4 向、最多 12 步、阈值/超时、点击透传、有序输入（笔画/按钮/滚轮/键盘）和捕获状态机。
 - `engine/intents.rs`:全局/应用意图选择、继承、黑名单、exe/精确路径/AUMID 匹配优先级，以及按有序输入序列匹配。
 - `engine/runtime.rs` 与 `engine/boundary.rs`:钩子输入到普通手势/边角序列识别、覆盖层、捕获事件、暂停、Node 插件生命周期和命令分发的协调层;边角序列按前缀匹配并在取消时恢复已暂存输入。
 - `engine/script_host.rs`:Node 插件运行时共用的原生宿主 trait、调用上下文、生命周期槽和鼠标按钮类型;不包含 JavaScript 引擎。
 - `engine/node_host.rs`、`engine/node_service.rs` 与 `node-host/`:ADR-0012 的常驻 Node supervisor/每插件 Worker、framed JSON IPC、有界非阻塞调用队列和项目物化;`nodePlugin` 命令及五个生命周期是唯一生产脚本执行链。release 只使用随应用分发的固定 Node/pnpm/TypeScript 与类型声明,debug 缺少内置工具链时才允许回退 PATH。
+- `engine/plugin_workspace.rs`:创建 `app_config_dir/plugins`、空目录播种 `gesture-demo`、一次性导出 v5 内嵌插件、扫描直接子项目、解析 `package.json.godgesture`、校验路径/数量/重复 ID，并在无效保存时保留上一可用项目。
+- `engine/node_service.rs`:按 OS/架构/revision 物化缓存，将 `actionId` 映射到 manifest export，以 bundled pnpm frozen 安装生产依赖并注入内置 SDK；500 ms 扫描触发候选宿主重载，prepare/import/onInit 失败时继续使用上一宿主。
 - `engine/corners.rs`:多显示器触发角/摩擦边状态机;文件头常量、语义和有意偏差是维护契约。
 - `engine/config.rs`:Rust 侧共享配置镜像、默认种子、`config.json` 与本机设置持久化;Windows 使用可覆盖既有目标的原子替换。
 - `account.rs`:OS 凭据存储、RFC 8252 OAuth 回环监听、本机设备身份和 `sync-state.json` 原子持久化;refresh token 不进入 WebView 持久化。
@@ -53,7 +57,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   5 次重定向、15 秒总超时、固定大小上限、流式超限中止、UTF-8 与稳定错误码,响应
   不落入系统下载目录。
 - `legacy_import.rs` 与 `lib.rs` 的 `legacy_import_apply`:WGestures 双配置批量应用、写命令互斥与进程内回滚。两个独立文件不保证进程被强制终止时的跨文件崩溃原子性。
-- `platform/windows/hook.rs`:低级鼠标/键盘钩子、模拟输入标记、同步重入 fail-open、FFI panic 边界;快捷键录制期间 `WH_KEYBOARD_LL` 先经有界队列转发到 WebView,再对收到的键盘事件返回非零值尝试阻断系统快捷键,但 Windows 保留组合仍可能由系统优先处理,普通点击在当前钩子回调返回后经有界消息队列重放。
+- `platform/windows/hook.rs`:低级鼠标/键盘钩子、模拟输入标记、进程级线程安全输入分发、同步重入 fail-open、FFI panic 边界;普通手势捕获期间的 `WH_KEYBOARD_LL` 按 `KeyboardEvent.code` 转入 tracker,快捷键录制期间同时经有界队列转发到 WebView 并尝试阻断系统快捷键,但 Windows 保留组合仍可能由系统优先处理,普通点击在当前钩子回调返回后经有界消息队列重放。
 - `platform/windows/startup.rs`:当前用户 SID 任务身份、Task Scheduler COM 对账/快照/所有权、split-token 校验、`runas` 与早期启动模式。
 - `platform/windows/overlay.rs`:原生分层窗口轨迹和命令提示;每次唤醒按 64 条命令帧预算
   消费并在队列未清空时先提交脏帧,避免连续鼠标移动造成渲染饥饿;不得改成 WebView
@@ -62,11 +66,11 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `platform/windows/script.rs`:Node 插件的 Windows 输入、鼠标、窗口和剪贴板宿主实现;插件不获得原生句柄。
 - `app_acquisition.rs` 与 `platform/windows/window.rs`:按下-拖动-释放窗口准星、光标下根窗口身份解析,以及 `.exe`/`.lnk` 应用绑定获取。
 - `platform/windows/input.rs`, `keys.rs`, `clipboard.rs`, `window.rs`, `icon.rs`:输入合成、键名、选中文本、窗口信息/AUMID 和按 exe 名提取 PNG 图标。
-- `platform/macos/hook.rs`:CGEventTap 全局鼠标捕获、同步吞噬、模拟事件标记、超时重启和 FFI panic fail-open。
+- `platform/macos/hook.rs`:CGEventTap 全局鼠标/键盘捕获、修饰键 `FlagsChanged` 状态跟踪、同步吞噬、模拟事件标记、超时重启和 FFI panic fail-open。
 - `platform/macos/overlay.rs`:主线程 `NSWindow` + `CALayer` 原生覆盖层,tiny-skia 绘制、
   点击穿透、全 Spaces/全屏辅助和渐隐;高频命令进入 FIFO pending 队列,同一时刻至多
   一个主线程 drain,每批只栅格化一次。
-- `platform/macos/input.rs`, `keys.rs`, `clipboard.rs`:键鼠/Unicode/SendKeys/滚轮/热键合成,以及保留 NSPasteboard 的选中文本获取。
+- `platform/macos/input.rs`, `keys.rs`, `clipboard.rs`:键鼠/Unicode/按键与文字序列/SendKeys/滚轮/热键合成,以及保留 NSPasteboard 的选中文本获取。
 - `platform/macos/window.rs` 与 `commands.rs`:CoreGraphics z-order + Bundle ID、带 TTL 的有界窗口 token、AX 窗口操作、Mission Control、文件/URL/Web 搜索、音量和 zsh/Terminal 命令;topmost 显式不支持。
 - `platform/macos/script.rs`:Node 插件的 macOS 输入、窗口、剪贴板和状态宿主实现。
 - `platform/macos/permissions.rs` 与 `startup.rs`:Accessibility/Input Monitoring/event-posting 状态、权限请求/设置入口,以及 macOS 13+ `SMAppService` 登录项。
@@ -77,9 +81,9 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Desktop Vue
 
-- 页面:`OptionsView`, `GesturesView`, `TemplatesView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。触发角与摩擦边已并入手势页,不再有独立页面。
-- `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、手势模板、账户与同步、设置、
-  关于;默认页仍为设置。主区不承担页面滚动,五页各自声明唯一
+- 页面:`OptionsView`, `GesturesView`, `TemplatesView`, `PluginsView`, `AccountView`, `AboutView`;中文/英文均走 vue-i18n。触发角与摩擦边已并入手势页,不再有独立页面。
+- `App.vue` 使用紧凑工作台壳层和固定导航顺序:手势、手势模板、插件、账户与同步、设置、
+  关于;默认页仍为设置。主区不承担页面滚动,六页各自声明唯一
   主滚动区或明确的分区滚动责任。Windows 主窗口在首次显示前移除系统 decorations,
   现有 48px 顶栏提供独立拖动区、最小化和关闭到托盘按钮；macOS 保留原生标题栏。
 - `QuickStartDialog.vue` 与 `onboarding/quick-guide.ts` 提供版本化的本机首次引导、平台就绪检查、默认手势试用和既有配置入口;About 可重开,浏览器 `?guide=1` 可强制展示。
@@ -95,7 +99,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
   GodGesture 图标,解析失败显示可访问的问号 SVG。请求与失败结果按平台身份在进程内
   去重缓存,不进入 `ConfigDocument`、模板、快照或云同步。
 - `GesturesView.vue` 使用固定白色应用列表 + 动作表格 + 编辑器工作台;全局应用同时显示普通手势与边角动作,具体应用只显示普通手势。普通手势编辑器提供独立修饰符选择器与帮助提示,禁用和触发键相同的按钮,重新录制基础输入时保留修饰符。`AddActionDialog.vue` 提供两步新增流程,在同一个屏幕选择器中显示全部四角和四边,并构建最多 12 步的边角序列;触发角/摩擦边开关位于全局应用标题区。三个区域分别持有滚动职责,Element Plus 表格有真实有界高度,`800x560` 下四列、行操作和新增按钮保持可见。
-- `ScriptEditor.vue` 惰性加载 Monaco、JavaScript/TypeScript worker、完整 Node/undici 声明与 GodGesture SDK 声明;JavaScript 开启触发字符补全、快速建议和参数提示,溢出提示固定到顶层 widget 避免被编辑面板裁剪。Node 声明独立分块,不进入主界面首屏 chunk。`NodePluginEditor.vue` 支持依赖增改删、精确 lockfile 准备、manifest/lockfile 结构化 diff、用户主动 `tsc` typecheck 和有界 Problems/Output 面板。
+- `PluginsView.vue` 与 `stores/plugins.ts` 提供 ready/error/empty 项目列表、manifest 元数据、动作导出、最近重载、打开根目录/项目目录及重新扫描；不包含源码编辑器，也不支持注册任意外部目录。
+- `NodePluginPicker.vue` 在命令编辑器中选择 `pluginId/actionId`，并提供打开目录和重新扫描入口；失效的插件或动作引用会明确提示且保留原值。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
 - `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
@@ -106,7 +111,8 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 5`,`nodePlugins` 项目集合与 `nodePlugin` 是唯一脚本协议;v1-v4 的结构字段可迁移到 v5,但旧 `script` 和 Pause 命令不再属于有效配置且不会自动执行。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮和滚轮步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 6`;`nodePlugin` 命令只保存 `pluginId/actionId`,`nodePlugins` 已从 v6 `ConfigDocument` 与同步载荷移除。Rust 仅在读取旧 v5 本地配置时暂存内嵌项目，启动后一次性导出至插件工作区并以 v6 重写；旧 `script` 和 Pause 命令仍按既有迁移边界移除。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮、滚轮和 `KeyboardEvent.code` 键盘步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；同一鼠标输入既是更长有序序列前缀时优先按有序序列等待,不被独立修饰符抢占。`sendText` 新配置使用按顺序排列的 `steps`，每步选择文字或一个带修饰键的按键,旧 `text` 字段仍可读取执行。旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- 插件源码、`package.json`、锁文件、依赖和缓存均是本机工作区文件，不进入整库同步；跨设备部署由用户使用 Git、复制或克隆 `gesture-demo` 完成。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
@@ -114,11 +120,15 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 同步使用整库版本、乐观并发、后写胜出和快照;文档上限为 4 MiB,快照同时限制最新 100 个和每用户 64 MiB 正文。恢复快照也要求版本 CAS。设备删除会撤销其访问。
 - Web Console 使用 shared Schema 校验 API 数据,支持密码/OAuth 登录、跨标签刷新协调、只读配置、设备改名/移除和快照恢复。
 
+2026-08-03 Web Console 配置查看页已与 Desktop 手势工作台对齐:左侧按全局/应用分栏导航,
+右侧统一展示当前应用动作;全局动作同时包含普通手势和 `boundaryIntents`,旧的独立触发角/摩擦边
+卡片仅保留为状态标签,不再按旧命令槽位展示;偏好设置摘要位于工作区上方并占满主内容宽度。
+
 ## 已知未完成边界
 
 - WGestures 导入遇到旧 `ScriptCommand` 时产生结构化不支持告警并降级为“什么也不做”;不保留、执行或转换旧 Lua/JavaScript 源码。
 - macOS 原生实现已落地,但尚无真实 Mac 对 TCC 拒绝/授权、输入吞噬与点击透传、X1/X2、Retina 多屏、全屏 Spaces 覆盖层、AX 窗口命令、Bundle ID 匹配和应用图标提取的验收证据。
-- 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;普通手势同样按有序输入序列匹配，Windows Rust 测试覆盖按钮、滚轮和方向序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
+- 边角序列匹配与输入恢复已同时接入 Windows 和 macOS 源码;普通手势同样按有序输入序列匹配，Windows Rust 测试覆盖按钮、滚轮、方向和键盘序列,但 Windows 真实桌面代表性序列及 macOS 真机行为仍待观察验收。
 - 带后续序列的摩擦边动作在光标进入边缘带后直接等待输入;滚轮事件会按当前指针位置即时武装,不要求滚动前再次移动。空序列摩擦边仍保持快速往复命中。Windows 平台无关运行时测试覆盖下边缘首格滚轮和停留后重新武装;macOS 复用同一状态机,仍需真机观察。
 - 手势工作台支持普通手势和边角动作的单条启停;列表仅保留状态图标,删除与重录/编辑序列集中在助记符下方的独立操作行。边角助记符先绘制灰色屏幕边框、再在上层绘制蓝色命中边;角触发使用蓝色拐角及相邻边段,边角序列可通过拖拽把手快速排序。
 - 音量命令的 `delta` 范围为 `-20..20`:正数提高、负数降低、零切换静音;滚轮输入方向决定加减方向并使用绝对值作为步数。Windows 与 macOS 共用同一平台无关判定,不再出现普通触发忽略配置数值而总是静音的语义漂移。
@@ -126,6 +136,30 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - Windows `autoStart` 和 `runAsAdmin` 已接 Task Scheduler COM 与 `runas`;macOS `autoStart` 已接 `SMAppService`,`runAsAdmin` 显式不支持。Windows 安装/卸载阶段尚未自动清理遗留任务,移动或删除可执行文件会使任务失效;macOS 登录项仍待真实机器注销/登录验收。
 - stable `v0.1.0` 已由 GitHub Actions 同版本发布 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater;公开 checksum、minisign、manifest/evidence、x64 PE、universal slices、strict ad-hoc codesign 和 DMG runner 校验均通过。Windows 已从已安装 RC.2 经原生 Updater 下载、验签、覆盖安装并重启至 stable。真实 Mac 的 Gatekeeper 手动放行、TCC、手势运行时和已安装升级仍按 owner 授权记为 `DEFERRED (owner-approved)`,不能解释为通过。Developer ID、公证、staple、Authenticode 和无警告首次启动不在当前分发模型内。
 - 独立 `Mr-BeanSir/gesture-templates` 公共仓库已发布 `v1.0.0`;catalog 与两个 package 的 production URL、SHA-256、Schema、身份、目标和风险已实时验证。种子仍位于 `distribution/gesture-templates`,自建 Server 不得代理该内容。
+- 物理 Mac 尚未验收 `app_config_dir/plugins`、文件扫描热更新、依赖准备和最后可用版本回退；这些观察仍按 M4 清单延期，不能解释为已通过。
+- `@godgesture/sdk` 是插件作者唯一需要安装的开发包；仓库不再提供独立的插件脚手架或校验 CLI。
+- 当前插件页消费 `PluginWorkspaceSnapshot`，展示 manifest 扫描的 ready/error/empty 状态；依赖准备、入口 import 或 `onInit` 拒绝主要记录到 Rust 日志，页面不宣称完整运行态健康。
+
+2026-08-04 本地日志系统实现完成:Desktop 保留既有日志 IPC 类型、浏览器 mock、统一 `appLog`
+WebView 入口、Pinia 日志 store、日志侧边栏页面和中英文文案;Rust `logging.rs` 已替换
+`env_logger`,使用 `app_log_dir()` 落盘 JSONL，支持 `off/error/warn/info/debug`、独立级别持久化、
+10 MiB 单文件、5 个历史文件和约 50 MiB 历史总量。Tauri 六个日志命令与 `log-event` 已注册，
+Node supervisor/Worker 的启动、依赖准备、IPC、超时、重载、崩溃、生命周期拒绝和队列丢弃均以
+稳定诊断字段进入 `node.supervisor`/`node.worker`;Rust writer 边界执行二次脱敏、控制字符清理、
+长度限制和有界非阻塞写入。`apps/desktop/src/logging.ts` 改为惰性获取 backend，日志不可用时不会
+破坏账户/config 等业务流程；新增 mock 日志回归测试覆盖默认 off、阈值、筛选、实时、导出和清理。
+浏览器预览实际检查中文浅色日志页的默认空态、debug、实时记录、关键词筛选、导出和清理；
+精确 980x700/800x560、英文/暗色预览以及 Windows/macOS 真机日志目录、轮转、重启级别持久化和
+Node 崩溃回退仍 pending。现役契约见 `docs/superpowers/specs/2026-08-04-local-desktop-logging-design.md`。
+
+本任务实际验证基线（2026-08-04）:
+
+- `cargo check --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/codex-logging` 通过。
+- `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir apps/desktop/src-tauri/target/codex-logging --lib logging::tests`：6 passed。
+- 同命令 `--lib engine::node_host::tests`：6 passed、1 ignored（性能门禁）；`--lib engine::node_service::tests`：6 passed。
+- `node --check apps/desktop/node-host/supervisor.mjs && node --check apps/desktop/node-host/worker.mjs` 通过。
+- `pnpm --filter @godgesture/desktop test`：24 个测试文件、123 tests passed；`pnpm --filter @godgesture/desktop typecheck` 通过。
+- `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` 与 `git diff --check` 通过。
 
 ## 不得破坏的语义
 
@@ -136,7 +170,10 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - Bottom 摩擦边保持当前全局坐标语义,不得混用局部坐标。
 - 外壳窗口不得执行窗口控制命令。
 - Windows `SendInput` 可能同步重入鼠标钩子;当前 TLS handler 临时取出、嵌套事件 fail-open 和 FFI panic 防护不得回退。
-- Node 插件事件必须继续使用有界非阻塞队列并按插件串行;Worker 超时/崩溃后重建并重跑 `init`,supervisor 退出后由服务恢复,原生输入钩子不得等待插件执行。
+- Node 插件事件必须继续使用有界非阻塞队列并按插件串行;Worker 超时/崩溃后重建并重跑 `onInit`,supervisor 退出后由服务恢复,原生输入钩子不得等待插件执行。
+- 插件唯一根目录为 `app_config_dir/plugins`，每个直接子目录通过 `package.json.godgesture` 声明；不使用程序安装目录，不注册任意外部目录。
+- 插件项目文件不云同步；命令只同步稳定 `pluginId/actionId`。
+- 文件扫描热更新必须保留最后可用运行时；候选 prepare/import/onInit 失败不得替换旧宿主。
 - macOS CGEventTap 回调必须同步决定事件吞噬、过滤 GodGesture 模拟事件、超时后恢复,且 panic 时 fail-open;AppKit 覆盖层对象只能在主线程访问。
 - macOS 窗口目标必须继续使用有界且带 TTL 的不透明 token,不得把未持有的 Objective-C 指针或通用原生句柄暴露给脚本。
 - OAuth 不得按未验证密码账户邮箱自动关联。
@@ -150,7 +187,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - 开发日志约定:`%TEMP%\godgesture-dev\stdout.log` 和 `%TEMP%\godgesture-dev\stderr.log`。
 - 暂停快捷键可能因其他程序占用而出现 `HotKey already registered`;应用仍可启动,但快捷键不可用。
 - WebView 曾在窗口关闭命令后记录 `Failed to unregister class Chrome_WidgetWin_0. Error = 1412`;证据不足,先稳定复现再改代码。
-- 已在真实 Tauri 会话验收 Monaco 行号、JavaScript 诊断和明暗主题同步。Desktop 开发服务直接消费 shared 源码,Monaco 深层入口不参与 Vite 依赖预构建并复用同一模块实例,避免 JavaScript 模型静默退化为纯文本。浏览器 preview 与声明契约测试覆盖 `node:`、`@godgesture/sdk`、`context.input` 补全和语法诊断;自动化完整右键手势注入未建立,脚本执行路径由 Windows Node 宿主 smoke 覆盖。
+- 插件页视觉验收覆盖 ready/error/empty 状态、中文/英文、浅色/深色以及 `980x700`/`800x560`；自动化完整右键手势注入未建立,脚本执行路径由 Windows Node 宿主 smoke 覆盖。
 - 2026-07-29 Windows 右键点击恢复修复:未形成手势时不再于低级钩子回调内嵌套 `SendInput`,而是在回调返回后由钩子线程消息泵重放完整点击;维护者在真实桌面确认右键抬起后已无明显感知延迟。已有 Vite-only 会话占用 `14200/14201` 时,真实 Tauri 开发会话自动使用 `14202/14203` 并连接成功。重复运行同一 debug 构建时第二进程以 0 退出,前后均仅一个 `godgesture.exe`,既有窗口已唤起;双语 toast 事件由 Desktop 测试覆盖,受本机窗口捕获接口限制未取得实机视觉证据。
 - 2026-07-29 原生轨迹调度修复:Windows 覆盖层不再清空无界 channel 后才绘制,
   单次唤醒最多消费 64 条命令,有剩余工作时重新唤醒;macOS 使用 FIFO pending 队列、
@@ -276,10 +313,10 @@ Worker 为 `83.2 ms`。定向测试 `5 passed, 1 ignored` 覆盖分帧、超限�
 
 2026-07-31 Node 插件生产宿主接线:同步插件被校验后按内容修订物化为真实 ESM 项目,
 常驻 supervisor 为每插件预载 Worker;手势执行线程只向 256 条有界队列投递,Node
-执行、宿主调用和超时均不阻塞输入钩子或原生命令。`init`、`execute`、
-`gestureRecognized`、`modifierTriggered`、`gestureEnded` 已接入,相对导入、完整 Node API、
+执行、宿主调用和超时均不阻塞输入钩子或原生命令。`onInit`、`onExecute`、
+`onGestureRecognized`、`onModifierTriggered`、`onEnd` 已接入,相对导入、完整 Node API、
 `fetch`、输入/窗口/剪贴板/状态异步 API、每插件顺序、可选生命周期、Worker 超时/崩溃
-重建和重建后自动 `init` 均由真实 Node 测试覆盖。新增 `@godgesture/sdk` 类型与运行时
+重建和重建后自动 `onInit` 均由真实 Node 测试覆盖。新增 `@godgesture/sdk` 类型与运行时
 helper 包。Windows release 新基准:冷启动 `96.786 ms`,noop p95/p99 `0.152/0.223 ms`,
 包含输入、剪贴板和状态三次真实宿主往返的 handler p95/p99 `0.495/0.640 ms`。
 shared `99/99`;Desktop `105/105`;SDK `1/1` + typecheck/build;Rust library
@@ -474,6 +511,94 @@ build、账户 locale parity 与 `git diff --check` 通过。浏览器 preview �
 英文视觉验收尚未单独完成,当前仅由双语 locale 编译与 key parity 测试覆盖。
 
 Server 测试中的 `Unhandled Prisma P2002 (OAuthAccount)` 是未知 constraint 映射为 500 的预期日志。Web 构建的 VueUse PURE 注释和大 chunk 警告是既有警告。不要跑全仓 `cargo fmt`;只格式化实际修改的 Rust 文件。
+
+2026-08-03 账户同步端点:Desktop 账户页支持官方/自定义同步端点,端点切换会重建统一的
+CloudSession,登录、OAuth、刷新、同步、设备和快照请求均跟随所选 origin;凭据仍按端点隔离。
+桌面端不再提供密码注册表单,注册链接打开端点 `/login?label=register`;Web Console 登录页
+读取该参数后直接展示注册标签。构建时端点变量统一为 `GODGESTURE_API`(保留 `VITE_API_BASE_URL`
+兼容读取),Desktop `125/125` 与 Desktop/Web Console typecheck 已通过。
+
+2026-08-03 本地全栈开发入口:`npm run dev:server` 现在由 `scripts/dev-server.mjs` 编排,
+自动选择 NestJS API 与 Web Console 的可用回环端口,等待 `/api/v1/health` 后将后端端口通过
+`GODGESTURE_SERVER_PORT` 传给 Vite 代理;Vite 固定绑定 `127.0.0.1`,并将实际前端地址打印到终端。
+
+2026-08-03 Desktop 云端诊断:账户会话初始化、网络 fetch、API 失败和服务端拒绝现在输出脱敏的
+`[GodGesture][cloud]` 结构化日志,包含 origin/URL、方法、HTTP 状态和错误码,不记录密码或令牌;
+Desktop `125/125` 与 typecheck 通过。
+
+2026-08-03 Server CORS:API 改为允许任意来源 (`origin: *`),同时关闭浏览器凭据模式;桌面端和
+Web Console 使用 Bearer 认证,不依赖 Cookie,可从 `127.0.0.1:14200` 和自定义端点访问。
+
+2026-08-03 配置快照新增备注字段并随 shared/OpenAPI/Prisma 迁移同步;每次同步保存来源说明,
+回滚生成的新版本会记录来源快照和回滚前云端版本。Web Console 与 Desktop 快照列表均展示备注;
+Desktop 账户页的“已同步”状态改为显示最近一次具体同步时间。
+
+2026-08-03 Node 插件编辑与邮箱认证/管理员端:Desktop Node.js 插件命令现在只在主编辑区保留
+插件选择、新建和编辑入口;插件名称、导出名、源文件、manifest、锁文件、依赖准备、类型检查、
+dry-run、Problems/Output 和生命周期脚本开关集中在编辑对话框。新建插件模板包含
+onInit/onExecute/onGestureRecognized/onModifierTriggered/onEnd 五个生命周期,使用 JSDoc
+PluginContext 类型标注避免 .mjs 的隐式 any 且保持 Node ESM 可运行;不再自动迁移旧生命周期模板;
+编辑窗口支持显式保存/取消草稿,取消编辑会恢复原插件,取消新建会移除未保存插件。
+Server 新增哈希化邮箱验证码、注册验证、密码找回、SMTP 配置位、账户角色/停用
+状态和管理员账户元数据 API;Web Console 增加验证码注册、找回密码和管理员页面。迁移保留旧
+密码账户可登录并将其现有邮箱视为已验证;新注册必须验证码通过。当前已验证 shared 107/107、
+Desktop 125/125 + typecheck/build、Server 91/91 + typecheck、Web Console typecheck/build、
+pnpm check:api。真实 SMTP、Prisma 生产迁移、管理员 bootstrap 邮箱和 Windows/macOS 真机
+体验仍需部署/平台验收;构建中的既有 VueUse PURE 注释与大 chunk 警告不构成失败。
+
+2026-08-04 文件系统插件工作区收尾:Desktop 侧边栏新增 PluginsView，插件仅从
+`app_config_dir/plugins` 扫描，空目录播种 `gesture-demo`，插件元数据来自
+`package.json.godgesture`；命令选择器仅保存稳定 `pluginId/actionId`，失效引用会明确提示。
+应用内源码编辑器和旧插件 IPC 已移除；文件扫描热更新保持上一可用宿主，插件文件不参与云同步。
+浏览器预览已在中文浅色 ready/error/empty、英文深色 ready、`980x700` 与 `800x560` 下检查，
+无横向溢出或渲染错误。验证:shared `109/109`、SDK `1/1`、Desktop `120/120`、
+Server `92/92`、Rust library `217 passed, 3 ignored`；shared/SDK/Desktop/Server/Web 类型检查、
+SDK/Desktop build、`pnpm check:api`、`pnpm validate:plugin-demo`、`cargo check` 与严格 Clippy 全部通过。浏览器预览新增的
+`section`、`guide=0`、`updates=0`、`locale` 和 `theme` 参数仅用于演示验收。
+
+2026-08-04 Node 插件生命周期协议统一为 `onInit`、`onExecute`、`onGestureRecognized`、
+`onModifierTriggered`、`onEnd`;SDK 的 `PluginLifecycle`、`PluginContext.phase`、Worker 自动初始化、
+Rust 生命周期槽、默认命令导出名、内置模板与文档同步切换,不提供旧生命周期名称兼容或自动迁移。
+仓库新增 `plugins/gesture-demo`,以中文注释展示五个生命周期,并通过应用同款内置
+`@godgesture/sdk` 运行时完成真实 ESM 导入验证。注册与找回密码的邮件验证码请求频控统一为
+每 IP 3 分钟 5 次,注册提交、重置确认与登录策略不变。验证:shared `107/107`、SDK `1/1`、
+Desktop `125/125`、Server `92/92`,四者 typecheck、Desktop/SDK build、`pnpm check:api`、
+`pnpm validate:plugin-demo`、Rust library `212 passed, 3 ignored`、`cargo check`、严格 Clippy 和
+`git diff --check` 全部通过。插件页打开插件根目录和项目目录的 opener 权限已限定为
+`%APPDATA%\com.godgesture.app` 及其子路径;独立 Tauri debug 构建、Desktop `121/121` 测试和
+typecheck 已复验通过。插件目录/项目目录打开失败时，页面恢复为仅展示简洁的操作失败消息；页面诊断对象
+仍保留操作、路径、异常类型、错误码、原始 throw 值和 JS stack 供本地页面调试，
+不写入本地日志、不上传 Server、也不进入同步文档。
+2026-08-05 插件开发入口按维护者决定收敛为仓库内 `plugins/gesture-demo`:用户复制或克隆 demo
+后执行 `npm install --save-dev @godgesture/sdk`，再在外部 IDE 中开发。删除未发布的
+`@godgesture/plugin` workspace、demo 的 CLI 校验脚本及所有公开脚手架文档；Desktop 的
+manifest、入口、动作导出和锁文件校验仍由插件工作区候选版本流程负责。`pnpm validate:plugin-demo`
+改为直接使用应用同款 SDK runtime 验证 demo 的 5 个生命周期导出及对应的 5 条 action 映射，当前验证通过。
+
+本地日志系统代码已完成；真实 Windows/macOS 日志目录、轮转、重启后级别持久化、Node 崩溃回退、
+文件权限和热更新日志仍按 `docs/superpowers/specs/2026-08-04-local-desktop-logging-design.md`
+标记 pending，不能以自动化测试或浏览器 mock 代替平台验收。
+
+2026-08-05 有序手势键盘与按键/文字序列:修复同一基础手势下有序左键步骤被独立左键修饰符
+抢占的问题;右键触发键保持按下时,左键按下会继续进入有序序列并在触发键释放时匹配。录制
+现在同时捕获键盘按下,以 `KeyboardEvent.code` 保存 `KeyQ`、`F4`、`Enter` 等步骤;Windows
+`WH_KEYBOARD_LL` 优先、Raw Input 兜底与 macOS `CGEventTap` 均接入 tracker,键盘抬起只用于吞掉对应
+物理事件。命令
+编辑器把 `sendText` 改为可增删的按键/文字动态步骤表单,双平台原生执行保留旧 `text` 字段兼容。
+重录旧手势时,若新捕获的有序输入已包含原独立修饰符对应的物理动作,会自动清除重复修饰符,
+避免旧的“左键修饰”配置阻断新的“有序左键”匹配。验证:shared `111/111` + build,Desktop
+`126/126` + typecheck,Rust tracker `15/15`,runtime `14/14`,Windows hook `8/8`,Windows input
+`15/15`,cargo check、cargo fmt check、`git diff --check` 通过。macOS 交叉检查因本机缺少目标
+C 编译器 `cc` 未完成,macOS 键盘/鼠标序列真机验收仍 pending;Windows 输入链路由后续最终确认条目记录。
+
+2026-08-05 Windows 手势键盘输入源最终确认:低级键盘钩子改为进程级线程安全处理器分发并保留
+每线程重入保护;Raw Input 使用隐藏 message-only 窗口和 `RIDEV_INPUTSINK` 兜底,修正合法
+`size=40,result=40` 被错误丢弃的问题。两路输入按 `(virtual-key, pressed, 100 ms)` 去重,不
+使用 `RIDEV_NOLEGACY`,不会扩大系统输入副作用。维护者在 Windows 实机连续两次执行“右键按住
+Q”录制,均收到 `KeyQ` 按下/抬起并最终保存为 1 个键盘输入步骤;日志链路确认
+`raw_input_received` → `engine_input_received` → `key_fired` → `capture_payload_emit`。
+最新定向验证: `cargo check`、`cargo fmt -- --check`、Windows hook `8/8`、Desktop typecheck、
+日志前端测试 `2/2`、`git diff --check` 均通过。macOS 交叉编译/真机验收仍 pending。
 
 ## 新任务接手流程
 

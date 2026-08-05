@@ -22,9 +22,10 @@ _避免_: 手势键(UI 文案可用,文档统一用"触发键")
 手势中的一段方向位移,取 8 方向(↑↗→↘↓↙←↖);斜向仅允许出现在首笔(条件性次笔),后续笔画均为 4 方向。
 
 **输入步骤 (Gesture Input)**:
-普通手势录制时按发生顺序保存的单步输入，分为方向笔画、鼠标按钮按下和滚轮前/后。
-因而可以自然表达“右键按住 → 中键按下 → 向右移动”等组合。最多保存 12 步；独立
-修饰符不计入输入步骤。
+普通手势录制时按发生顺序保存的单步输入，分为方向笔画、鼠标按钮按下、滚轮前/后和
+键盘按下(`KeyboardEvent.code`,如 `KeyQ`、`F4`、`Enter`)。因而可以自然表达“右键按住
+→ Q → 向右移动”或“右键按住 → 左键按下 → 向右移动”等组合。最多保存 12 步；键盘抬起
+用于结束物理按键捕获但不重复计入步骤，独立修饰符不计入输入步骤。
 
 **修饰符 (Gesture Modifier)**:
 独立于有序输入步骤的可选重复触发条件，可选无、滚轮前/后、左/中/右键、X1、X2。
@@ -43,7 +44,7 @@ _避免_: 手势绑定、快捷方式
 手势工作台中可配置的一条映射,包括手势意图和边角动作两类。动作描述“如何触发以及触发后执行什么”,不等同于最终执行的命令。
 
 **命令 (Command)**:
-动作被触发后执行的功能单元,共 11 类(什么也不做、执行快捷键、Web 搜索、窗口控制、任务切换、打开文件、按键序列、打开网址、命令行、Node.js 插件、音量控制)。
+动作被触发后执行的功能单元,共 11 类(什么也不做、执行快捷键、Web 搜索、窗口控制、任务切换、打开文件、按键/文字序列、打开网址、命令行、Node.js 插件、音量控制)。
 _避免_: 操作;不要把命令本身称为动作
 
 **应用 (App)**:
@@ -84,9 +85,30 @@ Windows 快捷键录制期间由常驻低级键盘钩子优先接收按键,将�
 尝试阻断系统快捷键;Windows 保留组合仍可能由系统优先处理。录制结束、取消或失焦时立即
 停用。macOS 与浏览器预览继续使用平台原生 WebView 键盘事件路径。
 
+**Windows 手势键盘捕获 (Windows Gesture Keyboard Capture)**:
+普通手势录制和识别期间优先使用 `WH_KEYBOARD_LL` 接收键盘事件,Windows Raw Input 通过隐藏
+message-only 窗口和 `RIDEV_INPUTSINK` 作为兜底;不使用 `RIDEV_NOLEGACY`。两路输入按虚拟键码、
+按下/释放状态和 100 ms 窗口去重,避免同一物理事件重复进入 tracker,也避免跨次录制残留状态。
+键盘按下按 `KeyboardEvent.code` 进入有序输入步骤,抬起只用于结束物理捕获和吞掉对应事件。该
+路径已在 Windows 实机验证;macOS 继续使用 `CGEventTap`,真实设备验收仍按平台清单进行。
+
 **Node 插件 (Node Plugin)**:
-由 GodGesture 管理的 JavaScript 项目,使用随应用分发的 Node.js LTS、ESM 和 npm
-依赖;可由一个或多个手势动作调用,源文件和锁文件参与同步,安装后的依赖缓存按机器保存。
+插件工作区中的 JavaScript/TypeScript 项目,使用 ESM、npm 依赖和随应用分发的 Node.js
+LTS;`package.json` 的 `godgesture` 字段同时充当插件 manifest。插件由一个或多个手势
+动作调用,源码、manifest、锁文件和依赖均是本机文件,不参与 GodGesture 云同步。
+现役生命周期及 `PluginContext.phase` 统一为 `onInit`、`onExecute`、
+`onGestureRecognized`、`onModifierTriggered`、`onEnd`,不提供旧名称兼容。
+
+**插件工作区 (Plugin Workspace)**:
+GodGesture 在系统应用配置目录下管理的唯一插件根目录 `plugins/`;每个直接子目录是一个
+插件项目。应用不允许注册任意外部目录,也不把插件放入程序安装目录。Windows 现役路径为
+`%APPDATA%\com.godgesture.app\plugins`,macOS 为
+`~/Library/Application Support/com.godgesture.desktop/plugins`。
+
+**Node 插件动作 (Node Plugin Action)**:
+Node 插件通过 `package.json` 的 `godgesture.actions` 暴露可调用入口,由稳定 `actionId` 标识并
+映射到 ESM 导出函数。手势命令只保存 `pluginId` 与 `actionId`;插件文件缺失时命令保留引用
+但在本机不可执行。
 
 **Node 插件宿主 (Node Plugin Host)**:
 常驻的 Node.js sidecar 与插件 Worker 组成的运行时,通过本地 IPC 调用原生输入、窗口、
@@ -108,6 +130,9 @@ _避免_: 客户端(客户端指软件本身)
 
 **配置快照 (Snapshot)**:
 服务端在每次成功推送时保留的整库配置历史版本,可查看与回滚。
+
+**快照备注 (Snapshot Note)**:
+随配置快照保存的来源说明;普通同步记录推送基准版本,回滚生成的新版本记录来源快照和回滚前云端版本。
 _避免_: 备份(备份指用户手动导出的本地文件)
 
 **同步 (Sync)**:
@@ -116,3 +141,28 @@ _避免_: 上传/下载(单向动作,不构成同步)
 
 **本机专属设置 (Machine-local Settings)**:
 不随账户漫游的设置项:开机自启、以管理员身份运行、托盘图标隐藏;其余设置全部参与同步。
+
+**同步端点 (Sync Endpoint)**:
+桌面端账户登录、OAuth、配置同步、设备和快照请求使用的服务端 origin。默认使用构建时
+注入的 `GODGESTURE_API`,用户也可在账户页选择自定义 http(s) origin;凭据按端点隔离保存。
+
+**邮箱验证码 (Email Verification Code)**:
+由 Server 通过 SMTP 或开发日志适配器发送的一次性六位代码,按注册或找回密码用途隔离,
+只保存哈希,具备过期、冷却、尝试次数和单次消费约束。
+
+**管理员端 (Administrator Console)**:
+Web 控制台中仅管理员可访问的账户元数据与会话管理区域。管理员端不读取用户配置正文、
+密码哈希或令牌;账户启停、角色调整和会话撤销均写入最小审计日志。
+
+**桌面本地日志 (Desktop Local Log)**:
+只保存在 Desktop `app_log_dir()` 下的 JSONL 运行记录,覆盖 Rust/Tauri、Vue/WebView 和 Node
+插件宿主;默认采集级别为 `off`,可选 `error`、`warn`、`info`、`debug`,不上传 Server、不参与
+同步。日志必须脱敏,不得包含密码、验证码、access/refresh token、剪贴板正文或插件源码。
+
+**日志采集级别 (Log Collection Level)**:
+本地日志的阈值设置。`error` 只记录错误,`warn` 包含错误和警告,`info` 再包含信息,
+`debug` 为一期最细粒度;不提供 `trace`。`off` 表示不落盘普通日志。
+
+**日志记录 (Log Entry)**:
+统一字段为 `timestamp`、`level`、`target`、`message`;`target` 是稳定来源名,例如 `config`,
+`cloud`, `node.supervisor`。日志页支持按级别、来源和关键词查看、实时刷新、导出和清理。
