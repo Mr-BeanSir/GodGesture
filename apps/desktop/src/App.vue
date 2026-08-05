@@ -57,7 +57,7 @@ const plugins = usePluginsStore();
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
 
-const active = ref<Section>("options");
+const active = ref<Section>("gestures");
 const quickStartVisible = ref(false);
 const legacyImportVisible = ref(false);
 const quickGuideStorage = resolveQuickGuideStorage();

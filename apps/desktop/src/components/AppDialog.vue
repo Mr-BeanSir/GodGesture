@@ -7,7 +7,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { Aim, Loading, UploadFilled } from "@element-plus/icons-vue";
-import type { AppEntry } from "@godgesture/shared";
+import { DEFAULT_APP_GROUP_ID, type AppEntry } from "@godgesture/shared";
 import {
   BackendError,
   useBackend,
@@ -181,6 +181,7 @@ function onSave() {
   const result: AppEntry = {
     id: props.app?.id ?? newId(),
     name: name.value.trim(),
+    groupId: props.app?.groupId ?? DEFAULT_APP_GROUP_ID,
     windows,
     mac,
     gesturingEnabled: props.app?.gesturingEnabled ?? true,

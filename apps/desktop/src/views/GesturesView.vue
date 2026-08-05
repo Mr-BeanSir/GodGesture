@@ -11,11 +11,13 @@ import {
   CircleCloseFilled,
   Delete,
   Edit,
+  MoreFilled,
   Plus,
   VideoCamera,
 } from "@element-plus/icons-vue";
 import type {
   AppEntry,
+  AppGroup,
   BoundaryIntent,
   BoundaryOrigin,
   BoundaryToken,
@@ -23,8 +25,14 @@ import type {
   GestureSpec,
   GestureModifier,
 } from "@godgesture/shared";
+import { DEFAULT_APP_GROUP_ID } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { newId } from "../utils/id";
+import {
+  moveAppToGroup,
+  moveGroupBefore,
+  removeCustomGroup,
+} from "../utils/app-groups";
 import { createDefaultCommand } from "../utils/commands";
 import { findBoundaryConflict } from "../utils/boundary-actions";
 import MnemonicText from "../components/MnemonicText.vue";
@@ -51,6 +59,11 @@ const appDialogVisible = ref(false);
 const editingApp = ref<AppEntry | null>(null);
 const addActionVisible = ref(false);
 const editingBoundaryId = ref<string | null>(null);
+const collapsedGroups = ref<Record<string, boolean>>({});
+
+type DragState = { kind: "app" | "group"; id: string } | null;
+type GroupCommand = { action: "rename" | "delete"; groupId: string };
+const dragState = ref<DragState>(null);
 
 type ActionRow =
   | { kind: "gesture"; key: string; id: string; name: string; intent: GestureIntent }
@@ -61,9 +74,22 @@ const boundaryKey = (id: string) => `boundary:${id}`;
 
 const currentIsGlobal = computed(() => selectedAppId.value === GLOBAL);
 const sortedApps = computed(() => [...doc.value.apps].sort((a, b) => a.order - b.order));
+const sortedGroups = computed(() => [...doc.value.groups].sort((a, b) => a.order - b.order));
 const currentApp = computed<AppEntry | null>(
   () => sortedApps.value.find((a) => a.id === selectedAppId.value) ?? null,
 );
+
+function appsInGroup(groupId: string): AppEntry[] {
+  return sortedApps.value.filter((app) => app.groupId === groupId);
+}
+
+function isGroupCollapsed(groupId: string): boolean {
+  return collapsedGroups.value[groupId] === true;
+}
+
+function toggleGroup(groupId: string) {
+  collapsedGroups.value[groupId] = !isGroupCollapsed(groupId);
+}
 
 function intentsArray(): GestureIntent[] {
   return currentIsGlobal.value ? doc.value.global.intents : (currentApp.value?.intents ?? []);
@@ -152,13 +178,23 @@ function openEditApp(app: AppEntry) {
   editingApp.value = app;
   appDialogVisible.value = true;
 }
+
+function normalizeAppOrders(groupId: string) {
+  appsInGroup(groupId).forEach((app, index) => {
+    app.order = index;
+  });
+}
+
 function onAppSave(app: AppEntry) {
   const apps = doc.value.apps;
   const idx = apps.findIndex((a) => a.id === app.id);
   if (idx >= 0) {
     apps[idx] = app;
   } else {
-    app.order = apps.length;
+    app.groupId = doc.value.groups.some((group) => group.id === app.groupId)
+      ? app.groupId
+      : DEFAULT_APP_GROUP_ID;
+    app.order = appsInGroup(app.groupId).length;
     apps.push(app);
   }
   selectApp(app.id);
@@ -180,7 +216,94 @@ async function deleteApp(app: AppEntry) {
   const apps = doc.value.apps;
   const idx = apps.findIndex((a) => a.id === app.id);
   if (idx >= 0) apps.splice(idx, 1);
+  normalizeAppOrders(app.groupId);
   if (selectedAppId.value === app.id) selectApp(GLOBAL);
+}
+
+async function promptGroupName(initialName: string, title: string): Promise<string | null> {
+  try {
+    const result = await ElMessageBox.prompt(t("gestures.groupNamePrompt"), title, {
+      inputValue: initialName,
+      inputPlaceholder: t("gestures.groupNamePlaceholder"),
+      inputValidator: (value) => {
+        const normalized = value.trim();
+        if (!normalized) return t("gestures.groupNameRequired");
+        if (normalized.length > 64) return t("gestures.groupNameTooLong");
+        return true;
+      },
+      confirmButtonText: t("common.save"),
+      cancelButtonText: t("common.cancel"),
+    });
+    return result.value.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function addGroup() {
+  const name = await promptGroupName("", t("gestures.addGroup"));
+  if (!name) return;
+  const group: AppGroup = {
+    id: newId(),
+    name,
+    order: doc.value.groups.reduce((max, candidate) => Math.max(max, candidate.order), -1) + 1,
+  };
+  doc.value.groups.push(group);
+  collapsedGroups.value[group.id] = false;
+}
+
+async function renameGroup(group: AppGroup) {
+  const name = await promptGroupName(group.name, t("gestures.renameGroup"));
+  if (name && name !== group.name) group.name = name;
+}
+
+async function deleteGroup(group: AppGroup) {
+  if (group.id === DEFAULT_APP_GROUP_ID) return;
+  try {
+    await ElMessageBox.confirm(
+      t("gestures.deleteGroupConfirm", { name: group.name }),
+      t("common.confirmDeleteTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("common.delete"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
+  } catch {
+    return;
+  }
+  removeCustomGroup(doc.value.groups, doc.value.apps, group.id);
+  delete collapsedGroups.value[group.id];
+}
+
+function onGroupCommand(command: GroupCommand) {
+  const group = doc.value.groups.find((candidate) => candidate.id === command.groupId);
+  if (!group) return;
+  if (command.action === "rename") void renameGroup(group);
+  else void deleteGroup(group);
+}
+
+function startDrag(kind: "app" | "group", id: string, event: DragEvent) {
+  dragState.value = { kind, id };
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
+  }
+}
+
+function clearDrag() {
+  dragState.value = null;
+}
+
+function dropOnGroup(targetGroupId: string) {
+  const current = dragState.value;
+  if (!current) return;
+  if (current.kind === "app") {
+    moveAppToGroup(doc.value.apps, doc.value.groups, current.id, targetGroupId);
+  } else {
+    moveGroupBefore(doc.value.groups, current.id, targetGroupId);
+  }
+  clearDrag();
 }
 
 // ---- 动作录制 / 增删 ----
@@ -360,7 +483,10 @@ onMounted(() => selectApp(GLOBAL));
     <aside class="gestures__apps">
       <div class="gestures__apps-head">
         <span>{{ t("gestures.appListTitle") }}</span>
-        <el-button size="small" :icon="Plus" @click="openAddApp">{{ t("gestures.addApp") }}</el-button>
+        <span class="gestures__apps-head-actions">
+          <el-button link size="small" :icon="Plus" @click="addGroup">{{ t("gestures.addGroup") }}</el-button>
+          <el-button size="small" :icon="Plus" @click="openAddApp">{{ t("gestures.addApp") }}</el-button>
+        </span>
       </div>
       <ul class="gestures__app-list">
         <li
@@ -374,24 +500,100 @@ onMounted(() => selectApp(GLOBAL));
           </span>
         </li>
         <li
-          v-for="app in sortedApps"
-          :key="app.id"
-          class="gestures__app-item"
-          :class="{ 'is-active': app.id === selectedAppId }"
-          @click="selectApp(app.id)"
+          v-for="group in sortedGroups"
+          :key="group.id"
+          class="gestures__group"
+          :class="{ 'is-drop-target': dragState?.kind === 'app' || dragState?.kind === 'group' }"
+          @dragover.prevent.stop
+          @drop.prevent.stop="dropOnGroup(group.id)"
         >
-          <span class="gestures__app-identity">
-            <AppIcon
-              :label="app.name"
-              :windows-exe-name="app.windows?.exeName"
-              :mac-bundle-id="app.mac?.bundleId"
-            />
-            <span class="gestures__app-name">{{ app.name }}</span>
-          </span>
-          <span class="gestures__app-actions">
-            <el-button link size="small" :icon="Edit" @click.stop="openEditApp(app)" />
-            <el-button link size="small" :icon="Delete" @click.stop="deleteApp(app)" />
-          </span>
+          <div class="gestures__group-head">
+            <button
+              class="gestures__drag-grip gestures__group-grip"
+              type="button"
+              draggable="true"
+              :aria-label="t('gestures.dragGroup', { name: group.name })"
+              @click.stop
+              @dragstart="startDrag('group', group.id, $event)"
+              @dragend="clearDrag"
+            >
+              <svg viewBox="0 0 12 12" aria-hidden="true">
+                <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" /><circle cx="10" cy="2" r="1" />
+                <circle cx="2" cy="6" r="1" /><circle cx="6" cy="6" r="1" /><circle cx="10" cy="6" r="1" />
+                <circle cx="2" cy="10" r="1" /><circle cx="6" cy="10" r="1" /><circle cx="10" cy="10" r="1" />
+              </svg>
+            </button>
+            <button
+              class="gestures__group-toggle"
+              type="button"
+              :aria-expanded="!isGroupCollapsed(group.id)"
+              @click="toggleGroup(group.id)"
+            >
+              <span class="gestures__group-chevron" :class="{ 'is-collapsed': isGroupCollapsed(group.id) }">▾</span>
+              <span class="gestures__group-name">{{ group.name }}</span>
+              <span class="gestures__group-count">{{ appsInGroup(group.id).length }}</span>
+            </button>
+            <el-dropdown trigger="click" @command="onGroupCommand">
+              <button
+                class="gestures__group-menu"
+                type="button"
+                :aria-label="t('gestures.groupMenu', { name: group.name })"
+                @click.stop
+              >
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="{ action: 'rename', groupId: group.id }">
+                    {{ t("gestures.renameGroup") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    :command="{ action: 'delete', groupId: group.id }"
+                    :disabled="group.id === DEFAULT_APP_GROUP_ID"
+                  >
+                    {{ t("gestures.deleteGroup") }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+          <ul v-if="!isGroupCollapsed(group.id)" class="gestures__group-apps">
+            <li
+              v-for="app in appsInGroup(group.id)"
+              :key="app.id"
+              class="gestures__app-item"
+              :class="{ 'is-active': app.id === selectedAppId }"
+              @click="selectApp(app.id)"
+            >
+              <button
+                class="gestures__drag-grip gestures__app-grip"
+                type="button"
+                draggable="true"
+                :aria-label="t('gestures.dragApp', { name: app.name })"
+                @click.stop
+                @dragstart="startDrag('app', app.id, $event)"
+                @dragend="clearDrag"
+              >
+                <svg viewBox="0 0 12 12" aria-hidden="true">
+                  <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" /><circle cx="10" cy="2" r="1" />
+                  <circle cx="2" cy="6" r="1" /><circle cx="6" cy="6" r="1" /><circle cx="10" cy="6" r="1" />
+                  <circle cx="2" cy="10" r="1" /><circle cx="6" cy="10" r="1" /><circle cx="10" cy="10" r="1" />
+                </svg>
+              </button>
+              <span class="gestures__app-identity">
+                <AppIcon
+                  :label="app.name"
+                  :windows-exe-name="app.windows?.exeName"
+                  :mac-bundle-id="app.mac?.bundleId"
+                />
+                <span class="gestures__app-name">{{ app.name }}</span>
+              </span>
+              <span class="gestures__app-actions">
+                <el-button link size="small" :icon="Edit" @click.stop="openEditApp(app)" />
+                <el-button link size="small" :icon="Delete" @click.stop="deleteApp(app)" />
+              </span>
+            </li>
+          </ul>
         </li>
       </ul>
     </aside>
@@ -546,7 +748,7 @@ onMounted(() => selectApp(GLOBAL));
   min-height: 0;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--gg-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -561,6 +763,11 @@ onMounted(() => selectApp(GLOBAL));
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+.gestures__apps-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .gestures__app-list {
   list-style: none;
   margin: 0;
@@ -568,10 +775,86 @@ onMounted(() => selectApp(GLOBAL));
   min-height: 0;
   overflow-y: auto;
 }
+.gestures__group {
+  list-style: none;
+  margin: 0;
+  border-radius: var(--el-border-radius-base);
+  transition: background-color 120ms ease;
+}
+.gestures__group.is-drop-target {
+  background: var(--el-color-primary-light-9);
+}
+.gestures__group-head {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  gap: 2px;
+  padding: 2px 3px 2px 1px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.gestures__group-toggle {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 5px;
+  padding: 4px 3px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.gestures__group-toggle:hover { color: var(--el-text-color-primary); }
+.gestures__group-chevron {
+  width: 12px;
+  flex: 0 0 auto;
+  color: var(--el-text-color-placeholder);
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.gestures__group-chevron.is-collapsed { transform: rotate(-90deg); }
+.gestures__group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.gestures__group-count {
+  flex: 0 0 auto;
+  color: var(--el-text-color-placeholder);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.gestures__group-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--el-border-radius-base);
+  background: transparent;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+}
+.gestures__group-menu:hover,
+.gestures__group-menu:focus-visible {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.gestures__group-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 3px 8px;
+}
 .gestures__app-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 5px;
   min-height: 34px;
   padding: 4px 7px;
   border-radius: var(--el-border-radius-base);
@@ -582,6 +865,7 @@ onMounted(() => selectApp(GLOBAL));
   display: flex;
   align-items: center;
   min-width: 0;
+  flex: 1;
   gap: 8px;
 }
 .gestures__app-item:hover {
@@ -601,8 +885,40 @@ onMounted(() => selectApp(GLOBAL));
   display: none;
   flex-shrink: 0;
 }
-.gestures__app-item:hover .gestures__app-actions {
+.gestures__app-item:hover .gestures__app-actions,
+.gestures__app-item:focus-within .gestures__app-actions {
   display: inline-flex;
+}
+.gestures__drag-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--el-border-radius-base);
+  background: transparent;
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.gestures__drag-grip:active { cursor: grabbing; }
+.gestures__drag-grip svg { width: 12px; height: 12px; fill: currentColor; }
+.gestures__group:hover .gestures__group-grip,
+.gestures__group:focus-within .gestures__group-grip,
+.gestures__app-item:hover .gestures__app-grip,
+.gestures__app-item:focus-within .gestures__app-grip,
+.gestures__drag-grip:focus-visible {
+  opacity: 1;
+}
+.gestures__drag-grip:hover,
+.gestures__drag-grip:focus-visible {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  outline: none;
 }
 .gestures__main {
   min-width: 0;

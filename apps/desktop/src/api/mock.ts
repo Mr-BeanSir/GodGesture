@@ -4,6 +4,7 @@
  */
 import {
   ConfigDocument,
+  DEFAULT_APP_GROUP_ID,
   MachineLocalSettings,
   type Command,
   type GestureInput,
@@ -102,6 +103,7 @@ function seedDocument(): ConfigDocument {
       {
         id: newId(),
         name: "Chrome",
+        groupId: DEFAULT_APP_GROUP_ID,
         windows: { exeName: "chrome.exe", matchByExactPath: false },
         mac: { bundleId: "com.google.Chrome" },
         gesturingEnabled: true,
@@ -270,7 +272,7 @@ export function createMockBackend(): Backend {
         return true;
       });
       const limit = Math.max(1, Math.min(request.limit ?? 1000, 5000));
-      return { entries: filtered.slice(-limit), total: filtered.length, files: [], level: logLevel };
+      return { entries: filtered.slice(-limit).reverse(), total: filtered.length, files: [], level: logLevel };
     },
     async logsExport(request) {
       const result = await this.logsQuery(request);
