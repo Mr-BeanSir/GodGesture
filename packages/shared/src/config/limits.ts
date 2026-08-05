@@ -1,6 +1,7 @@
 /** 同步配置的协议容量边界。字符串上限按 UTF-16 code unit，整文档按 UTF-8 字节。 */
 export const MAX_CONFIG_DOCUMENT_BYTES = 4 * 1024 * 1024;
 export const MAX_APPS = 128;
+export const MAX_APP_GROUPS = 64;
 export const MAX_INTENTS_PER_SCOPE = 256;
 export const MAX_BOUNDARY_INTENTS = 256;
 export const MAX_BOUNDARY_SEQUENCE_TOKENS = 12;

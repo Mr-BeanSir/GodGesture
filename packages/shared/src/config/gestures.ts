@@ -209,10 +209,19 @@ export const MacBinding = z.object({
 });
 export type MacBinding = z.infer<typeof MacBinding>;
 
+/** 应用分组:决定应用条目在手势工作区中的归属 */
+export const AppGroup = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(64),
+  order: z.number().int().default(0),
+});
+export type AppGroup = z.infer<typeof AppGroup>;
+
 /** 应用:配置分组单位;缺某平台绑定时在该平台休眠 */
 export const AppEntry = z.object({
   id: z.string().uuid(),
   name: z.string().max(64),
+  groupId: z.string().uuid(),
   windows: WindowsBinding.optional(),
   mac: MacBinding.optional(),
   /** 黑名单开关:false = 在该应用上禁用一切手势 */

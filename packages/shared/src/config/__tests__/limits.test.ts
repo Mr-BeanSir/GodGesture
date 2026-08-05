@@ -3,7 +3,9 @@ import {
   AppEntry,
   Command,
   ConfigDocument,
+  DEFAULT_APP_GROUP_ID,
   HotKeyCommand,
+  MAX_APP_GROUPS,
   MAX_APPS,
   MAX_COMMAND_TEXT_LENGTH,
   MAX_CONFIG_DOCUMENT_BYTES,
@@ -17,6 +19,7 @@ import {
 const app = (index: number) => ({
   id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
   name: `App ${index}`,
+  groupId: DEFAULT_APP_GROUP_ID,
 });
 
 const intent = (index: number) => ({
@@ -66,6 +69,30 @@ describe("config capacity limits", () => {
             intent(i),
           ),
         },
+      }),
+    ).toThrow();
+  });
+
+  it("bounds the number of application groups", () => {
+    const groups = [
+      { id: DEFAULT_APP_GROUP_ID, name: "Default", order: 0 },
+      ...Array.from({ length: MAX_APP_GROUPS - 1 }, (_, index) => ({
+        id: `80000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+        name: `Group ${index}`,
+        order: index + 1,
+      })),
+    ];
+    expect(ConfigDocument.parse({ groups }).groups).toHaveLength(MAX_APP_GROUPS);
+    expect(() =>
+      ConfigDocument.parse({
+        groups: [
+          ...groups,
+          {
+            id: "80000000-0000-4000-8000-000000000099",
+            name: "Too many",
+            order: MAX_APP_GROUPS,
+          },
+        ],
       }),
     ).toThrow();
   });

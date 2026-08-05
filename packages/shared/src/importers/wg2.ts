@@ -27,6 +27,7 @@ import {
   StrokeDirection,
   TriggerButton,
 } from "../config/gestures.js";
+import { DEFAULT_APP_GROUP_ID } from "../config/document.js";
 import {
   LegacyImportDiagnostic,
   LegacyImportDiagnosticCode,
@@ -477,6 +478,7 @@ export function importWg2(json: string): Wg2ImportResult {
       AppEntry.parse({
         id: deterministicUuid(`app:${appIndex}:${executablePath.toLowerCase()}`),
         name,
+        groupId: DEFAULT_APP_GROUP_ID,
         windows: {
           exeName,
           exactPath: executablePath,

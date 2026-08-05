@@ -58,7 +58,7 @@ describe("Node plugin configuration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(6);
+    expect(document.formatVersion).toBe(7);
     expect(document).not.toHaveProperty("nodePlugins");
     expect(document.global.intents[0]!.command.type).toBe("nodePlugin");
   });

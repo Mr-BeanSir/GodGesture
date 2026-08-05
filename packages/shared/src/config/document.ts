@@ -4,6 +4,7 @@
 import { z } from "zod";
 import {
   AppEntry,
+  AppGroup,
   BoundaryIntents,
   type BoundaryIntent,
   GlobalApp,
@@ -13,9 +14,16 @@ import {
   type GestureModifier,
 } from "./gestures.js";
 import { SyncedPreferences } from "./preferences.js";
-import { MAX_APPS } from "./limits.js";
+import { MAX_APPS, MAX_APP_GROUPS } from "./limits.js";
 /** 配置文档格式版本(载荷结构演进用,与同步版本号无关) */
-export const CONFIG_FORMAT_VERSION = 6;
+export const CONFIG_FORMAT_VERSION = 7;
+export const DEFAULT_APP_GROUP_ID = "20000000-0000-4000-8000-000000000001";
+
+const DEFAULT_APP_GROUP: AppGroup = {
+  id: DEFAULT_APP_GROUP_ID,
+  name: "默认",
+  order: 0,
+};
 
 const LEGACY_BOUNDARY_IDS = {
   "hotCorner:leftTop": "10000000-0000-4000-8000-000000000001",
@@ -162,11 +170,56 @@ function normalizeBoundaryCommands(value: unknown, legacy: boolean): unknown {
   return legacy ? normalizeCommand(value) : value;
 }
 
+function normalizeAppGroups(value: Record<string, unknown>, version: number) {
+  const rawGroups = Array.isArray(value.groups) ? value.groups : [];
+  const groups = rawGroups.flatMap((group, index) => {
+    if (!isRecord(group)) return [];
+    if (
+      typeof group.id !== "string" ||
+      !z.string().uuid().safeParse(group.id).success ||
+      typeof group.name !== "string" ||
+      group.name.trim().length === 0
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: group.id,
+        name: group.name,
+        order: typeof group.order === "number" && Number.isInteger(group.order)
+          ? group.order
+          : index,
+      },
+    ];
+  });
+  if (!groups.some((group) => group.id === DEFAULT_APP_GROUP_ID)) {
+    groups.push({ ...DEFAULT_APP_GROUP });
+  }
+  const groupIds = new Set(groups.map((group) => group.id));
+  const hasExplicitGroups = Array.isArray(value.groups);
+  const apps = Array.isArray(value.apps)
+    ? value.apps.map((app) => {
+        if (!isRecord(app)) return app;
+        const candidateGroupId =
+          typeof app.groupId === "string" ? app.groupId : null;
+        const groupId =
+          (version >= CONFIG_FORMAT_VERSION || hasExplicitGroups) &&
+          candidateGroupId !== null &&
+          z.string().uuid().safeParse(candidateGroupId).success &&
+          groupIds.has(candidateGroupId)
+            ? candidateGroupId
+            : DEFAULT_APP_GROUP_ID;
+        return { ...app, groupId };
+      })
+    : value.apps;
+  return { groups, apps };
+}
+
 /** Upgrade legacy corner/edge command maps into deterministic boundary intents. */
 export function migrateConfigDocument(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const version = Number(value.formatVersion ?? 1);
-  if (![1, 2, 3, 4, 5, CONFIG_FORMAT_VERSION].includes(version)) return value;
+  if (![1, 2, 3, 4, 5, 6, CONFIG_FORMAT_VERSION].includes(version)) return value;
   const legacy = version < CONFIG_FORMAT_VERSION;
 
   const hotCorners = isRecord(value.hotCorners) ? value.hotCorners : {};
@@ -220,14 +273,16 @@ export function migrateConfigDocument(value: unknown): unknown {
   }
 
   const global = normalizeIntentInputs(value.global, legacy);
-  const apps = Array.isArray(value.apps)
-    ? value.apps.map((app) => normalizeIntentInputs(app, legacy))
-    : value.apps;
+  const normalizedGroups = normalizeAppGroups(value, version);
+  const apps = Array.isArray(normalizedGroups.apps)
+    ? normalizedGroups.apps.map((app) => normalizeIntentInputs(app, legacy))
+    : normalizedGroups.apps;
   return {
     ...value,
     formatVersion: CONFIG_FORMAT_VERSION,
     global,
     apps,
+    groups: normalizedGroups.groups,
     hotCorners: { ...hotCorners, commands: {} },
     rubEdges: { ...rubEdges, commands: {} },
     boundaryIntents: [...existing, ...migrated],
@@ -238,17 +293,18 @@ export function migrateConfigDocument(value: unknown): unknown {
  * 用户配置整体文档:云同步的载荷,也是本地 config 文件的主体。
  * 不含本机专属设置(MachineLocalSettings 单独存本地)。
  */
-const ConfigDocumentV6 = z
+const ConfigDocumentV7 = z
   .object({
     formatVersion: z
       .literal(CONFIG_FORMAT_VERSION)
       .default(CONFIG_FORMAT_VERSION),
     global: GlobalApp.default({}),
+    groups: z.array(AppGroup).max(MAX_APP_GROUPS).default([DEFAULT_APP_GROUP]),
     apps: z.array(AppEntry).max(MAX_APPS).default([]),
     hotCorners: HotCornersConfig.default({}),
     rubEdges: RubEdgesConfig.default({}),
     boundaryIntents: BoundaryIntents,
     preferences: SyncedPreferences.default({}),
   });
-export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV6);
+export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV7);
 export type ConfigDocument = z.infer<typeof ConfigDocument>;

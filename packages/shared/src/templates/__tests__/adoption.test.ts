@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ConfigDocument,
+  DEFAULT_APP_GROUP_ID,
   GestureTemplatePackage,
   TemplateAdoptionError,
   planGestureTemplateAdoption,
@@ -96,6 +97,7 @@ describe("gesture template adoption", () => {
     expect(plan.document.apps[1]).toMatchObject({
       id: ids[0],
       name: "Browser",
+      groupId: DEFAULT_APP_GROUP_ID,
       windows: { exeName: "browser.exe" },
       mac: { bundleId: "com.example.browser" },
       order: 8,
@@ -105,11 +107,14 @@ describe("gesture template adoption", () => {
 
   it("reuses a uniquely matching App and fills a missing platform binding", () => {
     const appId = "20000000-0000-4000-8000-000000000001";
+    const existingGroupId = "20000000-0000-4000-8000-000000000010";
     const document = ConfigDocument.parse({
+      groups: [{ id: existingGroupId, name: "工作", order: 0 }],
       apps: [
         {
           id: appId,
           name: "My Browser",
+          groupId: existingGroupId,
           windows: { exeName: "BROWSER.EXE" },
           inheritGlobalGestures: false,
         },
@@ -126,6 +131,7 @@ describe("gesture template adoption", () => {
     expect(plan.document.apps[0]?.name).toBe("My Browser");
     expect(plan.document.apps[0]?.inheritGlobalGestures).toBe(false);
     expect(plan.document.apps[0]?.mac?.bundleId).toBe("com.example.browser");
+    expect(plan.document.apps[0]?.groupId).toBe(existingGroupId);
   });
 
   it("rejects bindings that resolve to two Apps", () => {

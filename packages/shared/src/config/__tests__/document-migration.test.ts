@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ConfigDocument, migrateConfigDocument } from "../document.js";
+import {
+  ConfigDocument,
+  DEFAULT_APP_GROUP_ID,
+  migrateConfigDocument,
+} from "../document.js";
 import { GestureInput, GestureSpec } from "../gestures.js";
 
-describe("configuration v6 migration", () => {
+describe("configuration v7 migration", () => {
   it("migrates legacy corner and edge commands without losing enable flags", () => {
     const document = ConfigDocument.parse({
       formatVersion: 1,
@@ -13,7 +17,10 @@ describe("configuration v6 migration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(6);
+    expect(document.formatVersion).toBe(7);
+    expect(document.groups).toEqual([
+      { id: DEFAULT_APP_GROUP_ID, name: "默认", order: 0 },
+    ]);
     expect(document.hotCorners).toEqual({ enabled: false, commands: {} });
     expect(document.rubEdges).toEqual({ enabled: true, commands: {} });
     expect(document.boundaryIntents.every((intent) => intent.enabled)).toBe(true);
@@ -30,6 +37,67 @@ describe("configuration v6 migration", () => {
         sequence: [],
         command: { type: "hotKey", modifiers: ["meta"], keys: ["d"] },
       }),
+    ]);
+  });
+
+  it("puts legacy apps into the default group without changing their order", () => {
+    const document = ConfigDocument.parse({
+      formatVersion: 6,
+      apps: [
+        {
+          id: "60000000-0000-4000-8000-000000000001",
+          name: "First",
+          order: 7,
+        },
+        {
+          id: "60000000-0000-4000-8000-000000000002",
+          name: "Second",
+          order: 2,
+        },
+      ],
+    });
+
+    expect(document.groups).toEqual([
+      { id: DEFAULT_APP_GROUP_ID, name: "默认", order: 0 },
+    ]);
+    expect(document.apps).toEqual([
+      expect.objectContaining({ groupId: DEFAULT_APP_GROUP_ID, order: 7 }),
+      expect.objectContaining({ groupId: DEFAULT_APP_GROUP_ID, order: 2 }),
+    ]);
+  });
+
+  it("keeps valid groups and falls back invalid or unknown app group IDs", () => {
+    const workGroup = "70000000-0000-4000-8000-000000000001";
+    const document = ConfigDocument.parse({
+      formatVersion: 7,
+      groups: [{ id: workGroup, name: "工作", order: 1 }],
+      apps: [
+        {
+          id: "70000000-0000-4000-8000-000000000010",
+          name: "Known",
+          groupId: workGroup,
+        },
+        {
+          id: "70000000-0000-4000-8000-000000000011",
+          name: "Malformed",
+          groupId: "not-a-uuid",
+        },
+        {
+          id: "70000000-0000-4000-8000-000000000012",
+          name: "Unknown",
+          groupId: "70000000-0000-4000-8000-000000000099",
+        },
+      ],
+    });
+
+    expect(document.groups).toEqual([
+      { id: workGroup, name: "工作", order: 1 },
+      { id: DEFAULT_APP_GROUP_ID, name: "默认", order: 0 },
+    ]);
+    expect(document.apps.map((app) => app.groupId)).toEqual([
+      workGroup,
+      DEFAULT_APP_GROUP_ID,
+      DEFAULT_APP_GROUP_ID,
     ]);
   });
 
@@ -197,14 +265,14 @@ describe("configuration v6 migration", () => {
       }],
     });
 
-    expect(document.formatVersion).toBe(6);
+    expect(document.formatVersion).toBe(7);
     expect(document.boundaryIntents).toHaveLength(1);
     expect(document.boundaryIntents[0]?.command).toEqual({ type: "doNothing" });
   });
 
   it("rejects removed pause commands in an already-current document", () => {
     expect(() => ConfigDocument.parse({
-      formatVersion: 6,
+      formatVersion: 7,
       global: {
         intents: [{
           id: "50000000-0000-4000-8000-000000000001",

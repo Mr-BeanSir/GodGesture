@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ConfigDocument,
+  DEFAULT_APP_GROUP_ID,
   type ConfigDocument as ConfigDocumentValue,
 } from "../config/document.js";
 import {
@@ -276,6 +277,7 @@ export function planGestureTemplateAdoption(
         ? { windows: templatePackage.target.windows }
         : {}),
       ...(templatePackage.target.mac ? { mac: templatePackage.target.mac } : {}),
+      groupId: DEFAULT_APP_GROUP_ID,
       gesturingEnabled: templatePackage.target.gesturingEnabled,
       inheritGlobalGestures: templatePackage.target.inheritGlobalGestures,
       intents: [],
