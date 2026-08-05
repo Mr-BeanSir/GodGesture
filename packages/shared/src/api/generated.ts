@@ -421,6 +421,8 @@ export interface components {
                 /** @default true */
                 gesturingEnabled: boolean;
                 /** Format: uuid */
+                groupId: string;
+                /** Format: uuid */
                 id: string;
                 /** @default true */
                 inheritGlobalGestures: boolean;
@@ -454,7 +456,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -500,6 +513,10 @@ export interface components {
                             direction: "forward" | "backward";
                             /** @enum {string} */
                             type: "wheel";
+                        } | {
+                            key: string;
+                            /** @enum {string} */
+                            type: "key";
                         })[];
                         /**
                          * @default none
@@ -560,7 +577,18 @@ export interface components {
                     /** @enum {string} */
                     type: "openFile";
                 } | {
-                    text: string;
+                    steps?: ({
+                        text: string;
+                        /** @enum {string} */
+                        type: "text";
+                    } | {
+                        /** @enum {string} */
+                        key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                        modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                        /** @enum {string} */
+                        type: "key";
+                    })[];
+                    text?: string;
                     /** @enum {string} */
                     type: "sendText";
                 } | {
@@ -625,10 +653,10 @@ export interface components {
                 })[];
             }[];
             /**
-             * @default 6
+             * @default 7
              * @enum {number}
              */
-            formatVersion: 6;
+            formatVersion: 7;
             /** @default {} */
             global: {
                 /** @default true */
@@ -663,7 +691,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -709,6 +748,10 @@ export interface components {
                             direction: "forward" | "backward";
                             /** @enum {string} */
                             type: "wheel";
+                        } | {
+                            key: string;
+                            /** @enum {string} */
+                            type: "key";
                         })[];
                         /**
                          * @default none
@@ -726,6 +769,22 @@ export interface components {
                     order: number;
                 }[];
             };
+            /**
+             * @default [
+             *       {
+             *         "id": "20000000-0000-4000-8000-000000000001",
+             *         "name": "默认",
+             *         "order": 0
+             *       }
+             *     ]
+             */
+            groups: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @default 0 */
+                order: number;
+            }[];
             /** @default {} */
             hotCorners: {
                 /** @default {} */
@@ -758,7 +817,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -814,7 +884,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -870,7 +951,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -926,7 +1018,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1060,7 +1163,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1116,7 +1230,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1172,7 +1297,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1228,7 +1364,18 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        text: string;
+                        steps?: ({
+                            text: string;
+                            /** @enum {string} */
+                            type: "text";
+                        } | {
+                            /** @enum {string} */
+                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        text?: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {

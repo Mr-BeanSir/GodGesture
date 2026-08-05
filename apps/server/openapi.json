@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              6
+              7
             ],
-            "default": 6
+            "default": 7
           },
           "global": {
             "type": "object",
@@ -196,6 +196,26 @@
                                 "required": [
                                   "type",
                                   "direction"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "key"
+                                    ]
+                                  },
+                                  "key": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 32
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "key"
                                 ]
                               }
                             ]
@@ -491,14 +511,205 @@
                                 "sendText"
                               ]
                             },
+                            "steps": {
+                              "type": "array",
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "text"
+                                        ]
+                                      },
+                                      "text": {
+                                        "type": "string",
+                                        "maxLength": 16384
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "text"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "key"
+                                        ]
+                                      },
+                                      "modifiers": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "ctrl",
+                                            "shift",
+                                            "alt",
+                                            "meta"
+                                          ]
+                                        },
+                                        "maxItems": 4
+                                      },
+                                      "key": {
+                                        "type": "string",
+                                        "enum": [
+                                          "a",
+                                          "b",
+                                          "c",
+                                          "d",
+                                          "e",
+                                          "f",
+                                          "g",
+                                          "h",
+                                          "i",
+                                          "j",
+                                          "k",
+                                          "l",
+                                          "m",
+                                          "n",
+                                          "o",
+                                          "p",
+                                          "q",
+                                          "r",
+                                          "s",
+                                          "t",
+                                          "u",
+                                          "v",
+                                          "w",
+                                          "x",
+                                          "y",
+                                          "z",
+                                          "0",
+                                          "1",
+                                          "2",
+                                          "3",
+                                          "4",
+                                          "5",
+                                          "6",
+                                          "7",
+                                          "8",
+                                          "9",
+                                          "f1",
+                                          "f2",
+                                          "f3",
+                                          "f4",
+                                          "f5",
+                                          "f6",
+                                          "f7",
+                                          "f8",
+                                          "f9",
+                                          "f10",
+                                          "f11",
+                                          "f12",
+                                          "f13",
+                                          "f14",
+                                          "f15",
+                                          "f16",
+                                          "f17",
+                                          "f18",
+                                          "f19",
+                                          "f20",
+                                          "f21",
+                                          "f22",
+                                          "f23",
+                                          "f24",
+                                          "backspace",
+                                          "tab",
+                                          "clear",
+                                          "enter",
+                                          "pauseBreak",
+                                          "capsLock",
+                                          "esc",
+                                          "space",
+                                          "pageUp",
+                                          "pageDown",
+                                          "end",
+                                          "home",
+                                          "left",
+                                          "up",
+                                          "right",
+                                          "down",
+                                          "printScreen",
+                                          "insert",
+                                          "delete",
+                                          "contextMenu",
+                                          "sleep",
+                                          "numpad0",
+                                          "numpad1",
+                                          "numpad2",
+                                          "numpad3",
+                                          "numpad4",
+                                          "numpad5",
+                                          "numpad6",
+                                          "numpad7",
+                                          "numpad8",
+                                          "numpad9",
+                                          "numpadMultiply",
+                                          "numpadAdd",
+                                          "numpadSeparator",
+                                          "numpadSubtract",
+                                          "numpadDecimal",
+                                          "numpadDivide",
+                                          "numpadEnter",
+                                          "numpadEqual",
+                                          "numLock",
+                                          "scrollLock",
+                                          "browserBack",
+                                          "browserForward",
+                                          "browserRefresh",
+                                          "browserStop",
+                                          "browserSearch",
+                                          "browserFavorites",
+                                          "browserHome",
+                                          "volumeMute",
+                                          "volumeDown",
+                                          "volumeUp",
+                                          "mediaNextTrack",
+                                          "mediaPrevTrack",
+                                          "mediaStop",
+                                          "mediaPlayPause",
+                                          "launchMail",
+                                          "launchMediaSelect",
+                                          "launchApp1",
+                                          "launchApp2",
+                                          "semicolon",
+                                          "equals",
+                                          "comma",
+                                          "minus",
+                                          "period",
+                                          "slash",
+                                          "backquote",
+                                          "bracketLeft",
+                                          "backslash",
+                                          "bracketRight",
+                                          "quote",
+                                          "intlBackslash"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "modifiers",
+                                      "key"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "maxItems": 64
+                            },
                             "text": {
                               "type": "string",
                               "maxLength": 16384
                             }
                           },
                           "required": [
-                            "type",
-                            "text"
+                            "type"
                           ]
                         },
                         {
@@ -613,6 +824,39 @@
             },
             "default": {}
           },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "order": {
+                  "type": "integer",
+                  "default": 0
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            },
+            "maxItems": 64,
+            "default": [
+              {
+                "id": "20000000-0000-4000-8000-000000000001",
+                "name": "默认",
+                "order": 0
+              }
+            ]
+          },
           "apps": {
             "type": "array",
             "items": {
@@ -625,6 +869,10 @@
                 "name": {
                   "type": "string",
                   "maxLength": 64
+                },
+                "groupId": {
+                  "type": "string",
+                  "format": "uuid"
                 },
                 "windows": {
                   "type": "object",
@@ -809,6 +1057,26 @@
                                   "required": [
                                     "type",
                                     "direction"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 32
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "key"
                                   ]
                                 }
                               ]
@@ -1104,14 +1372,205 @@
                                   "sendText"
                                 ]
                               },
+                              "steps": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "text"
+                                          ]
+                                        },
+                                        "text": {
+                                          "type": "string",
+                                          "maxLength": 16384
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "text"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "key"
+                                          ]
+                                        },
+                                        "modifiers": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "enum": [
+                                              "ctrl",
+                                              "shift",
+                                              "alt",
+                                              "meta"
+                                            ]
+                                          },
+                                          "maxItems": 4
+                                        },
+                                        "key": {
+                                          "type": "string",
+                                          "enum": [
+                                            "a",
+                                            "b",
+                                            "c",
+                                            "d",
+                                            "e",
+                                            "f",
+                                            "g",
+                                            "h",
+                                            "i",
+                                            "j",
+                                            "k",
+                                            "l",
+                                            "m",
+                                            "n",
+                                            "o",
+                                            "p",
+                                            "q",
+                                            "r",
+                                            "s",
+                                            "t",
+                                            "u",
+                                            "v",
+                                            "w",
+                                            "x",
+                                            "y",
+                                            "z",
+                                            "0",
+                                            "1",
+                                            "2",
+                                            "3",
+                                            "4",
+                                            "5",
+                                            "6",
+                                            "7",
+                                            "8",
+                                            "9",
+                                            "f1",
+                                            "f2",
+                                            "f3",
+                                            "f4",
+                                            "f5",
+                                            "f6",
+                                            "f7",
+                                            "f8",
+                                            "f9",
+                                            "f10",
+                                            "f11",
+                                            "f12",
+                                            "f13",
+                                            "f14",
+                                            "f15",
+                                            "f16",
+                                            "f17",
+                                            "f18",
+                                            "f19",
+                                            "f20",
+                                            "f21",
+                                            "f22",
+                                            "f23",
+                                            "f24",
+                                            "backspace",
+                                            "tab",
+                                            "clear",
+                                            "enter",
+                                            "pauseBreak",
+                                            "capsLock",
+                                            "esc",
+                                            "space",
+                                            "pageUp",
+                                            "pageDown",
+                                            "end",
+                                            "home",
+                                            "left",
+                                            "up",
+                                            "right",
+                                            "down",
+                                            "printScreen",
+                                            "insert",
+                                            "delete",
+                                            "contextMenu",
+                                            "sleep",
+                                            "numpad0",
+                                            "numpad1",
+                                            "numpad2",
+                                            "numpad3",
+                                            "numpad4",
+                                            "numpad5",
+                                            "numpad6",
+                                            "numpad7",
+                                            "numpad8",
+                                            "numpad9",
+                                            "numpadMultiply",
+                                            "numpadAdd",
+                                            "numpadSeparator",
+                                            "numpadSubtract",
+                                            "numpadDecimal",
+                                            "numpadDivide",
+                                            "numpadEnter",
+                                            "numpadEqual",
+                                            "numLock",
+                                            "scrollLock",
+                                            "browserBack",
+                                            "browserForward",
+                                            "browserRefresh",
+                                            "browserStop",
+                                            "browserSearch",
+                                            "browserFavorites",
+                                            "browserHome",
+                                            "volumeMute",
+                                            "volumeDown",
+                                            "volumeUp",
+                                            "mediaNextTrack",
+                                            "mediaPrevTrack",
+                                            "mediaStop",
+                                            "mediaPlayPause",
+                                            "launchMail",
+                                            "launchMediaSelect",
+                                            "launchApp1",
+                                            "launchApp2",
+                                            "semicolon",
+                                            "equals",
+                                            "comma",
+                                            "minus",
+                                            "period",
+                                            "slash",
+                                            "backquote",
+                                            "bracketLeft",
+                                            "backslash",
+                                            "bracketRight",
+                                            "quote",
+                                            "intlBackslash"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "modifiers",
+                                        "key"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "maxItems": 64
+                              },
                               "text": {
                                 "type": "string",
                                 "maxLength": 16384
                               }
                             },
                             "required": [
-                              "type",
-                              "text"
+                              "type"
                             ]
                           },
                           {
@@ -1230,7 +1689,8 @@
               },
               "required": [
                 "id",
-                "name"
+                "name",
+                "groupId"
               ]
             },
             "maxItems": 128,
@@ -1529,14 +1989,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -1916,14 +2567,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -2303,14 +3145,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -2690,14 +3723,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -3093,14 +4317,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -3480,14 +4895,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -3867,14 +5473,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -4254,14 +6051,205 @@
                               "sendText"
                             ]
                           },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16384
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "key"
+                                      ]
+                                    },
+                                    "modifiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ctrl",
+                                          "shift",
+                                          "alt",
+                                          "meta"
+                                        ]
+                                      },
+                                      "maxItems": 4
+                                    },
+                                    "key": {
+                                      "type": "string",
+                                      "enum": [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d",
+                                        "e",
+                                        "f",
+                                        "g",
+                                        "h",
+                                        "i",
+                                        "j",
+                                        "k",
+                                        "l",
+                                        "m",
+                                        "n",
+                                        "o",
+                                        "p",
+                                        "q",
+                                        "r",
+                                        "s",
+                                        "t",
+                                        "u",
+                                        "v",
+                                        "w",
+                                        "x",
+                                        "y",
+                                        "z",
+                                        "0",
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5",
+                                        "6",
+                                        "7",
+                                        "8",
+                                        "9",
+                                        "f1",
+                                        "f2",
+                                        "f3",
+                                        "f4",
+                                        "f5",
+                                        "f6",
+                                        "f7",
+                                        "f8",
+                                        "f9",
+                                        "f10",
+                                        "f11",
+                                        "f12",
+                                        "f13",
+                                        "f14",
+                                        "f15",
+                                        "f16",
+                                        "f17",
+                                        "f18",
+                                        "f19",
+                                        "f20",
+                                        "f21",
+                                        "f22",
+                                        "f23",
+                                        "f24",
+                                        "backspace",
+                                        "tab",
+                                        "clear",
+                                        "enter",
+                                        "pauseBreak",
+                                        "capsLock",
+                                        "esc",
+                                        "space",
+                                        "pageUp",
+                                        "pageDown",
+                                        "end",
+                                        "home",
+                                        "left",
+                                        "up",
+                                        "right",
+                                        "down",
+                                        "printScreen",
+                                        "insert",
+                                        "delete",
+                                        "contextMenu",
+                                        "sleep",
+                                        "numpad0",
+                                        "numpad1",
+                                        "numpad2",
+                                        "numpad3",
+                                        "numpad4",
+                                        "numpad5",
+                                        "numpad6",
+                                        "numpad7",
+                                        "numpad8",
+                                        "numpad9",
+                                        "numpadMultiply",
+                                        "numpadAdd",
+                                        "numpadSeparator",
+                                        "numpadSubtract",
+                                        "numpadDecimal",
+                                        "numpadDivide",
+                                        "numpadEnter",
+                                        "numpadEqual",
+                                        "numLock",
+                                        "scrollLock",
+                                        "browserBack",
+                                        "browserForward",
+                                        "browserRefresh",
+                                        "browserStop",
+                                        "browserSearch",
+                                        "browserFavorites",
+                                        "browserHome",
+                                        "volumeMute",
+                                        "volumeDown",
+                                        "volumeUp",
+                                        "mediaNextTrack",
+                                        "mediaPrevTrack",
+                                        "mediaStop",
+                                        "mediaPlayPause",
+                                        "launchMail",
+                                        "launchMediaSelect",
+                                        "launchApp1",
+                                        "launchApp2",
+                                        "semicolon",
+                                        "equals",
+                                        "comma",
+                                        "minus",
+                                        "period",
+                                        "slash",
+                                        "backquote",
+                                        "bracketLeft",
+                                        "backslash",
+                                        "bracketRight",
+                                        "quote",
+                                        "intlBackslash"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "modifiers",
+                                    "key"
+                                  ]
+                                }
+                              ]
+                            },
+                            "maxItems": 64
+                          },
                           "text": {
                             "type": "string",
                             "maxLength": 16384
                           }
                         },
                         "required": [
-                          "type",
-                          "text"
+                          "type"
                         ]
                       },
                       {
@@ -4800,14 +6788,205 @@
                             "sendText"
                           ]
                         },
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "text"
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 16384
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "text"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "key"
+                                    ]
+                                  },
+                                  "modifiers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ctrl",
+                                        "shift",
+                                        "alt",
+                                        "meta"
+                                      ]
+                                    },
+                                    "maxItems": 4
+                                  },
+                                  "key": {
+                                    "type": "string",
+                                    "enum": [
+                                      "a",
+                                      "b",
+                                      "c",
+                                      "d",
+                                      "e",
+                                      "f",
+                                      "g",
+                                      "h",
+                                      "i",
+                                      "j",
+                                      "k",
+                                      "l",
+                                      "m",
+                                      "n",
+                                      "o",
+                                      "p",
+                                      "q",
+                                      "r",
+                                      "s",
+                                      "t",
+                                      "u",
+                                      "v",
+                                      "w",
+                                      "x",
+                                      "y",
+                                      "z",
+                                      "0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5",
+                                      "6",
+                                      "7",
+                                      "8",
+                                      "9",
+                                      "f1",
+                                      "f2",
+                                      "f3",
+                                      "f4",
+                                      "f5",
+                                      "f6",
+                                      "f7",
+                                      "f8",
+                                      "f9",
+                                      "f10",
+                                      "f11",
+                                      "f12",
+                                      "f13",
+                                      "f14",
+                                      "f15",
+                                      "f16",
+                                      "f17",
+                                      "f18",
+                                      "f19",
+                                      "f20",
+                                      "f21",
+                                      "f22",
+                                      "f23",
+                                      "f24",
+                                      "backspace",
+                                      "tab",
+                                      "clear",
+                                      "enter",
+                                      "pauseBreak",
+                                      "capsLock",
+                                      "esc",
+                                      "space",
+                                      "pageUp",
+                                      "pageDown",
+                                      "end",
+                                      "home",
+                                      "left",
+                                      "up",
+                                      "right",
+                                      "down",
+                                      "printScreen",
+                                      "insert",
+                                      "delete",
+                                      "contextMenu",
+                                      "sleep",
+                                      "numpad0",
+                                      "numpad1",
+                                      "numpad2",
+                                      "numpad3",
+                                      "numpad4",
+                                      "numpad5",
+                                      "numpad6",
+                                      "numpad7",
+                                      "numpad8",
+                                      "numpad9",
+                                      "numpadMultiply",
+                                      "numpadAdd",
+                                      "numpadSeparator",
+                                      "numpadSubtract",
+                                      "numpadDecimal",
+                                      "numpadDivide",
+                                      "numpadEnter",
+                                      "numpadEqual",
+                                      "numLock",
+                                      "scrollLock",
+                                      "browserBack",
+                                      "browserForward",
+                                      "browserRefresh",
+                                      "browserStop",
+                                      "browserSearch",
+                                      "browserFavorites",
+                                      "browserHome",
+                                      "volumeMute",
+                                      "volumeDown",
+                                      "volumeUp",
+                                      "mediaNextTrack",
+                                      "mediaPrevTrack",
+                                      "mediaStop",
+                                      "mediaPlayPause",
+                                      "launchMail",
+                                      "launchMediaSelect",
+                                      "launchApp1",
+                                      "launchApp2",
+                                      "semicolon",
+                                      "equals",
+                                      "comma",
+                                      "minus",
+                                      "period",
+                                      "slash",
+                                      "backquote",
+                                      "bracketLeft",
+                                      "backslash",
+                                      "bracketRight",
+                                      "quote",
+                                      "intlBackslash"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "modifiers",
+                                  "key"
+                                ]
+                              }
+                            ]
+                          },
+                          "maxItems": 64
+                        },
                         "text": {
                           "type": "string",
                           "maxLength": 16384
                         }
                       },
                       "required": [
-                        "type",
-                        "text"
+                        "type"
                       ]
                     },
                     {
