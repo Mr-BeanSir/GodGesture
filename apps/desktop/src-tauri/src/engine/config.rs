@@ -6,7 +6,12 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 6;
+pub const CONFIG_FORMAT_VERSION: u32 = 7;
+pub const DEFAULT_APP_GROUP_ID: &str = "20000000-0000-4000-8000-000000000001";
+
+fn default_app_group_name() -> String {
+    "默认".into()
+}
 
 // ---------------------------------------------------------------------------
 // 命令(执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
@@ -123,6 +128,15 @@ pub enum WindowOperation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct AppGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GestureSpecConfig {
     pub trigger: TriggerButton,
     pub strokes: Vec<Direction>,
@@ -225,6 +239,7 @@ pub struct MacBinding {
 pub struct AppEntry {
     pub id: String,
     pub name: String,
+    pub group_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows: Option<WindowsBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -546,6 +561,7 @@ fn default_node_manifest() -> String {
 pub struct ConfigDocument {
     pub format_version: u32,
     pub global: GlobalApp,
+    pub groups: Vec<AppGroup>,
     pub apps: Vec<AppEntry>,
     pub hot_corners: HotCornersConfig,
     pub rub_edges: RubEdgesConfig,
@@ -561,6 +577,7 @@ pub struct ConfigDocument {
 struct ConfigDocumentWire {
     format_version: u32,
     global: GlobalApp,
+    groups: Vec<AppGroup>,
     apps: Vec<AppEntry>,
     hot_corners: HotCornersConfig,
     rub_edges: RubEdgesConfig,
@@ -575,6 +592,7 @@ impl Default for ConfigDocumentWire {
         Self {
             format_version: defaults.format_version,
             global: defaults.global,
+            groups: defaults.groups,
             apps: defaults.apps,
             hot_corners: defaults.hot_corners,
             rub_edges: defaults.rub_edges,
@@ -597,6 +615,7 @@ impl<'de> Deserialize<'de> for ConfigDocument {
         let mut document = Self {
             format_version: wire.format_version,
             global: wire.global,
+            groups: wire.groups,
             apps: wire.apps,
             hot_corners: wire.hot_corners,
             rub_edges: wire.rub_edges,
@@ -714,6 +733,84 @@ fn migrate_scope_value(value: &mut serde_json::Value, legacy: bool) {
     }
 }
 
+fn normalize_app_groups(value: &mut serde_json::Value, version: u64) {
+    let Some(root) = value.as_object_mut() else {
+        return;
+    };
+    let has_explicit_groups = root.get("groups").is_some_and(serde_json::Value::is_array);
+    let raw_groups = root
+        .get("groups")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut groups = Vec::new();
+    for (index, group) in raw_groups.into_iter().enumerate() {
+        let Some(object) = group.as_object() else {
+            continue;
+        };
+        let Some(id) = object.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if uuid::Uuid::parse_str(id).is_err() {
+            continue;
+        }
+        let Some(name) = object.get("name").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if name.trim().is_empty() {
+            continue;
+        }
+        let order = object
+            .get("order")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+            .unwrap_or(index as i32);
+        groups.push(serde_json::json!({
+            "id": id,
+            "name": name,
+            "order": order,
+        }));
+    }
+    if !groups.iter().any(|group| {
+        group.get("id").and_then(serde_json::Value::as_str) == Some(DEFAULT_APP_GROUP_ID)
+    }) {
+        groups.push(serde_json::json!({
+            "id": DEFAULT_APP_GROUP_ID,
+            "name": default_app_group_name(),
+            "order": 0,
+        }));
+    }
+    let group_ids = groups
+        .iter()
+        .filter_map(|group| {
+            group
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(apps) = root
+        .get_mut("apps")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for app in apps {
+            let Some(object) = app.as_object_mut() else {
+                continue;
+            };
+            let candidate = object.get("groupId").and_then(serde_json::Value::as_str);
+            let valid = (version >= CONFIG_FORMAT_VERSION as u64 || has_explicit_groups)
+                && candidate.is_some_and(|id| group_ids.contains(id));
+            if !valid {
+                object.insert(
+                    "groupId".into(),
+                    serde_json::Value::String(DEFAULT_APP_GROUP_ID.into()),
+                );
+            }
+        }
+    }
+    root.insert("groups".into(), serde_json::Value::Array(groups));
+}
+
 /// Normalize removed commands and pre-v5 gesture fields before strict serde
 /// decoding. This is shared by local files, sync payloads and Tauri IPC.
 fn migrate_config_value(value: &mut serde_json::Value) {
@@ -731,6 +828,7 @@ fn migrate_config_value(value: &mut serde_json::Value) {
     if legacy {
         neutralize_removed_commands(value);
     }
+    normalize_app_groups(value, version);
     normalize_node_plugin_commands(value);
     if let Some(global) = value
         .as_object_mut()
@@ -787,6 +885,11 @@ impl Default for ConfigDocument {
         Self {
             format_version: CONFIG_FORMAT_VERSION,
             global: GlobalApp::default(),
+            groups: vec![AppGroup {
+                id: DEFAULT_APP_GROUP_ID.into(),
+                name: default_app_group_name(),
+                order: 0,
+            }],
             apps: Vec::new(),
             hot_corners: HotCornersConfig::default(),
             rub_edges: RubEdgesConfig::default(),
@@ -1290,6 +1393,66 @@ mod tests {
     }
 
     #[test]
+    fn v6_apps_migrate_to_the_fixed_default_group() {
+        let document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "formatVersion": 6,
+            "apps": [
+                {
+                    "id": "60000000-0000-4000-8000-000000000001",
+                    "name": "First",
+                    "order": 4
+                },
+                {
+                    "id": "60000000-0000-4000-8000-000000000002",
+                    "name": "Second",
+                    "order": 1
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(document.format_version, 7);
+        assert_eq!(document.groups.len(), 1);
+        assert_eq!(document.groups[0].id, DEFAULT_APP_GROUP_ID);
+        assert_eq!(document.apps[0].group_id, DEFAULT_APP_GROUP_ID);
+        assert_eq!(document.apps[0].order, 4);
+        assert_eq!(document.apps[1].group_id, DEFAULT_APP_GROUP_ID);
+        assert_eq!(document.apps[1].order, 1);
+    }
+
+    #[test]
+    fn v7_preserves_valid_groups_and_falls_back_invalid_ids() {
+        let work_group = "70000000-0000-4000-8000-000000000001";
+        let document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "formatVersion": 7,
+            "groups": [{ "id": work_group, "name": "Work", "order": 1 }],
+            "apps": [
+                {
+                    "id": "70000000-0000-4000-8000-000000000010",
+                    "name": "Known",
+                    "groupId": work_group
+                },
+                {
+                    "id": "70000000-0000-4000-8000-000000000011",
+                    "name": "Malformed",
+                    "groupId": "not-a-uuid"
+                },
+                {
+                    "id": "70000000-0000-4000-8000-000000000012",
+                    "name": "Unknown",
+                    "groupId": "70000000-0000-4000-8000-000000000099"
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(document.groups.len(), 2);
+        assert_eq!(document.apps[0].group_id, work_group);
+        assert_eq!(document.apps[1].group_id, DEFAULT_APP_GROUP_ID);
+        assert_eq!(document.apps[2].group_id, DEFAULT_APP_GROUP_ID);
+    }
+
+    #[test]
     fn load_config_neutralizes_removed_scripts_without_resetting_other_settings() {
         let dir = TestDir::new();
         let store = ConfigStore::new(dir.0.clone());
@@ -1465,7 +1628,7 @@ mod tests {
     #[test]
     fn current_config_rejects_removed_pause_commands() {
         let result = serde_json::from_value::<ConfigDocument>(serde_json::json!({
-            "formatVersion": 6,
+            "formatVersion": 7,
             "global": {
                 "intents": [{
                     "id": "50000000-0000-4000-8000-000000000001",

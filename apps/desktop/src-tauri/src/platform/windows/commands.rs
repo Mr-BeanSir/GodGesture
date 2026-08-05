@@ -23,7 +23,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Shutdown::LockWorkStation;
-use windows::Win32::UI::Input::KeyboardAndMouse::{VK_MENU, VK_TAB};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_TAB};
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, SHGetKnownFolderPath, ShellExecuteW, KF_FLAG_DEFAULT,
 };
@@ -33,6 +33,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL,
     WM_CLOSE, WS_EX_TOPMOST,
 };
+
+const TASK_SWITCHER_MODIFIERS: &[VIRTUAL_KEY] = &[VK_CONTROL, VK_MENU];
+const TASK_SWITCHER_KEY: VIRTUAL_KEY = VK_TAB;
 
 /// 执行一条命令。`modifier` 是本次手势修饰,`ctx` 提供手势起点与目标窗口句柄。
 pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
@@ -62,7 +65,7 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             }
         }
         Command::TaskSwitcher => {
-            input::tap_with_modifiers(&[VK_MENU], VK_TAB);
+            input::tap_with_modifiers(TASK_SWITCHER_MODIFIERS, TASK_SWITCHER_KEY);
         }
         Command::WindowControl { operation } => window_control(*operation, ctx),
         Command::OpenFile { path } => open_or_log(path, None),
@@ -648,6 +651,14 @@ fn hex_digit(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_switcher_uses_ctrl_alt_tab() {
+        assert_eq!(TASK_SWITCHER_MODIFIERS.len(), 2);
+        assert!(TASK_SWITCHER_MODIFIERS.contains(&VK_CONTROL));
+        assert!(TASK_SWITCHER_MODIFIERS.contains(&VK_MENU));
+        assert_eq!(TASK_SWITCHER_KEY, VK_TAB);
+    }
 
     #[test]
     fn url_encode_basics() {

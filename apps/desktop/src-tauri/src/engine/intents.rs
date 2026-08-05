@@ -4,7 +4,9 @@
 //! - 全局开关是总开关，关闭后所有应用都禁止手势;
 //! - 应用黑名单(gesturing_enabled=false)在路径开始前进一步拦截。
 
-use super::config::{AppEntry, Command, ConfigDocument, GestureInput, GestureIntent};
+use super::config::{
+    AppEntry, Command, ConfigDocument, GestureInput, GestureIntent, DEFAULT_APP_GROUP_ID,
+};
 use super::types::{Direction, Modifier, TriggerButton};
 
 /// 前台程序的平台标识(由平台层解析)
@@ -292,6 +294,7 @@ mod tests {
         doc.apps.push(AppEntry {
             id: "chrome".into(),
             name: "Chrome".into(),
+            group_id: DEFAULT_APP_GROUP_ID.into(),
             windows: Some(WindowsBinding {
                 exe_name: "Chrome.EXE".into(),
                 aumid: None,
@@ -452,6 +455,7 @@ mod tests {
         doc.apps.push(AppEntry {
             id: "path".into(),
             name: "Path".into(),
+            group_id: DEFAULT_APP_GROUP_ID.into(),
             windows: Some(WindowsBinding {
                 exe_name: "app.exe".into(),
                 aumid: None,
@@ -467,6 +471,7 @@ mod tests {
         doc.apps.push(AppEntry {
             id: "aumid".into(),
             name: "Packaged".into(),
+            group_id: DEFAULT_APP_GROUP_ID.into(),
             windows: Some(WindowsBinding {
                 exe_name: "app.exe".into(),
                 aumid: Some("Contoso.App_123!Main".into()),
