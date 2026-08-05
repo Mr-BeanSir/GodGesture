@@ -14,8 +14,8 @@ import {
   replaceStorageValueIfCurrent,
 } from "./refresh-coordinator";
 
-/** 后端源(VITE_API_BASE_URL 留空 = 同源,走代理的 /api) */
-const API_ORIGIN = import.meta.env.VITE_API_BASE_URL ?? "";
+/** 后端源(GODGESTURE_API 留空 = 同源,走代理的 /api) */
+const API_ORIGIN = import.meta.env.GODGESTURE_API ?? import.meta.env.VITE_API_BASE_URL ?? "";
 const API_BASE = `${API_ORIGIN}/api/v1`;
 const REFRESH_TOKEN_KEY = "godgesture.refreshToken";
 const REFRESH_LEASE_KEY = "godgesture.refreshLease";

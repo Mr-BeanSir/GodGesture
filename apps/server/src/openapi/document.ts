@@ -6,6 +6,10 @@ import {
 import {
   ConfigDocument,
   ConfigTooLargeResponse,
+  AdminAccountStateRequest,
+  AdminRoleRequest,
+  AdminUser,
+  AdminUserListResponse,
   ListDevicesResponse,
   ListSnapshotsResponse,
   LoginRequest,
@@ -15,6 +19,8 @@ import {
   OAuthExchangeRequest,
   OAuthProvider,
   OAuthProvidersResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
@@ -23,6 +29,8 @@ import {
   RefreshRequest,
   RefreshRotationRaceResponse,
   RegisterRequest,
+  RequestEmailCodeRequest,
+  RequestEmailCodeResponse,
   RenameDeviceRequest,
   RestoreSnapshotRequest,
   RestoreSnapshotResponse,
@@ -38,10 +46,20 @@ const configDocumentSchema = registry.register(
   ConfigDocument,
 );
 
-const schemas = {
+  const schemas = {
   ConfigTooLargeResponse: registry.register(
     'ConfigTooLargeResponse',
     ConfigTooLargeResponse,
+  ),
+  AdminAccountStateRequest: registry.register(
+    'AdminAccountStateRequest',
+    AdminAccountStateRequest,
+  ),
+  AdminRoleRequest: registry.register('AdminRoleRequest', AdminRoleRequest),
+  AdminUser: registry.register('AdminUser', AdminUser),
+  AdminUserListResponse: registry.register(
+    'AdminUserListResponse',
+    AdminUserListResponse,
   ),
   ErrorResponse: registry.register(
     'ErrorResponse',
@@ -67,6 +85,14 @@ const schemas = {
   OAuthProvidersResponse: registry.register(
     'OAuthProvidersResponse',
     OAuthProvidersResponse,
+  ),
+  PasswordResetConfirmRequest: registry.register(
+    'PasswordResetConfirmRequest',
+    PasswordResetConfirmRequest,
+  ),
+  PasswordResetRequest: registry.register(
+    'PasswordResetRequest',
+    PasswordResetRequest,
   ),
   PullConfigResponse: registry.register(
     'PullConfigResponse',
@@ -94,6 +120,14 @@ const schemas = {
     RefreshRotationRaceResponse,
   ),
   RegisterRequest: registry.register('RegisterRequest', RegisterRequest),
+  RequestEmailCodeRequest: registry.register(
+    'RequestEmailCodeRequest',
+    RequestEmailCodeRequest,
+  ),
+  RequestEmailCodeResponse: registry.register(
+    'RequestEmailCodeResponse',
+    RequestEmailCodeResponse,
+  ),
   RenameDeviceRequest: registry.register(
     'RenameDeviceRequest',
     RenameDeviceRequest,
@@ -130,6 +164,7 @@ registry.registerComponent('securitySchemes', 'bearerAuth', {
 const bearerSecurity = [{ bearerAuth: [] }];
 const providerParams = z.object({ provider: OAuthProvider });
 const deviceParams = z.object({ id: z.string().uuid() });
+const userParams = z.object({ id: z.string().uuid() });
 const snapshotParams = z.object({
   version: z.coerce.number().int().positive(),
 });
@@ -168,6 +203,63 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/auth/email-verification/request',
+  tags: ['auth'],
+  operationId: 'requestRegistrationEmailCode',
+  summary: 'Send a registration email verification code',
+  request: {
+    body: {
+      required: true,
+      content: jsonContent(schemas.RequestEmailCodeRequest),
+    },
+  },
+  responses: {
+    200: jsonResponse('The request was accepted.', schemas.RequestEmailCodeResponse),
+    400: validationError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/password-reset/request',
+  tags: ['auth'],
+  operationId: 'requestPasswordReset',
+  summary: 'Request a password reset code without revealing account existence',
+  request: {
+    body: {
+      required: true,
+      content: jsonContent(schemas.PasswordResetRequest),
+    },
+  },
+  responses: {
+    200: jsonResponse('The request was accepted.', schemas.RequestEmailCodeResponse),
+    400: validationError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/password-reset/confirm',
+  tags: ['auth'],
+  operationId: 'confirmPasswordReset',
+  summary: 'Set a new password with a one-time email code',
+  request: {
+    body: {
+      required: true,
+      content: jsonContent(schemas.PasswordResetConfirmRequest),
+    },
+  },
+  responses: {
+    204: { description: 'The password was changed and sessions revoked.' },
+    400: validationError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/auth/register',
   tags: ['auth'],
   operationId: 'registerAccount',
@@ -179,6 +271,85 @@ registry.registerPath({
     201: jsonResponse('The account was created.', schemas.MeResponse),
     400: validationError,
     409: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/users',
+  tags: ['admin'],
+  operationId: 'listAdminUsers',
+  summary: 'List account metadata for administrators',
+  security: bearerSecurity,
+  responses: {
+    200: jsonResponse('The account metadata list.', schemas.AdminUserListResponse),
+    401: genericError,
+    403: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/users/{id}/state',
+  tags: ['admin'],
+  operationId: 'setAdminUserState',
+  summary: 'Enable or disable a user account',
+  security: bearerSecurity,
+  request: {
+    params: userParams,
+    body: {
+      required: true,
+      content: jsonContent(schemas.AdminAccountStateRequest),
+    },
+  },
+  responses: {
+    204: { description: 'The account state was updated.' },
+    400: validationError,
+    401: genericError,
+    403: genericError,
+    404: genericError,
+    409: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/users/{id}/role',
+  tags: ['admin'],
+  operationId: 'setAdminUserRole',
+  summary: 'Change a user role',
+  security: bearerSecurity,
+  request: {
+    params: userParams,
+    body: { required: true, content: jsonContent(schemas.AdminRoleRequest) },
+  },
+  responses: {
+    204: { description: 'The account role was updated.' },
+    400: validationError,
+    401: genericError,
+    403: genericError,
+    404: genericError,
+    409: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/users/{id}/revoke-sessions',
+  tags: ['admin'],
+  operationId: 'revokeAdminUserSessions',
+  summary: 'Revoke all sessions for a user',
+  security: bearerSecurity,
+  request: { params: userParams },
+  responses: {
+    204: { description: 'The user sessions were revoked.' },
+    401: genericError,
+    403: genericError,
+    404: genericError,
     429: rateLimited,
   },
 });

@@ -71,6 +71,7 @@ export class SyncService {
           dto.baseVersion,
           dto.document,
           sizeBytes,
+          `配置同步推送；基于云端版本 v${dto.baseVersion}。`,
         );
         return result;
       });
@@ -133,6 +134,7 @@ export class SyncService {
         createdAt: s.createdAt.toISOString(),
         deviceId: s.deviceId,
         deviceName: s.device?.name ?? null,
+        note: s.note,
         sizeBytes: s.sizeBytes,
       })),
     };
@@ -161,6 +163,7 @@ export class SyncService {
           dto.baseVersion,
           snapshot.document as ConfigDocument,
           this.assertConfigSize(snapshot.document),
+          `从配置快照 v${version} 回滚；回滚前云端版本为 v${dto.baseVersion}。`,
         );
       });
     } catch (error) {
@@ -179,6 +182,7 @@ export class SyncService {
     baseVersion: number,
     document: ConfigDocument,
     sizeBytes: number,
+    note: string,
   ): Promise<PushConfigResponse> {
     const current = await tx.userConfig.findUnique({ where: { userId } });
     const currentVersion = current?.version ?? 0;
@@ -227,6 +231,7 @@ export class SyncService {
         version: newVersion,
         document: json,
         sizeBytes,
+        note,
         deviceId,
         createdAt: now,
       },

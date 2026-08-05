@@ -3,7 +3,10 @@ import {
   MeResponse,
   OAuthExchangeRequest,
   OAuthProvidersResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
   RegisterRequest,
+  RequestEmailCodeResponse,
   TokenPairResponse,
 } from "@godgesture/shared";
 import {
@@ -17,6 +20,36 @@ export type LogoutOutcome = "revoked" | "local_only";
 
 export function registerAccount(input: RegisterRequest): Promise<MeResponse> {
   return apiRequest(MeResponse, "/auth/register", {
+    method: "POST",
+    body: input,
+    auth: false,
+  });
+}
+
+export function requestRegistrationCode(
+  email: string,
+): Promise<RequestEmailCodeResponse> {
+  return apiRequest(RequestEmailCodeResponse, "/auth/email-verification/request", {
+    method: "POST",
+    body: { email, purpose: "register" },
+    auth: false,
+  });
+}
+
+export function requestPasswordResetCode(
+  input: PasswordResetRequest,
+): Promise<RequestEmailCodeResponse> {
+  return apiRequest(RequestEmailCodeResponse, "/auth/password-reset/request", {
+    method: "POST",
+    body: input,
+    auth: false,
+  });
+}
+
+export function confirmPasswordReset(
+  input: PasswordResetConfirmRequest,
+): Promise<void> {
+  return apiRequestVoid("/auth/password-reset/confirm", {
     method: "POST",
     body: input,
     auth: false,

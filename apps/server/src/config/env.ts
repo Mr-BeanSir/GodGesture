@@ -32,12 +32,28 @@ const BaseEnvSchema = z.object({
   /** 刷新令牌有效期(天),默认 30 天 */
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
+  /** 邮箱验证码有效期/重发冷却/失败尝试上限 */
+  EMAIL_CODE_TTL_SEC: z.coerce.number().int().positive().max(3600).default(600),
+  EMAIL_CODE_COOLDOWN_SEC: z.coerce.number().int().positive().max(3600).default(60),
+  EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().max(20).default(5),
+
+  /** 管理员引导邮箱；已验证账户在启动时提升为 admin，不会自动创建账户 */
+  ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
+
   /** 服务对外基址(1Panel 反代后的 https 域名),用于拼 OAuth 回调地址 */
   PUBLIC_BASE_URL: z.string().url().default('http://127.0.0.1:3000'),
   /** Web 控制台源(CORS 与 OAuth redirect_uri 白名单) */
   WEB_CONSOLE_ORIGIN: z.string().url().optional(),
   /** 额外 CORS 源,逗号分隔(可选) */
   CORS_ORIGINS: z.string().optional(),
+
+  // ---- SMTP:验证码与密码找回邮件 ----
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().max(65535).default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().min(1).optional(),
+  SMTP_SECURE: bool,
 
   // ---- OAuth:GitHub / Google 先行 ----
   OAUTH_GITHUB_CLIENT_ID: z.string().optional(),

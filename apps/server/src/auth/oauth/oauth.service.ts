@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
@@ -243,6 +244,13 @@ export class OAuthService {
     ) {
       throw new BadRequestException({ error: 'invalid_code_verifier' });
     }
+    const user = await this.prisma.user.findUnique({
+      where: { id: grant.userId },
+      select: { disabledAt: true },
+    });
+    if (user?.disabledAt) {
+      throw new UnauthorizedException({ error: 'account_disabled' });
+    }
     const device = await this.prisma.device.create({
       data: {
         userId: grant.userId,
@@ -277,6 +285,9 @@ export class OAuthService {
       const byEmail = await this.prisma.user.findUnique({
         where: { email: identity.email },
       });
+      if (byEmail?.disabledAt) {
+        throw new UnauthorizedException({ error: 'account_disabled' });
+      }
       if (byEmail?.passwordHash) {
         // 不按邮箱自动关联到"本地密码账户"。
         //

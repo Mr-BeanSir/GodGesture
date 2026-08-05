@@ -82,10 +82,17 @@ export class TokenService {
   async rotateRefreshToken(rawToken: string): Promise<TokenPairResponse> {
     const record = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: sha256Hex(rawToken) },
-      include: { device: true },
+      include: {
+        device: {
+          include: { user: { select: { disabledAt: true } } },
+        },
+      },
     });
     if (!record) {
       throw new UnauthorizedException({ error: 'invalid_refresh_token' });
+    }
+    if (record.device.user.disabledAt) {
+      throw new UnauthorizedException({ error: 'account_disabled' });
     }
     if (record.revokedAt) {
       return this.handleReplay(record.deviceId, record.revokedAt);
@@ -150,6 +157,14 @@ export class TokenService {
   async revokeDeviceTokens(deviceId: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { deviceId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** 密码变更或管理员禁用账户时撤销账户的全部设备会话。 */
+  async revokeUserTokens(userId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { device: { userId }, revokedAt: null },
       data: { revokedAt: new Date() },
     });
   }

@@ -45,6 +45,12 @@ export const router = createRouter({
           name: "security",
           component: () => import("../views/SecurityView.vue"),
         },
+        {
+          path: "admin",
+          name: "admin",
+          component: () => import("../views/AdminView.vue"),
+          meta: { admin: true },
+        },
       ],
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },
@@ -55,6 +61,11 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.meta.public) return true;
   const auth = useAuthStore();
-  if (await auth.ensureUser()) return true;
+  if (await auth.ensureUser()) {
+    if (to.meta.admin && auth.user?.role !== "admin") {
+      return { name: "overview" };
+    }
+    return true;
+  }
   return { name: "login", query: { redirect: to.fullPath } };
 });

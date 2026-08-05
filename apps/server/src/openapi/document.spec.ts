@@ -1,6 +1,7 @@
 import { RequestMethod, Type } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { AppController } from '../app.controller';
+import { AdminController } from '../admin/admin.controller';
 import { AuthController } from '../auth/auth.controller';
 import { OAuthController } from '../auth/oauth/oauth.controller';
 import { DevicesController } from '../devices/devices.controller';
@@ -22,7 +23,14 @@ type HttpMethod = (typeof HTTP_METHODS)[number];
 
 const EXPECTED_OPERATIONS: ReadonlyArray<readonly [HttpMethod, string]> = [
   ['get', '/health'],
+  ['post', '/auth/email-verification/request'],
+  ['post', '/auth/password-reset/request'],
+  ['post', '/auth/password-reset/confirm'],
   ['post', '/auth/register'],
+  ['get', '/admin/users'],
+  ['post', '/admin/users/{id}/state'],
+  ['post', '/admin/users/{id}/role'],
+  ['post', '/admin/users/{id}/revoke-sessions'],
   ['post', '/auth/login'],
   ['post', '/auth/refresh'],
   ['post', '/auth/logout'],
@@ -43,6 +51,10 @@ const EXPECTED_OPERATIONS: ReadonlyArray<readonly [HttpMethod, string]> = [
 const PROTECTED_OPERATIONS = new Set([
   'post /auth/logout',
   'get /auth/me',
+  'get /admin/users',
+  'post /admin/users/{id}/state',
+  'post /admin/users/{id}/role',
+  'post /admin/users/{id}/revoke-sessions',
   'get /devices',
   'patch /devices/{id}',
   'delete /devices/{id}',
@@ -54,6 +66,7 @@ const PROTECTED_OPERATIONS = new Set([
 
 const CONTROLLERS: Type[] = [
   AppController,
+  AdminController,
   AuthController,
   OAuthController,
   DevicesController,

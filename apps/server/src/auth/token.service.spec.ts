@@ -40,7 +40,7 @@ describe('TokenService(刷新令牌轮换)', () => {
     expiresAt: new Date(now + 86_400_000),
     revokedAt: null,
     createdAt: new Date(now - 1000),
-    device: { id: 'dev-1', userId: 'user-1' },
+    device: { id: 'dev-1', userId: 'user-1', user: { disabledAt: null } },
   });
 
   beforeEach(() => {
@@ -142,6 +142,27 @@ describe('TokenService(刷新令牌轮换)', () => {
       UnauthorizedException,
     );
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('账户已停用 → refresh 立即拒绝且不启动轮换', async () => {
+    const raw = 'disabled-account-token';
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      ...activeRecord(raw),
+      device: {
+        ...activeRecord(raw).device,
+        user: { disabledAt: new Date() },
+      },
+    });
+
+    const error = await service
+      .rotateRefreshToken(raw)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toEqual({
+      error: 'account_disabled',
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('并发轮换竞争(CAS loser)→ 409 race 且不撤销设备 token family', async () => {

@@ -24,22 +24,10 @@ async function bootstrap(): Promise<void> {
   app.use(helmet());
   app.useGlobalFilters(new PrismaExceptionFilter());
 
-  // CORS:Web 控制台源 + 额外配置源;Tauri 桌面端 WebView 源默认放行
-  const origins = new Set<string>([
-    'tauri://localhost',
-    'http://tauri.localhost',
-    'https://tauri.localhost',
-  ]);
-  const webConsole = config.get('WEB_CONSOLE_ORIGIN', { infer: true });
-  if (webConsole) origins.add(webConsole);
-  const extra = config.get('CORS_ORIGINS', { infer: true });
-  if (extra) {
-    for (const origin of extra.split(',')) {
-      const trimmed = origin.trim();
-      if (trimmed) origins.add(trimmed);
-    }
-  }
-  app.enableCors({ origin: [...origins], credentials: true });
+  // Desktop and Web Console use bearer credentials, not browser cookies. Keep the
+  // API reachable from custom/self-hosted console origins and avoid the invalid
+  // wildcard + credentials combination rejected by browsers.
+  app.enableCors({ origin: '*', credentials: false });
 
   // 生产环境不暴露 API 枚举面；协议仍以 shared zod Schema 为准。
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {

@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type { OAuthProvider } from "@godgesture/shared";
-import { fetchOAuthProviders, login, registerAccount } from "../api/auth";
+import {
+  confirmPasswordReset,
+  fetchOAuthProviders,
+  login,
+  registerAccount,
+  requestPasswordResetCode,
+  requestRegistrationCode,
+} from "../api/auth";
 import { apiUrl } from "../api/client";
 import { detectBrowserDeviceName } from "../utils/device";
 import { errorMessageKey } from "../utils/errors";
@@ -17,9 +24,19 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const activeTab = ref<"login" | "register">("login");
-const form = reactive({ email: "", password: "" });
+type LoginMode = "login" | "register" | "forgot";
+const activeMode = ref<LoginMode>(
+  route.query.label === "register" ? "register" : "login",
+);
+const form = reactive({
+  email: "",
+  password: "",
+  verificationCode: "",
+});
 const submitting = ref(false);
+const codeSending = ref(false);
+const cooldown = ref(0);
+let cooldownTimer: ReturnType<typeof setInterval> | undefined;
 
 const enabledProviders = ref<OAuthProvider[]>([]);
 const providersLoading = ref(true);
@@ -45,21 +62,72 @@ function redirectTarget(): string {
     : "/";
 }
 
+function startCooldown(seconds: number): void {
+  cooldown.value = Math.max(1, seconds);
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  cooldownTimer = setInterval(() => {
+    cooldown.value -= 1;
+    if (cooldown.value <= 0 && cooldownTimer) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = undefined;
+    }
+  }, 1000);
+}
+
+function stopCooldown(): void {
+  if (cooldownTimer) {
+    clearInterval(cooldownTimer);
+    cooldownTimer = undefined;
+  }
+}
+
+async function sendVerificationCode(): Promise<void> {
+  if (codeSending.value || cooldown.value > 0 || !form.email) return;
+  codeSending.value = true;
+  try {
+    const result =
+      activeMode.value === "register"
+        ? await requestRegistrationCode(form.email)
+        : await requestPasswordResetCode({ email: form.email });
+    startCooldown(result.retryAfterSec);
+    ElMessage.success(t("auth.codeSent"));
+  } catch (err) {
+    ElMessage.error(t(errorMessageKey(err)));
+  } finally {
+    codeSending.value = false;
+  }
+}
+
 async function onSubmit(): Promise<void> {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    if (activeTab.value === "login") {
+    if (activeMode.value === "login") {
       await login({
         email: form.email,
         password: form.password,
         device: { name: detectBrowserDeviceName(), platform: "web" },
       });
       void router.push(redirectTarget());
-    } else {
-      await registerAccount({ email: form.email, password: form.password });
+    } else if (activeMode.value === "register") {
+      await registerAccount({
+        email: form.email,
+        password: form.password,
+        verificationCode: form.verificationCode,
+      });
       ElMessage.success(t("auth.registerSuccess"));
-      activeTab.value = "login";
+      activeMode.value = "login";
+      form.verificationCode = "";
+    } else {
+      await confirmPasswordReset({
+        email: form.email,
+        password: form.password,
+        verificationCode: form.verificationCode,
+      });
+      ElMessage.success(t("auth.passwordResetSuccess"));
+      activeMode.value = "login";
+      form.password = "";
+      form.verificationCode = "";
     }
   } catch (err) {
     ElMessage.error(t(errorMessageKey(err)));
@@ -68,31 +136,55 @@ async function onSubmit(): Promise<void> {
   }
 }
 
+function changeMode(mode: LoginMode): void {
+  activeMode.value = mode;
+  form.password = "";
+  form.verificationCode = "";
+  cooldown.value = 0;
+}
+
 async function startOAuth(provider: OAuthProvider): Promise<void> {
   try {
     const { session, challenge } = await createOAuthPkce();
     saveOAuthPkceSession(sessionStorage, session);
-    const redirectUri = `${window.location.origin}/oauth/callback`;
+    const redirectUri = window.location.origin + "/oauth/callback";
     const query = new URLSearchParams({
       redirect_uri: redirectUri,
       state: session.state,
       code_challenge: challenge,
       code_challenge_method: "S256",
     });
-    window.location.href = `${apiUrl(`/auth/oauth/${provider}/authorize`)}?${query}`;
+    window.location.href =
+      apiUrl("/auth/oauth/" + provider + "/authorize") + "?" + query;
   } catch (err) {
     ElMessage.error(t(errorMessageKey(err)));
   }
 }
 
 onMounted(loadOAuthProviders);
+onBeforeUnmount(stopCooldown);
 </script>
 
 <template>
   <div class="login-page">
     <el-card class="login-card">
-      <h1 class="title">{{ t("app.title") }}</h1>
-      <el-tabs v-model="activeTab">
+      <div class="login-heading">
+        <span class="login-kicker">{{ t("app.title") }}</span>
+        <h1 class="title">
+          {{
+            activeMode === "forgot"
+              ? t("auth.passwordReset")
+              : activeMode === "register"
+                ? t("auth.register")
+                : t("auth.login")
+          }}
+        </h1>
+      </div>
+      <el-tabs
+        v-if="activeMode !== 'forgot'"
+        :model-value="activeMode"
+        @update:model-value="changeMode($event as LoginMode)"
+      >
         <el-tab-pane :label="t('auth.login')" name="login" />
         <el-tab-pane :label="t('auth.register')" name="register" />
       </el-tabs>
@@ -105,14 +197,41 @@ onMounted(loadOAuthProviders);
             name="email"
           />
         </el-form-item>
+        <el-form-item
+          v-if="activeMode !== 'login'"
+          :label="t('auth.verificationCode')"
+        >
+          <div class="code-row">
+            <el-input
+              v-model="form.verificationCode"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+              name="verificationCode"
+            />
+            <el-button
+              :loading="codeSending"
+              :disabled="!form.email || cooldown > 0"
+              @click="sendVerificationCode"
+            >
+              {{
+                cooldown > 0
+                  ? t("auth.codeCountdown", { seconds: cooldown })
+                  : t("auth.sendCode")
+              }}
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item :label="t('auth.password')">
           <el-input
             v-model="form.password"
             type="password"
             show-password
-            :placeholder="activeTab === 'register' ? t('auth.passwordHint') : ''"
+            :placeholder="
+              activeMode === 'login' ? '' : t('auth.passwordHint')
+            "
             :autocomplete="
-              activeTab === 'login' ? 'current-password' : 'new-password'
+              activeMode === 'login' ? 'current-password' : 'new-password'
             "
             name="password"
           />
@@ -124,34 +243,56 @@ onMounted(loadOAuthProviders);
           :loading="submitting"
         >
           {{
-            activeTab === "login"
+            activeMode === "login"
               ? t("auth.loginAction")
-              : t("auth.registerAction")
+              : activeMode === "register"
+                ? t("auth.registerAction")
+                : t("auth.passwordResetAction")
           }}
         </el-button>
       </el-form>
-      <el-divider>{{ t("auth.oauthDivider") }}</el-divider>
-      <div v-loading="providersLoading" class="oauth-buttons">
+      <div class="secondary-actions">
         <el-button
-          v-for="provider in enabledProviders"
-          :key="provider"
-          @click="startOAuth(provider)"
+          v-if="activeMode === 'login'"
+          link
+          type="primary"
+          @click="changeMode('forgot')"
         >
-          {{ t(`provider.${provider}`) }}
+          {{ t("auth.forgotPassword") }}
         </el-button>
-        <template v-if="!providersLoading && providersUnavailable">
-          <span class="oauth-status">{{ t("auth.oauthUnavailable") }}</span>
-          <el-button text type="primary" @click="loadOAuthProviders">
-            {{ t("common.retry") }}
-          </el-button>
-        </template>
-        <span
-          v-else-if="!providersLoading && enabledProviders.length === 0"
-          class="oauth-status"
+        <el-button
+          v-else-if="activeMode === 'forgot'"
+          link
+          type="primary"
+          @click="changeMode('login')"
         >
-          {{ t("auth.oauthNoneAvailable") }}
-        </span>
+          {{ t("auth.backToLogin") }}
+        </el-button>
       </div>
+      <template v-if="activeMode === 'login'">
+        <el-divider>{{ t("auth.oauthDivider") }}</el-divider>
+        <div v-loading="providersLoading" class="oauth-buttons">
+          <el-button
+            v-for="provider in enabledProviders"
+            :key="provider"
+            @click="startOAuth(provider)"
+          >
+            {{ t("provider." + provider) }}
+          </el-button>
+          <template v-if="!providersLoading && providersUnavailable">
+            <span class="oauth-status">{{ t("auth.oauthUnavailable") }}</span>
+            <el-button text type="primary" @click="loadOAuthProviders">
+              {{ t("common.retry") }}
+            </el-button>
+          </template>
+          <span
+            v-else-if="!providersLoading && enabledProviders.length === 0"
+            class="oauth-status"
+          >
+            {{ t("auth.oauthNoneAvailable") }}
+          </span>
+        </div>
+      </template>
     </el-card>
   </div>
 </template>
@@ -162,21 +303,47 @@ onMounted(loadOAuthProviders);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
   background-color: var(--el-bg-color-page);
 }
 
 .login-card {
-  width: 380px;
+  width: min(420px, 100%);
+}
+
+.login-heading {
+  margin-bottom: 10px;
+}
+
+.login-kicker {
+  color: var(--el-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .title {
-  margin: 0 0 12px;
-  font-size: 20px;
-  text-align: center;
+  margin: 4px 0 0;
+  font-size: 22px;
 }
 
 .submit {
   width: 100%;
+}
+
+.code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  gap: 8px;
+}
+
+.secondary-actions {
+  display: flex;
+  justify-content: center;
+  min-height: 32px;
+  padding-top: 4px;
 }
 
 .oauth-buttons {
@@ -194,5 +361,11 @@ onMounted(loadOAuthProviders);
 .oauth-status {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+@media (max-width: 420px) {
+  .code-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

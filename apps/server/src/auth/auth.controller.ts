@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   HttpCode,
@@ -11,6 +12,10 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   LoginRequest,
   MeResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
+  RequestEmailCodeRequest,
+  RequestEmailCodeResponse,
   RefreshRequest,
   RegisterRequest,
   TokenPairResponse,
@@ -32,11 +37,45 @@ export class AuthController {
 
   @Post('register')
   @RateLimit('register', 3, 60 * 60 * 1000)
-  @ApiOperation({ summary: '邮箱+密码注册(argon2id)' })
+  @ApiOperation({ summary: '邮箱验证码+密码注册(argon2id)' })
   register(
     @Body(new ZodValidationPipe(RegisterRequest)) dto: RegisterRequest,
   ): Promise<MeResponse> {
     return this.auth.register(dto);
+  }
+
+  @Post('email-verification/request')
+  @RateLimit('email-verification', 5, 3 * 60 * 1000)
+  @ApiOperation({ summary: '发送邮箱注册验证码' })
+  requestRegistrationCode(
+    @Body(new ZodValidationPipe(RequestEmailCodeRequest))
+    dto: RequestEmailCodeRequest,
+  ): Promise<RequestEmailCodeResponse> {
+    if (dto.purpose !== 'register') {
+      throw new BadRequestException({ error: 'invalid_email_code_purpose' });
+    }
+    return this.auth.requestRegistrationCode(dto.email);
+  }
+
+  @Post('password-reset/request')
+  @RateLimit('password-reset-request', 5, 3 * 60 * 1000)
+  @ApiOperation({ summary: '请求密码找回验证码(不泄露邮箱是否存在)' })
+  requestPasswordReset(
+    @Body(new ZodValidationPipe(PasswordResetRequest))
+    dto: PasswordResetRequest,
+  ): Promise<RequestEmailCodeResponse> {
+    return this.auth.requestPasswordReset(dto);
+  }
+
+  @Post('password-reset/confirm')
+  @RateLimit('password-reset-confirm', 5, 10 * 60 * 1000)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '使用邮箱验证码设置新密码并撤销既有会话' })
+  async confirmPasswordReset(
+    @Body(new ZodValidationPipe(PasswordResetConfirmRequest))
+    dto: PasswordResetConfirmRequest,
+  ): Promise<void> {
+    await this.auth.confirmPasswordReset(dto);
   }
 
   @Post('login')

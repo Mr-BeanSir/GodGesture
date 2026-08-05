@@ -1,12 +1,17 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   LoginRequest,
   MeResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
+  RequestEmailCodeResponse,
   RegisterRequest,
   TokenPairResponse,
 } from '@godgesture/shared';
@@ -22,6 +27,8 @@ import {
   passwordHashUpgradeOptions,
   verifyPassword,
 } from './password-hash';
+import { EmailVerificationService } from './email-verification.service';
+import type { Env } from '../config/env';
 
 @Injectable()
 export class AuthService {
@@ -30,9 +37,16 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
+    private readonly emailVerification?: EmailVerificationService,
+    private readonly config?: ConfigService<Env, true>,
   ) {}
 
   async register(dto: RegisterRequest): Promise<MeResponse> {
+    if (this.emailVerification && dto.verificationCode) {
+      await this.emailVerification.consume(dto.email, 'register', dto.verificationCode);
+    } else if (this.emailVerification) {
+      throw new BadRequestException({ error: 'verification_code_required' });
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -40,11 +54,16 @@ export class AuthService {
       throw new ConflictException({ error: 'email_taken' });
     }
     let user;
+    const bootstrapEmail = this.config?.get('ADMIN_BOOTSTRAP_EMAIL', { infer: true });
     try {
       user = await this.prisma.user.create({
         data: {
           email: dto.email,
           passwordHash: await hashPassword(dto.password),
+          emailVerifiedAt: new Date(),
+          ...(bootstrapEmail && dto.email === bootstrapEmail.toLowerCase()
+            ? { role: 'admin' as const }
+            : {}),
         },
       });
     } catch (error) {
@@ -61,6 +80,8 @@ export class AuthService {
       email: user.email,
       createdAt: user.createdAt.toISOString(),
       linkedProviders: [],
+      role: user.role ?? 'user',
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
   }
 
@@ -77,8 +98,14 @@ export class AuthService {
     } catch (error) {
       this.logger.error('Argon2 password verification failed', error);
     }
+    if (user?.disabledAt) {
+      throw new UnauthorizedException({ error: 'account_disabled' });
+    }
     if (!user?.passwordHash || !passwordMatches) {
       throw new UnauthorizedException({ error: 'invalid_credentials' });
+    }
+    if (user.emailVerifiedAt === null) {
+      throw new UnauthorizedException({ error: 'email_not_verified' });
     }
 
     const upgradeOptions = passwordHashUpgradeOptions(user.passwordHash);
@@ -128,6 +155,51 @@ export class AuthService {
       email: user.email,
       createdAt: user.createdAt.toISOString(),
       linkedProviders: user.oauthAccounts.map((a) => a.provider),
+      role: user.role ?? 'user',
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
+  }
+
+  requestRegistrationCode(email: string): Promise<RequestEmailCodeResponse> {
+    if (!this.emailVerification) {
+      throw new BadRequestException({ error: 'email_verification_unavailable' });
+    }
+    return this.emailVerification.issue(email, 'register');
+  }
+
+  async requestPasswordReset(dto: PasswordResetRequest): Promise<RequestEmailCodeResponse> {
+    if (!this.emailVerification) {
+      throw new BadRequestException({ error: 'email_verification_unavailable' });
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { passwordHash: true, disabledAt: true },
+    });
+    if (!user?.passwordHash || user.disabledAt) {
+      return this.emailVerification.acceptedResponse();
+    }
+    return this.emailVerification.issue(dto.email, 'resetPassword');
+  }
+
+  async confirmPasswordReset(dto: PasswordResetConfirmRequest): Promise<void> {
+    if (!this.emailVerification) {
+      throw new BadRequestException({ error: 'email_verification_unavailable' });
+    }
+    await this.emailVerification.consume(dto.email, 'resetPassword', dto.verificationCode);
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { id: true, passwordHash: true, disabledAt: true },
+    });
+    if (!user?.passwordHash || user.disabledAt) {
+      throw new BadRequestException({ error: 'verification_code_invalid' });
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(dto.password),
+        emailVerifiedAt: new Date(),
+      },
+    });
+    await this.tokens.revokeUserTokens(user.id);
   }
 }

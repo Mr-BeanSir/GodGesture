@@ -59,10 +59,17 @@ export class JwtAuthGuard implements CanActivate {
     // token and must remain visible to the global error handling/monitoring.
     const device = await this.prisma.device.findUnique({
       where: { id: payload.dev },
-      select: { id: true, userId: true },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { disabledAt: true } },
+      },
     });
     if (!device || device.userId !== payload.sub) {
       throw new UnauthorizedException({ error: 'invalid_access_token' });
+    }
+    if (device.user.disabledAt) {
+      throw new UnauthorizedException({ error: 'account_disabled' });
     }
 
     req.auth = { userId: payload.sub, deviceId: device.id };

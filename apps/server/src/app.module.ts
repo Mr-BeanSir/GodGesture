@@ -8,6 +8,7 @@ import { SyncModule } from './sync/sync.module';
 import { DevicesModule } from './devices/devices.module';
 import { AppController } from './app.controller';
 import { RateLimitGuard } from './common/rate-limit.guard';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { RateLimitGuard } from './common/rate-limit.guard';
     AuthModule,
     SyncModule,
     DevicesModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: RateLimitGuard }],

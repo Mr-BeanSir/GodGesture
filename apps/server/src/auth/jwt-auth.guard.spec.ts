@@ -37,6 +37,7 @@ describe('JwtAuthGuard(验签 + 设备即时撤销)', () => {
     prisma.device.findUnique.mockResolvedValue({
       id: device1,
       userId: user1,
+      user: { disabledAt: null },
     });
     const req = request();
 
@@ -44,7 +45,11 @@ describe('JwtAuthGuard(验签 + 设备即时撤销)', () => {
 
     expect(prisma.device.findUnique).toHaveBeenCalledWith({
       where: { id: device1 },
-      select: { id: true, userId: true },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { disabledAt: true } },
+      },
     });
     expect(req.auth).toEqual({ userId: user1, deviceId: device1 });
   });
@@ -69,11 +74,30 @@ describe('JwtAuthGuard(验签 + 设备即时撤销)', () => {
     prisma.device.findUnique.mockResolvedValue({
       id: device2,
       userId: user2,
+      user: { disabledAt: null },
     });
 
     await expect(guard.canActivate(contextFor(request()))).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+
+  it('账户已停用 → 现有 access token 立即失效', async () => {
+    jwt.verifyAsync.mockResolvedValue({ sub: user1, dev: device1 });
+    prisma.device.findUnique.mockResolvedValue({
+      id: device1,
+      userId: user1,
+      user: { disabledAt: new Date() },
+    });
+
+    const error = await guard
+      .canActivate(contextFor(request()))
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toEqual({
+      error: 'account_disabled',
+    });
   });
 
   it('设备查询的数据库异常保持原样,不误报为 token invalid', async () => {

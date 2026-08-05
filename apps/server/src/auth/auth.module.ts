@@ -13,6 +13,7 @@ import { GithubOAuthProvider } from './oauth/github.provider';
 import { GoogleOAuthProvider } from './oauth/google.provider';
 import { WechatOAuthProvider } from './oauth/wechat.provider';
 import { QqOAuthProvider } from './oauth/qq.provider';
+import { EmailVerificationService } from './email-verification.service';
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { QqOAuthProvider } from './oauth/qq.provider';
     GoogleOAuthProvider,
     WechatOAuthProvider,
     QqOAuthProvider,
+    EmailVerificationService,
   ],
-  exports: [TokenService, JwtAuthGuard],
+  exports: [TokenService, JwtAuthGuard, EmailVerificationService],
 })
 export class AuthModule {}

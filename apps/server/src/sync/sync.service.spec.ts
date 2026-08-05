@@ -8,7 +8,6 @@ import { Prisma } from '@prisma/client';
 import {
   ConfigDocument as ConfigDocumentSchema,
   MAX_CONFIG_DOCUMENT_BYTES,
-  MAX_NODE_PLUGIN_FILE_BYTES,
   configDocumentSizeBytes,
   type ConfigDocument,
 } from '@godgesture/shared';
@@ -23,28 +22,11 @@ import { PrismaService } from '../prisma/prisma.service';
 const doc = { formatVersion: 1, apps: [] } as unknown as ConfigDocument;
 
 function sizedDocument(targetBytes: number): ConfigDocument {
-  const nodePlugins = Array.from({ length: 5 }, (_, pluginIndex) => ({
-    id: `30000000-0000-4000-8000-${pluginIndex.toString().padStart(12, '0')}`,
-    name: `Plugin ${pluginIndex}`,
-    entry: '0.mjs',
-    files: Object.fromEntries(
-      Array.from({ length: 4 }, (_, fileIndex) => [`${fileIndex}.mjs`, '']),
-    ),
-    packageJson: '{"private":true,"type":"module"}',
-  }));
-  const document = ConfigDocumentSchema.parse({ nodePlugins });
-  let remaining = targetBytes - configDocumentSizeBytes(document);
-  if (remaining < 0)
-    throw new Error('target is smaller than the document shell');
-  for (const plugin of document.nodePlugins) {
-    for (const path of Object.keys(plugin.files)) {
-      if (remaining === 0) break;
-      const length = Math.min(remaining, MAX_NODE_PLUGIN_FILE_BYTES);
-      plugin.files[path] = 'x'.repeat(length);
-      remaining -= length;
-    }
-  }
-  if (remaining !== 0 || configDocumentSizeBytes(document) !== targetBytes) {
+  const shell = ConfigDocumentSchema.parse({});
+  const padding = targetBytes - configDocumentSizeBytes(shell) - 13;
+  if (padding < 0) throw new Error('target is smaller than the document shell');
+  const document = { ...shell, padding: 'x'.repeat(padding) } as ConfigDocument;
+  if (configDocumentSizeBytes(document) !== targetBytes) {
     throw new Error('could not construct an exact-size valid document');
   }
   return document;
@@ -359,7 +341,11 @@ describe('SyncService(乐观并发 + 快照)', () => {
         data: expect.objectContaining({ version: 10, document: snapshotDoc }),
       });
       expect(tx.configSnapshot.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ version: 10, document: snapshotDoc }),
+        data: expect.objectContaining({
+          version: 10,
+          document: snapshotDoc,
+          note: '从配置快照 v3 回滚；回滚前云端版本为 v9。',
+        }),
       });
     });
 
@@ -454,6 +440,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
           createdAt,
           deviceId: 'dev-1',
           device: { name: '工作机' },
+          note: '',
           sizeBytes: 1024,
         },
         {
@@ -461,6 +448,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
           createdAt,
           deviceId: null,
           device: null,
+          note: '',
           sizeBytes: 512,
         },
       ]);
@@ -480,6 +468,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
           createdAt: createdAt.toISOString(),
           deviceId: 'dev-1',
           deviceName: '工作机',
+          note: '',
           sizeBytes: 1024,
         },
         {
@@ -487,6 +476,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
           createdAt: createdAt.toISOString(),
           deviceId: null,
           deviceName: null,
+          note: '',
           sizeBytes: 512,
         },
       ]);

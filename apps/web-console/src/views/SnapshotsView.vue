@@ -124,6 +124,11 @@ onMounted(load);
               {{ row.deviceName ?? t("overview.unknownDevice") }}
             </template>
           </el-table-column>
+          <el-table-column :label="t('snapshots.note')" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.note || t("snapshots.noteEmpty") }}
+            </template>
+          </el-table-column>
           <el-table-column :label="t('snapshots.size')" width="120">
             <template #default="{ row }">{{ formatBytes(row.sizeBytes) }}</template>
           </el-table-column>

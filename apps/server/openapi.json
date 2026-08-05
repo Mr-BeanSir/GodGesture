@@ -48,9 +48,9 @@
           "formatVersion": {
             "type": "number",
             "enum": [
-              5
+              6
             ],
-            "default": 5
+            "default": 6
           },
           "global": {
             "type": "object",
@@ -560,12 +560,12 @@
                               "type": "string",
                               "format": "uuid"
                             },
-                            "exportName": {
+                            "actionId": {
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 64,
-                              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                              "default": "execute"
+                              "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                              "default": "default"
                             }
                           },
                           "required": [
@@ -1173,12 +1173,12 @@
                                 "type": "string",
                                 "format": "uuid"
                               },
-                              "exportName": {
+                              "actionId": {
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 64,
-                                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                                "default": "execute"
+                                "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                                "default": "default"
                               }
                             },
                             "required": [
@@ -1598,12 +1598,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -1985,12 +1985,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -2372,12 +2372,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -2759,12 +2759,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -3162,12 +3162,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -3549,12 +3549,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -3936,12 +3936,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -4323,12 +4323,12 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "exportName": {
+                          "actionId": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                            "default": "execute"
+                            "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                            "default": "default"
                           }
                         },
                         "required": [
@@ -4869,12 +4869,12 @@
                           "type": "string",
                           "format": "uuid"
                         },
-                        "exportName": {
+                        "actionId": {
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 64,
-                          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
-                          "default": "execute"
+                          "pattern": "^[A-Za-z0-9_$][A-Za-z0-9._$-]*$",
+                          "default": "default"
                         }
                       },
                       "required": [
@@ -4917,57 +4917,6 @@
               ]
             },
             "maxItems": 256,
-            "default": []
-          },
-          "nodePlugins": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64
-                },
-                "entry": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "default": "index.mjs"
-                },
-                "files": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "default": {
-                    "index.mjs": "export async function execute(context) {\n  await context.input.sendText(\"Hello from GodGesture\");\n}\n"
-                  }
-                },
-                "packageJson": {
-                  "type": "string",
-                  "default": "{\n  \"private\": true,\n  \"type\": \"module\"\n}"
-                },
-                "lockfile": {
-                  "type": "string",
-                  "nullable": true,
-                  "default": null
-                },
-                "allowLifecycleScripts": {
-                  "type": "boolean",
-                  "default": false
-                }
-              },
-              "required": [
-                "id",
-                "name"
-              ]
-            },
-            "maxItems": 32,
             "default": []
           },
           "preferences": {
@@ -5287,6 +5236,136 @@
           "maxBytes"
         ]
       },
+      "AdminAccountStateRequest": {
+        "type": "object",
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disabled"
+        ]
+      },
+      "AdminRoleRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deviceCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "emailVerified",
+          "disabled",
+          "createdAt",
+          "deviceCount"
+        ]
+      },
+      "AdminUserListResponse": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "email": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "email"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "admin"
+                  ]
+                },
+                "emailVerified": {
+                  "type": "boolean"
+                },
+                "disabled": {
+                  "type": "boolean"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "deviceCount": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "email",
+                "role",
+                "emailVerified",
+                "disabled",
+                "createdAt",
+                "deviceCount"
+              ]
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "users",
+          "total"
+        ]
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -5388,6 +5467,11 @@
                   "type": "string",
                   "nullable": true
                 },
+                "note": {
+                  "type": "string",
+                  "maxLength": 512,
+                  "default": ""
+                },
                 "sizeBytes": {
                   "type": "integer",
                   "minimum": 0
@@ -5474,13 +5558,25 @@
                 "qq"
               ]
             }
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "email",
           "createdAt",
-          "linkedProviders"
+          "linkedProviders",
+          "role",
+          "emailVerified"
         ]
       },
       "OAuthExchangeRequest": {
@@ -5543,6 +5639,41 @@
         },
         "required": [
           "providers"
+        ]
+      },
+      "PasswordResetConfirmRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "verificationCode": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "email",
+          "verificationCode",
+          "password"
+        ]
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
         ]
       },
       "PullConfigResponse": {
@@ -5684,11 +5815,61 @@
             "type": "string",
             "minLength": 8,
             "maxLength": 128
+          },
+          "verificationCode": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
           }
         },
         "required": [
           "email",
           "password"
+        ]
+      },
+      "RequestEmailCodeRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "register",
+              "resetPassword"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "purpose"
+        ]
+      },
+      "RequestEmailCodeResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "expiresInSec": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "retryAfterSec": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          }
+        },
+        "required": [
+          "accepted",
+          "expiresInSec",
+          "retryAfterSec"
         ]
       },
       "RenameDeviceRequest": {
@@ -5824,6 +6005,152 @@
         }
       }
     },
+    "/auth/email-verification/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "requestRegistrationEmailCode",
+        "summary": "Send a registration email verification code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestEmailCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestEmailCodeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password-reset/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "requestPasswordReset",
+        "summary": "Request a password reset code without revealing account existence",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestEmailCodeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "confirmPasswordReset",
+        "summary": "Set a new password with a one-time email code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The password was changed and sessions revoked."
+          },
+          "400": {
+            "description": "Request validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "tags": [
@@ -5863,6 +6190,332 @@
             }
           },
           "409": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "listAdminUsers",
+        "summary": "List account metadata for administrators",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account metadata list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/state": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "setAdminUserState",
+        "summary": "Enable or disable a user account",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The account state was updated."
+          },
+          "400": {
+            "description": "Request validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/role": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "setAdminUserRole",
+        "summary": "Change a user role",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The account role was updated."
+          },
+          "400": {
+            "description": "Request validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/revoke-sessions": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "revokeAdminUserSessions",
+        "summary": "Revoke all sessions for a user",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The user sessions were revoked."
+          },
+          "401": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "Request failed.",
             "content": {
               "application/json": {

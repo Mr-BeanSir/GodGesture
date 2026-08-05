@@ -10,6 +10,7 @@ import {
   Clock,
   Lock,
   SwitchButton,
+  UserFilled,
 } from "@element-plus/icons-vue";
 import { useAuthStore } from "../stores/auth";
 import { setLocale, type ConsoleLocale } from "../i18n";
@@ -25,6 +26,9 @@ const navItems = computed(() => [
   { name: "devices", label: t("nav.devices"), icon: Monitor },
   { name: "snapshots", label: t("nav.snapshots"), icon: Clock },
   { name: "security", label: t("nav.security"), icon: Lock },
+  ...(auth.user?.role === "admin"
+    ? [{ name: "admin", label: t("nav.admin"), icon: UserFilled }]
+    : []),
 ]);
 
 const activeName = computed(() => (route.name as string) ?? "overview");
