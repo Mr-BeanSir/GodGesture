@@ -4,9 +4,7 @@
 //! - 全局开关是总开关，关闭后所有应用都禁止手势;
 //! - 应用黑名单(gesturing_enabled=false)在路径开始前进一步拦截。
 
-use super::config::{
-    AppEntry, Command, ConfigDocument, GestureInput, GestureIntent, DEFAULT_APP_GROUP_ID,
-};
+use super::config::{AppEntry, Command, ConfigDocument, GestureInput, GestureIntent};
 use super::types::{Direction, Modifier, TriggerButton};
 
 /// 前台程序的平台标识(由平台层解析)
@@ -258,7 +256,7 @@ pub fn rub_edge_command<'c>(config: &'c ConfigDocument, edge: &str) -> Option<&'
 mod tests {
     use super::*;
     use crate::engine::config::{
-        GestureInput, GestureInputButton, GestureSpecConfig, WindowsBinding,
+        GestureInput, GestureInputButton, GestureSpecConfig, WindowsBinding, DEFAULT_APP_GROUP_ID,
     };
 
     fn intent(name: &str, trigger: TriggerButton, strokes: Vec<Direction>) -> GestureIntent {

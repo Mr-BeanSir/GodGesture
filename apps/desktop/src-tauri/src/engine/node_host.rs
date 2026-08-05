@@ -185,7 +185,7 @@ impl NodeHost {
         let action_id = diagnostic_identifier(message.get("handler"));
         let lifecycle = diagnostic_identifier(message.get("handler"));
         let started = Instant::now();
-        if let Err(_) = write_frame(&mut self.stdin, &message) {
+        if write_frame(&mut self.stdin, &message).is_err() {
             log::warn!(
                 target: "node.supervisor",
                 "event=ipc_failed code=write_failed pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle}"
