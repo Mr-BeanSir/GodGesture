@@ -20,6 +20,8 @@ const USER: MeResponse = {
   email: "user@example.test",
   createdAt: "2026-07-28T00:00:00.000Z",
   linkedProviders: [],
+  role: "user",
+  emailVerified: true,
 };
 
 function makeBackend(initialToken: string | null = null) {
@@ -60,7 +62,7 @@ describe("cloud session configuration", () => {
     expect(resolveApiOrigin("http://api.example.test", false)).toBeNull();
     expect(resolveApiOrigin("https://api.example.test/path", false)).toBeNull();
     expect(resolveApiOrigin(undefined, true)).toBe("http://127.0.0.1:3000");
-    expect(resolveApiOrigin(undefined, false)).toBeNull();
+    expect(resolveApiOrigin("", false)).toBeNull();
   });
 
   it("rejects construction without a safe configured origin", () => {

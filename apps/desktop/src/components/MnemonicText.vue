@@ -6,6 +6,7 @@ import {
   BUTTON_SYMBOLS,
   DIRECTION_ARROWS,
   gestureModifierInput,
+  keyLabel,
   TRIGGER_SYMBOLS,
   gestureInputs,
 } from "../utils/mnemonic";
@@ -23,6 +24,7 @@ const inputs = computed(() => {
 
 function inputLabel(input: GestureInput): string {
   if (input.type === "stroke") return input.direction;
+  if (input.type === "key") return input.key;
   if (input.type === "wheel") return t(`modifier.${input.direction === "forward" ? "wheelForward" : "wheelBackward"}`);
   return t(`modifier.${input.button === "x1" ? "x1Down" : input.button === "x2" ? "x2Down" : `${input.button}ButtonDown`}`);
 }
@@ -40,6 +42,9 @@ function inputLabel(input: GestureInput): string {
       <span v-if="input.type === 'stroke'" :aria-label="inputLabel(input)">
         {{ DIRECTION_ARROWS[input.direction] }}
       </span>
+      <kbd v-else-if="input.type === 'key'" class="mnemonic__key" :aria-label="inputLabel(input)">
+        {{ keyLabel(input.key) }}
+      </kbd>
       <WheelModifierIcon
         v-else-if="input.type === 'wheel'"
         :direction="input.direction === 'forward' ? 'up' : 'down'"
@@ -75,5 +80,15 @@ function inputLabel(input: GestureInput): string {
 }
 .mnemonic__input--modifier {
   --wheel-modifier-accent: var(--el-color-warning);
+}
+.mnemonic__key {
+  padding: 1px 4px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 3px;
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+  font: inherit;
+  font-size: 0.8em;
+  letter-spacing: 0;
 }
 </style>

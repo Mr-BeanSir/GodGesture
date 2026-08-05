@@ -8,6 +8,8 @@ import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import {
   Connection,
+  Document,
+  Files,
   InfoFilled,
   MagicStick,
   Moon,
@@ -23,6 +25,7 @@ import en from "element-plus/es/locale/lang/en";
 import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
 import { useUpdateStore } from "./stores/update";
+import { usePluginsStore } from "./stores/plugins";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
 import { listenForSingleInstance } from "./single-instance";
 import {
@@ -38,15 +41,18 @@ import OptionsView from "./views/OptionsView.vue";
 import GesturesView from "./views/GesturesView.vue";
 import AccountView from "./views/AccountView.vue";
 import TemplatesView from "./views/TemplatesView.vue";
+import PluginsView from "./views/PluginsView.vue";
+import LogsView from "./views/LogsView.vue";
 import AboutView from "./views/AboutView.vue";
 
-type Section = "options" | "gestures" | "templates" | "account" | "about";
+type Section = "options" | "gestures" | "templates" | "plugins" | "logs" | "account" | "about";
 type LocaleSetting = "auto" | AppLocale;
 
 const { t, locale } = useI18n();
 const store = useConfigStore();
 const account = useAccountStore();
 const updates = useUpdateStore();
+const plugins = usePluginsStore();
 
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
@@ -60,12 +66,16 @@ const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
   templates: TemplatesView,
+  plugins: PluginsView,
+  logs: LogsView,
   account: AccountView,
   about: AboutView,
 } as const;
 const NAV_ITEMS = [
   { id: "gestures", icon: MagicStick },
   { id: "templates", icon: Connection },
+  { id: "plugins", icon: Files },
+  { id: "logs", icon: Document },
   { id: "account", icon: User },
   { id: "options", icon: Setting },
   { id: "about", icon: InfoFilled },
@@ -80,7 +90,7 @@ const currentViewBindings = computed(() => {
   }
   return {};
 });
-const needsConfig = computed(() => active.value !== "account" && active.value !== "about");
+const needsConfig = computed(() => !["account", "about", "plugins", "logs"].includes(active.value));
 const quickStartIntents = computed(() => store.doc?.global.intents ?? []);
 
 const localeSetting = computed<LocaleSetting>({
@@ -160,22 +170,45 @@ watch(
 
 onMounted(() => {
   void (async () => {
+    if (!store.backend.isTauri && typeof window !== "undefined") {
+      const requestedSection = new URLSearchParams(window.location.search).get("section");
+      if (requestedSection && requestedSection in SECTION_VIEWS) {
+        active.value = requestedSection as Section;
+      }
+    }
     if (store.backend.isTauri) {
       unlistenSingleInstance = await listenForSingleInstance(() => {
         ElMessage.info(t("app.alreadyRunning"));
       });
     }
     await store.load();
+    if (!store.backend.isTauri && typeof window !== "undefined") {
+      const previewParams = new URLSearchParams(window.location.search);
+      if (previewParams.get("locale") === "en" && store.doc) {
+        store.doc.preferences.locale = "en";
+        setLocale("en");
+      }
+      if (previewParams.get("theme") === "dark") isDark.value = true;
+    }
+    await plugins.initialize();
     const forced =
       !store.backend.isTauri &&
       typeof window !== "undefined" &&
       isQuickGuideForced(window.location.search);
-    if (store.ready && (forced || shouldShowQuickGuide(quickGuideStorage))) {
+    const previewGuideDisabled =
+      !store.backend.isTauri &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("guide") === "0";
+    if (store.ready && !previewGuideDisabled && (forced || shouldShowQuickGuide(quickGuideStorage))) {
       quickStartVisible.value = true;
     }
     await account.initialize();
+    const previewUpdatesDisabled =
+      !store.backend.isTauri &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("updates") === "0";
     updates.scheduleAutomaticCheck(
-      store.doc?.preferences.autoCheckForUpdate ?? false,
+      !previewUpdatesDisabled && (store.doc?.preferences.autoCheckForUpdate ?? false),
     );
   })();
 });

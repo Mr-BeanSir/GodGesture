@@ -11,21 +11,28 @@ import {
   User,
 } from "@element-plus/icons-vue";
 import type { OAuthProvider } from "@godgesture/shared";
+import { useBackend } from "../api/backend";
 import { useAccountStore } from "../stores/account";
 
 const { t, locale } = useI18n();
 const account = useAccountStore();
 
-const authMode = ref<"login" | "register">("login");
 const email = ref("");
 const password = ref("");
+const endpointChoice = ref(account.endpointMode);
+const customEndpointDraft = ref(account.customApiOrigin);
 const narrowLayout = useMediaQuery("(max-width: 640px)");
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const authModeOptions = computed(() => [
-  { label: t("account.login"), value: "login" },
-  { label: t("account.register"), value: "register" },
+const endpointOptions = computed(() => [
+  { label: t("account.endpointOfficial"), value: "official" },
+  { label: t("account.endpointCustom"), value: "custom" },
 ]);
+
+const registrationUrl = computed(() => {
+  const origin = account.apiOrigin;
+  return origin ? `${origin}/login?label=register` : null;
+});
 
 const syncTagType = computed(() => {
   switch (account.syncStatus.phase) {
@@ -41,16 +48,19 @@ const syncTagType = computed(() => {
   }
 });
 
-const syncStatusText = computed(() =>
-  t(`account.syncStates.${account.syncStatus.phase}`),
-);
-
 const lastSyncText = computed(() => {
   if (!account.syncStatus.lastSyncAt) return t("account.lastSyncNever");
   return new Intl.DateTimeFormat(locale.value, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(account.syncStatus.lastSyncAt));
+});
+
+const syncStatusText = computed(() => {
+  if (account.syncStatus.phase === "current" && account.syncStatus.lastSyncAt) {
+    return t("account.syncStates.currentAt", { time: lastSyncText.value });
+  }
+  return t(`account.syncStates.${account.syncStatus.phase}`);
 });
 
 function errorText(code: string | null): string {
@@ -69,26 +79,45 @@ function validateCredentials(): boolean {
     ElMessage.warning(t("account.passwordRequired"));
     return false;
   }
-  if (authMode.value === "register" && password.value.length < 8) {
-    ElMessage.warning(t("account.passwordTooShort"));
-    return false;
-  }
   return true;
 }
 
 async function onSubmit(): Promise<void> {
   if (!validateCredentials()) return;
   try {
-    if (authMode.value === "login") {
-      await account.loginWithPassword(email.value, password.value);
-    } else {
-      await account.registerWithPassword(email.value, password.value);
-    }
+    await account.loginWithPassword(email.value, password.value);
     password.value = "";
     ElMessage.success(t("account.loginSuccess"));
   } catch {
     ElMessage.error(errorText(account.authErrorCode));
   }
+}
+
+async function onEndpointChange(value: "official" | "custom"): Promise<void> {
+  if (value === "custom") return;
+  try {
+    await account.setEndpoint(value);
+  } catch {
+    endpointChoice.value = account.endpointMode;
+    ElMessage.error(errorText("invalid_api_origin"));
+  }
+}
+
+async function applyCustomEndpoint(): Promise<void> {
+  try {
+    await account.setEndpoint("custom", customEndpointDraft.value);
+    endpointChoice.value = "custom";
+  } catch {
+    ElMessage.error(errorText("invalid_api_origin"));
+  }
+}
+
+async function onRegister(): Promise<void> {
+  if (!registrationUrl.value) {
+    ElMessage.error(errorText("server_not_configured"));
+    return;
+  }
+  await useBackend().openExternal(registrationUrl.value);
 }
 
 async function onOAuth(provider: OAuthProvider): Promise<void> {
@@ -223,6 +252,33 @@ function providerLabel(provider: OAuthProvider): string {
             {{ t("account.loginSubtitle") }}
           </p>
         </div>
+        <div class="account__endpoint">
+          <label class="account__endpoint-label" for="account-endpoint">
+            {{ t("account.endpointLabel") }}
+          </label>
+          <el-select
+            id="account-endpoint"
+            v-model="endpointChoice"
+            size="small"
+            @change="onEndpointChange"
+          >
+            <el-option
+              v-for="option in endpointOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+          <el-input
+            v-if="endpointChoice === 'custom'"
+            v-model="customEndpointDraft"
+            size="small"
+            class="account__endpoint-input"
+            :placeholder="t('account.endpointPlaceholder')"
+            @keyup.enter="applyCustomEndpoint"
+            @blur="applyCustomEndpoint"
+          />
+        </div>
       </div>
 
       <el-alert
@@ -236,12 +292,6 @@ function providerLabel(provider: OAuthProvider): string {
 
       <div class="account__login-grid">
         <div class="account__credentials">
-          <el-segmented
-            v-model="authMode"
-            :options="authModeOptions"
-            class="account__mode"
-          />
-
           <div class="account__form">
             <div class="gg-field">
               <label class="gg-field-label" for="account-email">{{
@@ -263,15 +313,10 @@ function providerLabel(provider: OAuthProvider): string {
                 v-model="password"
                 type="password"
                 show-password
-                :autocomplete="
-                  authMode === 'login' ? 'current-password' : 'new-password'
-                "
+                autocomplete="current-password"
                 :placeholder="t('account.passwordPlaceholder')"
                 @keyup.enter="onSubmit"
               />
-              <p v-if="authMode === 'register'" class="gg-hint">
-                {{ t("account.passwordRequirement") }}
-              </p>
             </div>
             <el-button
               class="account__submit"
@@ -279,7 +324,16 @@ function providerLabel(provider: OAuthProvider): string {
               :loading="account.authBusy"
               @click="onSubmit"
             >
-              {{ t(authMode === "login" ? "account.login" : "account.register") }}
+              {{ t("account.login") }}
+            </el-button>
+            <el-button
+              class="account__register-link"
+              link
+              type="primary"
+              :disabled="!registrationUrl"
+              @click="onRegister"
+            >
+              {{ t("account.register") }}
             </el-button>
           </div>
         </div>
@@ -422,6 +476,9 @@ function providerLabel(provider: OAuthProvider): string {
                 /
                 {{ formatBytes(scope.row.sizeBytes) }}
               </div>
+              <div v-if="narrowLayout && scope.row.note" class="account__snapshot-note">
+                {{ scope.row.note }}
+              </div>
             </template>
           </el-table-column>
           <el-table-column
@@ -441,6 +498,16 @@ function providerLabel(provider: OAuthProvider): string {
             <template #default="scope">{{
               formatBytes(scope.row.sizeBytes)
             }}</template>
+          </el-table-column>
+          <el-table-column
+            v-if="!narrowLayout"
+            :label="t('account.snapshots.note')"
+            min-width="220"
+            show-overflow-tooltip
+          >
+            <template #default="scope">
+              {{ scope.row.note || t("account.snapshots.noteEmpty") }}
+            </template>
           </el-table-column>
           <el-table-column
             :label="t('account.snapshots.actions')"
@@ -485,6 +552,22 @@ function providerLabel(provider: OAuthProvider): string {
   align-items: center;
   gap: 10px;
 }
+.account__login-head > div:nth-child(2) {
+  min-width: 0;
+}
+.account__endpoint {
+  margin-left: auto;
+  min-width: 180px;
+  display: grid;
+  gap: 4px;
+}
+.account__endpoint-label {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+.account__endpoint-input {
+  width: 240px;
+}
 .account__identity-icon {
   flex: 0 0 32px;
   width: 32px;
@@ -511,9 +594,6 @@ function providerLabel(provider: OAuthProvider): string {
 .account__credentials {
   min-width: 0;
 }
-.account__mode {
-  width: 100%;
-}
 .account__form {
   display: grid;
   gap: 14px;
@@ -521,6 +601,10 @@ function providerLabel(provider: OAuthProvider): string {
 }
 .account__submit {
   width: 100%;
+}
+.account__register-link {
+  width: 100%;
+  margin: 0;
 }
 .account__actions {
   display: flex;
@@ -612,7 +696,26 @@ function providerLabel(provider: OAuthProvider): string {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.account__snapshot-note {
+  overflow: hidden;
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @media (max-width: 640px) {
+  .account__login-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .account__endpoint {
+    width: 100%;
+    margin-left: 42px;
+  }
+  .account__endpoint-input {
+    width: 100%;
+  }
   .account__login-grid {
     grid-template-columns: 1fr;
     gap: 18px;

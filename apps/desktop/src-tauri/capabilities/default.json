@@ -8,6 +8,13 @@
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-start-dragging",
-    "opener:default"
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPCONFIG" },
+        { "path": "$APPCONFIG/**" }
+      ]
+    }
   ]
 }

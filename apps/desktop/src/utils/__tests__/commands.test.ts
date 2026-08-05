@@ -9,4 +9,11 @@ describe("command helpers", () => {
       "Node plugin commands require an existing plugin selection",
     );
   });
+
+  it("creates an empty ordered text and key sequence", () => {
+    expect(createDefaultCommand("sendText")).toEqual({
+      type: "sendText",
+      steps: [],
+    });
+  });
 });

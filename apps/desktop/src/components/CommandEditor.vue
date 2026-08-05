@@ -6,6 +6,7 @@
  */
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { Delete, Plus } from "@element-plus/icons-vue";
 import type { Command } from "@godgesture/shared";
 import {
   COMMAND_TYPES,
@@ -15,16 +16,16 @@ import {
   type CommandOfType,
 } from "../utils/commands";
 import HotkeyInput from "./HotkeyInput.vue";
-import NodePluginEditor from "./NodePluginEditor.vue";
-import { useConfigStore } from "../stores/config";
+import NodePluginPicker from "./NodePluginPicker.vue";
+import type { HotkeyChord } from "./hotkey-recorder";
+import { usePluginsStore } from "../stores/plugins";
 import { newId } from "../utils/id";
-import { DEFAULT_NODE_PLUGIN_MANIFEST, DEFAULT_NODE_PLUGIN_SOURCE } from "@godgesture/shared";
 
 const props = defineProps<{ modelValue: Command }>();
 const emit = defineEmits<{ (e: "update:modelValue", value: Command): void }>();
 
 const { t } = useI18n();
-const configStore = useConfigStore();
+const plugins = usePluginsStore();
 
 /** 局部字段写入:合并补丁后整体 emit(判别联合下用 Record 逃逸类型约束) */
 function patch(partial: Record<string, unknown>) {
@@ -33,31 +34,16 @@ function patch(partial: Record<string, unknown>) {
 
 const asNodePlugin = computed(() => props.modelValue as CommandOfType<"nodePlugin">);
 
-function ensureNodePlugin() {
-  const existing = configStore.doc?.nodePlugins[0];
-  if (existing) return existing;
-  if (!configStore.doc) return null;
-  const created = {
-    id: newId(),
-    name: t("command.nodePlugin.newName"),
-    entry: "index.mjs",
-    files: { "index.mjs": DEFAULT_NODE_PLUGIN_SOURCE },
-    packageJson: DEFAULT_NODE_PLUGIN_MANIFEST,
-    lockfile: null,
-    allowLifecycleScripts: false,
-  };
-  configStore.doc.nodePlugins.push(created);
-  return created;
-}
-
 const type = computed<CommandType>({
   get: () => props.modelValue.type,
   set: (next) => {
     if (next === "nodePlugin") {
-      const plugin = ensureNodePlugin();
-      if (plugin) {
-        emit("update:modelValue", { type: "nodePlugin", pluginId: plugin.id, exportName: "execute" });
-      }
+      const plugin = plugins.readyPlugins[0];
+      emit("update:modelValue", {
+        type: "nodePlugin",
+        pluginId: plugin?.id ?? newId(),
+        actionId: plugin?.actions[0]?.id ?? "default",
+      });
       return;
     }
     emit("update:modelValue", createDefaultCommand(next));
@@ -73,6 +59,71 @@ const asSendText = computed(() => props.modelValue as CommandOfType<"sendText">)
 const asGotoUrl = computed(() => props.modelValue as CommandOfType<"gotoUrl">);
 const asCmd = computed(() => props.modelValue as CommandOfType<"cmd">);
 const asVolume = computed(() => props.modelValue as CommandOfType<"audioVolume">);
+
+type SendTextCommand = CommandOfType<"sendText">;
+type SendTextStep = NonNullable<SendTextCommand["steps"]>[number];
+
+/** Keep old SendKeys strings readable until the user edits the operation list. */
+const sendTextSteps = computed<SendTextStep[]>(() => {
+  if (Array.isArray(asSendText.value.steps)) return asSendText.value.steps;
+  if (asSendText.value.text !== undefined) {
+    return [{ type: "text", text: asSendText.value.text }];
+  }
+  return [];
+});
+
+function editableSendTextSteps(): SendTextStep[] {
+  return sendTextSteps.value.map((step) =>
+    step.type === "text"
+      ? { ...step }
+      : { ...step, modifiers: [...step.modifiers] },
+  );
+}
+
+function updateSendTextSteps(steps: SendTextStep[]) {
+  patch({ steps, text: undefined });
+}
+
+function addSendTextStep() {
+  updateSendTextSteps([
+    ...editableSendTextSteps(),
+    { type: "text", text: "" },
+  ]);
+}
+
+function removeSendTextStep(index: number) {
+  const steps = editableSendTextSteps();
+  steps.splice(index, 1);
+  updateSendTextSteps(steps);
+}
+
+function changeSendTextStepType(index: number, value: unknown) {
+  if (value !== "text" && value !== "key") return;
+  const steps = editableSendTextSteps();
+  steps[index] = value === "text"
+    ? { type: "text", text: "" }
+    : { type: "key", modifiers: [], key: "enter" };
+  updateSendTextSteps(steps);
+}
+
+function updateSendTextStepText(index: number, text: string) {
+  const steps = editableSendTextSteps();
+  const step = steps[index];
+  if (!step || step.type !== "text") return;
+  step.text = text;
+  updateSendTextSteps(steps);
+}
+
+function updateSendTextStepKey(index: number, value: HotkeyChord) {
+  const key = value.keys[0];
+  if (!key) return;
+  const steps = editableSendTextSteps();
+  const step = steps[index];
+  if (!step || step.type !== "key") return;
+  step.modifiers = [...value.modifiers];
+  step.key = key;
+  updateSendTextSteps(steps);
+}
 
 const useDefaultBrowser = computed<boolean>({
   get: () => asWebSearch.value.browser === null,
@@ -207,16 +258,56 @@ function updateVolumeDelta(value: unknown) {
       </div>
     </template>
 
-    <!-- 按键序列 -->
+    <!-- 按键/文字序列 -->
     <template v-else-if="type === 'sendText'">
       <div class="gg-field">
-        <label class="gg-field-label">{{ t("command.sendText.text") }}</label>
-        <el-input
-          type="textarea"
-          :autosize="{ minRows: 3 }"
-          :model-value="asSendText.text"
-          @update:model-value="patch({ text: $event })"
-        />
+        <label class="gg-field-label">{{ t("command.sendText.sequence") }}</label>
+        <div class="cmd-editor__send-text-steps">
+          <p v-if="sendTextSteps.length === 0" class="gg-hint">
+            {{ t("command.sendText.empty") }}
+          </p>
+          <div
+            v-for="(step, index) in sendTextSteps"
+            :key="index"
+            class="cmd-editor__send-text-step"
+          >
+            <span class="cmd-editor__step-index">{{ index + 1 }}</span>
+            <el-select
+              class="cmd-editor__step-type"
+              :model-value="step.type"
+              @update:model-value="changeSendTextStepType(index, $event)"
+            >
+              <el-option :label="t('command.sendText.textType')" value="text" />
+              <el-option :label="t('command.sendText.keyType')" value="key" />
+            </el-select>
+            <el-input
+              v-if="step.type === 'text'"
+              class="cmd-editor__step-value"
+              :model-value="step.text"
+              :placeholder="t('command.sendText.textPlaceholder')"
+              @update:model-value="updateSendTextStepText(index, $event)"
+            />
+            <HotkeyInput
+              v-else
+              class="cmd-editor__step-value"
+              :modifiers="step.modifiers"
+              :keys="[step.key]"
+              @complete="updateSendTextStepKey(index, $event)"
+            />
+            <el-tooltip :content="t('command.sendText.removeStep')">
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :aria-label="t('command.sendText.removeStep')"
+                @click="removeSendTextStep(index)"
+              />
+            </el-tooltip>
+          </div>
+          <el-button size="small" :icon="Plus" @click="addSendTextStep">
+            {{ t("command.sendText.addStep") }}
+          </el-button>
+        </div>
         <p class="gg-hint">{{ t("command.sendText.hint") }}</p>
       </div>
     </template>
@@ -261,7 +352,7 @@ function updateVolumeDelta(value: unknown) {
     </template>
 
     <!-- Node 插件 -->
-    <NodePluginEditor
+    <NodePluginPicker
       v-else-if="type === 'nodePlugin'"
       :model-value="asNodePlugin"
       @update:model-value="emit('update:modelValue', $event)"
@@ -300,5 +391,39 @@ function updateVolumeDelta(value: unknown) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.cmd-editor__send-text-steps {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.cmd-editor__send-text-step {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(84px, 110px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.cmd-editor__step-index {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+.cmd-editor__step-type,
+.cmd-editor__step-value {
+  min-width: 0;
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .cmd-editor__send-text-step {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+  .cmd-editor__step-type {
+    grid-column: 2;
+  }
+  .cmd-editor__step-value {
+    grid-column: 2;
+  }
 }
 </style>

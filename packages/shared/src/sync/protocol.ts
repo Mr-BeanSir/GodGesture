@@ -50,6 +50,8 @@ export const SnapshotMeta = z.object({
   createdAt: z.string().datetime(),
   deviceId: z.string().uuid().nullable(),
   deviceName: z.string().nullable(),
+  /** 该版本的来源说明;旧服务端缺失时按空备注兼容。 */
+  note: z.string().max(512).default(""),
   /** 载荷字节数,列表展示用 */
   sizeBytes: z.number().int().nonnegative(),
 });

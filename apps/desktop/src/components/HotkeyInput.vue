@@ -20,6 +20,7 @@ import {
   type HotkeyRecording,
 } from "./hotkey-recorder";
 import { useBackend, type HotkeyCaptureEvent } from "../api/backend";
+import { appLog } from "../logging";
 
 const props = withDefaults(
   defineProps<{
@@ -149,7 +150,7 @@ async function enableNativeCapture(token: number) {
     nativeCaptureRequested = false;
     nativeCaptureUnsubscribe?.();
     nativeCaptureUnsubscribe = null;
-    console.warn("Native hotkey capture unavailable; falling back to WebView events", error);
+    appLog.warn("hotkey", `原生快捷键捕获不可用，回退到 WebView 事件: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -170,7 +171,7 @@ function stopRecording() {
   nativeCaptureUnsubscribe = null;
   if (hadNativeCapture) {
     void backend.hotkeyCaptureCancel().catch((error) =>
-      console.warn("Failed to stop native hotkey capture", error),
+      appLog.warn("hotkey", `停止原生快捷键捕获失败: ${error instanceof Error ? error.message : String(error)}`),
     );
   }
   unsubscribe?.();

@@ -15,21 +15,21 @@ pub enum ScriptMouseButton {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptSlot {
-    Init,
-    Execute,
-    GestureRecognized,
-    ModifierTriggered,
-    GestureEnded,
+    OnInit,
+    OnExecute,
+    OnGestureRecognized,
+    OnModifierTriggered,
+    OnEnd,
 }
 
 impl ScriptSlot {
     pub(crate) fn name(self) -> &'static str {
         match self {
-            Self::Init => "init",
-            Self::Execute => "execute",
-            Self::GestureRecognized => "gestureRecognized",
-            Self::ModifierTriggered => "modifierTriggered",
-            Self::GestureEnded => "gestureEnded",
+            Self::OnInit => "onInit",
+            Self::OnExecute => "onExecute",
+            Self::OnGestureRecognized => "onGestureRecognized",
+            Self::OnModifierTriggered => "onModifierTriggered",
+            Self::OnEnd => "onEnd",
         }
     }
 }

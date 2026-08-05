@@ -15,6 +15,11 @@ import {
 import type {
   Backend,
   CapturedGesture,
+  LogEntry,
+  LogEntryLevel,
+  LogLevel,
+  LogsQueryRequest,
+  PluginWorkspaceSnapshot,
   UpdateMetadata,
 } from "./backend";
 import { gestureMnemonic } from "../utils/mnemonic";
@@ -166,9 +171,47 @@ export function createMockBackend(): Backend {
   let refreshToken: string | null = null;
   let syncMetadata: Awaited<ReturnType<Backend["syncMetadataGet"]>> = null;
   let pendingUpdate: UpdateMetadata | null = null;
+  let logLevel: LogLevel = "off";
+  let logEntries: LogEntry[] = [];
+  const pluginSnapshot: PluginWorkspaceSnapshot = {
+    root: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins",
+    plugins: [
+      {
+        id: "30000000-0000-4000-8000-000000000001",
+        name: "gesture-demo",
+        version: "0.1.0",
+        path: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins\\gesture-demo",
+        entry: "index.mjs",
+        apiVersion: 1,
+        actions: [{ id: "default", name: "Execute", exportName: "onExecute" }],
+        status: "ready",
+        error: null,
+        lastReloadAt: Date.now(),
+      },
+      {
+        id: "invalid:broken-plugin",
+        name: "broken-plugin",
+        version: "",
+        path: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins\\broken-plugin",
+        entry: "",
+        apiVersion: 0,
+        actions: [],
+        status: "error",
+        error: "package.json godgesture.actions must not be empty",
+        lastReloadAt: null,
+      },
+    ],
+  };
+  const pluginPreview =
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("plugins");
+  if (pluginPreview === "empty") pluginSnapshot.plugins = [];
+  if (pluginPreview === "error") pluginSnapshot.plugins = pluginSnapshot.plugins.slice(1);
 
   const listeners = new Set<(g: CapturedGesture) => void>();
   const pauseListeners = new Set<(paused: boolean) => void>();
+  const logListeners = new Set<(entry: LogEntry) => void>();
   let captureTimers: ReturnType<typeof setTimeout>[] = [];
 
   function stopCapture() {
@@ -180,6 +223,14 @@ export function createMockBackend(): Backend {
     listeners.forEach((l) => l(gesture));
   }
 
+  function levelRank(level: LogEntryLevel | LogLevel): number {
+    return { error: 0, warn: 1, info: 2, debug: 3, off: 4 }[level];
+  }
+
+  function accepts(level: LogEntryLevel): boolean {
+    return logLevel !== "off" && levelRank(level) <= levelRank(logLevel);
+  }
+
   return {
     isTauri: false,
 
@@ -189,73 +240,46 @@ export function createMockBackend(): Backend {
     async configSet(document) {
       doc = ConfigDocument.parse(document);
     },
-    async nodePluginInstall(plugin) {
-      const manifest = JSON.parse(plugin.packageJson) as {
-        dependencies?: Record<string, string>;
-        optionalDependencies?: Record<string, string>;
-      };
-      const dependencies = {
-        ...manifest.dependencies,
-        ...manifest.optionalDependencies,
-      };
-      return {
-        lockfile: [
-          "lockfileVersion: '9.0'",
-          "settings:",
-          "  autoInstallPeers: true",
-          "importers:",
-          "  .:",
-          `    dependencies: ${Object.keys(dependencies).length ? "resolved" : "{}"}`,
-          "",
-        ].join("\n"),
-        output: `Prepared ${Object.keys(dependencies).length} dependencies in browser preview.`,
-        ready: true,
-      };
+    async nodePluginsGet() {
+      return structuredClone(pluginSnapshot);
     },
-    async nodePluginPackageSearch(query) {
-      const normalized = query.trim().toLowerCase();
-      if (normalized.length < 2) return [];
-      return [
-        {
-          name: normalized === "zod" ? "zod" : `${normalized}-plugin`,
-          version: "4.4.3",
-          description: "Browser preview package result",
-          weeklyDownloads: 123456,
-        },
-      ];
+    async nodePluginsRescan() {
+      return structuredClone(pluginSnapshot);
     },
-    async nodePluginPackageLatest(name) {
-      return name === "zod" ? "4.4.3" : "1.2.0";
+    async nodePluginsDirectory() {
+      return pluginSnapshot.root;
     },
-  async nodePluginTest(plugin, handler) {
-      return {
-        output: `Dry-run passed for ${plugin.name}:${handler}. Native host calls were recorded without side effects.`,
-        ready: true,
-      };
+    async onNodePluginsChanged() {
+      return () => undefined;
     },
-    async nodePluginTypecheck(plugin) {
-      const diagnostics = plugin.files[plugin.entry]?.includes("typecheck-error")
-        ? [{ file: plugin.entry, line: 1, column: 1, severity: "error" as const, message: "Typecheck error (browser preview)." }]
-        : [];
-      return {
-        output: `TypeScript check completed for ${plugin.name} in browser preview.`,
-        ready: diagnostics.length === 0,
-        diagnostics,
-      };
+    async logLevelGet() { return logLevel; },
+    async logLevelSet(level) { logLevel = level; return logLevel; },
+    async logWrite(level, target, message) {
+      if (!accepts(level)) return;
+      const entry: LogEntry = { timestamp: new Date().toISOString(), level, target, message };
+      logEntries = [...logEntries, entry].slice(-2000);
+      logListeners.forEach((listener) => listener(entry));
     },
-    async nodePluginCacheStatus(plugin) {
-      const manifest = JSON.parse(plugin.packageJson) as {
-        dependencies?: Record<string, string>;
-        optionalDependencies?: Record<string, string>;
-      };
-      const hasDependencies = Boolean(
-        Object.keys(manifest.dependencies ?? {}).length ||
-        Object.keys(manifest.optionalDependencies ?? {}).length,
-      );
-      return {
-        state: hasDependencies ? (plugin.lockfile ? "ready" : "lockfileMissing") : "notRequired",
-        revision: "browser-preview",
-      };
+    async logsQuery(request: LogsQueryRequest) {
+      const keyword = request.keyword?.trim().toLocaleLowerCase();
+      const target = request.target?.trim().toLocaleLowerCase();
+      const filtered = logEntries.filter((entry) => {
+        if (request.level && request.level !== "off" && entry.level !== request.level) return false;
+        if (target && !entry.target.toLocaleLowerCase().includes(target)) return false;
+        if (keyword && !`${entry.target} ${entry.message}`.toLocaleLowerCase().includes(keyword)) return false;
+        return true;
+      });
+      const limit = Math.max(1, Math.min(request.limit ?? 1000, 5000));
+      return { entries: filtered.slice(-limit), total: filtered.length, files: [], level: logLevel };
+    },
+    async logsExport(request) {
+      const result = await this.logsQuery(request);
+      return `browser-preview://logs/${result.entries.length}`;
+    },
+    async logsClear() { logEntries = []; },
+    async onLogEvent(handler) {
+      logListeners.add(handler);
+      return () => logListeners.delete(handler);
     },
     async machineGet() {
       return { ...machine };
@@ -473,6 +497,9 @@ export function createMockBackend(): Backend {
     },
     async openExternal(url) {
       window.open(url, "_blank", "noopener");
+    },
+    async openPath() {
+      return undefined;
     },
     async getAppVersion() {
       return "0.1.0-dev";

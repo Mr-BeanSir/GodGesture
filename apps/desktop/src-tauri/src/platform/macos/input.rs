@@ -1,6 +1,7 @@
 // CoreGraphics input synthesis with event-tap re-entry tagging.
 
 use super::keys;
+use crate::engine::config::SendTextStep;
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use objc2_core_foundation::CGPoint;
@@ -243,6 +244,18 @@ pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
             SendTextAction::Key { modifiers, key } => synthesize_key_combo(&modifiers, &[key])?,
             SendTextAction::Sleep(milliseconds) => {
                 std::thread::sleep(std::time::Duration::from_millis(milliseconds));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn try_type_text_steps(steps: &[SendTextStep]) -> Result<(), String> {
+    for step in steps {
+        match step {
+            SendTextStep::Text { text } => type_unicode(text)?,
+            SendTextStep::Key { modifiers, key } => {
+                synthesize_key_combo(modifiers, std::slice::from_ref(key))?
             }
         }
     }

@@ -4,7 +4,7 @@ use super::config::WindowOperation;
 use super::script_host::{ScriptHost, ScriptInvocation, ScriptMouseButton, ScriptSlot};
 use super::types::{Modifier, TriggerButton};
 use serde_json::{json, Value};
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_STATUS_CHARS: usize = 200;
+const MAX_DIAGNOSTIC_FIELD_CHARS: usize = 64;
+const MAX_DIAGNOSTIC_LINE_CHARS: usize = 512;
 
 fn write_frame(mut writer: impl Write, message: &Value) -> Result<(), String> {
     let payload = serde_json::to_vec(message).map_err(|error| error.to_string())?;
@@ -92,13 +94,24 @@ impl NodeHost {
         request_timeout: Duration,
         host: Arc<dyn ScriptHost>,
     ) -> Result<Self, String> {
-        let mut child = Command::new(node)
+        let started = Instant::now();
+        log::info!(target: "node.supervisor", "event=host_start_started");
+        let mut child = match Command::new(node)
             .arg(supervisor)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
-            .map_err(|error| format!("start Node host: {error}"))?;
+        {
+            Ok(child) => child,
+            Err(error) => {
+                log::error!(
+                    target: "node.supervisor",
+                    "event=host_start_failed code=spawn_failed"
+                );
+                return Err(format!("start Node host: {error}"));
+            }
+        };
         let stdin = child
             .stdin
             .take()
@@ -107,7 +120,28 @@ impl NodeHost {
             .stdout
             .take()
             .ok_or_else(|| "Node host stdout was not piped".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "Node host stderr was not piped".to_string())?;
         let (sender, receiver) = mpsc::channel();
+        thread::Builder::new()
+            .name("godgesture-node-host-diagnostics".into())
+            .spawn(move || {
+                for line in BufReader::new(stderr).lines() {
+                    match line {
+                        Ok(line) => log_node_diagnostic_line(&line),
+                        Err(_) => break,
+                    }
+                }
+            })
+            .map_err(|error| {
+                log::error!(
+                    target: "node.supervisor",
+                    "event=host_start_failed code=diagnostics_thread_failed"
+                );
+                format!("start Node host diagnostics: {error}")
+            })?;
         thread::Builder::new()
             .name("godgesture-node-host-reader".into())
             .spawn(move || loop {
@@ -117,7 +151,18 @@ impl NodeHost {
                     break;
                 }
             })
-            .map_err(|error| format!("start Node host reader: {error}"))?;
+            .map_err(|error| {
+                log::error!(
+                    target: "node.supervisor",
+                    "event=host_start_failed code=reader_thread_failed"
+                );
+                format!("start Node host reader: {error}")
+            })?;
+        log::info!(
+            target: "node.supervisor",
+            "event=host_start_completed durationMs={}",
+            started.elapsed().as_millis()
+        );
         Ok(Self {
             child,
             stdin,
@@ -136,7 +181,17 @@ impl NodeHost {
         let id = self.next_request_id;
         self.next_request_id += 1;
         message["id"] = json!(id);
-        write_frame(&mut self.stdin, &message)?;
+        let plugin_id = diagnostic_identifier(message.get("pluginId"));
+        let action_id = diagnostic_identifier(message.get("handler"));
+        let lifecycle = diagnostic_identifier(message.get("handler"));
+        let started = Instant::now();
+        if let Err(_) = write_frame(&mut self.stdin, &message) {
+            log::warn!(
+                target: "node.supervisor",
+                "event=ipc_failed code=write_failed pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle}"
+            );
+            return Err("Node host IPC write failed".into());
+        }
 
         let mut host_calls = Vec::new();
         let mut status = None;
@@ -144,15 +199,49 @@ impl NodeHost {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
+                log::warn!(
+                    target: "node.supervisor",
+                    "event=ipc_failed code=timeout pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                    started.elapsed().as_millis()
+                );
                 return Err("Node host response timeout".into());
             }
-            let incoming = self
-                .receiver
-                .recv_timeout(remaining)
-                .map_err(|error| format!("Node host response timeout: {error}"))??;
+            let incoming = match self.receiver.recv_timeout(remaining) {
+                Ok(Ok(message)) => message,
+                Ok(Err(_)) => {
+                    log::warn!(
+                        target: "node.supervisor",
+                        "event=ipc_failed code=read_failed pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                        started.elapsed().as_millis()
+                    );
+                    return Err("Node host IPC frame read failed".into());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    log::warn!(
+                        target: "node.supervisor",
+                        "event=ipc_failed code=timeout pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                        started.elapsed().as_millis()
+                    );
+                    return Err("Node host response timeout".into());
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    log::warn!(
+                        target: "node.supervisor",
+                        "event=ipc_failed code=disconnected pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                        started.elapsed().as_millis()
+                    );
+                    return Err("Node host IPC disconnected".into());
+                }
+            };
             match incoming.get("type").and_then(Value::as_str) {
                 Some("hostCall") => {
                     host_calls.push(incoming.clone());
+                    log::debug!(
+                        target: "node.worker",
+                        "event=host_call pluginId={} actionId={action_id} method={}",
+                        diagnostic_identifier(incoming.get("pluginId")),
+                        diagnostic_identifier(incoming.get("method")),
+                    );
                     let result = invocation
                         .ok_or_else(|| "Node host call has no invocation context".to_string())
                         .and_then(|invocation| {
@@ -178,24 +267,47 @@ impl NodeHost {
                 }
                 Some("response") if incoming.get("id").and_then(Value::as_u64) == Some(id) => {
                     if incoming.get("ok").and_then(Value::as_bool) == Some(true) {
+                        log::debug!(
+                            target: "node.supervisor",
+                            "event=ipc_complete code=ok pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                            started.elapsed().as_millis()
+                        );
                         return Ok(InvocationResult {
                             value: incoming.get("result").cloned().unwrap_or(Value::Null),
                             host_calls,
                             status,
                         });
                     }
-                    return Err(incoming
+                    let error = incoming
                         .get("error")
                         .and_then(Value::as_str)
-                        .unwrap_or("Node host request failed")
-                        .to_string());
+                        .map(stable_node_error)
+                        .unwrap_or("request_failed");
+                    log::warn!(
+                        target: "node.supervisor",
+                        "event=ipc_failed code={error} pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                        started.elapsed().as_millis()
+                    );
+                    return Err(error.into());
                 }
-                _ => return Err(format!("unexpected Node host message: {incoming}")),
+                _ => {
+                    log::warn!(
+                        target: "node.supervisor",
+                        "event=ipc_failed code=unexpected_message pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={}",
+                        started.elapsed().as_millis()
+                    );
+                    return Err("Node host sent an unexpected message".into());
+                }
             }
         }
     }
 
     pub fn load_plugin(&mut self, plugin_id: &str, entry_path: &Path) -> Result<(), String> {
+        log::info!(
+            target: "node.supervisor",
+            "event=plugin_load_started pluginId={}",
+            diagnostic_identifier(Some(&Value::String(plugin_id.into())))
+        );
         self.request(
             json!({
                 "type": "load",
@@ -204,6 +316,11 @@ impl NodeHost {
             }),
             None,
         )?;
+        log::info!(
+            target: "node.supervisor",
+            "event=plugin_load_completed pluginId={}",
+            diagnostic_identifier(Some(&Value::String(plugin_id.into())))
+        );
         Ok(())
     }
 
@@ -215,6 +332,11 @@ impl NodeHost {
             }),
             None,
         )?;
+        log::info!(
+            target: "node.supervisor",
+            "event=plugin_unload_completed pluginId={}",
+            diagnostic_identifier(Some(&Value::String(plugin_id.into())))
+        );
         Ok(())
     }
 
@@ -246,6 +368,7 @@ impl NodeHost {
 
 impl Drop for NodeHost {
     fn drop(&mut self) {
+        log::debug!(target: "node.supervisor", "event=host_shutdown");
         let id = self.next_request_id;
         let _ = write_frame(&mut self.stdin, &json!({ "type": "shutdown", "id": id }));
         for _ in 0..20 {
@@ -258,6 +381,104 @@ impl Drop for NodeHost {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+fn diagnostic_identifier(value: Option<&Value>) -> String {
+    let Some(value) = value else {
+        return "-".into();
+    };
+    let Some(value) = value.as_str() else {
+        return "-".into();
+    };
+    let mut result = value
+        .chars()
+        .take(MAX_DIAGNOSTIC_FIELD_CHARS)
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if result.is_empty() {
+        result.push('-');
+    }
+    result
+}
+
+fn stable_node_error(error: &str) -> &str {
+    if error.contains("exited with code") {
+        return error;
+    }
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("timeout") || lower.contains("timed out") {
+        "node_invocation_timeout"
+    } else if lower.contains("unknown message type") {
+        "node unknown message type"
+    } else if lower.contains("does not export") {
+        "node_handler_missing"
+    } else if lower.contains("import") {
+        "node_plugin_import_failed"
+    } else {
+        "node_request_failed"
+    }
+}
+
+fn diagnostic_target(value: &Value) -> &'static str {
+    if value.get("source").and_then(Value::as_str) == Some("worker") {
+        "node.worker"
+    } else {
+        "node.supervisor"
+    }
+}
+
+fn emit_node_diagnostic(target: &str, level: Option<&str>, message: &str) {
+    match target {
+        "node.worker" => match level {
+            Some("debug") => log::debug!(target: "node.worker", "{message}"),
+            Some("info") => log::info!(target: "node.worker", "{message}"),
+            Some("error") => log::error!(target: "node.worker", "{message}"),
+            _ => log::warn!(target: "node.worker", "{message}"),
+        },
+        _ => match level {
+            Some("debug") => log::debug!(target: "node.supervisor", "{message}"),
+            Some("info") => log::info!(target: "node.supervisor", "{message}"),
+            Some("error") => log::error!(target: "node.supervisor", "{message}"),
+            _ => log::warn!(target: "node.supervisor", "{message}"),
+        },
+    }
+}
+
+fn log_node_diagnostic_line(line: &str) {
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        log::warn!(
+            target: "node.supervisor",
+            "event=diagnostic code=unstructured_stderr lineLength={}",
+            line.chars().count().min(MAX_DIAGNOSTIC_LINE_CHARS)
+        );
+        return;
+    };
+    let code = diagnostic_identifier(value.get("code"));
+    let plugin_id = diagnostic_identifier(value.get("pluginId"));
+    let action_id = diagnostic_identifier(value.get("actionId"));
+    let lifecycle = diagnostic_identifier(value.get("lifecycle"));
+    let duration = value
+        .get("durationMs")
+        .and_then(Value::as_u64)
+        .map_or_else(|| "-".into(), |value| value.to_string());
+    let line_length = value.get("lineLength").and_then(Value::as_u64).map_or_else(
+        || "-".into(),
+        |value| value.min(MAX_DIAGNOSTIC_LINE_CHARS as u64).to_string(),
+    );
+    let message = format!(
+        "event=diagnostic code={code} pluginId={plugin_id} actionId={action_id} lifecycle={lifecycle} durationMs={duration} lineLength={line_length}"
+    );
+    emit_node_diagnostic(
+        diagnostic_target(&value),
+        value.get("level").and_then(Value::as_str),
+        &message,
+    );
 }
 
 fn invocation_context(invocation: ScriptInvocation, slot: ScriptSlot) -> Value {
@@ -547,13 +768,26 @@ export async function hostCall(context) {
     }
 
     #[test]
+    fn node_diagnostic_source_routes_to_stable_targets() {
+        assert_eq!(
+            diagnostic_target(&json!({ "source": "worker" })),
+            "node.worker"
+        );
+        assert_eq!(
+            diagnostic_target(&json!({ "source": "supervisor" })),
+            "node.supervisor"
+        );
+        assert_eq!(diagnostic_target(&json!({})), "node.supervisor");
+    }
+
+    #[test]
     fn persistent_worker_runs_real_esm_node_and_host_calls() {
         let project = TestProject::new(PROBE_SOURCE);
         let fake = Arc::new(FakeHost::default());
         let mut host = node_host(fake.clone());
         host.load_plugin("probe", &project.entry()).unwrap();
         assert_eq!(
-            host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+            host.invoke("probe", "noop", false, ScriptSlot::OnExecute, invocation())
                 .unwrap()
                 .value,
             1
@@ -563,7 +797,7 @@ export async function hostCall(context) {
                 "probe",
                 "hostCall",
                 false,
-                ScriptSlot::GestureRecognized,
+                ScriptSlot::OnGestureRecognized,
                 invocation(),
             )
             .unwrap();
@@ -574,7 +808,7 @@ export async function hostCall(context) {
         assert_eq!(fake.text.lock().as_slice(), &["two!".to_string()]);
         assert_eq!(
             result.status.as_deref(),
-            Some("gestureRecognized:clipboard")
+            Some("onGestureRecognized:clipboard")
         );
     }
 
@@ -585,20 +819,20 @@ export async function hostCall(context) {
         host.load_plugin("probe", &project.entry()).unwrap();
         for expected in 1..=100 {
             assert_eq!(
-                host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                host.invoke("probe", "noop", false, ScriptSlot::OnExecute, invocation())
                     .unwrap()
                     .value,
                 expected
             );
         }
         assert_eq!(
-            host.invoke("probe", "init", true, ScriptSlot::Init, invocation())
+            host.invoke("probe", "onInit", true, ScriptSlot::OnInit, invocation())
                 .unwrap()
                 .value,
             Value::Null
         );
         let initialized = TestProject::new(
-            "let value = 0; export function init() { value = 41; } export function read() { return ++value; }",
+            "let value = 0; export function onInit() { value = 41; } export function read() { return ++value; }",
         );
         host.load_plugin("initialized", &initialized.entry())
             .unwrap();
@@ -607,7 +841,7 @@ export async function hostCall(context) {
                 "initialized",
                 "read",
                 false,
-                ScriptSlot::Execute,
+                ScriptSlot::OnExecute,
                 invocation(),
             )
             .unwrap()
@@ -623,13 +857,19 @@ export async function hostCall(context) {
     #[test]
     fn timeout_and_worker_crash_allow_a_clean_reload() {
         let hung =
-            TestProject::new("export async function execute() { await new Promise(() => {}); }");
+            TestProject::new("export async function onExecute() { await new Promise(() => {}); }");
         let fake: Arc<dyn ScriptHost> = Arc::new(FakeHost::default());
         let mut timed = node_host(fake.clone());
         timed.load_plugin("hung", &hung.entry()).unwrap();
         timed.request_timeout = Duration::from_millis(200);
         assert!(timed
-            .invoke("hung", "execute", false, ScriptSlot::Execute, invocation())
+            .invoke(
+                "hung",
+                "onExecute",
+                false,
+                ScriptSlot::OnExecute,
+                invocation()
+            )
             .unwrap_err()
             .contains("timeout"));
         drop(timed);
@@ -639,12 +879,12 @@ export async function hostCall(context) {
         let mut host = node_host(fake);
         host.load_plugin("probe", &crash.entry()).unwrap();
         assert!(host
-            .invoke("probe", "crash", false, ScriptSlot::Execute, invocation())
+            .invoke("probe", "crash", false, ScriptSlot::OnExecute, invocation())
             .unwrap_err()
             .contains("exited with code 17"));
         host.load_plugin("probe", &probe.entry()).unwrap();
         assert_eq!(
-            host.invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+            host.invoke("probe", "noop", false, ScriptSlot::OnExecute, invocation())
                 .unwrap()
                 .value,
             1
@@ -672,7 +912,7 @@ export async function hostCall(context) {
         for _ in 0..ITERATIONS {
             let started = Instant::now();
             last = host
-                .invoke("probe", "noop", false, ScriptSlot::Execute, invocation())
+                .invoke("probe", "noop", false, ScriptSlot::OnExecute, invocation())
                 .unwrap()
                 .value;
             no_op.push(started.elapsed());
@@ -686,7 +926,7 @@ export async function hostCall(context) {
                     "probe",
                     "hostCall",
                     false,
-                    ScriptSlot::Execute,
+                    ScriptSlot::OnExecute,
                     invocation(),
                 )
                 .unwrap()

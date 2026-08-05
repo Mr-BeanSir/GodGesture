@@ -11,11 +11,11 @@ export type Modifier =
   | "x2Down";
 
 export type LifecyclePhase =
-  | "init"
-  | "execute"
-  | "gestureRecognized"
-  | "modifierTriggered"
-  | "gestureEnded";
+  | "onInit"
+  | "onExecute"
+  | "onGestureRecognized"
+  | "onModifierTriggered"
+  | "onEnd";
 
 export type MouseButton = "left" | "right" | "middle" | "x1" | "x2";
 
@@ -75,11 +75,11 @@ export type PluginHandler<Result = unknown> = (
 ) => Result | Promise<Result>;
 
 export interface PluginLifecycle {
-  init?: PluginHandler;
-  execute?: PluginHandler;
-  gestureRecognized?: PluginHandler;
-  modifierTriggered?: PluginHandler;
-  gestureEnded?: PluginHandler;
+  onInit?: PluginHandler;
+  onExecute?: PluginHandler;
+  onGestureRecognized?: PluginHandler;
+  onModifierTriggered?: PluginHandler;
+  onEnd?: PluginHandler;
 }
 
 export function defineHandler<Result>(handler: PluginHandler<Result>): PluginHandler<Result> {

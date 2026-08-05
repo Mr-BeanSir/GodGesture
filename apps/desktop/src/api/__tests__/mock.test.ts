@@ -68,31 +68,16 @@ describe("mock backend updater", () => {
   });
 });
 
-describe("mock backend Node plugin cache", () => {
-  it("reports whether the current dependency revision needs preparation", async () => {
+describe("mock backend Node plugin workspace", () => {
+  it("returns filesystem projects and their declared actions", async () => {
     const backend = createMockBackend();
-    const base = {
-      id: "30000000-0000-4000-8000-000000000001",
-      name: "Test",
-      entry: "index.mjs",
-      files: { "index.mjs": "export function execute() {}" },
-      allowLifecycleScripts: false,
-    };
+    const snapshot = await backend.nodePluginsGet();
 
-    await expect(
-      backend.nodePluginCacheStatus({
-        ...base,
-        packageJson: '{"private":true,"type":"module"}',
-        lockfile: null,
-      }),
-    ).resolves.toMatchObject({ state: "notRequired" });
-
-    await expect(
-      backend.nodePluginCacheStatus({
-        ...base,
-        packageJson: '{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}',
-        lockfile: null,
-      }),
-    ).resolves.toMatchObject({ state: "lockfileMissing" });
+    expect(snapshot.root).toContain("plugins");
+    expect(snapshot.plugins[0]).toMatchObject({
+      name: "gesture-demo",
+      status: "ready",
+      actions: [{ id: "default", exportName: "onExecute" }],
+    });
   });
 });

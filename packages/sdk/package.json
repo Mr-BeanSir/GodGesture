@@ -1,7 +1,6 @@
 {
   "name": "@godgesture/sdk",
   "version": "0.1.0",
-  "private": true,
   "description": "TypeScript contract and helpers for GodGesture Node plugins",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,10 +13,30 @@
     }
   },
   "files": [
-    "dist"
+    "dist/index.js",
+    "dist/index.d.ts"
   ],
+  "sideEffects": false,
+  "keywords": [
+    "godgesture",
+    "plugin",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mr-BeanSir/GodGesture.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/Mr-BeanSir/GodGesture#readme",
+  "bugs": {
+    "url": "https://github.com/Mr-BeanSir/GodGesture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src"
   },

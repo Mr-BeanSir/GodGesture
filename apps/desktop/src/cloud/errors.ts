@@ -21,6 +21,16 @@ export class CloudError extends Error {
   }
 }
 
+/** Convert an unknown transport failure to a log-safe string without payloads/tokens. */
+export function describeCloudCause(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return String(error);
+}
+
 export function extractCloudErrorCode(body: unknown): string | null {
   if (typeof body !== "object" || body === null || !("error" in body))
     return null;

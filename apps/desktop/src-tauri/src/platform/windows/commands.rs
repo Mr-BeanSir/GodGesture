@@ -53,9 +53,13 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
                 let _ = input::synthesize_key_combo(modifiers, keys);
             }
         }
-        Command::SendText { text } => {
+        Command::SendText { steps, text } => {
             activate_target(ctx);
-            input::type_text_with_sleeps(text);
+            if !steps.is_empty() {
+                input::type_text_steps(steps);
+            } else if let Some(text) = text {
+                input::type_text_with_sleeps(text);
+            }
         }
         Command::TaskSwitcher => {
             input::tap_with_modifiers(&[VK_MENU], VK_TAB);

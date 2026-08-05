@@ -12,6 +12,7 @@ const hmrPort = Number(process.env.GODGESTURE_HMR_PORT || "14201");
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
+  envPrefix: ["GODGESTURE_", "VITE_"],
   resolve: {
     // Consume the protocol source directly so Desktop dev cannot retain an optimized
     // packages/shared/dist bundle from before a schema edit.
@@ -20,15 +21,7 @@ export default defineConfig(async () => ({
         new URL("../../packages/shared/src/index.ts", import.meta.url),
       ),
     },
-    dedupe: ["monaco-editor"],
   },
-  // Monaco's editor, language definitions, and TypeScript provider must share one
-  // registry. Optimizing the deep entry points separately creates isolated registries
-  // where JavaScript models silently fall back to plaintext.
-  optimizeDeps: {
-    exclude: ["monaco-editor"],
-  },
-
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

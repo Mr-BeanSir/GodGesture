@@ -7,7 +7,6 @@ import {
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
-  RegisterRequest,
   RestoreSnapshotRequest,
   RestoreSnapshotResponse,
   TokenPairResponse,
@@ -15,11 +14,9 @@ import {
   type GodGestureApiClient,
   type GodGestureApiComponents,
   type LoginRequest as LoginInput,
-  type MeResponse as AccountUser,
   type OAuthExchangeRequest as OAuthExchangeInput,
   type OAuthProvider,
   type PushConfigRequest as PushConfigInput,
-  type RegisterRequest as RegisterInput,
   type RestoreSnapshotRequest as RestoreSnapshotInput,
 } from "@godgesture/shared";
 import { CloudSession } from "./session";
@@ -33,15 +30,6 @@ export class CloudApi {
       baseUrl: session.apiBase,
       fetch: session.authenticatedFetch,
     });
-  }
-
-  async register(input: RegisterInput): Promise<AccountUser> {
-    const body = RegisterRequest.parse(input);
-    return apiData(
-      MeResponse,
-      this.session.publicClient.POST("/auth/register", { body }),
-      "/auth/register",
-    );
   }
 
   async login(input: LoginInput): Promise<void> {

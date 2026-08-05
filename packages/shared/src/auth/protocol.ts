@@ -29,14 +29,48 @@ export type DevicePlatform = z.infer<typeof DevicePlatform>;
 
 const DeviceName = z.string().trim().min(1).max(64);
 
+export const UserRole = z.enum(["user", "admin"]);
+export type UserRole = z.infer<typeof UserRole>;
+
+export const EmailCodePurpose = z.enum(["register", "resetPassword"]);
+export type EmailCodePurpose = z.infer<typeof EmailCodePurpose>;
+
+const EmailAddress = z.string().trim().email().transform((value) => value.toLowerCase());
+
+export const RequestEmailCodeRequest = z.object({
+  email: EmailAddress,
+  purpose: EmailCodePurpose,
+});
+export type RequestEmailCodeRequest = z.infer<typeof RequestEmailCodeRequest>;
+
+export const RequestEmailCodeResponse = z.object({
+  accepted: z.literal(true),
+  expiresInSec: z.number().int().positive(),
+  retryAfterSec: z.number().int().positive(),
+});
+export type RequestEmailCodeResponse = z.infer<typeof RequestEmailCodeResponse>;
+
 export const RegisterRequest = z.object({
-  email: z.string().email(),
+  email: EmailAddress,
   password: z.string().min(8).max(128),
+  verificationCode: z.string().regex(/^\d{6}$/).optional(),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequest>;
 
+export const PasswordResetRequest = z.object({
+  email: EmailAddress,
+});
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequest>;
+
+export const PasswordResetConfirmRequest = z.object({
+  email: EmailAddress,
+  verificationCode: z.string().regex(/^\d{6}$/),
+  password: z.string().min(8).max(128),
+});
+export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmRequest>;
+
 export const LoginRequest = z.object({
-  email: z.string().email(),
+  email: EmailAddress,
   password: z.string().min(1),
   device: z.object({
     name: DeviceName,
@@ -122,5 +156,34 @@ export const MeResponse = z.object({
   email: z.string().email().nullable(),
   createdAt: z.string().datetime(),
   linkedProviders: z.array(OAuthProvider),
+  role: UserRole,
+  emailVerified: z.boolean(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
+
+export const AdminUser = z.object({
+  id: z.string().uuid(),
+  email: z.string().email().nullable(),
+  role: UserRole,
+  emailVerified: z.boolean(),
+  disabled: z.boolean(),
+  createdAt: z.string().datetime(),
+  deviceCount: z.number().int().nonnegative(),
+});
+export type AdminUser = z.infer<typeof AdminUser>;
+
+export const AdminUserListResponse = z.object({
+  users: z.array(AdminUser),
+  total: z.number().int().nonnegative(),
+});
+export type AdminUserListResponse = z.infer<typeof AdminUserListResponse>;
+
+export const AdminAccountStateRequest = z.object({
+  disabled: z.boolean(),
+});
+export type AdminAccountStateRequest = z.infer<typeof AdminAccountStateRequest>;
+
+export const AdminRoleRequest = z.object({
+  role: UserRole,
+});
+export type AdminRoleRequest = z.infer<typeof AdminRoleRequest>;

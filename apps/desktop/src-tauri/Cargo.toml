@@ -30,8 +30,7 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 tiny-skia = "0.11"
 ab_glyph = "0.2"
-log = "0.4"
-env_logger = "0.11"
+log = { version = "0.4", features = ["std"] }
 keyring = { version = "4.1.5", default-features = false, features = ["v1"] }
 url = "2"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider", "stream", "system-proxy"] }
@@ -61,6 +60,7 @@ windows = { version = "0.62", features = [
   "Win32_Storage_FileSystem",
   "Win32_Storage_Packaging_Appx",
   "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Input",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",
   "Win32_UI_HiDpi",

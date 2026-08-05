@@ -25,11 +25,11 @@ describe("GodGesture Node plugin API declarations", () => {
 
   it("keeps lifecycle and window-operation literals complete", () => {
     for (const literal of [
-      "init",
-      "execute",
-      "gestureRecognized",
-      "modifierTriggered",
-      "gestureEnded",
+      "onInit",
+      "onExecute",
+      "onGestureRecognized",
+      "onModifierTriggered",
+      "onEnd",
       "maximizeRestore",
       "minimize",
       "close",
@@ -51,11 +51,11 @@ describe("GodGesture Node plugin API declarations", () => {
     for (const symbol of [
       "@godgesture/sdk",
       "PluginContext",
-      "init",
-      "execute",
-      "gestureRecognized",
-      "modifierTriggered",
-      "gestureEnded",
+      "onInit",
+      "onExecute",
+      "onGestureRecognized",
+      "onModifierTriggered",
+      "onEnd",
       "keyCombo",
       "sendText",
       "mouseClick",
@@ -76,7 +76,7 @@ describe("GodGesture Node plugin API declarations", () => {
     ]) {
       expect(scriptingGuide).toContain(symbol);
     }
-    for (const limit of ["32", "64", "256 KiB", "1 MiB", "512 KiB", "4 MiB"]) {
+    for (const limit of ["32", "64", "256 KiB", "1 MiB", "512 KiB"]) {
       expect(scriptingGuide).toContain(limit);
     }
     expect(scriptingGuide).toContain("Node.js");

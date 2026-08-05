@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { onScopeDispose, ref, watch } from "vue";
+import { computed, onScopeDispose, ref, watch } from "vue";
 import {
   ConfigDocument,
   type MeResponse,
@@ -16,6 +16,7 @@ import {
 import { CloudSession, resolveApiOrigin } from "../cloud/session";
 import { CloudSyncEngine, type CloudSyncStatus } from "../cloud/sync-engine";
 import { useConfigStore } from "./config";
+import { appLog } from "../logging";
 
 export type { OAuthProvider } from "@godgesture/shared";
 
@@ -31,6 +32,16 @@ const SIGNED_OUT_SYNC_STATUS: CloudSyncStatus = {
   errorCode: null,
   dirty: false,
 };
+
+const ENDPOINT_MODE_KEY = "godgesture.account.endpointMode";
+const CUSTOM_ENDPOINT_KEY = "godgesture.account.customEndpoint";
+type EndpointMode = "official" | "custom";
+
+function readEndpointSettings(): { mode: EndpointMode; custom: string } {
+  if (typeof localStorage === "undefined") return { mode: "official", custom: "" };
+  const mode = localStorage.getItem(ENDPOINT_MODE_KEY) === "custom" ? "custom" : "official";
+  return { mode, custom: localStorage.getItem(CUSTOM_ENDPOINT_KEY) ?? "" };
+}
 
 export const useAccountStore = defineStore("account", () => {
   const backend = useBackend();
@@ -49,6 +60,12 @@ export const useAccountStore = defineStore("account", () => {
   const snapshots = ref<SnapshotMeta[]>([]);
   const snapshotsLoading = ref(false);
   const snapshotsErrorCode = ref<string | null>(null);
+  const endpointSettings = readEndpointSettings();
+  const endpointMode = ref<EndpointMode>(endpointSettings.mode);
+  const customApiOrigin = ref(endpointSettings.custom);
+  const apiOrigin = computed(() =>
+    endpointMode.value === "custom" ? customApiOrigin.value : resolveApiOrigin(),
+  );
 
   let session: CloudSession | null = null;
   let api: CloudApi | null = null;
@@ -94,16 +111,31 @@ export const useAccountStore = defineStore("account", () => {
 
   async function configureCloud(): Promise<void> {
     cloudConfigured.value = false;
-    const origin = resolveApiOrigin();
+    const origin = resolveApiOrigin(apiOrigin.value ?? undefined, false);
     if (!origin) throw new CloudError(0, "server_not_configured");
     device.value = await backend.accountDeviceInfo();
     if (device.value.platform === "unsupported") {
       throw new CloudError(0, "unsupported_platform");
     }
     session = new CloudSession({ apiOrigin: origin, backend });
+    appLog.info("cloud", `会话已配置 origin=${origin}`);
     session.setExpiredHandler(handleSessionExpired);
     api = new CloudApi(session);
     cloudConfigured.value = true;
+  }
+
+  async function setEndpoint(mode: EndpointMode, customOrigin = customApiOrigin.value): Promise<void> {
+    const normalized = mode === "official"
+      ? resolveApiOrigin()
+      : resolveApiOrigin(customOrigin, false);
+    if (!normalized) throw new CloudError(0, "invalid_api_origin");
+    endpointMode.value = mode;
+    customApiOrigin.value = mode === "custom" ? normalized : customOrigin;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(ENDPOINT_MODE_KEY, mode);
+      if (mode === "custom") localStorage.setItem(CUSTOM_ENDPOINT_KEY, normalized);
+    }
+    await initialize();
   }
 
   function initialize(): Promise<void> {
@@ -137,6 +169,10 @@ export const useAccountStore = defineStore("account", () => {
       }
       phase.value = "sessionError";
       authErrorCode.value = normalized.code;
+      appLog.error(
+        "cloud",
+        `会话初始化失败 origin=${apiOrigin.value ?? ""} status=${normalized.status} code=${normalized.code}`,
+      );
     }
   }
 
@@ -163,27 +199,6 @@ export const useAccountStore = defineStore("account", () => {
     authErrorCode.value = null;
     try {
       const cloud = ensureCloud();
-      await cloud.api.login({ email, password, device: makeDevicePayload() });
-      await finishLogin();
-    } catch (error) {
-      const normalized = normalizeCloudError(error);
-      authErrorCode.value = normalized.code;
-      throw normalized;
-    } finally {
-      authBusy.value = false;
-    }
-  }
-
-  async function registerWithPassword(
-    email: string,
-    password: string,
-  ): Promise<void> {
-    if (authBusy.value) return;
-    authBusy.value = true;
-    authErrorCode.value = null;
-    try {
-      const cloud = ensureCloud();
-      await cloud.api.register({ email, password });
       await cloud.api.login({ email, password, device: makeDevicePayload() });
       await finishLogin();
     } catch (error) {
@@ -379,6 +394,9 @@ export const useAccountStore = defineStore("account", () => {
 
   return {
     phase,
+    endpointMode,
+    customApiOrigin,
+    apiOrigin,
     user,
     device,
     authBusy,
@@ -392,9 +410,9 @@ export const useAccountStore = defineStore("account", () => {
     snapshotsLoading,
     snapshotsErrorCode,
     initialize,
+    setEndpoint,
     loadProviders,
     loginWithPassword,
-    registerWithPassword,
     loginWithOAuth,
     syncNow,
     loadSnapshots,

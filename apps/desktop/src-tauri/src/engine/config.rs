@@ -6,7 +6,7 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FORMAT_VERSION: u32 = 5;
+pub const CONFIG_FORMAT_VERSION: u32 = 6;
 
 // ---------------------------------------------------------------------------
 // 命令(执行器在 M2 落地,类型先行以支撑意图查找与配置往返)
@@ -39,7 +39,11 @@ pub enum Command {
     },
     #[serde(rename_all = "camelCase")]
     SendText {
-        text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        steps: Vec<SendTextStep>,
+        /// Old SendKeys string, retained only for backward-compatible reads.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     GotoUrl {
@@ -56,8 +60,8 @@ pub enum Command {
     #[serde(rename_all = "camelCase")]
     NodePlugin {
         plugin_id: String,
-        #[serde(default = "default_node_export")]
-        export_name: String,
+        #[serde(default = "default_node_action")]
+        action_id: String,
     },
     #[serde(rename_all = "camelCase")]
     AudioVolume {
@@ -76,12 +80,20 @@ pub enum GestureInputButton {
     X2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum GestureInput {
     Stroke { direction: Direction },
     Button { button: GestureInputButton },
     Wheel { direction: BoundaryWheelDirection },
+    Key { key: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SendTextStep {
+    Text { text: String },
+    Key { modifiers: Vec<String>, key: String },
 }
 
 fn default_true() -> bool {
@@ -90,8 +102,8 @@ fn default_true() -> bool {
 fn default_delta() -> i32 {
     1
 }
-fn default_node_export() -> String {
-    "execute".into()
+fn default_node_action() -> String {
+    "default".into()
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -476,6 +488,16 @@ pub struct NodePlugin {
     pub lockfile: Option<String>,
     #[serde(default)]
     pub allow_lifecycle_scripts: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<NodePluginAction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodePluginAction {
+    pub id: String,
+    pub name: String,
+    pub export_name: String,
 }
 
 fn default_node_entry() -> String {
@@ -486,9 +508,28 @@ fn default_node_files() -> std::collections::HashMap<String, String> {
     [(
         "index.mjs".into(),
         concat!(
-            "export async function execute(context) {\n",
-            "  await context.input.sendText(\"Hello from GodGesture\");\n",
-            "}\n"
+            "import { defineHandler } from \"@godgesture/sdk\";\n",
+            "\n",
+            "// Runs once when the plugin worker loads or is rebuilt.\n",
+            "export const onInit = defineHandler(async (/** @type {import(\"@godgesture/sdk\").PluginContext} */ context) => {\n",
+            "  await context.status.report(\"GodGesture plugin ready\");\n",
+            "});\n\n",
+            "// Runs after the configured gesture is recognized and released.\n",
+            "export const onExecute = defineHandler(async (/** @type {import(\"@godgesture/sdk\").PluginContext} */ context) => {\n",
+            "  await context.status.report(\"onExecute: \" + context.phase);\n",
+            "});\n\n",
+            "// Runs as soon as the gesture matcher recognizes the configured input.\n",
+            "export const onGestureRecognized = defineHandler(async (/** @type {import(\"@godgesture/sdk\").PluginContext} */ context) => {\n",
+            "  await context.status.report(\"recognized: \" + context.phase);\n",
+            "});\n\n",
+            "// Runs once for every configured independent modifier trigger.\n",
+            "export const onModifierTriggered = defineHandler(async (/** @type {import(\"@godgesture/sdk\").PluginContext} */ context) => {\n",
+            "  await context.status.report(\"modifier: \" + context.modifier);\n",
+            "});\n\n",
+            "// Runs when the gesture lifecycle ends, including a cancelled gesture.\n",
+            "export const onEnd = defineHandler(async (/** @type {import(\"@godgesture/sdk\").PluginContext} */ context) => {\n",
+            "  await context.status.report(\"gesture ended\");\n",
+            "});\n"
         )
         .into(),
     )]
@@ -509,6 +550,8 @@ pub struct ConfigDocument {
     pub hot_corners: HotCornersConfig,
     pub rub_edges: RubEdgesConfig,
     pub boundary_intents: Vec<BoundaryIntent>,
+    /// 仅供本机一次性导出旧版内嵌插件;跳过 v6 同步/本地配置序列化。
+    #[serde(skip_serializing)]
     pub node_plugins: Vec<NodePlugin>,
     pub preferences: SyncedPreferences,
 }
@@ -688,6 +731,7 @@ fn migrate_config_value(value: &mut serde_json::Value) {
     if legacy {
         neutralize_removed_commands(value);
     }
+    normalize_node_plugin_commands(value);
     if let Some(global) = value
         .as_object_mut()
         .and_then(|root| root.get_mut("global"))
@@ -710,6 +754,32 @@ fn migrate_config_value(value: &mut serde_json::Value) {
             "formatVersion".into(),
             serde_json::Value::Number(CONFIG_FORMAT_VERSION.into()),
         );
+}
+
+fn normalize_node_plugin_commands(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                normalize_node_plugin_commands(item);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            if fields.get("type").and_then(serde_json::Value::as_str) == Some("nodePlugin")
+                && !fields.contains_key("actionId")
+            {
+                let action = fields
+                    .remove("exportName")
+                    .or_else(|| Some(serde_json::Value::String("default".into())));
+                if let Some(action) = action {
+                    fields.insert("actionId".into(), action);
+                }
+            }
+            for value in fields.values_mut() {
+                normalize_node_plugin_commands(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl Default for ConfigDocument {
@@ -890,7 +960,9 @@ impl ConfigStore {
                     });
                 serde_json::from_str::<ConfigDocument>(&text)
                     .inspect(|document| {
-                        if original_version != Some(CONFIG_FORMAT_VERSION as u64) {
+                        if original_version != Some(CONFIG_FORMAT_VERSION as u64)
+                            && document.node_plugins.is_empty()
+                        {
                             if let Err(error) = self.save_config(document) {
                                 log::warn!("迁移后的配置写回失败: {path:?}: {error}");
                             }
@@ -1026,6 +1098,34 @@ fn neutralize_removed_commands(value: &mut serde_json::Value) -> usize {
 }
 
 impl ConfigDocument {
+    pub fn referenced_node_plugin_actions(&self) -> std::collections::HashMap<String, Vec<String>> {
+        let mut references = std::collections::HashMap::<String, Vec<String>>::new();
+        let mut visit = |command: &Command| {
+            if let Command::NodePlugin {
+                plugin_id,
+                action_id,
+            } = command
+            {
+                let actions = references.entry(plugin_id.clone()).or_default();
+                if !actions.contains(action_id) {
+                    actions.push(action_id.clone());
+                }
+            }
+        };
+        for intent in &self.global.intents {
+            visit(&intent.command);
+        }
+        for app in &self.apps {
+            for intent in &app.intents {
+                visit(&intent.command);
+            }
+        }
+        for intent in &self.boundary_intents {
+            visit(&intent.command);
+        }
+        references
+    }
+
     pub fn migrate_legacy_boundaries(&mut self) {
         for intent in &mut self.global.intents {
             if intent.gesture.inputs.is_empty() {
@@ -1244,7 +1344,7 @@ mod tests {
             node,
             Command::NodePlugin {
                 plugin_id: "30000000-0000-4000-8000-000000000001".into(),
-                export_name: "execute".into(),
+                action_id: "default".into(),
             }
         );
 
@@ -1263,6 +1363,16 @@ mod tests {
         assert_eq!(plugin.entry, "index.mjs");
         assert!(plugin.files.contains_key("index.mjs"));
         assert!(plugin.package_json.contains("\"type\": \"module\""));
+        let source = &plugin.files["index.mjs"];
+        for lifecycle in [
+            "onInit",
+            "onExecute",
+            "onGestureRecognized",
+            "onModifierTriggered",
+            "onEnd",
+        ] {
+            assert!(source.contains(&format!("export const {lifecycle} = defineHandler")));
+        }
     }
 
     #[test]
@@ -1296,7 +1406,7 @@ mod tests {
         .unwrap();
 
         document.migrate_legacy_boundaries();
-        assert_eq!(document.format_version, 5);
+        assert_eq!(document.format_version, CONFIG_FORMAT_VERSION);
         assert!(!document.hot_corners.enabled);
         assert!(document.hot_corners.commands.is_empty());
         assert!(document.rub_edges.commands.is_empty());
@@ -1355,7 +1465,7 @@ mod tests {
     #[test]
     fn current_config_rejects_removed_pause_commands() {
         let result = serde_json::from_value::<ConfigDocument>(serde_json::json!({
-            "formatVersion": 5,
+            "formatVersion": 6,
             "global": {
                 "intents": [{
                     "id": "50000000-0000-4000-8000-000000000001",
@@ -1366,6 +1476,45 @@ mod tests {
             }
         }));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn v5_embedded_plugins_migrate_to_local_only_action_references() {
+        let document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "formatVersion": 5,
+            "nodePlugins": [{
+                "id": "50000000-0000-4000-8000-000000000010",
+                "name": "Legacy plugin"
+            }],
+            "global": {
+                "intents": [{
+                    "id": "50000000-0000-4000-8000-000000000011",
+                    "name": "Legacy action",
+                    "gesture": { "trigger": "right", "strokes": ["up"] },
+                    "command": {
+                        "type": "nodePlugin",
+                        "pluginId": "50000000-0000-4000-8000-000000000010",
+                        "exportName": "customHandler"
+                    }
+                }]
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(document.node_plugins.len(), 1);
+        assert_eq!(
+            document.global.intents[0].command,
+            Command::NodePlugin {
+                plugin_id: "50000000-0000-4000-8000-000000000010".into(),
+                action_id: "customHandler".into(),
+            }
+        );
+        let serialized = serde_json::to_value(document).unwrap();
+        assert!(serialized.get("nodePlugins").is_none());
+        assert_eq!(
+            serialized["global"]["intents"][0]["command"]["actionId"],
+            "customHandler"
+        );
     }
 
     #[test]

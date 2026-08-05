@@ -2,6 +2,14 @@ import { pathToFileURL } from "node:url";
 
 const [, , entryPath, handlerName] = process.argv;
 if (!entryPath || !handlerName) throw new Error("test runner requires an entry path and handler");
+const INIT_HANDLER = "onInit";
+const LIFECYCLE_PHASES = new Set([
+  INIT_HANDLER,
+  "onExecute",
+  "onGestureRecognized",
+  "onModifierTriggered",
+  "onEnd",
+]);
 
 const calls = [];
 const logs = [];
@@ -16,7 +24,7 @@ for (const level of ["log", "info", "warn", "error"]) {
 
 const plugin = await import(pathToFileURL(entryPath).href);
 const context = {
-  phase: "test",
+  phase: LIFECYCLE_PHASES.has(handlerName) ? handlerName : "onExecute",
   gesture: {
     origin: { x: 0, y: 0 },
     endpoint: { x: 10, y: 10 },
@@ -47,7 +55,9 @@ const context = {
   },
 };
 
-if (handlerName !== "init" && typeof plugin.init === "function") await plugin.init({ ...context, phase: "init" });
+if (handlerName !== INIT_HANDLER && typeof plugin[INIT_HANDLER] === "function") {
+  await plugin[INIT_HANDLER]({ ...context, phase: INIT_HANDLER });
+}
 const handler = plugin[handlerName];
 if (typeof handler !== "function") throw new Error(`plugin does not export '${handlerName}'`);
 const result = await handler(context);

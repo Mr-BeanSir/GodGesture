@@ -14,10 +14,8 @@ import {
 } from "./gestures.js";
 import { SyncedPreferences } from "./preferences.js";
 import { MAX_APPS } from "./limits.js";
-import { NodePlugins } from "./plugins.js";
-
 /** 配置文档格式版本(载荷结构演进用,与同步版本号无关) */
-export const CONFIG_FORMAT_VERSION = 5;
+export const CONFIG_FORMAT_VERSION = 6;
 
 const LEGACY_BOUNDARY_IDS = {
   "hotCorner:leftTop": "10000000-0000-4000-8000-000000000001",
@@ -119,6 +117,14 @@ function normalizeGesture(
 function normalizeCommand(value: unknown): unknown {
   if (!isRecord(value)) return value;
   if (value.type === "pause") return { type: "doNothing" };
+  if (value.type === "nodePlugin" && typeof value.pluginId === "string") {
+    const actionId = typeof value.actionId === "string"
+      ? value.actionId
+      : typeof value.exportName === "string"
+        ? value.exportName
+        : "onExecute";
+    return { type: "nodePlugin", pluginId: value.pluginId, actionId };
+  }
   return value;
 }
 
@@ -159,8 +165,8 @@ function normalizeBoundaryCommands(value: unknown, legacy: boolean): unknown {
 /** Upgrade legacy corner/edge command maps into deterministic boundary intents. */
 export function migrateConfigDocument(value: unknown): unknown {
   if (!isRecord(value)) return value;
-  const version = value.formatVersion ?? 1;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== CONFIG_FORMAT_VERSION) return value;
+  const version = Number(value.formatVersion ?? 1);
+  if (![1, 2, 3, 4, 5, CONFIG_FORMAT_VERSION].includes(version)) return value;
   const legacy = version < CONFIG_FORMAT_VERSION;
 
   const hotCorners = isRecord(value.hotCorners) ? value.hotCorners : {};
@@ -225,7 +231,6 @@ export function migrateConfigDocument(value: unknown): unknown {
     hotCorners: { ...hotCorners, commands: {} },
     rubEdges: { ...rubEdges, commands: {} },
     boundaryIntents: [...existing, ...migrated],
-    nodePlugins: Array.isArray(value.nodePlugins) ? value.nodePlugins : [],
   };
 }
 
@@ -233,7 +238,7 @@ export function migrateConfigDocument(value: unknown): unknown {
  * 用户配置整体文档:云同步的载荷,也是本地 config 文件的主体。
  * 不含本机专属设置(MachineLocalSettings 单独存本地)。
  */
-const ConfigDocumentV5 = z
+const ConfigDocumentV6 = z
   .object({
     formatVersion: z
       .literal(CONFIG_FORMAT_VERSION)
@@ -243,25 +248,7 @@ const ConfigDocumentV5 = z
     hotCorners: HotCornersConfig.default({}),
     rubEdges: RubEdgesConfig.default({}),
     boundaryIntents: BoundaryIntents,
-    nodePlugins: NodePlugins,
     preferences: SyncedPreferences.default({}),
-  })
-  .superRefine((document, ctx) => {
-    const pluginIds = new Set(document.nodePlugins.map((plugin) => plugin.id));
-    const commands = [
-      ...document.global.intents.map((intent) => intent.command),
-      ...document.apps.flatMap((app) => app.intents.map((intent) => intent.command)),
-      ...document.boundaryIntents.map((intent) => intent.command),
-    ];
-    for (const command of commands) {
-      if (command.type === "nodePlugin" && !pluginIds.has(command.pluginId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["nodePlugins"],
-          message: `Node plugin command references missing plugin '${command.pluginId}'`,
-        });
-      }
-    }
   });
-export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV5);
+export const ConfigDocument = z.preprocess(migrateConfigDocument, ConfigDocumentV6);
 export type ConfigDocument = z.infer<typeof ConfigDocument>;

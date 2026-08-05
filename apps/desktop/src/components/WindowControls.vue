@@ -2,6 +2,7 @@
 import { CloseBold, Minus } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { closeSettingsWindow, minimizeSettingsWindow } from "../window-controls";
+import { appLog } from "../logging";
 
 const { t } = useI18n();
 
@@ -9,7 +10,7 @@ async function minimizeWindow() {
   try {
     await minimizeSettingsWindow();
   } catch (error) {
-    console.error("Failed to minimize the settings window", error);
+    appLog.warn("window", `最小化设置窗口失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -17,7 +18,7 @@ async function closeWindow() {
   try {
     await closeSettingsWindow();
   } catch (error) {
-    console.error("Failed to close the settings window", error);
+    appLog.warn("window", `关闭设置窗口失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 </script>

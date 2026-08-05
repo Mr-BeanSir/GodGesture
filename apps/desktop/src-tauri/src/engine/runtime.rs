@@ -270,6 +270,19 @@ impl EngineShared {
 
     /// 钩子线程入口:裁决是否吞事件
     pub fn on_hook_event(self: &Arc<Self>, input: Input) -> bool {
+        let key_probe_phase = match &input {
+            Input::KeyDown(key) if key == "KeyQ" => Some("down"),
+            Input::KeyUp(key) if key == "KeyQ" => Some("up"),
+            _ => None,
+        };
+        if let Some(phase) = key_probe_phase {
+            log::debug!(
+                target: "gesture.capture",
+                "event=engine_input_received key=KeyQ phase={phase} recording={} capturing={}",
+                self.is_recording(),
+                self.tracker.lock().is_capturing()
+            );
+        }
         // 先记录物理按键状态:下面的和弦分支会提前 return,放这里才不会漏记
         match &input {
             Input::ButtonDown(b, _) => {
@@ -322,6 +335,14 @@ impl EngineShared {
 
         let mut host = HostImpl { shared: self };
         let outcome = self.tracker.lock().handle(input, now, &mut host);
+        if let Some(phase) = key_probe_phase {
+            log::debug!(
+                target: "gesture.capture",
+                "event=engine_input_completed key=KeyQ phase={phase} swallowed={} action_count={}",
+                outcome.swallow,
+                outcome.actions.len()
+            );
+        }
         self.apply_actions(outcome.actions);
 
         // 触发角 / 摩擦边:纯观察,不参与吞事件的裁决
@@ -417,6 +438,11 @@ impl EngineShared {
                         .fetch_and(!button_bit(*button), Ordering::Relaxed);
                 }
                 swallow
+            }
+            Input::KeyDown(_) | Input::KeyUp(_) => {
+                let result = self.boundary.lock().cancel();
+                self.apply_boundary_result(result);
+                false
             }
         }
     }
@@ -684,30 +710,55 @@ impl EngineShared {
                     let mut session_guard = self.session.lock();
                     if let Some(s) = session_guard.as_mut() {
                         s.active_modifier = m;
-                        let mut independent_intent = None;
-                        if !self.is_recording() {
-                            independent_intent = self
+                        let ordered_input = modifier_to_input(m).filter(|input| {
+                            let mut prefix = s.inputs.clone();
+                            prefix.push(input.clone());
+                            self.finder
+                                .lock()
+                                .any_inputs_with_prefix(s.trigger, &prefix, &s.fg)
+                        });
+                        let intent = if self.is_recording() {
+                            if let Some(input) = modifier_to_input(m) {
+                                s.inputs.push(input);
+                            }
+                            None
+                        } else if let Some(input) = ordered_input {
+                            // A configured ordered step wins over a same-shaped
+                            // independent modifier. The ordered intent is still
+                            // deferred until the trigger button is released.
+                            s.inputs.push(input);
+                            None
+                        } else {
+                            let independent_intent = self
                                 .finder
                                 .lock()
                                 .find_modifier(s.trigger, &s.inputs, m, &s.fg)
                                 .cloned();
-                        }
-                        let intent = if independent_intent.is_some() {
-                            // 独立修饰符不进入基础输入,因此下一次相同事件仍可命中。
-                            independent_intent
-                        } else {
-                            if let Some(input) = modifier_to_input(m) {
-                                s.inputs.push(input);
-                            }
-                            if self.is_recording() {
-                                None
+                            if independent_intent.is_some() {
+                                // Independent modifiers do not enter the
+                                // ordered input list, so the same event can
+                                // fire again.
+                                independent_intent
                             } else {
-                                self.finder
-                                    .lock()
-                                    .find_inputs(s.trigger, &s.inputs, &s.fg)
-                                    .cloned()
+                                if let Some(input) = modifier_to_input(m) {
+                                    s.inputs.push(input);
+                                }
+                                None
                             }
                         };
+                        if !self.is_recording() {
+                            let recognized = self
+                                .finder
+                                .lock()
+                                .find_inputs(s.trigger, &s.inputs, &s.fg)
+                                .map(|intent| intent.name.clone());
+                            if recognized != s.last_recognized {
+                                s.last_recognized = recognized.clone();
+                                let _ = self
+                                    .tx
+                                    .send(EngineMsg::RecognitionChanged { name: recognized });
+                            }
+                        }
                         let context = GestureContext {
                             origin: s.origin,
                             endpoint: pos,
@@ -727,6 +778,39 @@ impl EngineShared {
                             modifier: m,
                             context,
                         });
+                    }
+                }
+                Action::KeyFired { key } => {
+                    if key == "KeyQ" {
+                        log::debug!(
+                            target: "gesture.capture",
+                            "event=key_fired key=KeyQ recording={}",
+                            self.is_recording()
+                        );
+                    }
+                    let mut session_guard = self.session.lock();
+                    if let Some(s) = session_guard.as_mut() {
+                        s.inputs.push(GestureInput::Key { key });
+                        if !self.is_recording() {
+                            let recognized = self
+                                .finder
+                                .lock()
+                                .find_inputs(s.trigger, &s.inputs, &s.fg)
+                                .map(|intent| intent.name.clone());
+                            if recognized != s.last_recognized {
+                                s.last_recognized = recognized.clone();
+                                let _ = self
+                                    .tx
+                                    .send(EngineMsg::RecognitionChanged { name: recognized });
+                            }
+                        } else {
+                            let _ = self.tx.send(EngineMsg::CaptureUpdated {
+                                trigger: s.trigger,
+                                strokes: s.parser.strokes().to_vec(),
+                                modifier: s.active_modifier,
+                                inputs: s.inputs.clone(),
+                            });
+                        }
                     }
                 }
                 Action::PathEnd { pos } => {
@@ -1036,6 +1120,98 @@ mod tests {
                 vec![Direction::Up, Direction::Right],
             ))
         );
+    }
+
+    #[test]
+    fn recording_preserves_keyboard_input_order() {
+        let (shared, rx) = EngineShared::new(ConfigDocument::default(), Arc::new(StubPlatform));
+        shared.start_recording();
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(shared.on_hook_event(Input::KeyDown("KeyQ".into())));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        assert!(shared.on_hook_event(Input::KeyUp("KeyQ".into())));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+
+        let captured = rx.try_iter().find_map(|message| match message {
+            EngineMsg::GestureCaptured { inputs, .. } => Some(inputs),
+            _ => None,
+        });
+        assert_eq!(
+            captured,
+            Some(vec![
+                GestureInput::Key { key: "KeyQ".into() },
+                GestureInput::Stroke {
+                    direction: Direction::Right,
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn ordered_button_input_wins_over_an_independent_modifier() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = ConfigDocument::default();
+        config.global.intents = vec![
+            GestureIntent {
+                id: "50000000-0000-4000-8000-000000000010".into(),
+                name: "Ordered left click".into(),
+                enabled: true,
+                gesture: GestureSpecConfig {
+                    trigger: TriggerButton::Right,
+                    strokes: vec![Direction::Right],
+                    modifier: Modifier::None,
+                    inputs: vec![
+                        GestureInput::Stroke {
+                            direction: Direction::Right,
+                        },
+                        GestureInput::Button {
+                            button: GestureInputButton::Left,
+                        },
+                    ],
+                },
+                command: Command::DoNothing,
+                order: 0,
+            },
+            GestureIntent {
+                id: "50000000-0000-4000-8000-000000000011".into(),
+                name: "Independent left click".into(),
+                enabled: true,
+                gesture: GestureSpecConfig {
+                    trigger: TriggerButton::Right,
+                    strokes: vec![Direction::Right],
+                    modifier: Modifier::LeftButtonDown,
+                    inputs: vec![GestureInput::Stroke {
+                        direction: Direction::Right,
+                    }],
+                },
+                command: Command::DoNothing,
+                order: 1,
+            },
+        ];
+        let (shared, rx) = EngineShared::new(config, platform);
+
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Right, Point { x: 0, y: 0 },)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 0 })));
+        assert!(shared.on_hook_event(Input::ButtonDown(MouseButton::Left, Point { x: 120, y: 0 },)));
+        assert!(!rx.try_iter().any(|message| matches!(
+            message,
+            EngineMsg::ModifierFired {
+                intent: Some(intent),
+                modifier: Modifier::LeftButtonDown,
+                ..
+            } if intent.name == "Independent left click"
+        )));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Left, Point { x: 120, y: 0 },)));
+        assert!(shared.on_hook_event(Input::ButtonUp(MouseButton::Right, Point { x: 120, y: 0 },)));
+
+        assert!(rx.try_iter().any(|message| matches!(
+            message,
+            EngineMsg::PathEnded {
+                intent: Some(intent),
+                ..
+            } if intent.name == "Ordered left click"
+        )));
     }
 
     #[test]

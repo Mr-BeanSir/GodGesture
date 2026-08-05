@@ -7,10 +7,12 @@ import {
 import type { Backend } from "../api/backend";
 import {
   CloudError,
+  describeCloudCause,
   INVALID_REFRESH_CODES,
   normalizeCloudError,
 } from "./errors";
 import { apiData, responseErrorCode } from "./transport";
+import { appLog } from "../logging";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -27,7 +29,7 @@ export interface CloudSessionOptions {
 }
 
 export function resolveApiOrigin(
-  configured = import.meta.env.VITE_API_BASE_URL,
+  configured = import.meta.env.GODGESTURE_API ?? import.meta.env.VITE_API_BASE_URL,
   development = import.meta.env.DEV,
 ): string | null {
   const candidate =
@@ -266,7 +268,11 @@ export class CloudSession {
         new Request(request, { signal: controller.signal }),
       );
     } catch (error) {
-      throw normalizeCloudError(error);
+      appLog.error(
+        "cloud",
+        `网络请求失败 method=${request.method} url=${request.url} cause=${describeCloudCause(error)}`,
+      );
+      throw normalizeCloudError(error, request.url);
     } finally {
       globalThis.clearTimeout(timeout);
       request.signal.removeEventListener("abort", abort);

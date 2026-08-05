@@ -45,6 +45,7 @@ enum ServiceMessage {
     Invoke {
         plugin_id: String,
         handler: String,
+        resolve_action: bool,
         optional: bool,
         slot: ScriptSlot,
         invocation: ScriptInvocation,
@@ -71,6 +72,7 @@ struct ServiceState {
     script_host: Arc<dyn ScriptHost>,
     outcome_sink: OutcomeSink,
     plugins: HashMap<String, PreparedPlugin>,
+    actions: HashMap<String, HashMap<String, String>>,
     load_errors: HashMap<String, String>,
     node_host: Option<NodeHost>,
 }
@@ -98,6 +100,7 @@ impl NodeScriptService {
                     script_host,
                     outcome_sink,
                     plugins: HashMap::new(),
+                    actions: HashMap::new(),
                     load_errors: HashMap::new(),
                     node_host: None,
                 };
@@ -108,10 +111,18 @@ impl NodeScriptService {
                         ServiceMessage::Invoke {
                             plugin_id,
                             handler,
+                            resolve_action,
                             optional,
                             slot,
                             invocation,
-                        } => state.invoke(plugin_id, handler, optional, slot, invocation),
+                        } => state.invoke(
+                            plugin_id,
+                            handler,
+                            resolve_action,
+                            optional,
+                            slot,
+                            invocation,
+                        ),
                     }
                 }
             })
@@ -143,29 +154,54 @@ impl NodeScriptService {
     pub fn invoke(
         &self,
         plugin_id: impl Into<String>,
-        handler: impl Into<String>,
+        action_id: impl Into<String>,
         optional: bool,
         slot: ScriptSlot,
         invocation: ScriptInvocation,
     ) -> bool {
         self.try_send(ServiceMessage::Invoke {
             plugin_id: plugin_id.into(),
-            handler: handler.into(),
+            handler: action_id.into(),
+            resolve_action: false,
             optional,
             slot,
             invocation,
         })
     }
 
+    pub fn invoke_action(
+        &self,
+        plugin_id: impl Into<String>,
+        action_id: impl Into<String>,
+        slot: ScriptSlot,
+        invocation: ScriptInvocation,
+    ) -> bool {
+        self.try_send(ServiceMessage::Invoke {
+            plugin_id: plugin_id.into(),
+            handler: action_id.into(),
+            resolve_action: true,
+            optional: false,
+            slot,
+            invocation,
+        })
+    }
+
     fn try_send(&self, message: ServiceMessage) -> bool {
+        let (plugin_id, action_id) = service_message_context(&message);
         match self.sender.try_send(message) {
             Ok(()) => true,
             Err(TrySendError::Full(_)) => {
-                log::error!("Node plugin service queue is full; invocation was dropped");
+                log::warn!(
+                    target: "node.supervisor",
+                    "event=queue_drop code=service_queue_full pluginId={plugin_id} actionId={action_id}"
+                );
                 false
             }
             Err(TrySendError::Disconnected(_)) => {
-                log::error!("Node plugin service is unavailable; invocation was dropped");
+                log::warn!(
+                    target: "node.supervisor",
+                    "event=queue_drop code=service_unavailable pluginId={plugin_id} actionId={action_id}"
+                );
                 false
             }
         }
@@ -175,38 +211,85 @@ impl NodeScriptService {
 impl ServiceState {
     fn sync_plugins(&mut self, plugins: Vec<NodePlugin>) {
         if plugins.len() > MAX_PLUGINS {
-            log::error!("Node plugin config exceeds the {MAX_PLUGINS}-plugin limit");
+            log::error!(
+                target: "node.supervisor",
+                "event=plugin_sync_failed code=plugin_limit_exceeded pluginId=- actionId=- count={}",
+                plugins.len()
+            );
             return;
         }
         let mut next_plugins = HashMap::new();
+        let mut next_actions = HashMap::new();
         let mut next_errors = HashMap::new();
         for plugin in plugins {
             let id = plugin.id.clone();
+            let action_map = if plugin.actions.is_empty() {
+                HashMap::from([(String::from("default"), String::from("onExecute"))])
+            } else {
+                plugin
+                    .actions
+                    .iter()
+                    .map(|action| (action.id.clone(), action.export_name.clone()))
+                    .collect()
+            };
+            next_actions.insert(id.clone(), action_map);
             match prepare_plugin_cache(&self.workspace, &self.node, &self.pnpm, &plugin) {
                 Ok(prepared) => {
                     next_plugins.insert(id, prepared);
                 }
                 Err(error) => {
-                    log::error!("Node plugin '{id}' could not be prepared: {error}");
-                    next_errors.insert(id, error);
+                    log::error!(
+                        target: "node.supervisor",
+                        "event=plugin_prepare_failed code={} pluginId={id} actionId=-",
+                        node_error_code(&error)
+                    );
+                    if let Some(previous) = self.plugins.get(&id).cloned() {
+                        next_plugins.insert(id, previous);
+                    } else {
+                        next_errors.insert(id, error);
+                    }
                 }
             }
         }
-        if next_plugins == self.plugins && next_errors == self.load_errors {
+        if next_plugins == self.plugins
+            && next_actions == self.actions
+            && next_errors == self.load_errors
+        {
             return;
         }
-        self.node_host = None;
-        self.plugins = next_plugins;
-        self.load_errors = next_errors;
-        if let Err(error) = self.start_host() {
-            log::error!("Node plugin host could not start: {error}");
+        let previous_plugins = std::mem::replace(&mut self.plugins, next_plugins);
+        let previous_actions = std::mem::replace(&mut self.actions, next_actions);
+        let previous_errors = std::mem::replace(&mut self.load_errors, next_errors);
+        let previous_host = self.node_host.take();
+        match self.build_host() {
+            Ok(host) => self.node_host = host,
+            Err(error) if previous_host.is_some() => {
+                log::error!(
+                    target: "node.supervisor",
+                    "event=plugin_reload_rejected code={} pluginId=- actionId=-",
+                    node_error_code(&error)
+                );
+                self.plugins = previous_plugins;
+                self.actions = previous_actions;
+                self.load_errors = previous_errors;
+                self.node_host = previous_host;
+            }
+            Err(error) => {
+                log::error!(
+                    target: "node.supervisor",
+                    "event=host_start_failed code={} pluginId=- actionId=-",
+                    node_error_code(&error)
+                );
+                for id in self.plugins.keys() {
+                    self.load_errors.insert(id.clone(), error.clone());
+                }
+            }
         }
     }
 
-    fn start_host(&mut self) -> Result<(), String> {
+    fn build_host(&self) -> Result<Option<NodeHost>, String> {
         if self.plugins.is_empty() {
-            self.node_host = None;
-            return Ok(());
+            return Ok(None);
         }
         let mut host = NodeHost::start_with_supervisor(
             &self.node,
@@ -218,32 +301,68 @@ impl ServiceState {
         ids.sort();
         for id in ids {
             let plugin = &self.plugins[&id];
-            let result = host.load_plugin(&id, &plugin.entry_path).and_then(|_| {
-                host.invoke(&id, "init", true, ScriptSlot::Init, empty_invocation())
-                    .map(|_| ())
-            });
-            if let Err(error) = result {
-                log::error!("Node plugin '{id}' could not load: {error}");
-                self.load_errors.insert(id, error);
-            }
+            host.load_plugin(&id, &plugin.entry_path)
+                .and_then(|_| {
+                    host.invoke(&id, "onInit", true, ScriptSlot::OnInit, empty_invocation())
+                        .map(|_| ())
+                })
+                .map_err(|error| format!("Node plugin '{id}' could not load: {error}"))?;
         }
-        self.node_host = Some(host);
-        Ok(())
+        Ok(Some(host))
     }
 
     fn invoke(
         &mut self,
         plugin_id: String,
         handler: String,
+        resolve_action: bool,
         optional: bool,
         slot: ScriptSlot,
         invocation: ScriptInvocation,
     ) {
+        let export_name = if resolve_action {
+            self.actions
+                .get(&plugin_id)
+                .and_then(|actions| actions.get(&handler))
+                .cloned()
+        } else {
+            Some(handler.clone())
+        };
+        let Some(export_name) = export_name else {
+            log::warn!(
+                target: "node.worker",
+                "event=invocation_rejected code=action_not_declared pluginId={plugin_id} actionId={handler}"
+            );
+            (self.outcome_sink)(NodeInvocationOutcome {
+                plugin_id,
+                handler: handler.clone(),
+                invocation,
+                result: Err(format!("Node plugin action '{handler}' is not declared")),
+                status: None,
+            });
+            return;
+        };
+        let started = Instant::now();
         let (result, status) =
-            match self.invoke_inner(&plugin_id, &handler, optional, slot, invocation) {
+            match self.invoke_inner(&plugin_id, &export_name, optional, slot, invocation) {
                 Ok(InvocationResult { value, status, .. }) => (Ok(value), status),
                 Err(error) => (Err(error), None),
             };
+        match &result {
+            Ok(_) => log::debug!(
+                target: "node.worker",
+                "event=invocation_complete code=ok pluginId={plugin_id} actionId={handler} lifecycle={} durationMs={}",
+                slot.name(),
+                started.elapsed().as_millis()
+            ),
+            Err(error) => log::warn!(
+                target: "node.worker",
+                "event=invocation_failed code={} pluginId={plugin_id} actionId={handler} lifecycle={} durationMs={}",
+                node_error_code(error),
+                slot.name(),
+                started.elapsed().as_millis()
+            ),
+        }
         (self.outcome_sink)(NodeInvocationOutcome {
             plugin_id,
             handler,
@@ -268,7 +387,11 @@ impl ServiceState {
             return Err(format!("Node plugin '{plugin_id}' is unavailable: {error}"));
         }
         if self.node_host.is_none() {
-            self.start_host()?;
+            log::info!(
+                target: "node.supervisor",
+                "event=host_restart_requested code=host_missing pluginId={plugin_id} actionId={handler}"
+            );
+            self.node_host = self.build_host()?;
         }
         let result = self
             .node_host
@@ -284,6 +407,11 @@ impl ServiceState {
                 .as_ref()
                 .is_err_and(|error| error.contains("Node host response timeout"))
         {
+            log::warn!(
+                target: "node.supervisor",
+                "event=host_unavailable code={} pluginId={plugin_id} actionId={handler}",
+                if host_stopped { "host_stopped" } else { "timeout" }
+            );
             self.node_host = None;
         }
         result
@@ -295,6 +423,53 @@ fn empty_invocation() -> ScriptInvocation {
         gesture: Default::default(),
         trigger: None,
         modifier: super::types::Modifier::None,
+    }
+}
+
+fn service_message_context(message: &ServiceMessage) -> (String, String) {
+    match message {
+        ServiceMessage::Sync(_) => ("-".into(), "sync".into()),
+        ServiceMessage::Invoke {
+            plugin_id, handler, ..
+        } => (safe_log_identifier(plugin_id), safe_log_identifier(handler)),
+    }
+}
+
+fn safe_log_identifier(value: &str) -> String {
+    let result = value
+        .chars()
+        .take(64)
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if result.is_empty() {
+        "-".into()
+    } else {
+        result
+    }
+}
+
+pub(crate) fn node_error_code(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("timeout") || lower.contains("timed out") {
+        "timeout"
+    } else if lower.contains("not configured") {
+        "plugin_not_configured"
+    } else if lower.contains("not declared") {
+        "action_not_declared"
+    } else if lower.contains("prepare") || lower.contains("dependency") || lower.contains("pnpm") {
+        "prepare_failed"
+    } else if lower.contains("import") {
+        "import_failed"
+    } else if lower.contains("worker") || lower.contains("host") {
+        "host_failed"
+    } else {
+        "invocation_failed"
     }
 }
 
@@ -347,15 +522,6 @@ fn prepare_plugin_cache(
     Ok(PreparedPlugin {
         entry_path: plugin_root.join(plugin.entry.replace('/', std::path::MAIN_SEPARATOR_STR)),
     })
-}
-
-pub(crate) fn ensure_plugin_cache(
-    workspace: &Path,
-    node: &Path,
-    pnpm: &Path,
-    plugin: &NodePlugin,
-) -> Result<(), String> {
-    prepare_plugin_cache(workspace, node, pnpm, plugin).map(|_| ())
 }
 
 pub fn plugin_cache_status(
@@ -426,7 +592,6 @@ fn install_dependencies(
     let mut command = super::node_toolchain::pnpm_command(node, pnpm);
     command
         .arg("install")
-        .arg("--offline")
         .arg("--frozen-lockfile")
         .arg("--prod")
         .arg("--store-dir")
@@ -439,27 +604,47 @@ fn install_dependencies(
     if !plugin.allow_lifecycle_scripts {
         command.arg("--ignore-scripts");
     }
+    let started = Instant::now();
+    log::info!(
+        target: "node.supervisor",
+        "event=dependency_prepare_started pluginId={} actionId=-",
+        safe_log_identifier(&plugin.id)
+    );
     let mut child = command
         .spawn()
-        .map_err(|error| format!("start bundled pnpm: {error}"))?;
-    let started = Instant::now();
+        .map_err(|_| "start bundled pnpm failed".to_string())?;
     loop {
         if let Some(status) = child
             .try_wait()
             .map_err(|error| format!("wait for pnpm: {error}"))?
         {
             if status.success() {
+                log::info!(
+                    target: "node.supervisor",
+                    "event=dependency_prepare_completed code=ok pluginId={} actionId=- durationMs={}",
+                    safe_log_identifier(&plugin.id),
+                    started.elapsed().as_millis()
+                );
                 return Ok(());
             }
-            return Err(format!("pnpm install failed ({status})"));
+            log::error!(
+                target: "node.supervisor",
+                "event=dependency_prepare_failed code=install_failed pluginId={} actionId=- durationMs={}",
+                safe_log_identifier(&plugin.id),
+                started.elapsed().as_millis()
+            );
+            return Err("pnpm install failed".into());
         }
         if started.elapsed() >= PACKAGE_INSTALL_TIMEOUT {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!(
-                "pnpm install exceeded {} seconds",
-                PACKAGE_INSTALL_TIMEOUT.as_secs()
-            ));
+            log::error!(
+                target: "node.supervisor",
+                "event=dependency_prepare_failed code=timeout pluginId={} actionId=- durationMs={}",
+                safe_log_identifier(&plugin.id),
+                started.elapsed().as_millis()
+            );
+            return Err("pnpm install timeout".into());
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -646,6 +831,7 @@ mod tests {
             package_json: r#"{"private":true,"type":"module"}"#.into(),
             lockfile: None,
             allow_lifecycle_scripts: false,
+            actions: Vec::new(),
         }
     }
 
@@ -656,7 +842,7 @@ mod tests {
             &dir.0,
             Path::new("node"),
             Path::new("pnpm"),
-            &plugin("export function execute() {}"),
+            &plugin("export function onExecute() {}"),
         )
         .unwrap();
         assert!(first.entry_path.is_file());
@@ -664,7 +850,7 @@ mod tests {
             &dir.0,
             Path::new("node"),
             Path::new("pnpm"),
-            &plugin("export function execute() { return 2 }"),
+            &plugin("export function onExecute() { return 2 }"),
         )
         .unwrap();
         assert_ne!(first.entry_path, second.entry_path);
@@ -682,7 +868,7 @@ mod tests {
     #[test]
     fn cache_status_distinguishes_dependency_readiness() {
         let dir = TestDir::new();
-        let no_dependencies = plugin("export function execute() {}");
+        let no_dependencies = plugin("export function onExecute() {}");
         assert_eq!(
             plugin_cache_status(&dir.0, &no_dependencies).unwrap().state,
             "notRequired"
@@ -708,7 +894,7 @@ mod tests {
 
     #[test]
     fn cache_revision_includes_lifecycle_script_policy() {
-        let plugin = plugin("export function execute() {}");
+        let plugin = plugin("export function onExecute() {}");
         let mut approved = plugin.clone();
         approved.allow_lifecycle_scripts = true;
         assert_ne!(plugin_fingerprint(&plugin), plugin_fingerprint(&approved));
@@ -723,11 +909,11 @@ async function record(context) {
   events.push(context.phase);
   await context.status.report(events.join(","));
 }
-export const init = record;
-export const gestureRecognized = record;
-export const modifierTriggered = record;
-export const gestureEnded = record;
-export const execute = record;
+export const onInit = record;
+export const onGestureRecognized = record;
+export const onModifierTriggered = record;
+export const onEnd = record;
+export const onExecute = record;
 "#;
         let (sender, receiver) = mpsc::channel();
         let sink: OutcomeSink = Arc::new(move |outcome| sender.send(outcome).unwrap());
@@ -739,10 +925,10 @@ export const execute = record;
         )
         .unwrap();
         for (handler, slot) in [
-            ("gestureRecognized", ScriptSlot::GestureRecognized),
-            ("modifierTriggered", ScriptSlot::ModifierTriggered),
-            ("execute", ScriptSlot::Execute),
-            ("gestureEnded", ScriptSlot::GestureEnded),
+            ("onGestureRecognized", ScriptSlot::OnGestureRecognized),
+            ("onModifierTriggered", ScriptSlot::OnModifierTriggered),
+            ("onExecute", ScriptSlot::OnExecute),
+            ("onEnd", ScriptSlot::OnEnd),
         ] {
             assert!(service.invoke(
                 "30000000-0000-4000-8000-000000000001",
@@ -762,11 +948,92 @@ export const execute = record;
         assert_eq!(
             statuses,
             [
-                "init,gestureRecognized",
-                "init,gestureRecognized,modifierTriggered",
-                "init,gestureRecognized,modifierTriggered,execute",
-                "init,gestureRecognized,modifierTriggered,execute,gestureEnded",
+                "onInit,onGestureRecognized",
+                "onInit,onGestureRecognized,onModifierTriggered",
+                "onInit,onGestureRecognized,onModifierTriggered,onExecute",
+                "onInit,onGestureRecognized,onModifierTriggered,onExecute,onEnd",
             ]
         );
+    }
+
+    #[test]
+    fn failed_reload_keeps_the_previous_worker_active() {
+        let dir = TestDir::new();
+        let source = r#"
+let count = 0;
+export async function onExecute(context) {
+  count += 1;
+  await context.status.report(String(count));
+}
+"#;
+        let (sender, receiver) = mpsc::channel();
+        let sink: OutcomeSink = Arc::new(move |outcome| sender.send(outcome).unwrap());
+        let service = NodeScriptService::start_development(
+            dir.0.clone(),
+            Arc::new(FakeHost),
+            sink,
+            vec![plugin(source)],
+        )
+        .unwrap();
+        assert!(service.invoke(
+            "30000000-0000-4000-8000-000000000001",
+            "onExecute",
+            false,
+            ScriptSlot::OnExecute,
+            empty_invocation(),
+        ));
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("1")
+        );
+
+        assert!(service.sync_plugins(vec![plugin("export const onExecute = ;")]));
+        assert!(service.invoke(
+            "30000000-0000-4000-8000-000000000001",
+            "onExecute",
+            false,
+            ScriptSlot::OnExecute,
+            empty_invocation(),
+        ));
+        let outcome = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+        outcome.result.unwrap();
+        assert_eq!(outcome.status.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn command_actions_resolve_stable_ids_to_exports() {
+        let dir = TestDir::new();
+        let mut configured = plugin(
+            "export async function renamed(context) { await context.status.report('mapped'); }",
+        );
+        configured.actions = vec![super::super::config::NodePluginAction {
+            id: "default".into(),
+            name: "Execute".into(),
+            export_name: "renamed".into(),
+        }];
+        let (sender, receiver) = mpsc::channel();
+        let sink: OutcomeSink = Arc::new(move |outcome| sender.send(outcome).unwrap());
+        let service = NodeScriptService::start_development(
+            dir.0.clone(),
+            Arc::new(FakeHost),
+            sink,
+            vec![configured],
+        )
+        .unwrap();
+
+        assert!(service.invoke_action(
+            "30000000-0000-4000-8000-000000000001",
+            "default",
+            ScriptSlot::OnExecute,
+            empty_invocation(),
+        ));
+        let outcome = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+        outcome.result.unwrap();
+        assert_eq!(outcome.handler, "default");
+        assert_eq!(outcome.status.as_deref(), Some("mapped"));
     }
 }

@@ -6,6 +6,7 @@ import { Check, DocumentChecked } from "@element-plus/icons-vue";
 import type { LegacyImportResult } from "@godgesture/shared";
 import { BackendError } from "../api/backend";
 import { useConfigStore } from "../stores/config";
+import { appLog } from "../logging";
 import {
   LegacyImportPreparationError,
   assertLegacyImportFileSize,
@@ -56,7 +57,7 @@ function clearPlist() {
 }
 
 function showPreparationError(error: unknown) {
-  console.error("[legacy-import] preparation failed", error);
+  appLog.error("legacy-import", `准备导入失败: ${error instanceof Error ? error.message : String(error)}`);
   if (error instanceof LegacyImportPreparationError) {
     errorKey.value = `options.legacyImport.error.${error.code}`;
     errorSource.value = error.source ?? null;
@@ -114,7 +115,7 @@ async function applyImport() {
     ElMessage.success(t("options.legacyImport.success"));
     emit("update:modelValue", false);
   } catch (error) {
-    console.error("[legacy-import] apply failed", error);
+    appLog.error("legacy-import", `应用导入失败: ${error instanceof Error ? error.message : String(error)}`);
     errorKey.value =
       error instanceof BackendError && error.code === "rollback_incomplete"
         ? "options.legacyImport.error.rollback_incomplete"

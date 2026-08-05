@@ -2,7 +2,7 @@
 
 use super::{clipboard, input, window};
 use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
-use crate::engine::config::{Command, WindowOperation};
+use crate::engine::config::{Command, SendTextStep, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
 use objc2_app_kit::NSWorkspace;
@@ -16,9 +16,15 @@ pub fn execute(command: &Command, modifier: Modifier, context: &GestureContext) 
             activate_best_effort(context);
             input::synthesize_key_combo(modifiers, keys)
         }
-        Command::SendText { text } => {
+        Command::SendText { steps, text } => {
             activate_best_effort(context);
-            input::try_type_text_with_sleeps(text)
+            if !steps.is_empty() {
+                input::try_type_text_steps(steps)
+            } else if let Some(text) = text {
+                input::try_type_text_with_sleeps(text)
+            } else {
+                Ok(())
+            }
         }
         Command::TaskSwitcher => mission_control(),
         Command::WindowControl { operation } => {

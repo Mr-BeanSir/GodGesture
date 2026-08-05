@@ -2,6 +2,7 @@ mod account;
 mod app_acquisition;
 pub mod engine;
 mod legacy_import;
+mod logging;
 pub mod platform;
 mod template_download;
 mod updater;
@@ -13,6 +14,7 @@ use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::node_service::{NodeInvocationOutcome, NodeScriptService, OutcomeSink};
+use engine::plugin_workspace::{PluginWorkspace, PluginWorkspaceSnapshot};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script_host::{ScriptInvocation, ScriptSlot};
@@ -129,10 +131,22 @@ fn run_node_slot(
     invocation: ScriptInvocation,
 ) -> bool {
     let Some(service) = service else {
-        log::error!("Node plugin runtime is unavailable; '{plugin_id}:{handler}' was skipped");
+        log::warn!(
+            target: "node.worker",
+            "event=lifecycle_rejected code=runtime_unavailable pluginId={plugin_id} actionId={handler} lifecycle={} ",
+            slot.name()
+        );
         return false;
     };
-    service.invoke(plugin_id, handler, true, slot, invocation)
+    let accepted = service.invoke(plugin_id, handler, true, slot, invocation);
+    if !accepted {
+        log::warn!(
+            target: "node.worker",
+            "event=lifecycle_rejected code=queue_drop pluginId={plugin_id} actionId={handler} lifecycle={}",
+            slot.name()
+        );
+    }
+    accepted
 }
 
 #[cfg(any(windows, target_os = "macos"))]
@@ -150,8 +164,8 @@ fn end_active_node_script(
     run_node_slot(
         service,
         &active.plugin_id,
-        "gestureEnded",
-        ScriptSlot::GestureEnded,
+        "onEnd",
+        ScriptSlot::OnEnd,
         active.invocation,
     );
 }
@@ -177,15 +191,15 @@ fn start_incoming_lifecycle(
             if run_node_slot(
                 node_service,
                 &plugin_id,
-                "gestureRecognized",
-                ScriptSlot::GestureRecognized,
+                "onGestureRecognized",
+                ScriptSlot::OnGestureRecognized,
                 invocation,
             ) {
                 run_node_slot(
                     node_service,
                     &plugin_id,
-                    "modifierTriggered",
-                    ScriptSlot::ModifierTriggered,
+                    "onModifierTriggered",
+                    ScriptSlot::OnModifierTriggered,
                     invocation,
                 );
                 *active_node = Some(ActiveNodeScript {
@@ -220,21 +234,24 @@ fn spawn_engine_consumer(
                             if outcome.invocation.trigger.is_some() {
                                 outcome_overlay.send(OverlayCmd::Recognized(Some(status)));
                             } else {
-                                log::info!(
-                                    "Node plugin '{}:{}' status: {status}",
+                                log::debug!(
+                                    target: "node.worker",
+                                    "event=status_reported pluginId={} actionId={}",
                                     outcome.plugin_id,
                                     outcome.handler
                                 );
                             }
                         }
                     }
-                    Err(error) => log::error!(
-                        "Node plugin '{}:{}' failed: {error}",
+                    Err(_) => log::warn!(
+                        target: "node.worker",
+                        "event=invocation_failed code=outcome_error pluginId={} actionId={}",
                         outcome.plugin_id,
                         outcome.handler
                     ),
                 });
-            let initial_plugins = app.state::<Arc<ConfigStore>>().load_config().node_plugins;
+            let plugin_workspace = app.state::<Arc<PluginWorkspace>>().inner().clone();
+            let initial_plugins = plugin_workspace.plugins();
             let node_service = app
                 .path()
                 .app_local_data_dir()
@@ -255,16 +272,53 @@ fn spawn_engine_consumer(
             let node_service = match node_service {
                 Ok(service) => Some(service),
                 Err(error) => {
-                    log::error!("{error}");
+                    log::error!(
+                        target: "node.supervisor",
+                        "event=service_start_failed code={} pluginId=- actionId=-",
+                        engine::node_service::node_error_code(&error)
+                    );
                     None
                 }
             };
+            {
+                let watcher_workspace = Arc::clone(&plugin_workspace);
+                let watcher_service = node_service.clone();
+                let watcher_app = app.clone();
+                std::thread::Builder::new()
+                    .name("gg-plugin-workspace".into())
+                    .spawn(move || {
+                        let mut last_plugins = watcher_workspace.plugins();
+                        let mut last_snapshot = watcher_workspace.snapshot();
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            watcher_workspace.rescan();
+                            let plugins = watcher_workspace.plugins();
+                            if plugins != last_plugins {
+                                if let Some(service) = watcher_service.as_ref() {
+                                    service.sync_plugins(plugins.clone());
+                                }
+                                last_plugins = plugins;
+                            }
+                            let snapshot = watcher_workspace.snapshot();
+                            if snapshot != last_snapshot {
+                                let _ = watcher_app.emit("node-plugins-changed", snapshot.clone());
+                                last_snapshot = snapshot;
+                            }
+                        }
+                    })
+                    .expect("failed to spawn plugin workspace watcher");
+            }
             let mut active_node_script: Option<ActiveNodeScript> = None;
             for msg in rx {
                 match msg {
                     EngineMsg::PathStarted { trigger, origin } => {
                         active_node_script = None;
-                        log::debug!("手势开始: {trigger:?} @ ({}, {})", origin.x, origin.y);
+                        log::debug!(
+                            target: "gesture.capture",
+                            "手势开始: {trigger:?} @ ({}, {})",
+                            origin.x,
+                            origin.y
+                        );
                         let (main, unrecognized, show_path, show_label, fade_out) =
                             shared.trail_style_for(trigger);
                         overlay.send(OverlayCmd::Begin {
@@ -279,7 +333,7 @@ fn spawn_engine_consumer(
                         overlay.send(OverlayCmd::Grow(point));
                     }
                     EngineMsg::RecognitionChanged { name } => {
-                        log::debug!("识别变化: {name:?}");
+                        log::debug!(target: "gesture.runtime", "识别变化: {name:?}");
                         overlay.send(OverlayCmd::Recognized(name));
                     }
                     EngineMsg::ModifierFired {
@@ -288,7 +342,8 @@ fn spawn_engine_consumer(
                         modifier,
                         context,
                     } => {
-                        log::info!(
+                        log::debug!(
+                            target: "gesture.runtime",
                             "修饰触发: {modifier:?} → {:?}",
                             intent.as_ref().map(|i| &i.name)
                         );
@@ -328,8 +383,8 @@ fn spawn_engine_consumer(
                                         run_node_slot(
                                             node_service.as_ref(),
                                             &active.plugin_id,
-                                            "modifierTriggered",
-                                            ScriptSlot::ModifierTriggered,
+                                            "onModifierTriggered",
+                                            ScriptSlot::OnModifierTriggered,
                                             invocation,
                                         );
                                     }
@@ -400,6 +455,7 @@ fn spawn_engine_consumer(
                         match intent {
                             Some(intent) => {
                                 log::info!(
+                                    target: "gesture.runtime",
                                     "手势完成: [{}] {} (修饰 {modifier:?}) → 命令 {:?}",
                                     intent
                                         .gesture
@@ -426,7 +482,7 @@ fn spawn_engine_consumer(
                                     deferred_intent = Some(intent);
                                 }
                             }
-                            None => log::debug!("手势结束: 无匹配意图"),
+                            None => log::debug!(target: "gesture.runtime", "手势结束: 无匹配意图"),
                         }
                         overlay.send(OverlayCmd::End);
                         if let Some(intent) = deferred_intent {
@@ -448,6 +504,12 @@ fn spawn_engine_consumer(
                         modifier,
                         inputs,
                     } => {
+                        log::debug!(
+                            target: "gesture.capture",
+                            "event=capture_payload_emit phase=update input_count={} has_key_q={}",
+                            inputs.len(),
+                            contains_key_q(&inputs)
+                        );
                         let payload = CapturedGesture {
                             trigger,
                             mnemonic: captured_mnemonic(trigger, &inputs, &strokes, modifier),
@@ -456,7 +518,7 @@ fn spawn_engine_consumer(
                             inputs,
                         };
                         if let Err(e) = app.emit("gesture-captured", payload) {
-                            log::warn!("手势录制增量事件发送失败: {e}");
+                            log::warn!(target: "gesture.capture", "手势录制增量事件发送失败: {e}");
                         }
                     }
                     EngineMsg::GestureCaptured {
@@ -465,6 +527,12 @@ fn spawn_engine_consumer(
                         modifier,
                         inputs,
                     } => {
+                        log::debug!(
+                            target: "gesture.capture",
+                            "event=capture_payload_emit phase=complete input_count={} has_key_q={}",
+                            inputs.len(),
+                            contains_key_q(&inputs)
+                        );
                         overlay.send(OverlayCmd::End);
                         let payload = CapturedGesture {
                             trigger,
@@ -474,7 +542,7 @@ fn spawn_engine_consumer(
                             inputs,
                         };
                         if let Err(e) = app.emit("gesture-captured", payload) {
-                            log::warn!("手势录制事件发送失败: {e}");
+                            log::warn!(target: "gesture.capture", "手势录制事件发送失败: {e}");
                         }
                     }
                     EngineMsg::CornerEdgeFired {
@@ -483,7 +551,7 @@ fn spawn_engine_consumer(
                         command,
                         origin,
                     } => {
-                        log::info!("{hit} 触发 → 命令 {command:?}");
+                        log::info!(target: "gesture.runtime", "{hit} 触发 → 命令 {command:?}");
                         // 目标窗口取前台窗口:此刻光标停在屏幕边角,指针下方的窗口
                         // 多半不是用户想操作的那个。
                         let fg = shared.resolve_foreground_app(origin, false);
@@ -505,7 +573,7 @@ fn spawn_engine_consumer(
                     }
                     EngineMsg::PathCancelled => {
                         active_node_script = None;
-                        log::debug!("手势取消");
+                        log::debug!(target: "gesture.capture", "手势取消");
                         overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::PauseChanged(paused) => {
@@ -513,9 +581,8 @@ fn spawn_engine_consumer(
                     }
                     EngineMsg::ScriptConfigChanged => {
                         if let Some(service) = node_service.as_ref() {
-                            service.sync_plugins(
-                                app.state::<Arc<ConfigStore>>().load_config().node_plugins,
-                            );
+                            plugin_workspace.rescan();
+                            service.sync_plugins(plugin_workspace.plugins());
                         }
                     }
                 }
@@ -534,6 +601,12 @@ struct CapturedGesture {
     inputs: Vec<engine::config::GestureInput>,
 }
 
+fn contains_key_q(inputs: &[engine::config::GestureInput]) -> bool {
+    inputs
+        .iter()
+        .any(|input| matches!(input, engine::config::GestureInput::Key { key } if key == "KeyQ"))
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 fn execute_intent(
     command: &engine::config::Command,
@@ -543,20 +616,20 @@ fn execute_intent(
 ) {
     if let engine::config::Command::NodePlugin {
         plugin_id,
-        export_name,
+        action_id,
     } = command
     {
         let Some(service) = node_service else {
             log::error!(
-                "Node plugin runtime is unavailable; '{plugin_id}:{export_name}' was skipped"
+                target: "node.worker",
+                "event=invocation_rejected code=runtime_unavailable pluginId={plugin_id} actionId={action_id}"
             );
             return;
         };
-        service.invoke(
+        service.invoke_action(
             plugin_id.clone(),
-            export_name.clone(),
-            false,
-            ScriptSlot::Execute,
+            action_id.clone(),
+            ScriptSlot::OnExecute,
             invocation,
         );
     } else {
@@ -604,9 +677,20 @@ fn captured_mnemonic(
                     engine::config::BoundaryWheelDirection::Backward => "▼",
                 });
             }
+            engine::config::GestureInput::Key { key } => {
+                mnemonic.push_str(&key_mnemonic(key));
+            }
         }
     }
     mnemonic
+}
+
+fn key_mnemonic(key: &str) -> String {
+    let label = key
+        .strip_prefix("Key")
+        .or_else(|| key.strip_prefix("Digit"))
+        .unwrap_or(key);
+    format!("[{label}]")
 }
 
 impl TriggerMnemonic for engine::types::TriggerButton {
@@ -635,6 +719,50 @@ fn engine_is_paused(state: tauri::State<Arc<EngineShared>>) -> bool {
 #[tauri::command]
 fn config_get(store: tauri::State<Arc<ConfigStore>>) -> ConfigDocument {
     store.load_config()
+}
+
+#[tauri::command]
+fn log_level_get(logging: tauri::State<Arc<logging::LoggingService>>) -> logging::LogLevel {
+    logging.level()
+}
+
+#[tauri::command]
+fn log_level_set(
+    level: logging::LogLevel,
+    logging: tauri::State<Arc<logging::LoggingService>>,
+) -> Result<logging::LogLevel, String> {
+    logging.set_level(level)
+}
+
+#[tauri::command]
+fn log_write(
+    level: logging::LogEntryLevel,
+    target: String,
+    message: String,
+    logging: tauri::State<Arc<logging::LoggingService>>,
+) -> Result<(), String> {
+    logging.write_user(level, &target, &message)
+}
+
+#[tauri::command]
+fn logs_query(
+    request: logging::LogsQueryRequest,
+    logging: tauri::State<Arc<logging::LoggingService>>,
+) -> Result<logging::LogsQueryResponse, String> {
+    logging.query(&request)
+}
+
+#[tauri::command]
+fn logs_export(
+    request: logging::LogsQueryRequest,
+    logging: tauri::State<Arc<logging::LoggingService>>,
+) -> Result<String, String> {
+    logging.export(&request)
+}
+
+#[tauri::command]
+fn logs_clear(logging: tauri::State<Arc<logging::LoggingService>>) -> Result<(), String> {
+    logging.clear()
 }
 
 #[tauri::command]
@@ -690,100 +818,20 @@ fn resolve_node_toolchain(
 }
 
 #[tauri::command]
-async fn node_plugin_install(
-    plugin: engine::config::NodePlugin,
-    app: tauri::AppHandle,
-) -> Result<engine::node_packages::NodePackageResult, String> {
-    let workspace = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
-        .join("node-plugins")
-        .join("runtime");
-    let toolchain = resolve_node_toolchain(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let result = engine::node_packages::install_plugin(&workspace, &toolchain, &plugin)?;
-        let mut prepared_plugin = plugin;
-        prepared_plugin.lockfile = result.lockfile.clone();
-        engine::node_service::ensure_plugin_cache(
-            &workspace,
-            &toolchain.node,
-            &toolchain.pnpm,
-            &prepared_plugin,
-        )?;
-        Ok(result)
-    })
-    .await
-    .map_err(|error| format!("Node package worker failed: {error}"))?
+fn node_plugins_get(workspace: tauri::State<Arc<PluginWorkspace>>) -> PluginWorkspaceSnapshot {
+    workspace.rescan();
+    workspace.snapshot()
 }
 
 #[tauri::command]
-async fn node_plugin_package_search(
-    query: String,
-) -> Result<Vec<engine::node_registry::NodePackageSearchResult>, String> {
-    engine::node_registry::search_node_packages(query).await
+fn node_plugins_rescan(workspace: tauri::State<Arc<PluginWorkspace>>) -> PluginWorkspaceSnapshot {
+    workspace.rescan();
+    workspace.snapshot()
 }
 
 #[tauri::command]
-async fn node_plugin_package_latest(name: String) -> Result<String, String> {
-    engine::node_registry::latest_node_package_version(name).await
-}
-
-#[tauri::command]
-async fn node_plugin_test(
-    plugin: engine::config::NodePlugin,
-    handler: String,
-    app: tauri::AppHandle,
-) -> Result<engine::node_packages::NodeTestResult, String> {
-    let workspace = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
-        .join("node-plugins")
-        .join("runtime");
-    let toolchain = resolve_node_toolchain(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        engine::node_packages::test_plugin(&workspace, &toolchain, &plugin, &handler)
-    })
-    .await
-    .map_err(|error| format!("Node test worker failed: {error}"))?
-}
-
-#[tauri::command]
-async fn node_plugin_typecheck(
-    plugin: engine::config::NodePlugin,
-    app: tauri::AppHandle,
-) -> Result<engine::node_packages::NodeTypecheckResult, String> {
-    let workspace = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
-        .join("node-plugins")
-        .join("runtime");
-    let toolchain = resolve_node_toolchain(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        engine::node_packages::typecheck_plugin(&workspace, &toolchain, &plugin)
-    })
-    .await
-    .map_err(|error| format!("Node typecheck worker failed: {error}"))?
-}
-
-#[tauri::command]
-async fn node_plugin_cache_status(
-    plugin: engine::config::NodePlugin,
-    app: tauri::AppHandle,
-) -> Result<engine::node_service::NodePluginCacheStatus, String> {
-    let workspace = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("resolve Node plugin data directory: {error}"))?
-        .join("node-plugins")
-        .join("runtime");
-    tauri::async_runtime::spawn_blocking(move || {
-        engine::node_service::plugin_cache_status(&workspace, &plugin)
-    })
-    .await
-    .map_err(|error| format!("Node cache status worker failed: {error}"))?
+fn node_plugins_directory(workspace: tauri::State<Arc<PluginWorkspace>>) -> String {
+    workspace.root().to_string_lossy().into_owned()
 }
 
 #[tauri::command]
@@ -1614,7 +1662,9 @@ fn replace_pause_hotkey_value(app: &tauri::AppHandle, next: Option<String>) -> R
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let logging = Arc::new(logging::LoggingService::new());
+    logging::LoggingService::install_global(Arc::clone(&logging))
+        .expect("install GodGesture local logger");
 
     #[cfg(windows)]
     let early_mode = match platform::windows::startup::parse_early_mode(std::env::args()) {
@@ -1698,8 +1748,42 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .expect("cannot resolve app config dir");
+            app.manage(Arc::clone(&logging));
+            let log_settings_path = config_dir.join("logging.json");
+            match app.path().app_log_dir() {
+                Ok(log_dir) => {
+                    let event_app = app.handle().clone();
+                    let event_sink: logging::LogEventSink = Arc::new(move |entry| {
+                        let _ = event_app.emit("log-event", entry);
+                    });
+                    if let Err(error) = logging.configure(
+                        log_dir,
+                        log_settings_path,
+                        Some(event_sink),
+                    ) {
+                        log::error!(target: "logs", "event=init_failed code=writer_unavailable error={error}");
+                    }
+                }
+                Err(error) => {
+                    log::error!(target: "logs", "event=init_failed code=app_log_dir_unavailable error={error}");
+                }
+            }
+            log::info!(target: "app.lifecycle", "event=setup_started");
+            let plugin_workspace = Arc::new(
+                PluginWorkspace::new(config_dir.join("plugins")).map_err(std::io::Error::other)?,
+            );
             let store = Arc::new(ConfigStore::new(config_dir));
-            let config = store.load_config();
+            let mut config = store.load_config();
+            if plugin_workspace
+                .export_embedded_plugins(
+                    &config.node_plugins,
+                    &config.referenced_node_plugin_actions(),
+                )
+                .map_err(std::io::Error::other)?
+            {
+                config.node_plugins.clear();
+                store.save_config(&config)?;
+            }
             #[cfg(windows)]
             let machine = store.load_machine();
             #[cfg(target_os = "macos")]
@@ -1712,6 +1796,7 @@ pub fn run() {
                 }
             }
             app.manage(store);
+            app.manage(plugin_workspace);
             app.manage(ConfigTransaction(parking_lot::Mutex::new(())));
             app.manage(account::OAuthLoopbackState::default());
             app.manage(updater::DesktopUpdaterState::default());
@@ -1854,12 +1939,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             config_get,
             config_set,
-            node_plugin_install,
-            node_plugin_package_search,
-            node_plugin_package_latest,
-            node_plugin_test,
-            node_plugin_typecheck,
-            node_plugin_cache_status,
+            node_plugins_get,
+            node_plugins_rescan,
+            node_plugins_directory,
+            log_level_get,
+            log_level_set,
+            log_write,
+            logs_query,
+            logs_export,
+            logs_clear,
             machine_get,
             machine_set,
             machine_status,

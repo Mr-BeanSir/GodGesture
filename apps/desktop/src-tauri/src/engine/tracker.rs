@@ -47,6 +47,8 @@ impl MouseButton {
 pub enum Input {
     ButtonDown(MouseButton, Point),
     ButtonUp(MouseButton, Point),
+    KeyDown(String),
+    KeyUp(String),
     Move(Point),
     /// forward = 滚轮向前(远离使用者)
     Wheel {
@@ -66,6 +68,8 @@ pub enum Action {
     PathGrow(Point),
     /// 修饰触发
     ModifierFired { modifier: Modifier, pos: Point },
+    /// 键盘输入按下,由运行时追加到有序输入序列
+    KeyFired { key: String },
     /// 正常结束:交由引擎按识别结果执行/取消
     PathEnd { pos: Point },
     /// 停留超时取消(轨迹应立即消失,后续抬起会被吞)
@@ -152,6 +156,8 @@ enum State {
         last_activity: Instant,
         /// 手势期间按下的其它按键(其抬起也要吞)
         held_modifier_buttons: Vec<MouseButton>,
+        /// 手势期间按下的键盘键(避免长按重复记录,其抬起也要吞)
+        held_keys: Vec<String>,
     },
     /// 起始超时后转普通拖拽:一切透传,等触发键抬起
     PassthroughDrag {
@@ -249,6 +255,8 @@ impl PathTracker {
         match input {
             Input::ButtonDown(btn, pos) => self.on_button_down(btn, pos, now, host),
             Input::ButtonUp(btn, pos) => self.on_button_up(btn, pos, now, host),
+            Input::KeyDown(key) => self.on_key_down(key, now),
+            Input::KeyUp(key) => self.on_key_up(key),
             Input::Move(pos) => self.on_move(pos, now),
             Input::Wheel { forward, pos } => self.on_wheel(forward, pos, now),
         }
@@ -279,6 +287,7 @@ impl PathTracker {
                         last_wheel: None,
                         last_activity: now,
                         held_modifier_buttons: Vec::new(),
+                        held_keys: Vec::new(),
                     };
                     return Outcome::swallowed(vec![Action::PathStart {
                         trigger,
@@ -327,6 +336,7 @@ impl PathTracker {
                     last_wheel: None,
                     last_activity: now,
                     held_modifier_buttons: vec![btn],
+                    held_keys: Vec::new(),
                 };
                 Outcome::swallowed(vec![
                     Action::PathStart { trigger, origin },
@@ -405,6 +415,7 @@ impl PathTracker {
                         last_wheel: None,
                         last_activity: now,
                         held_modifier_buttons: Vec::new(),
+                        held_keys: Vec::new(),
                     };
                     Outcome {
                         swallow: false,
@@ -459,6 +470,7 @@ impl PathTracker {
                     last_wheel: Some(now),
                     last_activity: now,
                     held_modifier_buttons: Vec::new(),
+                    held_keys: Vec::new(),
                 };
                 let m = if forward {
                     Modifier::WheelForward
@@ -477,6 +489,58 @@ impl PathTracker {
                     .is_some_and(|t| now.duration_since(t) < POST_GESTURE_WHEEL_SWALLOW) =>
             {
                 Outcome::swallowed(Vec::new())
+            }
+            _ => Outcome::pass(),
+        }
+    }
+
+    fn on_key_down(&mut self, key: String, now: Instant) -> Outcome {
+        match &mut self.state {
+            State::Tracking {
+                held_keys,
+                last_activity,
+                ..
+            } => {
+                *last_activity = now;
+                if held_keys.iter().any(|held| held == &key) {
+                    return Outcome::swallowed(Vec::new());
+                }
+                held_keys.push(key.clone());
+                Outcome::swallowed(vec![Action::KeyFired { key }])
+            }
+            State::Pending {
+                button,
+                trigger,
+                origin,
+                ..
+            } => {
+                let (trigger, origin, primary) = (*trigger, *origin, *button);
+                self.state = State::Tracking {
+                    button: primary,
+                    modifier_used: false,
+                    last_wheel: None,
+                    last_activity: now,
+                    held_modifier_buttons: Vec::new(),
+                    held_keys: vec![key.clone()],
+                };
+                Outcome::swallowed(vec![
+                    Action::PathStart { trigger, origin },
+                    Action::KeyFired { key },
+                ])
+            }
+            _ => Outcome::pass(),
+        }
+    }
+
+    fn on_key_up(&mut self, key: String) -> Outcome {
+        match &mut self.state {
+            State::Tracking { held_keys, .. } => {
+                if let Some(index) = held_keys.iter().position(|held| held == &key) {
+                    held_keys.remove(index);
+                    Outcome::swallowed(Vec::new())
+                } else {
+                    Outcome::pass()
+                }
             }
             _ => Outcome::pass(),
         }
@@ -813,6 +877,43 @@ mod tests {
         // 修饰用过后,即使无笔画,抬起也按 PathEnd 处理(引擎决定执行与否)
         let o = t.handle(Input::ButtonUp(MouseButton::Right, pt(30, 0)), t0, &mut h);
         assert_eq!(o.actions, vec![Action::PathEnd { pos: pt(30, 0) }]);
+    }
+
+    #[test]
+    fn keyboard_input_is_recorded_before_and_after_the_first_stroke() {
+        let (mut t, mut h, t0) = setup(TrackerParams::default());
+        h.recording = true;
+
+        let down = t.handle(Input::ButtonDown(MouseButton::Right, pt(0, 0)), t0, &mut h);
+        assert_eq!(
+            down.actions,
+            vec![Action::PathStart {
+                trigger: TriggerButton::Right,
+                origin: pt(0, 0),
+            }]
+        );
+
+        let key = t.handle(
+            Input::KeyDown("KeyQ".into()),
+            t0 + Duration::from_millis(10),
+            &mut h,
+        );
+        assert_eq!(key.actions, vec![Action::KeyFired { key: "KeyQ".into() }]);
+        assert!(key.swallow);
+
+        let move_outcome = t.handle(
+            Input::Move(pt(30, 0)),
+            t0 + Duration::from_millis(20),
+            &mut h,
+        );
+        assert_eq!(move_outcome.actions, vec![Action::PathGrow(pt(30, 0))]);
+
+        let key_up = t.handle(
+            Input::KeyUp("KeyQ".into()),
+            t0 + Duration::from_millis(30),
+            &mut h,
+        );
+        assert!(key_up.swallow && key_up.actions.is_empty());
     }
 
     #[test]

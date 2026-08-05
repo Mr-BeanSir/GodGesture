@@ -7,6 +7,7 @@ export const MAX_BOUNDARY_SEQUENCE_TOKENS = 12;
 export const MAX_HOTKEY_MODIFIERS = 4;
 export const MAX_HOTKEY_KEYS = 16;
 export const MAX_COMMAND_TEXT_LENGTH = 16 * 1024;
+export const MAX_SEND_TEXT_STEPS = 64;
 export const MAX_NODE_PLUGINS = 32;
 export const MAX_NODE_PLUGIN_FILES = 64;
 export const MAX_NODE_PLUGIN_PATH_LENGTH = 256;

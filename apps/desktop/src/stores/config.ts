@@ -14,6 +14,7 @@ import {
   useBackend,
   type MachineRuntimeStatus,
 } from "../api/backend";
+import { appLog } from "../logging";
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -99,7 +100,7 @@ export const useConfigStore = defineStore("config", () => {
       try {
         await ensurePauseListener();
       } catch (err) {
-        console.error("[config] pause listener setup failed", err);
+        appLog.warn("config", `暂停状态监听建立失败: ${err instanceof Error ? err.message : String(err)}`);
       }
       const pauseVersionAtRead = pauseEventVersion;
       const [d, m, p] = await Promise.all([
@@ -130,7 +131,7 @@ export const useConfigStore = defineStore("config", () => {
       doc.value = null;
       machine.value = null;
       loadError.value = err instanceof Error ? err.message : String(err);
-      console.error("[config] initial load failed", err);
+      appLog.error("config", `配置初始载入失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       loading.value = false;
     }
@@ -141,7 +142,7 @@ export const useConfigStore = defineStore("config", () => {
     const parsed = ConfigDocument.safeParse(doc.value);
     if (!parsed.success) {
       saveState.value = "error";
-      console.warn("[config] validation failed", parsed.error.issues);
+      appLog.warn("config", `配置校验失败: ${parsed.error.issues.length} 个问题`);
       throw new Error("config validation failed");
     }
     const serialized = JSON.stringify(parsed.data);
@@ -153,7 +154,7 @@ export const useConfigStore = defineStore("config", () => {
       saveState.value = hasPendingChanges() ? "saving" : "saved";
     } catch (err) {
       saveState.value = "error";
-      console.error("[config] config_set failed", err);
+      appLog.error("config", `配置保存失败: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     }
   }
@@ -179,7 +180,7 @@ export const useConfigStore = defineStore("config", () => {
       saveState.value = hasPendingChanges() ? "saving" : "saved";
     } catch (err) {
       saveState.value = "error";
-      console.error("[config] machine_set failed", err);
+      appLog.error("config", `本机设置保存失败: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     }
   }

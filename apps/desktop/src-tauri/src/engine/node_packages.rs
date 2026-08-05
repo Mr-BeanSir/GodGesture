@@ -513,6 +513,7 @@ mod tests {
             package_json: "{}".into(),
             lockfile: None,
             allow_lifecycle_scripts: false,
+            actions: Vec::new(),
         };
         assert!(validate_plugin(&plugin).is_err());
     }
@@ -527,12 +528,13 @@ mod tests {
             entry: "index.mjs".into(),
             files: HashMap::from([(
                 String::from("index.mjs"),
-                "export async function execute(context) { await context.input.sendText('dry'); }"
+                "export async function onExecute(context) { await context.input.sendText(context.phase); }"
                     .into(),
             )]),
             package_json: r#"{"private":true,"type":"module"}"#.into(),
             lockfile: None,
             allow_lifecycle_scripts: false,
+            actions: Vec::new(),
         };
         let toolchain = NodeToolchain {
             node: PathBuf::from("node"),
@@ -540,11 +542,12 @@ mod tests {
             supervisor: PathBuf::from("unused"),
             typescript: PathBuf::from("typescript/lib/tsc.js"),
         };
-        let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
+        let result = test_plugin(&workspace, &toolchain, &plugin, "onExecute");
         let _ = fs::remove_dir_all(&workspace);
         let result = result.expect("Node dry-run should execute with the development toolchain");
         assert!(result.ready);
         assert!(result.output.contains("input.sendText"));
+        assert!(result.output.contains("onExecute"));
     }
 
     #[test]
@@ -557,12 +560,13 @@ mod tests {
             entry: "index.mjs".into(),
             files: HashMap::from([(
                 String::from("index.mjs"),
-                "export async function execute() {}".into(),
+                "export async function onExecute() {}".into(),
             )]),
             package_json: r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#
                 .into(),
             lockfile: None,
             allow_lifecycle_scripts: false,
+            actions: Vec::new(),
         };
         let toolchain = NodeToolchain {
             node: PathBuf::from("unused-node"),
@@ -570,7 +574,7 @@ mod tests {
             supervisor: PathBuf::from("unused"),
             typescript: PathBuf::from("typescript/lib/tsc.js"),
         };
-        let result = test_plugin(&workspace, &toolchain, &plugin, "execute");
+        let result = test_plugin(&workspace, &toolchain, &plugin, "onExecute");
         let _ = fs::remove_dir_all(&workspace);
         assert_eq!(
             result.unwrap_err(),

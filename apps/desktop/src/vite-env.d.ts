@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly GODGESTURE_API?: string;
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_GESTURE_TEMPLATE_CATALOG_URL?: string;
   readonly VITE_GESTURE_TEMPLATE_REPOSITORY_URL?: string;

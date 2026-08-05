@@ -97,10 +97,34 @@ export function gestureModifierInput(modifier: GestureModifier): GestureInput | 
   }
 }
 
+/**
+ * Re-recording keeps an existing independent modifier unless the new ordered
+ * capture already contains the same physical input.
+ */
+export function preservedModifierForInputs(
+  inputs: readonly GestureInput[],
+  modifier: GestureModifier,
+): GestureModifier {
+  const modifierInput = gestureModifierInput(modifier);
+  if (!modifierInput) return "none";
+  return inputs.some((input) => sameInput(input, modifierInput)) ? "none" : modifier;
+}
+
+export function keyLabel(key: string): string {
+  if (key.startsWith("Key") && key.length === 4) return key.slice(3);
+  if (key.startsWith("Digit") && key.length === 6) return key.slice(5);
+  if (key.startsWith("Numpad")) return `Num${key.slice(6)}`;
+  if (key.startsWith("Arrow")) return key.slice(5);
+  if (key.startsWith("Control")) return `Ctrl${key.slice(7)}`;
+  if (key.startsWith("Meta")) return `Meta${key.slice(4)}`;
+  return key;
+}
+
 function inputMnemonic(input: GestureInput): string {
   if (input.type === "stroke") return DIRECTION_ARROWS[input.direction];
   if (input.type === "button") return BUTTON_SYMBOLS[input.button];
-  return input.direction === "forward" ? "⇈" : "⇊";
+  if (input.type === "wheel") return input.direction === "forward" ? "⇈" : "⇊";
+  return `[${keyLabel(input.key)}]`;
 }
 
 /** 完整助记符,如 "◑→↓" 或 "◑→●"。 */
@@ -119,14 +143,20 @@ export function sameGesture(a: GestureSpec, b: GestureSpec): boolean {
   return (
     a.trigger === b.trigger &&
     aInputs.length === bInputs.length &&
-    aInputs.every((input, index) => {
-      const other = bInputs[index];
-      return input.type === other.type &&
-        (input.type === "stroke"
-          ? other.type === "stroke" && input.direction === other.direction
-          : input.type === "button"
-            ? other.type === "button" && input.button === other.button
-            : other.type === "wheel" && input.direction === other.direction);
-    })
+    aInputs.every((input, index) => sameInput(input, bInputs[index]))
   );
+}
+
+function sameInput(a: GestureInput, b: GestureInput): boolean {
+  if (a.type !== b.type) return false;
+  switch (a.type) {
+    case "stroke":
+      return a.direction === (b as Extract<GestureInput, { type: "stroke" }>).direction;
+    case "button":
+      return a.button === (b as Extract<GestureInput, { type: "button" }>).button;
+    case "wheel":
+      return a.direction === (b as Extract<GestureInput, { type: "wheel" }>).direction;
+    case "key":
+      return a.key === (b as Extract<GestureInput, { type: "key" }>).key;
+  }
 }

@@ -54,7 +54,7 @@ export function createDefaultCommand(type: CommandType): Command {
     case "openFile":
       return { type: "openFile", path: "" };
     case "sendText":
-      return { type: "sendText", text: "" };
+      return { type: "sendText", steps: [] };
     case "gotoUrl":
       return { type: "gotoUrl", url: "" };
     case "cmd":

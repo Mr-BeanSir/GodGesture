@@ -86,7 +86,7 @@ struct EngineHookHandler {
 }
 
 impl HookHandler for EngineHookHandler {
-    fn on_event(&mut self, input: Input) -> bool {
+    fn on_event(&self, input: Input) -> bool {
         self.shared.on_hook_event(input)
     }
 }

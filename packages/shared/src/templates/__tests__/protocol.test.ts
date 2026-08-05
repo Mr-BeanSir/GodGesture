@@ -171,7 +171,7 @@ describe("gesture template protocol", () => {
       target: {
         scope: "global",
         intents: [
-          intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001", exportName: "execute" }),
+          intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001", actionId: "default" }),
           intent("Shell", { type: "cmd", code: "echo ok" }),
           intent("File", { type: "openFile", path: "tool.exe" }),
           intent("URL", { type: "gotoUrl", url: "https://example.com" }),

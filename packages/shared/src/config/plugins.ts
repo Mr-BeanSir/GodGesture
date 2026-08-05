@@ -10,9 +10,36 @@ import {
   utf8SizeBytes,
 } from "./limits.js";
 
-export const DEFAULT_NODE_PLUGIN_SOURCE = `export async function execute(context) {
-  await context.input.sendText("Hello from GodGesture");
-}
+/**
+ * A side-effect-light starter project. Every lifecycle is included so a new
+ * plugin is immediately useful as a reference while remaining safe to dry-run.
+ */
+export const DEFAULT_NODE_PLUGIN_SOURCE = `import { defineHandler } from "@godgesture/sdk";
+
+// Runs once when the plugin worker loads or is rebuilt.
+export const onInit = defineHandler(async (/** @type {import("@godgesture/sdk").PluginContext} */ context) => {
+  await context.status.report("GodGesture plugin ready");
+});
+
+// Runs after the configured gesture is recognized and released.
+export const onExecute = defineHandler(async (/** @type {import("@godgesture/sdk").PluginContext} */ context) => {
+  await context.status.report("onExecute: " + context.phase);
+});
+
+// Runs as soon as the gesture matcher recognizes the configured input.
+export const onGestureRecognized = defineHandler(async (/** @type {import("@godgesture/sdk").PluginContext} */ context) => {
+  await context.status.report("recognized: " + context.phase);
+});
+
+// Runs once for every configured independent modifier trigger.
+export const onModifierTriggered = defineHandler(async (/** @type {import("@godgesture/sdk").PluginContext} */ context) => {
+  await context.status.report("modifier: " + context.modifier);
+});
+
+// Runs when the gesture lifecycle ends, including a cancelled gesture.
+export const onEnd = defineHandler(async (/** @type {import("@godgesture/sdk").PluginContext} */ context) => {
+  await context.status.report("gesture ended");
+});
 `;
 
 export const DEFAULT_NODE_PLUGIN_MANIFEST = JSON.stringify(
@@ -170,11 +197,11 @@ export const NodePlugins = z
 export const NodePluginCommand = z.object({
   type: z.literal("nodePlugin"),
   pluginId: z.string().uuid(),
-  exportName: z
+  actionId: z
     .string()
     .min(1)
     .max(64)
-    .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
-    .default("execute"),
+    .regex(/^[A-Za-z0-9_$][A-Za-z0-9._$-]*$/)
+    .default("default"),
 });
 export type NodePluginCommand = z.infer<typeof NodePluginCommand>;

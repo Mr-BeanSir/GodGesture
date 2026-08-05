@@ -4,9 +4,9 @@
  * Rust 侧需实现的命令(snake_case,与本文件一一对应):
  * - config_get(): ConfigDocument
  * - config_set(document: ConfigDocument)        // 保存并即时生效
- * - node_plugin_install(plugin): NodePackageResult // 用户主动解析/准备依赖
- * - node_plugin_package_search(query): NodePackageSearchResult[] // npm registry metadata
- * - node_plugin_package_latest(name): string // npm dist-tag metadata
+ * - node_plugins_get()/node_plugins_rescan(): PluginWorkspaceSnapshot
+ * - node_plugins_directory(): string
+ *     + Tauri event "node-plugins-changed", payload: PluginWorkspaceSnapshot
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
  * - machine_status(): MachineRuntimeStatus
@@ -28,7 +28,6 @@ import type {
   DevicePlatform,
   GestureInput,
   MachineLocalSettings,
-  NodePlugin,
 } from "@godgesture/shared";
 import { createMockBackend } from "./mock";
 
@@ -116,41 +115,53 @@ export interface UpdateMetadata {
   publishedAt: string | null;
 }
 
-export interface NodePackageResult {
-  lockfile: string | null;
-  output: string;
-  ready: boolean;
+export interface PluginActionSummary {
+  id: string;
+  name: string;
+  exportName: string;
 }
 
-export interface NodeTestResult {
-  output: string;
-  ready: boolean;
+export interface PluginProjectSummary {
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  entry: string;
+  apiVersion: number;
+  actions: PluginActionSummary[];
+  status: "ready" | "error";
+  error: string | null;
+  lastReloadAt: number | null;
 }
 
-export interface NodeTypecheckDiagnostic {
-  file: string;
-  line: number;
-  column: number;
-  severity: "error" | "warning" | "info";
+export interface PluginWorkspaceSnapshot {
+  root: string;
+  plugins: PluginProjectSummary[];
+}
+
+export type LogLevel = "off" | "error" | "warn" | "info" | "debug";
+export type LogEntryLevel = Exclude<LogLevel, "off">;
+
+export interface LogEntry {
+  timestamp: string;
+  level: LogEntryLevel;
+  target: string;
   message: string;
 }
 
-export interface NodeTypecheckResult {
-  output: string;
-  ready: boolean;
-  diagnostics: NodeTypecheckDiagnostic[];
+export interface LogsQueryRequest {
+  level?: LogLevel | null;
+  target?: string | null;
+  keyword?: string | null;
+  limit?: number | null;
 }
 
-export interface NodePluginCacheStatus {
-  state: "notRequired" | "lockfileMissing" | "missing" | "ready";
-  revision: string;
-}
-
-export interface NodePackageSearchResult {
-  name: string;
-  version: string;
-  description: string | null;
-  weeklyDownloads: number | null;
+export interface LogsQueryResponse {
+  entries: LogEntry[];
+  total?: number;
+  files?: string[];
+  logPath?: string;
+  level?: LogLevel;
 }
 
 export type UpdateDownloadEvent =
@@ -182,12 +193,20 @@ export interface Backend {
   configGet(): Promise<ConfigDocument>;
   /** 保存并即时生效 */
   configSet(document: ConfigDocument): Promise<void>;
-  nodePluginInstall(plugin: NodePlugin): Promise<NodePackageResult>;
-  nodePluginPackageSearch(query: string): Promise<NodePackageSearchResult[]>;
-  nodePluginPackageLatest(name: string): Promise<string>;
-  nodePluginTest(plugin: NodePlugin, handler: string): Promise<NodeTestResult>;
-  nodePluginTypecheck(plugin: NodePlugin): Promise<NodeTypecheckResult>;
-  nodePluginCacheStatus(plugin: NodePlugin): Promise<NodePluginCacheStatus>;
+  nodePluginsGet(): Promise<PluginWorkspaceSnapshot>;
+  nodePluginsRescan(): Promise<PluginWorkspaceSnapshot>;
+  nodePluginsDirectory(): Promise<string>;
+  onNodePluginsChanged(
+    handler: (snapshot: PluginWorkspaceSnapshot) => void,
+  ): Promise<() => void>;
+
+  logLevelGet(): Promise<LogLevel>;
+  logLevelSet(level: LogLevel): Promise<LogLevel>;
+  logWrite(level: LogEntryLevel, target: string, message: string): Promise<void>;
+  logsQuery(request: LogsQueryRequest): Promise<LogsQueryResponse>;
+  logsExport(request: LogsQueryRequest): Promise<string>;
+  logsClear(): Promise<void>;
+  onLogEvent(handler: (entry: LogEntry) => void): Promise<() => void>;
 
   machineGet(): Promise<MachineLocalSettings>;
   machineSet(settings: MachineLocalSettings): Promise<void>;
@@ -246,6 +265,8 @@ export interface Backend {
 
   /** 系统浏览器打开外部链接 */
   openExternal(url: string): Promise<void>;
+  /** 使用系统文件管理器打开本地目录。 */
+  openPath(path: string): Promise<void>;
 
   getAppVersion(): Promise<string>;
 }
@@ -254,14 +275,21 @@ function normalizeBackendError(error: unknown): BackendError {
   if (error instanceof BackendError) return error;
 
   if (typeof error === "object" && error !== null) {
-    const value = error as { code?: unknown; message?: unknown };
+    const value = error as { code?: unknown; error?: unknown; message?: unknown };
+    const detail =
+      typeof value.message === "string"
+        ? value.message
+        : typeof value.error === "string"
+          ? value.error
+          : null;
     if (typeof value.code === "string") {
       return new BackendError(
         value.code,
-        typeof value.message === "string" ? value.message : value.code,
+        detail ?? value.code,
         error,
       );
     }
+    if (detail) return new BackendError("unknown", detail, error);
   }
 
   const message = error instanceof Error ? error.message : String(error);
@@ -302,53 +330,51 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("config_set", { document });
     },
-    async nodePluginInstall(plugin) {
+    async nodePluginsGet() {
       const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<NodePackageResult>("node_plugin_install", { plugin });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+      return invoke<PluginWorkspaceSnapshot>("node_plugins_get");
     },
-    async nodePluginPackageSearch(query) {
+    async nodePluginsRescan() {
       const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<NodePackageSearchResult[]>("node_plugin_package_search", { query });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+      return invoke<PluginWorkspaceSnapshot>("node_plugins_rescan");
     },
-    async nodePluginPackageLatest(name) {
+    async nodePluginsDirectory() {
       const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<string>("node_plugin_package_latest", { name });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+      return invoke<string>("node_plugins_directory");
     },
-    async nodePluginTest(plugin, handler) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<NodeTestResult>("node_plugin_test", { plugin, handler });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+    async onNodePluginsChanged(handler) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<PluginWorkspaceSnapshot>("node-plugins-changed", (event) =>
+        handler(event.payload),
+      );
     },
-    async nodePluginTypecheck(plugin) {
+    async logLevelGet() {
       const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<NodeTypecheckResult>("node_plugin_typecheck", { plugin });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+      return invoke<LogLevel>("log_level_get");
     },
-    async nodePluginCacheStatus(plugin) {
+    async logLevelSet(level) {
       const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        return await invoke<NodePluginCacheStatus>("node_plugin_cache_status", { plugin });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
+      return invoke<LogLevel>("log_level_set", { level });
+    },
+    async logWrite(level, target, message) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("log_write", { level, target, message });
+    },
+    async logsQuery(request) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<LogsQueryResponse>("logs_query", { request });
+    },
+    async logsExport(request) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<string>("logs_export", { request });
+    },
+    async logsClear() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("logs_clear");
+    },
+    async onLogEvent(handler) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<LogEntry>("log-event", (event) => handler(event.payload));
     },
     async machineGet() {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -563,7 +589,19 @@ function createTauriBackend(): Backend {
     },
     async openExternal(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
+      try {
+        await openUrl(url);
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async openPath(path) {
+      const { openPath } = await import("@tauri-apps/plugin-opener");
+      try {
+        await openPath(path);
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
     },
     async getAppVersion() {
       const { getVersion } = await import("@tauri-apps/api/app");

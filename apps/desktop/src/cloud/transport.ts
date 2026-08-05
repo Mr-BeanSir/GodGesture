@@ -3,6 +3,7 @@ import {
   extractCloudErrorCode,
   normalizeCloudError,
 } from "./errors";
+import { appLog } from "../logging";
 
 interface RuntimeSchema<T> {
   safeParse(
@@ -26,15 +27,25 @@ export async function apiData<T>(
   try {
     result = await request;
   } catch (error) {
-    throw normalizeCloudError(error, endpoint);
+    const normalized = normalizeCloudError(error, endpoint);
+    appLog.error(
+      "cloud",
+      `请求失败 endpoint=${endpoint} status=${normalized.status} code=${normalized.code}`,
+    );
+    throw normalized;
   }
   if (!result.response.ok) {
-    throw new CloudError(
+    const failure = new CloudError(
       result.response.status,
       extractCloudErrorCode(result.error) ?? `http_${result.response.status}`,
       result.error,
       endpoint,
     );
+    appLog.warn(
+      "cloud",
+      `服务端拒绝请求 endpoint=${endpoint} status=${failure.status} code=${failure.code}`,
+    );
+    throw failure;
   }
   const parsed = schema.safeParse(result.data);
   if (!parsed.success) {
@@ -56,15 +67,25 @@ export async function apiVoid(
   try {
     result = await request;
   } catch (error) {
-    throw normalizeCloudError(error, endpoint);
+    const normalized = normalizeCloudError(error, endpoint);
+    appLog.error(
+      "cloud",
+      `请求失败 endpoint=${endpoint} status=${normalized.status} code=${normalized.code}`,
+    );
+    throw normalized;
   }
   if (!result.response.ok) {
-    throw new CloudError(
+    const failure = new CloudError(
       result.response.status,
       extractCloudErrorCode(result.error) ?? `http_${result.response.status}`,
       result.error,
       endpoint,
     );
+    appLog.warn(
+      "cloud",
+      `服务端拒绝请求 endpoint=${endpoint} status=${failure.status} code=${failure.code}`,
+    );
+    throw failure;
   }
 }
 

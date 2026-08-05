@@ -10,6 +10,7 @@ import {
   MAX_BOUNDARY_SEQUENCE_TOKENS,
   MAX_HOTKEY_KEYS,
   MAX_HOTKEY_MODIFIERS,
+  MAX_SEND_TEXT_STEPS,
   MAX_INTENTS_PER_SCOPE,
   MAX_PATH_LENGTH,
   MAX_URL_LENGTH,
@@ -56,6 +57,11 @@ export const GestureInput = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("wheel"),
     direction: z.enum(["forward", "backward"]),
+  }),
+  z.object({
+    type: z.literal("key"),
+    /** KeyboardEvent.code 风格的跨平台物理键名,如 KeyQ/F4/Enter。 */
+    key: z.string().min(1).max(32),
   }),
 ]);
 export type GestureInput = z.infer<typeof GestureInput>;
@@ -119,8 +125,19 @@ export const OpenFileCommand = z.object({
 
 export const SendTextCommand = z.object({
   ...base("sendText"),
-  /** 按键序列文本,支持 {sleep N} 停顿标记 */
-  text: z.string().max(MAX_COMMAND_TEXT_LENGTH),
+  /** 新协议:按实际执行顺序排列的文字/按键操作。 */
+  steps: z.array(
+    z.discriminatedUnion("type", [
+      z.object({ type: z.literal("text"), text: z.string().max(MAX_COMMAND_TEXT_LENGTH) }),
+      z.object({
+        type: z.literal("key"),
+        modifiers: z.array(HotkeyModifier).max(MAX_HOTKEY_MODIFIERS),
+        key: HotkeyKeyName,
+      }),
+    ]),
+  ).max(MAX_SEND_TEXT_STEPS).optional(),
+  /** 旧版兼容字段;新配置不再写入,保留以便旧的 SendKeys 语法继续可执行。 */
+  text: z.string().max(MAX_COMMAND_TEXT_LENGTH).optional(),
 });
 
 export const GotoUrlCommand = z.object({

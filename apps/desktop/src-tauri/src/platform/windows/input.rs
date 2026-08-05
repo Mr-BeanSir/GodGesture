@@ -4,6 +4,7 @@
 
 use super::hook::EXTRA_INFO_TAG;
 use super::keys;
+use crate::engine::config::SendTextStep;
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -383,6 +384,26 @@ pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
             }
         };
         result?;
+    }
+    Ok(())
+}
+
+/// Execute the structured text/key sequence. The sequence is parsed and
+/// validated by the shared config schema before reaching this platform layer.
+pub fn type_text_steps(steps: &[SendTextStep]) {
+    if let Err(error) = try_type_text_steps(steps) {
+        log::error!("结构化文字/按键序列执行失败，已停止剩余序列: {error}");
+    }
+}
+
+pub fn try_type_text_steps(steps: &[SendTextStep]) -> Result<(), String> {
+    for step in steps {
+        match step {
+            SendTextStep::Text { text } => type_text(text)?,
+            SendTextStep::Key { modifiers, key } => {
+                synthesize_key_combo(modifiers, std::slice::from_ref(key))?
+            }
+        }
     }
     Ok(())
 }

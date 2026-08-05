@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConfigDocument, migrateConfigDocument } from "../document.js";
 import { GestureInput, GestureSpec } from "../gestures.js";
 
-describe("configuration v5 migration", () => {
+describe("configuration v6 migration", () => {
   it("migrates legacy corner and edge commands without losing enable flags", () => {
     const document = ConfigDocument.parse({
       formatVersion: 1,
@@ -13,8 +13,7 @@ describe("configuration v5 migration", () => {
       },
     });
 
-    expect(document.formatVersion).toBe(5);
-    expect(document.nodePlugins).toEqual([]);
+    expect(document.formatVersion).toBe(6);
     expect(document.hotCorners).toEqual({ enabled: false, commands: {} });
     expect(document.rubEdges).toEqual({ enabled: true, commands: {} });
     expect(document.boundaryIntents.every((intent) => intent.enabled)).toBe(true);
@@ -198,15 +197,14 @@ describe("configuration v5 migration", () => {
       }],
     });
 
-    expect(document.formatVersion).toBe(5);
-    expect(document.nodePlugins).toEqual([]);
+    expect(document.formatVersion).toBe(6);
     expect(document.boundaryIntents).toHaveLength(1);
     expect(document.boundaryIntents[0]?.command).toEqual({ type: "doNothing" });
   });
 
   it("rejects removed pause commands in an already-current document", () => {
     expect(() => ConfigDocument.parse({
-      formatVersion: 5,
+      formatVersion: 6,
       global: {
         intents: [{
           id: "50000000-0000-4000-8000-000000000001",
@@ -216,6 +214,35 @@ describe("configuration v5 migration", () => {
         }],
       },
     })).toThrow();
+  });
+
+  it("migrates embedded plugin commands to stable action references", () => {
+    const document = ConfigDocument.parse({
+      formatVersion: 5,
+      nodePlugins: [{
+        id: "50000000-0000-4000-8000-000000000010",
+        name: "Legacy plugin",
+      }],
+      global: {
+        intents: [{
+          id: "50000000-0000-4000-8000-000000000011",
+          name: "Run legacy export",
+          gesture: { trigger: "right", strokes: ["up"], modifier: "none" },
+          command: {
+            type: "nodePlugin",
+            pluginId: "50000000-0000-4000-8000-000000000010",
+            exportName: "customHandler",
+          },
+        }],
+      },
+    });
+
+    expect(document).not.toHaveProperty("nodePlugins");
+    expect(document.global.intents[0]?.command).toEqual({
+      type: "nodePlugin",
+      pluginId: "50000000-0000-4000-8000-000000000010",
+      actionId: "customHandler",
+    });
   });
 
   it("rejects removed script commands instead of converting them", () => {

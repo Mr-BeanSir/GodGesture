@@ -195,6 +195,30 @@ impl IntentFinder {
             None => in_global(),
         }
     }
+
+    /// Return whether any ordinary ordered-input intent starts with `prefix`.
+    /// Independent modifiers are deliberately excluded: they must not steal
+    /// an input that is also the next step of a longer ordered gesture.
+    pub fn any_inputs_with_prefix(
+        &self,
+        trigger: TriggerButton,
+        prefix: &[GestureInput],
+        fg: &ForegroundApp,
+    ) -> bool {
+        let starts = |i: &GestureIntent| {
+            i.enabled
+                && i.gesture.trigger == trigger
+                && i.gesture.modifier == Modifier::None
+                && i.gesture.effective_inputs().starts_with(prefix)
+        };
+        let in_global = || self.config.global.intents.iter().any(starts);
+        match self.match_app(fg) {
+            Some(app) => {
+                app.intents.iter().any(starts) || (app.inherit_global_gestures && in_global())
+            }
+            None => in_global(),
+        }
+    }
 }
 
 /// 触发角/摩擦边命令查找(键: leftTop/rightTop/... 与 left/top/right/bottom)

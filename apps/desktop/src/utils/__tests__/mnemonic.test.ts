@@ -4,6 +4,7 @@ import {
   gestureInputs,
   gestureMnemonic,
   isModifierForTrigger,
+  preservedModifierForInputs,
   sameGesture,
 } from "../mnemonic";
 
@@ -40,6 +41,21 @@ describe("gesture mnemonic input sequence", () => {
     expect(sameGesture(buttonThenStroke, strokeThenButton)).toBe(false);
   });
 
+  it("keeps keyboard inputs in the sequence and identity", () => {
+    const withQ = gesture([
+      { type: "key", key: "KeyQ" },
+      { type: "stroke", direction: "right" },
+    ]);
+    const withW = gesture([
+      { type: "key", key: "KeyW" },
+      { type: "stroke", direction: "right" },
+    ]);
+
+    expect(gestureMnemonic(withQ)).toBe("◑[Q]→");
+    expect(sameGesture(withQ, withQ)).toBe(true);
+    expect(sameGesture(withQ, withW)).toBe(false);
+  });
+
   it("includes the independent modifier in display and identity", () => {
     const plain = gesture([{ type: "stroke", direction: "right" }]);
     const repeated = {
@@ -57,5 +73,20 @@ describe("gesture mnemonic input sequence", () => {
   it("identifies the trigger button's invalid modifier option", () => {
     expect(isModifierForTrigger("right", "rightButtonDown")).toBe(true);
     expect(isModifierForTrigger("right", "middleButtonDown")).toBe(false);
+  });
+
+  it("clears a preserved modifier when the new recording captures that input", () => {
+    expect(
+      preservedModifierForInputs(
+        [{ type: "button", button: "left" }],
+        "leftButtonDown",
+      ),
+    ).toBe("none");
+    expect(
+      preservedModifierForInputs(
+        [{ type: "button", button: "left" }],
+        "middleButtonDown",
+      ),
+    ).toBe("middleButtonDown");
   });
 });

@@ -1,0 +1,43 @@
+{
+  "name": "gesture-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GodGesture Node.js 插件生命周期示例",
+  "type": "module",
+  "exports": "./index.mjs",
+  "godgesture": {
+    "id": "30000000-0000-4000-8000-000000000001",
+    "apiVersion": 1,
+    "entry": "index.mjs",
+    "actions": [
+      {
+        "id": "init",
+        "name": "初始化",
+        "export": "onInit"
+      },
+      {
+        "id": "default",
+        "name": "执行",
+        "export": "onExecute"
+      },
+      {
+        "id": "gestureRecognized",
+        "name": "手势识别",
+        "export": "onGestureRecognized"
+      },
+      {
+        "id": "modifierTriggered",
+        "name": "修饰符触发",
+        "export": "onModifierTriggered"
+      },
+      {
+        "id": "end",
+        "name": "结束",
+        "export": "onEnd"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@godgesture/sdk": "0.1.0"
+  }
+}

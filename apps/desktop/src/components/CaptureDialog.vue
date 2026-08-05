@@ -14,7 +14,12 @@ import type {
   TriggerButton,
 } from "@godgesture/shared";
 import { useBackend, type CapturedGesture } from "../api/backend";
-import { gestureMnemonic, sameGesture } from "../utils/mnemonic";
+import { appLog } from "../logging";
+import {
+  gestureMnemonic,
+  preservedModifierForInputs,
+  sameGesture,
+} from "../utils/mnemonic";
 import MnemonicText from "./MnemonicText.vue";
 
 const props = defineProps<{
@@ -107,10 +112,17 @@ function onCaptured(g: CapturedGesture, epoch: number) {
                       ? [{ type: "button" as const, button: "x2" as const }]
                       : []),
       ];
+  appLog.debug(
+    "capture",
+    `event=capture_payload_received inputCount=${inputs.length} hasKeyQ=${inputs.some((input) => input.type === "key" && input.key === "KeyQ")}`,
+  );
   captured.value = {
     trigger: g.trigger as TriggerButton,
     inputs,
-    modifier: props.preserveModifier ?? "none",
+    modifier: preservedModifierForInputs(
+      inputs,
+      props.preserveModifier ?? "none",
+    ),
   };
 }
 
@@ -133,7 +145,7 @@ function detachListener(listener: (() => void) | null = unlisten) {
     // A failed unlisten must be observable, even though capture_cancel remains
     // the authoritative native cleanup below.
     startError.value = errorMessage(error);
-    console.error("Failed to remove gesture capture listener", error);
+    appLog.warn("capture", `移除手势录制监听失败: ${errorMessage(error)}`);
   }
 }
 
@@ -146,7 +158,7 @@ async function cancelRecording(): Promise<boolean> {
   } catch (error) {
     const wasPending = cancelError.value !== null;
     cancelError.value = errorMessage(error);
-    console.error("Failed to cancel gesture recording", error);
+    appLog.error("capture", `取消手势录制失败: ${errorMessage(error)}`);
     if (!wasPending) ElMessage.error(t("capture.cancelError"));
     return false;
   }
@@ -188,7 +200,7 @@ async function start(epoch: number) {
     // issue the matching cancel so recording cannot remain stuck globally.
     await cancelRecording();
     startError.value = errorMessage(error);
-    console.error("Failed to start gesture recording", error);
+    appLog.error("capture", `开始手势录制失败: ${errorMessage(error)}`);
   }
 }
 
@@ -197,7 +209,7 @@ function enqueue(operation: () => Promise<void>): void {
   lifecycleBusy.value = true;
   const run = lifecycle.then(operation, operation).catch((error) => {
     startError.value = errorMessage(error);
-    console.error("Unexpected gesture capture lifecycle failure", error);
+    appLog.error("capture", `手势录制生命周期失败: ${errorMessage(error)}`);
   });
   lifecycle = run.finally(() => {
     queuedOperations -= 1;
