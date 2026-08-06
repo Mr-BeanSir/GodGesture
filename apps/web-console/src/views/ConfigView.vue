@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type {
   AppEntry,
+  AppGroup,
   BoundaryIntent,
   BoundaryToken,
   ConfigDocument,
@@ -27,6 +28,31 @@ type ActionRow =
 const sortedApps = computed<AppEntry[]>(() =>
   doc.value ? [...doc.value.apps].sort((a, b) => a.order - b.order) : [],
 );
+
+type DisplayAppGroup = AppGroup & { apps: AppEntry[]; unassigned?: boolean };
+
+const displayedGroups = computed<DisplayAppGroup[]>(() => {
+  if (!doc.value) return [];
+  const groups = [...doc.value.groups].sort((a, b) => a.order - b.order);
+  const knownGroupIds = new Set(groups.map((group) => group.id));
+  const result: DisplayAppGroup[] = groups.map((group) => ({
+    ...group,
+    apps: sortedApps.value.filter((app) => app.groupId === group.id),
+  }));
+  const unassigned = sortedApps.value.filter(
+    (app) => !knownGroupIds.has(app.groupId),
+  );
+  if (unassigned.length) {
+    result.push({
+      id: "__unassigned__",
+      name: t("config.unassignedGroup"),
+      order: Number.MAX_SAFE_INTEGER,
+      apps: unassigned,
+      unassigned: true,
+    });
+  }
+  return result;
+});
 
 const currentApp = computed<AppEntry | null>(() =>
   selectedAppId.value === GLOBAL
@@ -228,28 +254,41 @@ onMounted(async () => {
               </el-tag>
             </button>
 
-            <button
-              v-for="app in sortedApps"
-              :key="app.id"
-              type="button"
-              class="config-app"
-              :class="{ 'is-active': app.id === selectedAppId }"
-              @click="selectApp(app.id)"
+            <section
+              v-for="group in displayedGroups"
+              :key="group.id"
+              class="config-app-group"
+              :class="{ 'is-unassigned': group.unassigned }"
             >
-              <span class="config-app__avatar">{{ appInitials(app.name) }}</span>
-              <span class="config-app__body">
-                <span class="config-app__name">{{ app.name }}</span>
-                <span class="config-app__meta">
-                  {{ t("config.actionCount", { count: app.intents.length }) }}
-                </span>
-              </span>
-              <el-tag v-if="!app.gesturingEnabled" type="danger" size="small">
-                {{ t("config.disabledShort") }}
-              </el-tag>
-              <el-tag v-else-if="app.inheritGlobalGestures" type="info" size="small">
-                {{ t("config.inheritShort") }}
-              </el-tag>
-            </button>
+              <div class="config-app-group__head">
+                <span>{{ group.name }}</span>
+                <span>{{ group.apps.length }}</span>
+              </div>
+              <div class="config-app-group__apps">
+                <button
+                  v-for="app in group.apps"
+                  :key="app.id"
+                  type="button"
+                  class="config-app"
+                  :class="{ 'is-active': app.id === selectedAppId }"
+                  @click="selectApp(app.id)"
+                >
+                  <span class="config-app__avatar">{{ appInitials(app.name) }}</span>
+                  <span class="config-app__body">
+                    <span class="config-app__name">{{ app.name }}</span>
+                    <span class="config-app__meta">
+                      {{ t("config.actionCount", { count: app.intents.length }) }}
+                    </span>
+                  </span>
+                  <el-tag v-if="!app.gesturingEnabled" type="danger" size="small">
+                    {{ t("config.disabledShort") }}
+                  </el-tag>
+                  <el-tag v-else-if="app.inheritGlobalGestures" type="info" size="small">
+                    {{ t("config.inheritShort") }}
+                  </el-tag>
+                </button>
+              </div>
+            </section>
           </nav>
         </aside>
 
@@ -421,6 +460,40 @@ p {
   display: grid;
   gap: 3px;
   padding: 6px;
+}
+
+.config-app-group {
+  min-width: 0;
+}
+
+.config-app-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 7px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.config-app-group__head span:last-child {
+  color: var(--el-text-color-placeholder);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.config-app-group__apps {
+  display: grid;
+  gap: 3px;
+  margin-left: 7px;
+  padding-left: 7px;
+  border-left: 1px solid var(--el-border-color-lighter);
+}
+
+.config-app-group.is-unassigned .config-app-group__head {
+  color: var(--el-color-warning);
 }
 
 .config-app {

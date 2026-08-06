@@ -11,6 +11,7 @@ import {
   AdminUser,
   AdminUserListResponse,
   ListDevicesResponse,
+  ListSnapshotsQuery,
   ListSnapshotsResponse,
   LoginRequest,
   MeResponse,
@@ -71,6 +72,10 @@ const configDocumentSchema = registry.register(
   ListDevicesResponse: registry.register(
     'ListDevicesResponse',
     ListDevicesResponse,
+  ),
+  ListSnapshotsQuery: registry.register(
+    'ListSnapshotsQuery',
+    ListSnapshotsQuery,
   ),
   ListSnapshotsResponse: registry.register(
     'ListSnapshotsResponse',
@@ -616,6 +621,7 @@ registry.registerPath({
   operationId: 'listSnapshots',
   summary: 'List retained configuration snapshots',
   security: bearerSecurity,
+  request: { query: schemas.ListSnapshotsQuery },
   responses: {
     200: jsonResponse(
       'The retained snapshot list.',

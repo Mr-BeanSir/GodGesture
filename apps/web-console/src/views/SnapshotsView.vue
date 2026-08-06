@@ -2,7 +2,10 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import type { SnapshotMeta } from "@godgesture/shared";
+import {
+  DEFAULT_SNAPSHOT_PAGE_SIZE,
+  type SnapshotMeta,
+} from "@godgesture/shared";
 import { listSnapshots, pullConfig, restoreSnapshot } from "../api/sync";
 import { ApiError } from "../api/client";
 import { formatBytes, formatDateTime } from "../utils/format";
@@ -15,20 +18,36 @@ const errorKey = ref<string | null>(null);
 const snapshots = ref<SnapshotMeta[]>([]);
 const currentVersion = ref<number | null>(null);
 const restoringVersion = ref<number | null>(null);
+const page = ref(1);
+const pageSize = ref(DEFAULT_SNAPSHOT_PAGE_SIZE);
+const total = ref(0);
+const totalPages = ref(1);
 
-async function load(): Promise<void> {
+async function load(
+  targetPage = page.value,
+  targetPageSize = pageSize.value,
+  refreshVersion = currentVersion.value === null,
+): Promise<void> {
   loading.value = true;
   errorKey.value = null;
-  currentVersion.value = null;
   try {
-    const [snapshotResult, configResult] = await Promise.all([
-      listSnapshots(),
-      pullConfig(),
-    ]);
+    const snapshotRequest = listSnapshots({
+      page: targetPage,
+      pageSize: targetPageSize,
+    });
+    const [snapshotResult, configResult] = refreshVersion
+      ? await Promise.all([snapshotRequest, pullConfig()])
+      : [await snapshotRequest, null];
     snapshots.value = snapshotResult.snapshots;
-    currentVersion.value = configResult.version;
+    page.value = snapshotResult.page;
+    pageSize.value = snapshotResult.pageSize;
+    total.value = snapshotResult.total;
+    totalPages.value = snapshotResult.totalPages;
+    if (configResult) currentVersion.value = configResult.version;
   } catch (err) {
     snapshots.value = [];
+    total.value = 0;
+    totalPages.value = 1;
     errorKey.value = errorMessageKey(err);
   } finally {
     loading.value = false;
@@ -59,7 +78,7 @@ async function onRestore(snapshot: SnapshotMeta): Promise<void> {
   try {
     const result = await restoreSnapshot(snapshot.version, { baseVersion });
     ElMessage.success(t("snapshots.restoreSuccess", { version: result.version }));
-    await load();
+    await load(1, pageSize.value, true);
   } catch (err) {
     if (
       err instanceof ApiError &&
@@ -68,7 +87,7 @@ async function onRestore(snapshot: SnapshotMeta): Promise<void> {
     ) {
       ElMessage.warning(t("snapshots.restoreConflict"));
       // 只刷新，不自动重试。用户必须根据新版本重新确认一次回滚。
-      await load();
+      await load(1, pageSize.value, true);
     } else {
       ElMessage.error(t(errorMessageKey(err)));
     }
@@ -77,7 +96,19 @@ async function onRestore(snapshot: SnapshotMeta): Promise<void> {
   }
 }
 
-onMounted(load);
+function onRefresh(): void {
+  void load(1, pageSize.value, true);
+}
+
+function onPageChange(nextPage: number): void {
+  void load(nextPage, pageSize.value, false);
+}
+
+function onPageSizeChange(nextPageSize: number): void {
+  void load(1, nextPageSize, false);
+}
+
+onMounted(() => load(1, DEFAULT_SNAPSHOT_PAGE_SIZE, true));
 </script>
 
 <template>
@@ -92,7 +123,7 @@ onMounted(load);
       <el-button
         size="small"
         :disabled="loading || restoringVersion !== null"
-        @click="load"
+        @click="onRefresh"
       >
         {{ t("common.refresh") }}
       </el-button>
@@ -149,6 +180,19 @@ onMounted(load);
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="total > 0"
+          class="snapshots-pagination"
+          background
+          layout="total, sizes, prev, pager, next"
+          :current-page="page"
+          :page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="total"
+          :disabled="loading || restoringVersion !== null"
+          @current-change="onPageChange"
+          @size-change="onPageSizeChange"
+        />
       </el-card>
     </template>
   </div>
@@ -177,5 +221,11 @@ onMounted(load);
 .current-version {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+.snapshots-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 </style>

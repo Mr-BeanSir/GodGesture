@@ -225,6 +225,36 @@ describe('OpenAPI contract', () => {
     });
   });
 
+  it('documents bounded snapshot pagination query parameters', () => {
+    const snapshots = operation('get', '/sync/snapshots');
+
+    expect(snapshots.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'page',
+          in: 'query',
+          schema: expect.objectContaining({
+            type: 'integer',
+            default: 1,
+            minimum: 0,
+            exclusiveMinimum: true,
+          }),
+        }),
+        expect.objectContaining({
+          name: 'pageSize',
+          in: 'query',
+          schema: expect.objectContaining({
+            type: 'integer',
+            default: 10,
+            minimum: 0,
+            exclusiveMinimum: true,
+            maximum: 50,
+          }),
+        }),
+      ]),
+    );
+  });
+
   it('contains only the relative API server and no credential material', () => {
     expect(document.servers).toEqual([
       { url: '/api/v1', description: 'Version 1 API' },

@@ -10,6 +10,19 @@ const slots = vi.hoisted(() => ({
   api: null as Record<string, unknown> | null,
   engines: [] as Array<Record<string, unknown>>,
   engineOptions: [] as unknown[],
+  snapshotResponse: {
+    snapshots: [],
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 1,
+  } as {
+    snapshots: Array<Record<string, unknown>>;
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  },
 }));
 
 vi.mock("../../api/backend", () => ({
@@ -98,7 +111,9 @@ vi.mock("../../cloud/sync-engine", () => ({
         start: vi.fn(async () => undefined),
         stop: vi.fn(),
         syncNow: vi.fn(async () => undefined),
-        listSnapshots: vi.fn(async () => []),
+        listSnapshots: vi.fn(async (_query: unknown) =>
+          structuredClone(slots.snapshotResponse),
+        ),
         restore: vi.fn(async () => undefined),
       };
       slots.engines.push(engine);
@@ -168,6 +183,13 @@ beforeEach(() => {
   setActivePinia(createPinia());
   slots.engines = [];
   slots.engineOptions = [];
+  slots.snapshotResponse = {
+    snapshots: [],
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 1,
+  };
   slots.backend = makeBackend();
   slots.session = makeSession();
   slots.api = makeApi();
@@ -212,6 +234,43 @@ describe("account store startup", () => {
     expect(store.phase).toBe("sessionError");
     expect(store.authErrorCode).toBe("network");
     expect(session.clearLocal).not.toHaveBeenCalled();
+  });
+
+  it("loads snapshot page metadata after restoring a session", async () => {
+    const session = slots.session as ReturnType<typeof makeSession>;
+    session.restore.mockResolvedValueOnce(true);
+    slots.snapshotResponse = {
+      snapshots: [
+        {
+          version: 8,
+          createdAt: "2026-08-06T08:00:00.000Z",
+          deviceId: null,
+          deviceName: null,
+          note: "",
+          sizeBytes: 512,
+        },
+      ],
+      page: 2,
+      pageSize: 20,
+      total: 21,
+      totalPages: 2,
+    };
+    const store = useAccountStore();
+
+    await store.initialize();
+    await vi.waitFor(() => {
+      expect(slots.engines[0].listSnapshots).toHaveBeenCalled();
+    });
+
+    expect(slots.engines[0].listSnapshots).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 10,
+    });
+    expect(store.snapshots).toHaveLength(1);
+    expect(store.snapshotsPage).toBe(2);
+    expect(store.snapshotsPageSize).toBe(20);
+    expect(store.snapshotsTotal).toBe(21);
+    expect(store.snapshotsTotalPages).toBe(2);
   });
 });
 

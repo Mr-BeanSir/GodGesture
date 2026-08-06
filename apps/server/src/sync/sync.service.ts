@@ -9,6 +9,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import type {
   ConfigDocument,
+  ListSnapshotsQuery,
   ListSnapshotsResponse,
   PullConfigResponse,
   PushConfigRequest,
@@ -121,14 +122,27 @@ export class SyncService {
     throw error;
   }
 
-  async listSnapshots(userId: string): Promise<ListSnapshotsResponse> {
+  async listSnapshots(
+    userId: string,
+    query: ListSnapshotsQuery,
+  ): Promise<ListSnapshotsResponse> {
+    const total = await this.prisma.configSnapshot.count({
+      where: { userId },
+    });
+    const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+    const page = Math.min(query.page, totalPages);
     const snapshots = await this.prisma.configSnapshot.findMany({
       where: { userId },
       orderBy: { version: 'desc' },
-      take: SNAPSHOT_RETENTION,
+      skip: (page - 1) * query.pageSize,
+      take: query.pageSize,
       include: { device: { select: { name: true } } },
     });
     return {
+      page,
+      pageSize: query.pageSize,
+      total,
+      totalPages,
       snapshots: snapshots.map((s) => ({
         version: s.version,
         createdAt: s.createdAt.toISOString(),

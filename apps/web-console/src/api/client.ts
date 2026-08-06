@@ -432,8 +432,23 @@ function expireAccessSession(expectedRefreshToken: string | null): boolean {
 export interface RequestOptions {
   method?: string;
   body?: unknown;
+  query?: Record<string, string | number | boolean | null | undefined>;
   /** 默认 true:携带 Bearer 并走 401→refresh→重试流程 */
   auth?: boolean;
+}
+
+function requestPath(
+  path: string,
+  query: RequestOptions["query"],
+): string {
+  if (!query) return path;
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null) search.set(key, String(value));
+  }
+  const encoded = search.toString();
+  if (!encoded) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${encoded}`;
 }
 
 async function rawRequest(
@@ -452,7 +467,7 @@ async function rawRequest(
     if (options.body !== undefined)
       headers["Content-Type"] = "application/json";
     if (accessTokenUsed) headers.Authorization = `Bearer ${accessTokenUsed}`;
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${API_BASE}${requestPath(path, options.query)}`, {
       method: options.method ?? "GET",
       headers,
       body:

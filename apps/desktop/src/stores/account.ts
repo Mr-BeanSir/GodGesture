@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, onScopeDispose, ref, watch } from "vue";
 import {
   ConfigDocument,
+  DEFAULT_SNAPSHOT_PAGE_SIZE,
   type MeResponse,
   type OAuthProvider,
   type SnapshotMeta,
@@ -58,6 +59,10 @@ export const useAccountStore = defineStore("account", () => {
   const providersError = ref(false);
   const syncStatus = ref<CloudSyncStatus>({ ...SIGNED_OUT_SYNC_STATUS });
   const snapshots = ref<SnapshotMeta[]>([]);
+  const snapshotsPage = ref(1);
+  const snapshotsPageSize = ref(DEFAULT_SNAPSHOT_PAGE_SIZE);
+  const snapshotsTotal = ref(0);
+  const snapshotsTotalPages = ref(1);
   const snapshotsLoading = ref(false);
   const snapshotsErrorCode = ref<string | null>(null);
   const endpointSettings = readEndpointSettings();
@@ -305,6 +310,10 @@ export const useAccountStore = defineStore("account", () => {
     syncEngine = null;
     snapshotRequestGeneration += 1;
     snapshots.value = [];
+    snapshotsPage.value = 1;
+    snapshotsPageSize.value = DEFAULT_SNAPSHOT_PAGE_SIZE;
+    snapshotsTotal.value = 0;
+    snapshotsTotalPages.value = 1;
     snapshotsLoading.value = false;
     snapshotsErrorCode.value = null;
     syncStatus.value = { ...SIGNED_OUT_SYNC_STATUS };
@@ -316,19 +325,26 @@ export const useAccountStore = defineStore("account", () => {
     await loadSnapshots();
   }
 
-  async function loadSnapshots(): Promise<void> {
+  async function loadSnapshots(
+    page = snapshotsPage.value,
+    pageSize = snapshotsPageSize.value,
+  ): Promise<void> {
     const engine = syncEngine;
     if (!engine || snapshotsLoading.value) return;
     const requestGeneration = ++snapshotRequestGeneration;
     snapshotsLoading.value = true;
     snapshotsErrorCode.value = null;
     try {
-      const next = await engine.listSnapshots();
+      const next = await engine.listSnapshots({ page, pageSize });
       if (
         syncEngine === engine &&
         snapshotRequestGeneration === requestGeneration
       ) {
-        snapshots.value = next;
+        snapshots.value = next.snapshots;
+        snapshotsPage.value = next.page;
+        snapshotsPageSize.value = next.pageSize;
+        snapshotsTotal.value = next.total;
+        snapshotsTotalPages.value = next.totalPages;
       }
     } catch (error) {
       if (
@@ -407,6 +423,10 @@ export const useAccountStore = defineStore("account", () => {
     providersError,
     syncStatus,
     snapshots,
+    snapshotsPage,
+    snapshotsPageSize,
+    snapshotsTotal,
+    snapshotsTotalPages,
     snapshotsLoading,
     snapshotsErrorCode,
     initialize,

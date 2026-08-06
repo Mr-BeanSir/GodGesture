@@ -97,6 +97,8 @@ export default {
     globalApp: "Global",
     globalDisabled: "Master gesturing switch is off",
     apps: "Apps",
+    groups: "Groups",
+    unassignedGroup: "Unassigned",
     appDisabled: "Blacklisted (gesturing disabled)",
     inheritGlobal: "Inherits global gestures",
     noIntents: "No gesture intents",

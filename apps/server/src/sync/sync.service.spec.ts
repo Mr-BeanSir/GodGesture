@@ -61,7 +61,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
   let prisma: {
     $transaction: jest.Mock;
     userConfig: { findUnique: jest.Mock };
-    configSnapshot: { findMany: jest.Mock };
+    configSnapshot: { count: jest.Mock; findMany: jest.Mock };
   };
   let service: SyncService;
 
@@ -83,7 +83,7 @@ describe('SyncService(乐观并发 + 快照)', () => {
     prisma = {
       $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
       userConfig: { findUnique: jest.fn() },
-      configSnapshot: { findMany: jest.fn() },
+      configSnapshot: { count: jest.fn(), findMany: jest.fn() },
     };
     service = new SyncService(prisma as unknown as PrismaService);
   });
@@ -432,8 +432,9 @@ describe('SyncService(乐观并发 + 快照)', () => {
   });
 
   describe('listSnapshots', () => {
-    it('按版本降序取至多 100 条,带设备名', async () => {
+    it('按版本降序获取请求页并返回分页元数据', async () => {
       const createdAt = new Date('2026-07-25T12:00:00.000Z');
+      prisma.configSnapshot.count.mockResolvedValue(23);
       prisma.configSnapshot.findMany.mockResolvedValue([
         {
           version: 2,
@@ -453,33 +454,87 @@ describe('SyncService(乐观并发 + 快照)', () => {
         },
       ]);
 
-      const res = await service.listSnapshots('user-1');
+      const res = await service.listSnapshots('user-1', {
+        page: 2,
+        pageSize: 10,
+      });
 
+      expect(prisma.configSnapshot.count).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
       expect(prisma.configSnapshot.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { userId: 'user-1' },
           orderBy: { version: 'desc' },
-          take: 100,
+          skip: 10,
+          take: 10,
         }),
       );
-      expect(res.snapshots).toEqual([
-        {
-          version: 2,
-          createdAt: createdAt.toISOString(),
-          deviceId: 'dev-1',
-          deviceName: '工作机',
-          note: '',
-          sizeBytes: 1024,
-        },
-        {
-          version: 1,
-          createdAt: createdAt.toISOString(),
-          deviceId: null,
-          deviceName: null,
-          note: '',
-          sizeBytes: 512,
-        },
-      ]);
+      expect(res).toEqual({
+        page: 2,
+        pageSize: 10,
+        total: 23,
+        totalPages: 3,
+        snapshots: [
+          {
+            version: 2,
+            createdAt: createdAt.toISOString(),
+            deviceId: 'dev-1',
+            deviceName: '工作机',
+            note: '',
+            sizeBytes: 1024,
+          },
+          {
+            version: 1,
+            createdAt: createdAt.toISOString(),
+            deviceId: null,
+            deviceName: null,
+            note: '',
+            sizeBytes: 512,
+          },
+        ],
+      });
+    });
+
+    it('请求页超过范围时返回最后一页', async () => {
+      prisma.configSnapshot.count.mockResolvedValue(23);
+      prisma.configSnapshot.findMany.mockResolvedValue([]);
+
+      const res = await service.listSnapshots('user-1', {
+        page: 9,
+        pageSize: 10,
+      });
+
+      expect(prisma.configSnapshot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+      expect(res).toMatchObject({
+        page: 3,
+        pageSize: 10,
+        total: 23,
+        totalPages: 3,
+      });
+    });
+
+    it('空列表规范化为第一页', async () => {
+      prisma.configSnapshot.count.mockResolvedValue(0);
+      prisma.configSnapshot.findMany.mockResolvedValue([]);
+
+      const res = await service.listSnapshots('user-1', {
+        page: 4,
+        pageSize: 20,
+      });
+
+      expect(prisma.configSnapshot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(res).toEqual({
+        snapshots: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 1,
+      });
     });
   });
 });

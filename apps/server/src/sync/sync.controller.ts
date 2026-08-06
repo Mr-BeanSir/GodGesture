@@ -8,11 +8,13 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ListSnapshotsResponse,
+  ListSnapshotsQuery,
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
@@ -50,9 +52,12 @@ export class SyncController {
   }
 
   @Get('snapshots')
-  @ApiOperation({ summary: '快照列表(按版本降序,至多 100 条且历史正文不超过 64 MiB)' })
-  listSnapshots(@CurrentUser() userId: string): Promise<ListSnapshotsResponse> {
-    return this.sync.listSnapshots(userId);
+  @ApiOperation({ summary: '分页快照列表(按版本降序,单页至多 50 条)' })
+  listSnapshots(
+    @CurrentUser() userId: string,
+    @Query(new ZodValidationPipe(ListSnapshotsQuery)) query: ListSnapshotsQuery,
+  ): Promise<ListSnapshotsResponse> {
+    return this.sync.listSnapshots(userId, query);
   }
 
   @Post('snapshots/:version/restore')

@@ -1,7 +1,8 @@
 import {
   ConfigDocument,
   type ConfigDocument as ConfigDocumentValue,
-  type SnapshotMeta,
+  type ListSnapshotsQuery,
+  type ListSnapshotsResponse,
 } from "@godgesture/shared";
 import type { Backend, SyncMetadata } from "../api/backend";
 import type { CloudApi } from "./api";
@@ -192,12 +193,14 @@ export class CloudSyncEngine {
     return this.runSync();
   }
 
-  async listSnapshots(): Promise<SnapshotMeta[]> {
+  async listSnapshots(
+    query: ListSnapshotsQuery,
+  ): Promise<ListSnapshotsResponse> {
     const lifecycle = this.lifecycle;
     this.assertActive(lifecycle);
-    const response = await this.api.listSnapshots();
+    const response = await this.api.listSnapshots(query);
     this.assertActive(lifecycle);
-    return response.snapshots;
+    return response;
   }
 
   async restore(version: number): Promise<void> {

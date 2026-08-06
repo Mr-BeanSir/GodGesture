@@ -1,18 +1,27 @@
 import {
+  ListSnapshotsQuery,
   ListSnapshotsResponse,
   PullConfigResponse,
   RestoreSnapshotRequest,
   RestoreSnapshotResponse,
 } from "@godgesture/shared";
-import type { RestoreSnapshotRequest as RestoreSnapshotRequestType } from "@godgesture/shared";
+import type {
+  ListSnapshotsQuery as ListSnapshotsQueryType,
+  RestoreSnapshotRequest as RestoreSnapshotRequestType,
+} from "@godgesture/shared";
 import { apiRequest } from "./client";
 
 export function pullConfig(): Promise<PullConfigResponse> {
   return apiRequest(PullConfigResponse, "/sync/config");
 }
 
-export function listSnapshots(): Promise<ListSnapshotsResponse> {
-  return apiRequest(ListSnapshotsResponse, "/sync/snapshots");
+export function listSnapshots(
+  query: ListSnapshotsQueryType,
+): Promise<ListSnapshotsResponse> {
+  const parsed = ListSnapshotsQuery.parse(query);
+  return apiRequest(ListSnapshotsResponse, "/sync/snapshots", {
+    query: parsed,
+  });
 }
 
 export function restoreSnapshot(

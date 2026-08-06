@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对:2026-08-05。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
+最后核对:2026-08-06。M8 产品与发布基线为 stable `v0.1.0` / `5b81245`;后续文档提交不改变产品行为。从该版本起 GodGesture 作为独立项目演进,新功能由维护者需求驱动,不再以 WGestures 行为作为实现基准。现有 WGestures 配置导入继续作为兼容迁移能力保留。
 
 本文是“当前实际实现”的权威入口。协作与文档路由以 `AGENTS.md` 为准,术语以 `CONTEXT.md` 为准,架构理由按 `docs/adr/README.md` 选择相关 ADR。`docs/ROADMAP.md` 只记录 `v0.1.0` 历史里程碑。功能状态、入口、已知问题或验证基线改变时必须同步更新本文。
 
@@ -102,7 +102,7 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 - `PluginsView.vue` 与 `stores/plugins.ts` 提供 ready/error/empty 项目列表、manifest 元数据、动作导出、最近重载、打开根目录/项目目录及重新扫描；不包含源码编辑器，也不支持注册任意外部目录。
 - `NodePluginPicker.vue` 在命令编辑器中选择 `pluginId/actionId`，并提供打开目录和重新扫描入口；失效的插件或动作引用会明确提示且保留原值。
 - `cloud/` 负责 OpenAPI + Zod 传输校验、内存 access token、refresh 去重/轮换、PKCE、整库同步状态机、3 秒防抖推送、30 分钟拉取、退避和最多 3 次 `409` 拉取重推。
-- `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;refresh token 仅由 Windows Credential Manager/macOS Keychain 保存,原生 keyring 读写使用进程内串行锁,启动时自动轮换恢复;窄窗口下快照信息与恢复操作保持可达。
+- `stores/account.ts` 与 `AccountView.vue` 已接密码注册/登录、服务端启用的 OAuth 提供方、会话恢复/离线登出、手动同步及配置快照查看/恢复;快照按服务端页码分页加载,单页支持 10/20/50 条且不再预取全部历史;refresh token 仅由 Windows Credential Manager/macOS Keychain 保存,原生 keyring 读写使用进程内串行锁,启动时自动轮换恢复;窄窗口下快照信息与恢复操作保持可达。
 - `templates/` 与 `stores/templates.ts` 通过 Backend 调用 Tauri 原生受限下载器,再对不可信
   GitHub catalog/package 执行 shared Schema、身份、目标和风险校验;浏览器 preview 继续
   使用 fixture。模板详情提供冲突策略、风险确认和纯规划,再经 `stores/config.ts` 整库
@@ -111,18 +111,19 @@ M4 的已知代码、配置和配套文档实现已经结束;当前没有未记�
 
 ## Shared、Server 与 Web
 
-- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 7`;`AppGroup`、固定默认组和 `AppEntry.groupId` 属于同步配置,旧 v1-v6 文档与非法/未知归属会迁移到默认组,新手势模板应用进入默认组而命中已有应用保留原组。`nodePlugin` 命令只保存 `pluginId/actionId`,`nodePlugins` 已从 v6 `ConfigDocument` 与同步载荷移除。Rust 仅在读取旧 v5 本地配置时暂存内嵌项目，启动后一次性导出至插件工作区并以 v7 重写；旧 `script` 和 Pause 命令仍按既有迁移边界移除。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮、滚轮和 `KeyboardEvent.code` 键盘步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；同一鼠标输入既是更长有序序列前缀时优先按有序序列等待,不被独立修饰符抢占。`sendText` 新配置使用按顺序排列的 `steps`，每步选择文字或一个带修饰键的按键,旧 `text` 字段仍可读取执行。旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
+- `packages/shared` 是 TypeScript 协议单一来源,同时发布 ESM、CommonJS 和类型声明。配置格式当前为 `CONFIG_FORMAT_VERSION = 7`;`AppGroup`、固定默认组和 `AppEntry.groupId` 属于同步配置,旧 v1-v6 文档与非法/未知归属会迁移到默认组,新手势模板应用进入默认组而命中已有应用保留原组。快照列表共享 `page/pageSize` 查询和分页元数据,默认每页 10 条、服务端单次最多 50 条。`nodePlugin` 命令只保存 `pluginId/actionId`,`nodePlugins` 已从 v6 `ConfigDocument` 与同步载荷移除。Rust 仅在读取旧 v5 本地配置时暂存内嵌项目，启动后一次性导出至插件工作区并以 v7 重写；旧 `script` 和 Pause 命令仍按既有迁移边界移除。普通手势的 `GestureSpec.inputs` 保存触发键之后的有序笔画、按钮、滚轮和 `KeyboardEvent.code` 键盘步骤,独立 `modifier` 在基础输入匹配后立即且可重复执行；同一鼠标输入既是更长有序序列前缀时优先按有序序列等待,不被独立修饰符抢占。`sendText` 新配置使用按顺序排列的 `steps`，每步选择文字或一个带修饰键的按键,旧 `text` 字段仍可读取执行。旧 `strokes + modifier + executeOnModifier` 只在迁移时解释。全局 `boundaryIntents` 与普通手势意图都支持默认启用、可单条关闭的 `enabled`;旧配置缺字段时保持启用。读取 v1 时会把旧触发角/摩擦边命令稳定迁移为空序列边角动作。手势模板是独立分发协议,采纳后才并入个人配置。`src/api/generated.ts` 与 `openapi-fetch` 封装提供 OpenAPI 类型化客户端。
 - 插件源码、`package.json`、锁文件、依赖和缓存均是本机工作区文件，不进入整库同步；跨设备部署由用户使用 Git、复制或克隆 `gesture-demo` 完成。
 - 配置是整库同步文档;本机专属设置不进入同步。容量限制集中在 `config/limits.ts`。
 - Server 路由前缀为 `/api/v1`;包含 health、密码注册/登录、刷新/退出、OAuth、设备管理、配置推拉、快照列表/恢复。
 - `apps/server/openapi.json` 由 shared Zod Schema 和服务端 HTTP 注册表生成,覆盖 15 条路径/17 个操作;`pnpm generate:api` 更新文档与 shared 类型,`pnpm check:api` 检查漂移。开发环境挂载 Swagger UI,生产环境不挂载。
 - OAuth 已实现 GitHub/Google 可配置提供方和 PKCE;微信/QQ 保留配置位并默认不可用。不得按邮箱把 OAuth 自动关联到未验证密码账户。
-- 同步使用整库版本、乐观并发、后写胜出和快照;文档上限为 4 MiB,快照同时限制最新 100 个和每用户 64 MiB 正文。恢复快照也要求版本 CAS。设备删除会撤销其访问。
-- Web Console 使用 shared Schema 校验 API 数据,支持密码/OAuth 登录、跨标签刷新协调、只读配置、设备改名/移除和快照恢复。
+- 同步使用整库版本、乐观并发、后写胜出和快照;文档上限为 4 MiB,快照同时限制最新 100 个和每用户 64 MiB 正文。快照元数据列表使用服务端分页,请求页越界时规范化到最后一页,非法或超过 50 的单页数量返回 400。恢复快照也要求版本 CAS。设备删除会撤销其访问。
+- Web Console 使用 shared Schema 校验 API 数据,支持密码/OAuth 登录、跨标签刷新协调、按同步分组查看只读配置、设备改名/移除和服务端分页的快照恢复。
 
 2026-08-03 Web Console 配置查看页已与 Desktop 手势工作台对齐:左侧按全局/应用分栏导航,
 右侧统一展示当前应用动作;全局动作同时包含普通手势和 `boundaryIntents`,旧的独立触发角/摩擦边
 卡片仅保留为状态标签,不再按旧命令槽位展示;偏好设置摘要位于工作区上方并占满主内容宽度。
+2026-08-06 左侧应用导航进一步读取配置 v7 的 `groups/groupId`,全局仍固定置顶,各应用按分组和组内顺序展示,异常未知归属显示为只读“未指派”组而不修改云端文档。
 
 ## 已知未完成边界
 
@@ -620,6 +621,13 @@ Rust library `232 passed, 3 ignored`,`pnpm check:api`、严格 Clippy、定向 c
 拖拽取消、失焦和组件卸载均清理状态;拖拽中源条目显示虚线轮廓,并创建不拦截命中的副本跟随光标。
 Chrome `http://127.0.0.1:14204/` 已用实际鼠标事件验证源条目、副本、目标高亮和释放后的清理行为。
 验证:Desktop `137/137` + typecheck/build、`git diff --check` 通过。
+
+2026-08-06 后台分组与快照分页:Web Console 配置页按同步 `groups/groupId` 展示应用分组;`GET
+/sync/snapshots` 增加共享 `page/pageSize` 查询、完整分页元数据和 50 条单次上限,Server 使用
+`count + skip/take` 只查询当前页且不读取快照正文。Web Console 与 Desktop 均改为服务端分页,
+替代 2026-08-05 的 Desktop 客户端全量切片实现;Web Console 翻页时不重复拉取完整配置正文。
+验证:shared `120/120` + build,Server `95/95` + typecheck,Desktop `139/139` + typecheck/build,
+Web Console typecheck/build、`pnpm check:api` 通过;生产构建仅保留既有 VueUse PURE 注释和大 chunk 警告。
 
 ## 新任务接手流程
 

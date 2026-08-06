@@ -1431,7 +1431,15 @@ export interface components {
                 platform: "windows" | "macos" | "web";
             }[];
         };
+        ListSnapshotsQuery: {
+            /** @default 1 */
+            page: number;
+            /** @default 10 */
+            pageSize: number;
+        };
         ListSnapshotsResponse: {
+            page: number;
+            pageSize: number;
             snapshots: {
                 /** Format: date-time */
                 createdAt: string;
@@ -1443,6 +1451,8 @@ export interface components {
                 sizeBytes: number;
                 version: number;
             }[];
+            total: number;
+            totalPages: number;
         };
         LoginRequest: {
             device: {
@@ -2662,7 +2672,10 @@ export interface operations {
     };
     listSnapshots: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;

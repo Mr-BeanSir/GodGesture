@@ -91,6 +91,8 @@ export default {
     globalApp: "全局",
     globalDisabled: "手势总开关已关闭",
     apps: "应用",
+    groups: "分组",
+    unassignedGroup: "未指派",
     appDisabled: "黑名单(手势已禁用)",
     inheritGlobal: "继承全局手势",
     noIntents: "没有手势意图",

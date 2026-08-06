@@ -7620,6 +7620,24 @@
           "devices"
         ]
       },
+      "ListSnapshotsQuery": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 50,
+            "default": 10
+          }
+        }
+      },
       "ListSnapshotsResponse": {
         "type": "object",
         "properties": {
@@ -7664,10 +7682,34 @@
                 "sizeBytes"
               ]
             }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 50
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
           }
         },
         "required": [
-          "snapshots"
+          "snapshots",
+          "page",
+          "pageSize",
+          "total",
+          "totalPages"
         ]
       },
       "LoginRequest": {
@@ -9565,6 +9607,31 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 50,
+              "default": 10
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
           }
         ],
         "responses": {

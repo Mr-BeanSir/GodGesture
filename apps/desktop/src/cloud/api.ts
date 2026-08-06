@@ -1,4 +1,5 @@
 import {
+  ListSnapshotsQuery,
   ListSnapshotsResponse,
   LoginRequest,
   MeResponse,
@@ -14,6 +15,7 @@ import {
   type GodGestureApiClient,
   type GodGestureApiComponents,
   type LoginRequest as LoginInput,
+  type ListSnapshotsQuery as ListSnapshotsInput,
   type OAuthExchangeRequest as OAuthExchangeInput,
   type OAuthProvider,
   type PushConfigRequest as PushConfigInput,
@@ -106,10 +108,13 @@ export class CloudApi {
     );
   }
 
-  listSnapshots(): Promise<ListSnapshotsResponse> {
+  listSnapshots(input: ListSnapshotsInput): Promise<ListSnapshotsResponse> {
+    const query = ListSnapshotsQuery.parse(input);
     return apiData(
       ListSnapshotsResponse,
-      this.authClient.GET("/sync/snapshots"),
+      this.authClient.GET("/sync/snapshots", {
+        params: { query },
+      }),
       "/sync/snapshots",
     );
   }

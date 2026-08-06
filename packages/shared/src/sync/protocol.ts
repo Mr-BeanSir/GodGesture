@@ -57,8 +57,26 @@ export const SnapshotMeta = z.object({
 });
 export type SnapshotMeta = z.infer<typeof SnapshotMeta>;
 
+export const DEFAULT_SNAPSHOT_PAGE_SIZE = 10;
+export const MAX_SNAPSHOT_PAGE_SIZE = 50;
+
+export const ListSnapshotsQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_SNAPSHOT_PAGE_SIZE)
+    .default(DEFAULT_SNAPSHOT_PAGE_SIZE),
+});
+export type ListSnapshotsQuery = z.infer<typeof ListSnapshotsQuery>;
+
 export const ListSnapshotsResponse = z.object({
   snapshots: z.array(SnapshotMeta),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive().max(MAX_SNAPSHOT_PAGE_SIZE),
+  total: z.number().int().nonnegative(),
+  totalPages: z.number().int().positive(),
 });
 export type ListSnapshotsResponse = z.infer<typeof ListSnapshotsResponse>;
 

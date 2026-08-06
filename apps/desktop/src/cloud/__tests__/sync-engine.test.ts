@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConfigDocument, type PullConfigResponse } from "@godgesture/shared";
+import {
+  ConfigDocument,
+  type ListSnapshotsResponse,
+  type PullConfigResponse,
+} from "@godgesture/shared";
 import type { ConfigDocument as ConfigDocumentValue } from "@godgesture/shared";
 import type { SyncMetadata } from "../../api/backend";
 import { CloudError } from "../errors";
@@ -89,7 +93,13 @@ function harness(
       version: baseVersion + 1,
       updatedAt: NOW.toISOString(),
     })),
-    listSnapshots: vi.fn(async () => ({ snapshots: [] })),
+    listSnapshots: vi.fn(async (): Promise<ListSnapshotsResponse> => ({
+      snapshots: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 1,
+    })),
     restoreSnapshot: vi.fn(
       async (_version: number, input: { baseVersion: number }) => ({
         version: input.baseVersion + 1,
@@ -427,6 +437,44 @@ describe("cloud sync local changes and conflicts", () => {
 });
 
 describe("cloud snapshot restore", () => {
+  it("forwards pagination and returns the complete snapshot page", async () => {
+    const baseline = document("auto");
+    const { engine, api } = harness({
+      local: baseline,
+      stored: metadata(3, baseline),
+      pulled: pull(3, baseline),
+    });
+    api.listSnapshots.mockResolvedValueOnce({
+      snapshots: [
+        {
+          version: 2,
+          createdAt: NOW.toISOString(),
+          deviceId: null,
+          deviceName: null,
+          note: "",
+          sizeBytes: 12,
+        },
+      ],
+      page: 2,
+      pageSize: 20,
+      total: 21,
+      totalPages: 2,
+    });
+
+    await engine.start();
+    const result = await engine.listSnapshots({ page: 2, pageSize: 20 });
+
+    expect(api.listSnapshots).toHaveBeenCalledWith({ page: 2, pageSize: 20 });
+    expect(result).toMatchObject({
+      page: 2,
+      pageSize: 20,
+      total: 21,
+      totalPages: 2,
+    });
+    expect(result.snapshots).toHaveLength(1);
+    engine.stop();
+  });
+
   it("pushes pending local state before restoring and then applies the restored version", async () => {
     const baseline = document("auto");
     const local = document("zh-CN");
