@@ -9,6 +9,7 @@ import {
 const entry = {
   slug: "demo-plugin",
   version: "1.0.0",
+  author: "GodGesture",
   title: { "zh-CN": "演示插件", en: "Demo plugin" },
   summary: { "zh-CN": "用于测试", en: "For testing" },
   pluginId: "30000000-0000-4000-8000-000000000001",
@@ -43,6 +44,16 @@ describe("online plugin catalog protocol", () => {
         }),
       ).toThrow();
     }
+  });
+
+  it("requires an author in every catalog entry", () => {
+    expect(() =>
+      OnlinePluginCatalog.parse({
+        formatVersion: 1,
+        generatedAt: "2026-08-07T08:00:00Z",
+        entries: [{ ...entry, author: undefined }],
+      }),
+    ).toThrow();
   });
 
   it("rejects Windows reserved subdirectory names and oversized source fields", () => {

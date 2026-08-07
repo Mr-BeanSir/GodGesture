@@ -17,6 +17,7 @@ const lifecycleExports = [
 ];
 
 assert.equal(manifest.type, "module");
+assert.equal(manifest.author, "GodGesture");
 assert.equal(manifest.dependencies, undefined);
 assert.deepEqual(manifest.devDependencies, { "@godgesture/sdk": "0.1.0" });
 assert.equal(manifest.scripts, undefined);

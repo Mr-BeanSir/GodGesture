@@ -7,7 +7,7 @@ import {
 import { BackendError, useBackend, type TemplateResourceKind } from "../api/backend";
 
 export const DEFAULT_ONLINE_PLUGIN_CATALOG_URL =
-  "https://github.com/Mr-BeanSir/GodGesture-Plugins/releases/latest/download/catalog.json";
+  "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Plugins/main/catalog.min.json";
 
 export type OnlinePluginSourceErrorCode =
   | "template_url_invalid"
@@ -122,7 +122,7 @@ export function createFixtureOnlinePluginSource(): OnlinePluginSource {
   return {
     async loadCatalog() {
       try {
-        const module = await import("../../../../distribution/plugins/catalog.json");
+        const module = await import("../../../../distribution/plugins/catalog.min.json");
         return parseOnlinePluginCatalog(JSON.stringify(module.default ?? module));
       } catch (error) {
         if (error instanceof OnlinePluginCatalogProtocolError) {

@@ -67,6 +67,7 @@ function fixture(withPlugin = false) {
     formatVersion: 1,
     slug: entry.slug,
     version: entry.version,
+    author: "GodGesture",
     ...(withPlugin ? { plugins: [pluginSource] } : {}),
     target: {
       scope: "global",

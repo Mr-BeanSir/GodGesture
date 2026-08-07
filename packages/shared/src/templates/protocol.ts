@@ -223,6 +223,19 @@ export const GestureTemplatePackage = z
     formatVersion: z.literal(GESTURE_TEMPLATE_FORMAT_VERSION),
     slug,
     version: semanticVersion,
+    author: z.string().trim().min(1).max(64),
+    title: localizedTitle.optional(),
+    summary: localizedSummary.optional(),
+    tags: z
+      .array(z.string().trim().min(1).max(32))
+      .max(MAX_GESTURE_TEMPLATE_TAGS)
+      .refine(
+        (values) =>
+          new Set(values.map((value) => value.toLocaleLowerCase())).size ===
+          values.length,
+        { message: "Template tags must be unique" },
+      )
+      .optional(),
     plugins: z.array(OnlinePluginSource).max(MAX_GESTURE_TEMPLATE_PLUGINS).default([]),
     target: GestureTemplateTarget,
   })
@@ -270,6 +283,7 @@ export type GestureTemplateProtocolErrorCode =
   | "invalid_catalog"
   | "invalid_package"
   | "identity_mismatch"
+  | "metadata_mismatch"
   | "target_mismatch"
   | "risk_mismatch";
 
@@ -398,6 +412,21 @@ export function verifyGestureTemplatePackage(
     throw new GestureTemplateProtocolError(
       "identity_mismatch",
       "Template package identity does not match its catalog entry",
+    );
+  }
+
+  if (
+    entry.author !== templatePackage.author ||
+    (templatePackage.title !== undefined &&
+      JSON.stringify(entry.title) !== JSON.stringify(templatePackage.title)) ||
+    (templatePackage.summary !== undefined &&
+      JSON.stringify(entry.summary) !== JSON.stringify(templatePackage.summary)) ||
+    (templatePackage.tags !== undefined &&
+      JSON.stringify(entry.tags) !== JSON.stringify(templatePackage.tags))
+  ) {
+    throw new GestureTemplateProtocolError(
+      "metadata_mismatch",
+      "Template package metadata does not match its catalog entry",
     );
   }
 

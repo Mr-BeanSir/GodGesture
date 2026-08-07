@@ -203,7 +203,7 @@ mod tests {
     use super::*;
 
     const PRODUCTION_CATALOG_URL: &str =
-        "https://github.com/Mr-BeanSir/GodGesture-Templates/releases/latest/download/catalog.json";
+        "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/catalog.min.json";
 
     #[test]
     fn resource_kinds_have_fixed_protocol_limits() {
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires live GitHub Release access"]
+    #[ignore = "requires live GitHub raw-file access"]
     fn production_catalog_and_packages_follow_validated_redirects() {
         tauri::async_runtime::block_on(async {
             let catalog_text = download_template_text(

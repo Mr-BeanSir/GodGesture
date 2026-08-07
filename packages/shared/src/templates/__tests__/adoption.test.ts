@@ -307,6 +307,7 @@ function globalPackage(intents: ReturnType<typeof templateIntent>[]) {
     formatVersion: 1,
     slug: "global-navigation",
     version: "1.0.0",
+    author: "GodGesture",
     target: { scope: "global", intents },
   });
 }
@@ -321,6 +322,7 @@ function appPackage(
     formatVersion: 1,
     slug: "browser-navigation",
     version: "1.0.0",
+    author: "GodGesture",
     target: {
       scope: "app",
       name,

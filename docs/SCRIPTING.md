@@ -34,8 +34,8 @@ Windows 程序安装目录或 macOS `.app` bundle:前者通常不可写,后者�
 
 ## 在线插件目录与安装
 
-“插件”页会从 `GodGesture-Plugins` 的 GitHub Release 读取公开目录。目录条目固定给出
-插件 `pluginId`、HTTPS GitHub 仓库 URL、Git ref 和可选子目录；Desktop 会拒绝非 GitHub、
+“插件”页会从 `GodGesture-Plugins` 的 `main/catalog.min.json` 读取公开目录。目录条目固定给出
+插件 `pluginId`、作者、HTTPS GitHub 仓库 URL、Git ref 和可选子目录；Desktop 会拒绝非 GitHub、
 非 HTTPS、含凭据、路径穿越或 manifest ID 不匹配的来源。
 
 安装必须由用户在界面中确认。确认后，App 在临时目录取得指定项目，核对

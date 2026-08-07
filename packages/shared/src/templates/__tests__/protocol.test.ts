@@ -15,6 +15,7 @@ const packageValue = () =>
     formatVersion: 1,
     slug: "browser-navigation",
     version: "1.2.0",
+    author: "GodGesture",
     target: {
       scope: "app",
       name: "Browser",
@@ -49,7 +50,7 @@ const entryValue = () => ({
   },
   risks: [],
   packageUrl:
-    "https://github.com/Mr-BeanSir/GodGesture-Templates/releases/download/v1/browser-navigation.json",
+    "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/packages/browser-navigation.json",
 });
 
 describe("gesture template protocol", () => {
@@ -93,6 +94,12 @@ describe("gesture template protocol", () => {
         generatedAt: "2026-07-28T12:00:00Z",
         entries: [{ ...entryValue(), unexpected: true }],
       }),
+    ).toThrow();
+  });
+
+  it("requires an author in every template package", () => {
+    expect(() =>
+      GestureTemplatePackage.parse({ ...packageValue(), author: undefined }),
     ).toThrow();
   });
 
@@ -168,6 +175,7 @@ describe("gesture template protocol", () => {
       formatVersion: 1,
       slug: "risky-tools",
       version: "1.0.0",
+      author: "GodGesture",
       plugins: [
         {
           pluginId: "00000000-0000-4000-8000-000000000001",
@@ -239,6 +247,7 @@ describe("gesture template protocol", () => {
         formatVersion: 1,
         slug: "plugin-command",
         version: "1.0.0",
+        author: "GodGesture",
         target: {
           scope: "global",
           intents: [
@@ -256,6 +265,7 @@ describe("gesture template protocol", () => {
         formatVersion: 1,
         slug: "plugin-command",
         version: "1.0.0",
+        author: "GodGesture",
         plugins: [
           {
             pluginId: "00000000-0000-4000-8000-000000000001",
@@ -281,6 +291,7 @@ describe("gesture template protocol", () => {
         formatVersion: 1,
         slug: "plugin-command",
         version: "1.0.0",
+        author: "GodGesture",
         plugins: [
           {
             pluginId: "00000000-0000-4000-8000-000000000001",

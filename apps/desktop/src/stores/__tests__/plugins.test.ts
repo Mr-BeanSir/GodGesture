@@ -48,6 +48,7 @@ const ready = {
 const onlineEntry = {
   slug: "online-plugin",
   version: "1.0.0",
+  author: "GodGesture",
   title: { "zh-CN": "在线插件", en: "Online plugin" },
   summary: { "zh-CN": "用于安装测试", en: "Used for installation tests" },
   pluginId: "50000000-0000-4000-8000-000000000001",

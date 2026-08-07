@@ -8,12 +8,12 @@ import {
   type GestureTemplatePackage,
 } from "@godgesture/shared";
 import { BackendError, useBackend, type TemplateResourceKind } from "../api/backend";
-import catalogFixture from "../../../../distribution/templates/catalog.json";
+import catalogFixture from "../../../../distribution/templates/catalog.min.json";
 import browserFixture from "../../../../distribution/templates/packages/browser-window-basics.json";
 import globalFixture from "../../../../distribution/templates/packages/global-window-basics.json";
 
 export const DEFAULT_GESTURE_TEMPLATE_CATALOG_URL =
-  "https://github.com/Mr-BeanSir/GodGesture-Templates/releases/latest/download/catalog.json";
+  "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/catalog.min.json";
 
 export type TemplateSourceErrorCode =
   | "template_url_invalid"
@@ -27,6 +27,7 @@ export type TemplateSourceErrorCode =
   | "invalid_catalog"
   | "invalid_package"
   | "identity_mismatch"
+  | "metadata_mismatch"
   | "target_mismatch"
   | "risk_mismatch"
   | "template_fixture_missing";

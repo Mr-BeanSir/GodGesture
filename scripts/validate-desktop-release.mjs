@@ -135,6 +135,7 @@ const productionFiles = [
   "apps/desktop/src/views/AboutView.vue",
   "apps/desktop/src/views/TemplatesView.vue",
   "distribution/templates/README.md",
+  "distribution/templates/catalog.min.json",
 ];
 const productionSources = await Promise.all(
   productionFiles.map((path) => readFile(resolve(root, path), "utf8")),
@@ -158,7 +159,7 @@ const templateCatalog = JSON.parse(
 for (const entry of templateCatalog.entries) {
   assert.match(
     entry.packageUrl,
-    /^https:\/\/github\.com\/Mr-BeanSir\/GodGesture-Templates\/releases\/latest\/download\//,
+    /^https:\/\/raw\.githubusercontent\.com\/Mr-BeanSir\/GodGesture-Templates\/main\/packages\//,
   );
 }
 console.log(

@@ -110,9 +110,10 @@ GodGesture 在系统应用配置目录下管理的唯一插件根目录 `plugins
 `~/Library/Application Support/com.godgesture.desktop/plugins`。
 
 **在线插件目录 (Online Plugin Catalog)**:
-由 GitHub Releases 托管的公开 JSON 目录,每个条目包含插件稳定 `pluginId`、HTTPS GitHub
-仓库 URL、Git ref 和可选的可移植子目录。Desktop 只接受符合协议和大小限制的目录,不把目录
-内容写入用户配置。
+由 `Mr-BeanSir/GodGesture-Plugins` 仓库根目录 `catalog.min.json` 提供的公开 JSON 目录,每个条目
+包含插件稳定 `pluginId`、作者、HTTPS GitHub 仓库 URL、Git ref 和可选的可移植子目录。Desktop
+只接受符合协议和大小限制的目录,不把目录内容写入用户配置。仓库通过 PR 校验 JSON 和插件
+manifest,合并到 `main` 后自动生成格式化 `catalog.json` 与压缩版 `catalog.min.json`。
 
 **在线插件源 (Online Plugin Source)**:
 在线插件目录或手势模板包中声明的一组下载信息。用户明确确认后,App 在临时目录取得指定
@@ -133,6 +134,9 @@ Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供�
 
 **手势模板 (Gesture Template)**:
 托管在专门 GitHub 仓库中的预置手势配置包;用户下载采纳后并入个人配置,自此视同用户自己的数据参与同步。
+模板目录从 `Mr-BeanSir/GodGesture-Templates` 根目录的 `catalog.min.json` 读取;每个模板包必须声明
+`author` 以及目录生成所需的本地化标题、摘要和标签。仓库通过 PR 校验模板 JSON,合并到 `main` 后
+自动生成 `catalog.json` 与 `catalog.min.json`。
 模板包可以通过 `plugins` 字段声明在线插件源,其 `nodePlugin` 命令必须引用同一 `pluginId`。
 每个声明的插件源也必须至少被一个 `nodePlugin` 命令引用,不能借模板安装无关项目。
 采纳前先取得用户确认并安装所有被引用插件,安装成功后才写入配置;同步文档仍只保存 `pluginId`。

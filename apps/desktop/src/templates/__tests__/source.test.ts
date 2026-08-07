@@ -145,6 +145,7 @@ function packageFor(entry: GestureTemplateCatalogEntry) {
     formatVersion: 1 as const,
     slug: entry.slug,
     version: entry.version,
+    author: "GodGesture",
     target: {
       scope: "global" as const,
       intents: [

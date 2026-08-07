@@ -139,6 +139,7 @@ export type OnlinePluginSource = z.infer<typeof OnlinePluginSource>;
 export const OnlinePluginCatalogEntry = OnlinePluginSource.extend({
   slug,
   version: semanticVersion,
+  author: z.string().trim().min(1).max(64),
   title: localizedText,
   summary: localizedText,
 }).strict();

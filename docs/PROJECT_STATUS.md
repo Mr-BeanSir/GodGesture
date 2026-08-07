@@ -53,7 +53,9 @@
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
 - 插件示例与公开模板分别由 `distribution/plugins` 和 `distribution/templates` Git submodule 管理；
-  模板下载地址使用 `Mr-BeanSir/GodGesture-Templates`，在线插件目录使用 `Mr-BeanSir/GodGesture-Plugins`。
+  两者都从对应仓库 `main/catalog.min.json` 读取，模板包和插件 manifest 均要求 `author`。两个
+  仓库的 PR Workflow 校验 JSON、协议和目录内容；合并后自动生成格式化 `catalog.json` 与压缩版
+  `catalog.min.json`，Desktop 的模板/插件目录不再依赖公开 Releases 资产。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
@@ -77,10 +79,10 @@
 以下为 2026-08-07 工作区的最新验证结果；在线插件目录、模板插件源、npm/pnpm 锁文件和安装事务恢复
 均已纳入本轮检查。真实 macOS 设备验收仍按上方 M4 清单保持 pending，不能由 Windows 或自动化结果替代：
 
-- `pnpm test`：Shared `84/84`、SDK `1/1`、Desktop `138/138`、Server `97/97`；Web Console 当前无测试，脚本正常退出。
+- `pnpm test`：Shared `86/86`、SDK `1/1`、Desktop `140/140`、Server `97/97`；Web Console 当前无测试，脚本正常退出。
 - `pnpm typecheck`：Shared、SDK、Desktop、Server、Web Console 全部通过；`pnpm --filter @godgesture/desktop build` 的 `vue-tsc` 与 Vite 生产构建通过。
 - `pnpm check:api`：OpenAPI 生成检查与 `packages/shared` 产物一致。
-- `pnpm validate:templates`、`pnpm validate:plugin-demo`、`pnpm validate:release`：分别验证 2 个模板、5 个插件生命周期和 10 个发布合同测试通过；`node --test scripts/__tests__/node-toolchain.test.mjs` 的 7 个工具链合同测试通过。
+- `pnpm validate:templates`、`pnpm validate:plugins`、`pnpm validate:plugin-demo`、`pnpm validate:release`：分别验证 2 个模板、插件目录与 5 个插件生命周期和 10 个发布合同测试通过；两个子模块的 `scripts/validate-content.mjs` 同时校验 `catalog.json` 与 `catalog.min.json`。
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`：`251 passed, 3 ignored`；忽略项为性能、Task Scheduler 和实时 GitHub smoke，未将其计入自动化通过数。
 - `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- -D warnings`、`cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`、`git diff --check`：通过。
 - Vite 构建仅保留既有 VueUse 注释、较大 chunk 和 Tauri identifier 建议警告；未出现新的编译错误。

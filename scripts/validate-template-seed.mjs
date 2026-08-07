@@ -12,9 +12,13 @@ const root = resolve(
   "../distribution/templates",
 );
 const packagesDirectory = join(root, "packages");
-const catalog = parseGestureTemplateCatalog(
-  await readFile(join(root, "catalog.json"), "utf8"),
-);
+const catalogText = await readFile(join(root, "catalog.json"), "utf8");
+const minCatalogText = await readFile(join(root, "catalog.min.json"), "utf8");
+const catalog = parseGestureTemplateCatalog(catalogText);
+const minCatalog = parseGestureTemplateCatalog(minCatalogText);
+if (JSON.stringify(catalog) !== JSON.stringify(minCatalog)) {
+  throw new Error("catalog.min.json must contain the same data as catalog.json");
+}
 const referencedFiles = new Set();
 
 for (const entry of catalog.entries) {
@@ -31,6 +35,9 @@ for (const entry of catalog.entries) {
   const templatePackage = parseGestureTemplatePackage(
     await readFile(join(packagesDirectory, fileName), "utf8"),
   );
+  if (templatePackage.author !== entry.author) {
+    throw new Error(`Template ${entry.slug}@${entry.version} author does not match its catalog entry`);
+  }
   verifyGestureTemplatePackage(entry, templatePackage);
 }
 

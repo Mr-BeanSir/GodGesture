@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -18,6 +18,7 @@ const plugins = usePluginsStore();
 
 const selected = computed(() => plugins.selected);
 const onlineEntries = computed(() => plugins.onlineEntries);
+const onlineDialogVisible = ref(false);
 
 const lastReload = computed(() => {
   const timestamp = selected.value?.lastReloadAt;
@@ -65,6 +66,10 @@ async function installOnline(entry: (typeof onlineEntries.value)[number]) {
 function openRepository(url: string) {
   void plugins.backend?.openExternal(url);
 }
+
+function openOnlinePlugins() {
+  onlineDialogVisible.value = true;
+}
 </script>
 
 <template>
@@ -75,8 +80,17 @@ function openRepository(url: string) {
         <p class="gg-hint">{{ t("plugins.subtitle") }}</p>
       </div>
       <div class="plugins-page__actions">
-        <el-button :icon="FolderOpened" @click="plugins.openRoot()">
+        <el-button class="plugins-page__text-action" :icon="FolderOpened" @click="plugins.openRoot()">
           {{ t("plugins.openFolder") }}
+        </el-button>
+        <el-button
+          class="plugins-page__text-action"
+          type="primary"
+          plain
+          :icon="Download"
+          @click="openOnlinePlugins"
+        >
+          {{ t("plugins.downloadPlugins") }}
         </el-button>
         <el-tooltip :content="t('plugins.rescan')">
           <el-button
@@ -210,65 +224,77 @@ function openRepository(url: string) {
           </div>
     </main>
 
-    <section class="plugins-online" aria-labelledby="online-plugin-title">
-      <header class="plugins-online__header">
-        <div>
-          <h3 id="online-plugin-title">{{ t("plugins.online.title") }}</h3>
-          <p class="gg-hint">{{ t("plugins.online.subtitle") }}</p>
-        </div>
-        <el-tooltip :content="t('plugins.online.refresh')" placement="top">
-          <el-button
-            circle
-            :icon="Refresh"
-            :loading="plugins.loadingOnlineCatalog"
-            :aria-label="t('plugins.online.refresh')"
-            @click="plugins.loadOnlineCatalog(true)"
-          />
-        </el-tooltip>
-      </header>
-      <el-alert
-        v-if="plugins.onlineCatalogError"
-        type="error"
-        show-icon
-        :closable="false"
-        :title="t('plugins.online.loadFailed')"
-      />
-      <el-skeleton v-else-if="plugins.loadingOnlineCatalog" :rows="2" animated />
-      <el-empty
-        v-else-if="onlineEntries.length === 0"
-        :image-size="42"
-        :description="t('plugins.online.empty')"
-      />
-      <div v-else class="plugins-online__list">
-        <article v-for="entry in onlineEntries" :key="`${entry.slug}@${entry.version}`" class="plugins-online__row">
-          <div class="plugins-online__identity">
-            <strong>{{ localized(entry.title) }}</strong>
-            <span>{{ localized(entry.summary) }}</span>
-            <code>{{ entry.repositoryUrl }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
+    <el-dialog
+      v-model="onlineDialogVisible"
+      class="plugins-online-dialog"
+      :title="t('plugins.downloadPlugins')"
+      width="min(760px, calc(100vw - 32px))"
+      top="5vh"
+      destroy-on-close
+      :close-on-click-modal="!plugins.installingPluginId"
+      :close-on-press-escape="!plugins.installingPluginId"
+      :show-close="!plugins.installingPluginId"
+    >
+      <section class="plugins-online" aria-labelledby="online-plugin-title">
+        <header class="plugins-online__header">
+          <div>
+            <h3 id="online-plugin-title">{{ t("plugins.online.title") }}</h3>
+            <p class="gg-hint">{{ t("plugins.online.subtitle") }}</p>
           </div>
-          <div class="plugins-online__actions">
-            <el-tag size="small" effect="plain">v{{ entry.version }}</el-tag>
-            <el-tag v-if="plugins.installedPluginIds.has(entry.pluginId)" size="small" type="success" effect="plain">
-              {{ t("plugins.online.installed") }}
-            </el-tag>
+          <el-tooltip :content="t('plugins.online.refresh')" placement="top">
             <el-button
-              v-else
-              type="primary"
-              size="small"
-              :icon="Download"
-              :loading="plugins.installingPluginId === entry.pluginId"
-              :disabled="Boolean(plugins.installingPluginId)"
-              @click="installOnline(entry)"
-            >
-              {{ plugins.installingPluginId === entry.pluginId ? t("plugins.online.installing") : t("plugins.online.install") }}
-            </el-button>
-            <el-tooltip :content="t('plugins.online.repository')" placement="top">
-              <el-button circle size="small" :icon="Link" :aria-label="t('plugins.online.repository')" @click="openRepository(entry.repositoryUrl)" />
-            </el-tooltip>
-          </div>
-        </article>
-      </div>
-    </section>
+              circle
+              :icon="Refresh"
+              :loading="plugins.loadingOnlineCatalog"
+              :aria-label="t('plugins.online.refresh')"
+              @click="plugins.loadOnlineCatalog(true)"
+            />
+          </el-tooltip>
+        </header>
+        <el-alert
+          v-if="plugins.onlineCatalogError"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="t('plugins.online.loadFailed')"
+        />
+        <el-skeleton v-else-if="plugins.loadingOnlineCatalog" :rows="2" animated />
+        <el-empty
+          v-else-if="onlineEntries.length === 0"
+          :image-size="42"
+          :description="t('plugins.online.empty')"
+        />
+        <div v-else class="plugins-online__list">
+          <article v-for="entry in onlineEntries" :key="`${entry.slug}@${entry.version}`" class="plugins-online__row">
+            <div class="plugins-online__identity">
+              <strong>{{ localized(entry.title) }}</strong>
+              <span>{{ localized(entry.summary) }}</span>
+              <code>{{ entry.repositoryUrl }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
+            </div>
+            <div class="plugins-online__actions">
+              <el-tag size="small" effect="plain">v{{ entry.version }}</el-tag>
+              <el-tag v-if="plugins.installedPluginIds.has(entry.pluginId)" size="small" type="success" effect="plain">
+                {{ t("plugins.online.installed") }}
+              </el-tag>
+              <el-button
+                v-else
+                type="primary"
+                size="small"
+                :icon="Download"
+                :loading="plugins.installingPluginId === entry.pluginId"
+                :disabled="Boolean(plugins.installingPluginId)"
+                @click="installOnline(entry)"
+              >
+                {{ plugins.installingPluginId === entry.pluginId ? t("plugins.online.installing") : t("plugins.online.install") }}
+              </el-button>
+              <el-tooltip :content="t('plugins.online.repository')" placement="top">
+                <el-button circle size="small" :icon="Link" :aria-label="t('plugins.online.repository')" @click="openRepository(entry.repositoryUrl)" />
+              </el-tooltip>
+            </div>
+          </article>
+        </div>
+      </section>
+    </el-dialog>
     </div>
   </div>
 </template>
@@ -276,10 +302,10 @@ function openRepository(url: string) {
 <style scoped>
 .plugins-page__header > div:first-child { min-width: 0; }
 .plugins-page__header p { margin: 4px 0 0; }
-.plugins-page__actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.plugins-page__actions { display: flex; align-items: center; align-self: center; gap: 8px; flex: 0 0 auto; }
 .plugins-page__content {
-  display: grid;
-  grid-template-rows: auto minmax(320px, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-width: 0;
   min-height: 0;
@@ -287,6 +313,7 @@ function openRepository(url: string) {
 .plugins-workspace {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -398,8 +425,6 @@ function openRepository(url: string) {
 .plugin-detail__empty-icon { width: 28px; height: 28px; color: var(--el-color-primary); }
 .plugins-online {
   min-width: 0;
-  border-top: 1px solid var(--gg-border);
-  padding-top: 14px;
 }
 .plugins-online__header {
   display: flex;
@@ -424,6 +449,10 @@ function openRepository(url: string) {
 .plugins-online__identity span { color: var(--el-text-color-secondary); font-size: 12px; }
 .plugins-online__identity code { overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .plugins-online__actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+:deep(.plugins-online-dialog .el-dialog__body) {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+}
 @media (max-width: 860px) {
   .plugins-workspace { grid-template-columns: 196px minmax(0, 1fr); }
   .plugin-detail { padding: 14px; }
@@ -452,12 +481,12 @@ function openRepository(url: string) {
 }
 @media (max-width: 480px) {
   .plugins-page__header h2 { white-space: nowrap; }
-  .plugins-page__actions > :first-child {
+  .plugins-page__actions > .plugins-page__text-action {
     width: 32px;
     padding: 0;
     font-size: 0;
   }
-  .plugins-page__actions > :first-child :deep(.el-icon) {
+  .plugins-page__actions > .plugins-page__text-action :deep(.el-icon) {
     margin: 0;
     font-size: 14px;
   }
