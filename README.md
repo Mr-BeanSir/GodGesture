@@ -91,7 +91,7 @@ docs/adr                      架构决策记录
 等外部 IDE 创建和维护项目:
 
 ```shell
-# 从 GodGesture 仓库复制 distribution/plugins/gesture-demo 为自己的项目后执行
+# 从 GodGesture 仓库复制 distribution/plugins/plugins/gesture-demo 为自己的项目后执行
 cd my-plugin
 npm install --save-dev @godgesture/sdk
 ```

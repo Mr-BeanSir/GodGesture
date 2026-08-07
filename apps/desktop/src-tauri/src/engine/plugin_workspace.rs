@@ -511,17 +511,17 @@ fn seed_demo_if_empty(root: &Path) -> Result<(), String> {
     fs::create_dir_all(&demo).map_err(|error| format!("create gesture demo directory: {error}"))?;
     fs::write(
         demo.join("package.json"),
-        include_str!("../../../../../distribution/plugins/gesture-demo/package.json"),
+        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/package.json"),
     )
     .map_err(|error| format!("write gesture demo package.json: {error}"))?;
     fs::write(
         demo.join("index.mjs"),
-        include_str!("../../../../../distribution/plugins/gesture-demo/index.mjs"),
+        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/index.mjs"),
     )
     .map_err(|error| format!("write gesture demo entry: {error}"))?;
     fs::write(
         demo.join("README.md"),
-        include_str!("../../../../../distribution/plugins/gesture-demo/README.md"),
+        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/README.md"),
     )
     .map_err(|error| format!("write gesture demo README: {error}"))
 }

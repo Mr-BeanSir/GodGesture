@@ -12,7 +12,7 @@ GodGesture 使用随应用分发的 Node.js LTS 作为唯一脚本运行时。�
 开发插件时需要在本机安装 Node.js/npm,以便安装 IDE 类型依赖和生成锁文件;
 GodGesture 正式执行插件时不依赖用户安装的 Node、npm 或 pnpm。唯一需要安装的开发包是
 `@godgesture/sdk`,它提供 `PluginContext`、生命周期类型和 `defineHandler` 的编辑器提示。
-仓库中的 `distribution/plugins/gesture-demo` 是开发起点,不提供独立的脚手架或项目校验 CLI。
+仓库中的 `distribution/plugins/plugins/gesture-demo` 是开发起点,不提供独立的脚手架或项目校验 CLI。
 
 插件项目把 `@godgesture/sdk` 放在 `devDependencies`。App 准备运行副本时会在隔离缓存中
 注入随应用分发的匹配版 SDK,因此手势执行不依赖 npm 上的 SDK,也不会直接执行开发目录
@@ -50,11 +50,11 @@ Windows 程序安装目录或 macOS `.app` bundle:前者通常不可写,后者�
 
 ## 从 demo 开始
 
-先在“插件”页打开插件根目录,把仓库中的 `distribution/plugins/gesture-demo` 复制为新的直接子目录,
+先在“插件”页打开插件根目录,把仓库中的 `distribution/plugins/plugins/gesture-demo` 复制为新的直接子目录,
 再在新项目目录中执行:
 
 ```powershell
-Copy-Item -Recurse distribution/plugins/gesture-demo my-plugin
+Copy-Item -Recurse distribution/plugins/plugins/gesture-demo my-plugin
 cd my-plugin
 npm install --save-dev @godgesture/sdk
 ```
@@ -63,7 +63,7 @@ demo 已包含全部五个 `onXxxx` 生命周期和 `package.json` manifest。�
 VS Code/WebStorm 可以获得类型、补全、悬停和参数提示。若插件加入生产依赖,请提交精确的
 `pnpm-lock.yaml` 或 `package-lock.json`; App 会按锁文件选择内置包管理器准备依赖。
 
-仓库内的 [gesture-demo](../distribution/plugins/gesture-demo/README.md) 与首次启动生成的同名项目可
+仓库内的 [gesture-demo](../distribution/plugins/plugins/gesture-demo/README.md) 与首次启动生成的同名项目可
 作为最小参考。保存文件后无需在 App 中再次保存;文件扫描会自动触发热更新。“重新扫描”
 按钮用于立即刷新目录状态。
 
@@ -279,7 +279,7 @@ Windows release 性能、顺序、Worker 恢复和随包工具链已有验证;ma
 
 ## 相关文档
 
-- [gesture-demo 示例插件](../distribution/plugins/gesture-demo/README.md)
+- [gesture-demo 示例插件](../distribution/plugins/plugins/gesture-demo/README.md)
 - [用户指南](USER_GUIDE.md)
 - [当前项目状态](PROJECT_STATUS.md)
 - [Node-only 架构决策](adr/0012-node-only-script-runtime.md)

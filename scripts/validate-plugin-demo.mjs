@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const demoRoot = resolve(root, "distribution", "plugins", "gesture-demo");
+const demoRoot = resolve(root, "distribution", "plugins", "plugins", "gesture-demo");
 const source = await readFile(join(demoRoot, "index.mjs"), "utf8");
 const manifest = JSON.parse(await readFile(join(demoRoot, "package.json"), "utf8"));
 const lifecycleExports = [

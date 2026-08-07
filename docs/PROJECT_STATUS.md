@@ -28,7 +28,7 @@
 | Shared | v8 配置、认证、同步/快照分页、模板、在线插件目录、DSL 与 OpenAPI 生成客户端 | `packages/shared/src/` |
 | Server | NestJS REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
 | Web Console | 只读配置、设备、快照、安全和管理员区域 | `apps/web-console/src/` |
-| SDK / demo | `@godgesture/sdk` 开发类型与 `distribution/plugins/gesture-demo` 五生命周期示例 | `packages/sdk/`、`distribution/plugins/` |
+| SDK / demo | `@godgesture/sdk` 开发类型与 `distribution/plugins/plugins/gesture-demo` 五生命周期示例 | `packages/sdk/`、`distribution/plugins/` |
 | 发布与部署 | GitHub Actions、Windows NSIS、macOS universal ad-hoc DMG、1Panel Compose | `.github/workflows/`、`docs/*_RELEASE.md`、`apps/server/README-DEPLOY.md` |
 
 ## 现役实现
@@ -52,8 +52,9 @@
 - Desktop 自动同步使用 30 秒尾随防抖、启动/定时拉取和手动立即同步；refresh token 只进 Windows Credential Manager/macOS Keychain，不进 WebView。
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
-- 插件示例与公开模板分别由 `distribution/plugins` 和 `distribution/templates` Git submodule 管理；
-  两者都从对应仓库 `main/catalog.min.json` 读取，模板包和插件 manifest 均要求 `author`。两个
+- 插件示例与公开模板分别由 `distribution/plugins` 和 `distribution/templates` Git submodule 管理；插件仓库的
+  项目统一位于 `plugins/<slug>/`，根目录只保留目录、文档、Workflow 和复用脚本。两者都从对应仓库
+  `main/catalog.min.json` 读取，模板包和插件 manifest 均要求 `author`。两个
   仓库的 PR Workflow 校验 JSON、协议和目录内容；合并后自动生成格式化 `catalog.json` 与压缩版
   `catalog.min.json`，Desktop 的模板/插件目录不再依赖公开 Releases 资产。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。

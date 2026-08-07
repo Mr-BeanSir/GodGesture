@@ -111,7 +111,7 @@ GodGesture 在系统应用配置目录下管理的唯一插件根目录 `plugins
 
 **在线插件目录 (Online Plugin Catalog)**:
 由 `Mr-BeanSir/GodGesture-Plugins` 仓库根目录 `catalog.min.json` 提供的公开 JSON 目录,每个条目
-包含插件稳定 `pluginId`、作者、HTTPS GitHub 仓库 URL、Git ref 和可选的可移植子目录。Desktop
+包含插件稳定 `pluginId`、作者、HTTPS GitHub 仓库 URL、Git ref 和指向 `plugins/<slug>/` 的可移植子目录。Desktop
 只接受符合协议和大小限制的目录,不把目录内容写入用户配置。仓库通过 PR 校验 JSON 和插件
 manifest,合并到 `main` 后自动生成格式化 `catalog.json` 与压缩版 `catalog.min.json`。
 

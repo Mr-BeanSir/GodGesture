@@ -98,7 +98,7 @@ npm 依赖和 `@godgesture/sdk`。GodGesture 不包含旧 QuickJS 运行时或�
 插件源码在 VS Code、WebStorm 等外部 IDE 中维护,
 App 只提供侧边栏“插件”管理页,不提供内置源码编辑器。开发者 API、项目结构和依赖管理见
 [脚本开发指南](SCRIPTING.md)，仓库中的中文模板见
-[gesture-demo](../distribution/plugins/gesture-demo/README.md)。
+[gesture-demo](../distribution/plugins/plugins/gesture-demo/README.md)。
 
 ### 安装与开发插件
 
@@ -111,10 +111,10 @@ App 只提供侧边栏“插件”管理页,不提供内置源码编辑器。开
 | Windows | `%APPDATA%\com.godgesture.app\plugins` |
 | macOS | `~/Library/Application Support/com.godgesture.desktop/plugins` |
 
-在插件根目录打开终端,把仓库中的 `distribution/plugins/gesture-demo` 复制为自己的项目,随后安装 SDK:
+在插件根目录打开终端,把仓库中的 `distribution/plugins/plugins/gesture-demo` 复制为自己的项目,随后安装 SDK:
 
 ```powershell
-Copy-Item -Recurse distribution/plugins/gesture-demo my-plugin
+Copy-Item -Recurse distribution/plugins/plugins/gesture-demo my-plugin
 cd my-plugin
 npm install --save-dev @godgesture/sdk
 ```

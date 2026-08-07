@@ -24,7 +24,7 @@ release 性能门槛;仍需真实设备观察的 Node 宿主、输入、窗口�
 macOS 修改 `.app` bundle 还会破坏签名与升级边界。
 
 每个直接子目录是一个插件项目,`package.json` 的 `godgesture` 字段是唯一 manifest。
-仓库中的 `distribution/plugins/gesture-demo` 是用户复制或克隆后开始开发的参考项目;
+仓库中的 `distribution/plugins/plugins/gesture-demo` 是用户复制或克隆后开始开发的参考项目;
 `@godgesture/sdk` 作为唯一公开开发依赖提供 IDE 类型与辅助函数,运行时则由应用在隔离缓存
 中注入匹配版本,不依赖用户机器在执行阶段访问 npm。项目不提供独立脚手架或校验 CLI。
 
@@ -71,7 +71,7 @@ macOS 修改 `.app` bundle 还会破坏签名与升级边界。
 - 插件项目留在 `app_config_dir/plugins`,不进入整库同步文档;同步只引用 `pluginId`,缺少
   对应本机项目时命令不可执行但引用不丢失。只有当前配置实际引用的插件才启动 Worker
   并执行 `onInit`。
-- 外部 IDE、公开 SDK 和仓库内 `distribution/plugins/gesture-demo` 是源码开发体验;App 提供插件管理页
+- 外部 IDE、公开 SDK 和仓库内 `distribution/plugins/plugins/gesture-demo` 是源码开发体验;App 提供插件管理页
   和受确认的 GitHub 在线安装，但不提供 Monaco、脚手架或其他内置源码编辑器。
 - 旧配置中的 `script` 命令不会自动转换;配置格式升级后应通过校验拒绝或由既有
   解析边界按其稳定错误处理,不再提供产品内迁移入口。
@@ -81,7 +81,7 @@ macOS 修改 `.app` bundle 还会破坏签名与升级边界。
 ## 2026-08-05 开发入口修订
 
 维护者决定不再维护独立的 `@godgesture/plugin` 脚手架和校验包。插件作者从仓库的
-`distribution/plugins/gesture-demo` 复制或克隆项目,执行 `npm install --save-dev @godgesture/sdk` 后在
+`distribution/plugins/plugins/gesture-demo` 复制或克隆项目,执行 `npm install --save-dev @godgesture/sdk` 后在
 外部 IDE 中开发。Desktop 仍在扫描和候选版本准备阶段校验 manifest、入口、生命周期导出与锁文件;
 这部分校验不再暴露为 npm CLI。
 
