@@ -1,19 +1,19 @@
 mod account;
 mod app_acquisition;
 pub mod engine;
-mod legacy_import;
 mod logging;
 pub mod platform;
 mod template_download;
 mod updater;
 
 #[cfg(windows)]
-use engine::config::ConfigFilesSnapshot;
+use engine::config::MachineSettingsSnapshot;
 #[cfg(any(windows, target_os = "macos"))]
 use engine::config::PauseHotkey;
 use engine::config::{ConfigDocument, ConfigStore, MachineLocalSettings};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::node_service::{NodeInvocationOutcome, NodeScriptService, OutcomeSink};
+use engine::plugin_download::{OnlinePluginSource, PluginInstallError};
 use engine::plugin_workspace::{PluginWorkspace, PluginWorkspaceSnapshot};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
@@ -251,7 +251,12 @@ fn spawn_engine_consumer(
                     ),
                 });
             let plugin_workspace = app.state::<Arc<PluginWorkspace>>().inner().clone();
-            let initial_plugins = plugin_workspace.plugins();
+            let active_plugin_ids = shared.referenced_node_plugin_ids();
+            let initial_plugins = plugin_workspace
+                .plugins()
+                .into_iter()
+                .filter(|plugin| active_plugin_ids.contains(&plugin.id))
+                .collect();
             let node_service = app
                 .path()
                 .app_local_data_dir()
@@ -259,9 +264,7 @@ fn spawn_engine_consumer(
                 .and_then(|data_dir| {
                     resolve_node_toolchain(&app).and_then(|toolchain| {
                         NodeScriptService::start(
-                            toolchain.node,
-                            toolchain.pnpm,
-                            toolchain.supervisor,
+                            toolchain,
                             data_dir.join("node-plugins").join("runtime"),
                             script_host,
                             outcome_sink,
@@ -284,6 +287,7 @@ fn spawn_engine_consumer(
                 let watcher_workspace = Arc::clone(&plugin_workspace);
                 let watcher_service = node_service.clone();
                 let watcher_app = app.clone();
+                let watcher_shared = Arc::clone(&shared);
                 std::thread::Builder::new()
                     .name("gg-plugin-workspace".into())
                     .spawn(move || {
@@ -294,8 +298,15 @@ fn spawn_engine_consumer(
                             watcher_workspace.rescan();
                             let plugins = watcher_workspace.plugins();
                             if plugins != last_plugins {
+                                let next_plugins = plugins.clone();
                                 if let Some(service) = watcher_service.as_ref() {
-                                    service.sync_plugins(plugins.clone());
+                                    let active = watcher_shared.referenced_node_plugin_ids();
+                                    service.sync_plugins(
+                                        next_plugins
+                                            .into_iter()
+                                            .filter(|plugin| active.contains(&plugin.id))
+                                            .collect(),
+                                    );
                                 }
                                 last_plugins = plugins;
                             }
@@ -331,6 +342,26 @@ fn spawn_engine_consumer(
                     }
                     EngineMsg::PathGrown { point } => {
                         overlay.send(OverlayCmd::Grow(point));
+                    }
+                    EngineMsg::BoundaryPathStarted { origin } => {
+                        let (main, unrecognized, show_path, show_label, fade_out) =
+                            shared.trail_style_for(engine::types::TriggerButton::Right);
+                        overlay.send(OverlayCmd::Begin {
+                            origin,
+                            colors: TrailColors { main, unrecognized },
+                            show_path,
+                            show_label,
+                            fade_out,
+                        });
+                    }
+                    EngineMsg::BoundaryPathGrown { point } => {
+                        overlay.send(OverlayCmd::Grow(point));
+                    }
+                    EngineMsg::BoundaryPathEnded => {
+                        overlay.send(OverlayCmd::End);
+                    }
+                    EngineMsg::BoundaryPathCancelled => {
+                        overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::RecognitionChanged { name } => {
                         log::debug!(target: "gesture.runtime", "识别变化: {name:?}");
@@ -582,7 +613,14 @@ fn spawn_engine_consumer(
                     EngineMsg::ScriptConfigChanged => {
                         if let Some(service) = node_service.as_ref() {
                             plugin_workspace.rescan();
-                            service.sync_plugins(plugin_workspace.plugins());
+                            let active = shared.referenced_node_plugin_ids();
+                            service.sync_plugins(
+                                plugin_workspace
+                                    .plugins()
+                                    .into_iter()
+                                    .filter(|plugin| active.contains(&plugin.id))
+                                    .collect(),
+                            );
                         }
                     }
                 }
@@ -614,21 +652,18 @@ fn execute_intent(
     _shared: &Arc<EngineShared>,
     node_service: Option<&NodeScriptService>,
 ) {
-    if let engine::config::Command::NodePlugin {
-        plugin_id,
-        action_id,
-    } = command
-    {
+    if let engine::config::Command::NodePlugin { plugin_id, .. } = command {
         let Some(service) = node_service else {
             log::error!(
                 target: "node.worker",
-                "event=invocation_rejected code=runtime_unavailable pluginId={plugin_id} actionId={action_id}"
+                "event=invocation_rejected code=runtime_unavailable pluginId={plugin_id} actionId=onExecute"
             );
             return;
         };
-        service.invoke_action(
+        service.invoke(
             plugin_id.clone(),
-            action_id.clone(),
+            "onExecute",
+            true,
             ScriptSlot::OnExecute,
             invocation,
         );
@@ -805,6 +840,7 @@ fn resolve_node_toolchain(
             log::debug!("{error}; using PATH Node for debug development");
             Ok(engine::node_toolchain::NodeToolchain {
                 node: std::path::PathBuf::from("node"),
+                npm: std::path::PathBuf::from("npm"),
                 pnpm: std::path::PathBuf::from("pnpm"),
                 supervisor: engine::node_host::default_supervisor_path(),
                 typescript: std::path::PathBuf::from("typescript/lib/tsc.js"),
@@ -832,6 +868,27 @@ fn node_plugins_rescan(workspace: tauri::State<Arc<PluginWorkspace>>) -> PluginW
 #[tauri::command]
 fn node_plugins_directory(workspace: tauri::State<Arc<PluginWorkspace>>) -> String {
     workspace.root().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+async fn node_plugin_install(
+    source: OnlinePluginSource,
+    workspace: tauri::State<'_, Arc<PluginWorkspace>>,
+    app: tauri::AppHandle,
+) -> Result<PluginWorkspaceSnapshot, PluginInstallError> {
+    let workspace = workspace.inner().clone();
+    let toolchain = resolve_node_toolchain(&app)
+        .map_err(|error| PluginInstallError::new("plugin_install", error))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine::plugin_download::install_online_plugin(&workspace, &toolchain, source)
+    })
+    .await
+    .map_err(|error| {
+        PluginInstallError::new(
+            "plugin_install",
+            format!("plugin install worker failed: {error}"),
+        )
+    })?
 }
 
 #[tauri::command]
@@ -890,7 +947,7 @@ fn machine_set_blocking(
 
 #[cfg(windows)]
 struct DesktopMachineSnapshot {
-    files: ConfigFilesSnapshot,
+    machine: MachineSettingsSnapshot,
     task: TaskSnapshot,
     sid: String,
     tray_visible: bool,
@@ -908,13 +965,13 @@ impl platform::windows::startup::MachineEffects for DesktopMachineEffects<'_> {
     type Snapshot = DesktopMachineSnapshot;
 
     fn snapshot(&mut self) -> Result<Self::Snapshot, StartupError> {
-        let files = self.store.snapshot_files().map_err(|err| {
+        let machine = self.store.snapshot_machine_settings().map_err(|err| {
             StartupError::new("apply_failed", format!("snapshot machine file: {err}"))
         })?;
         let sid = platform::windows::startup::current_user_sid()?;
         let task = platform::windows::startup::snapshot(&sid)?;
         Ok(DesktopMachineSnapshot {
-            files,
+            machine,
             task,
             sid,
             tray_visible: current_tray_visibility(self.app),
@@ -958,7 +1015,7 @@ impl platform::windows::startup::MachineEffects for DesktopMachineEffects<'_> {
             }
         }
         if progress.file_attempted {
-            if let Err(err) = self.store.restore_machine_snapshot(&snapshot.files) {
+            if let Err(err) = self.store.restore_machine_snapshot(&snapshot.machine) {
                 errors.push(format!("machine file restore failed: {err}"));
             }
         }
@@ -1017,7 +1074,7 @@ fn machine_set_blocking(
     let transaction = app.state::<ConfigTransaction>();
     let _transaction = transaction.0.lock();
     let previous = store.load_machine();
-    let files = store.snapshot_files().map_err(|error| {
+    let machine = store.snapshot_machine_settings().map_err(|error| {
         StartupError::new("apply_failed", format!("snapshot machine file: {error}"))
     })?;
     let login_item = if previous.auto_start || settings.auto_start {
@@ -1049,7 +1106,7 @@ fn machine_set_blocking(
                 rollback_errors.push(format!("login item restore failed: {}", rollback.message));
             }
         }
-        if let Err(rollback) = store.restore_machine_snapshot(&files) {
+        if let Err(rollback) = store.restore_machine_snapshot(&machine) {
             rollback_errors.push(format!("machine file restore failed: {rollback}"));
         }
         let error = if rollback_errors.is_empty() {
@@ -1091,186 +1148,6 @@ fn machine_set(
 #[tauri::command]
 fn machine_status() -> MachineRuntimeStatus {
     MachineRuntimeStatus::healthy()
-}
-
-#[cfg(windows)]
-struct DesktopLegacyImportSnapshot {
-    files: ConfigFilesSnapshot,
-    hotkey: Option<String>,
-    tray_visible: bool,
-    startup: TaskSnapshot,
-    sid: String,
-}
-
-#[cfg(windows)]
-struct DesktopLegacyImportEffects<'a> {
-    store: &'a ConfigStore,
-    engine: &'a EngineShared,
-    app: &'a tauri::AppHandle,
-}
-
-#[cfg(windows)]
-impl legacy_import::LegacyImportEffects for DesktopLegacyImportEffects<'_> {
-    type Snapshot = DesktopLegacyImportSnapshot;
-
-    fn snapshot(&mut self) -> Result<Self::Snapshot, String> {
-        let files = self.store.snapshot_files().map_err(|err| err.to_string())?;
-        let sid = platform::windows::startup::current_user_sid().map_err(|err| err.message)?;
-        let startup = platform::windows::startup::snapshot(&sid).map_err(|err| err.message)?;
-        Ok(DesktopLegacyImportSnapshot {
-            files,
-            hotkey: current_pause_hotkey(self.app),
-            tray_visible: current_tray_visibility(self.app),
-            startup,
-            sid,
-        })
-    }
-
-    fn apply_hotkey(&mut self, hotkey: &PauseHotkey) -> Result<(), String> {
-        replace_pause_hotkey(self.app, hotkey)
-    }
-
-    fn apply_tray_visibility(&mut self, visible: bool) -> Result<(), String> {
-        set_tray_visible(self.app, visible)
-    }
-
-    fn save_config(&mut self, document: &ConfigDocument) -> Result<(), String> {
-        self.store
-            .save_config(document)
-            .map_err(|err| err.to_string())
-    }
-
-    fn save_machine(&mut self, machine: &MachineLocalSettings) -> Result<(), String> {
-        self.store
-            .save_machine(machine)
-            .map_err(|err| err.to_string())
-    }
-
-    fn apply_startup(&mut self, machine: &MachineLocalSettings) -> Result<(), String> {
-        if machine.run_as_admin {
-            let (elevated, split) =
-                platform::windows::startup::elevation_state().map_err(|err| err.message)?;
-            if !elevated && !split {
-                return Err("admin_account_required".into());
-            }
-        }
-        platform::windows::startup::reconcile_with_elevation(
-            &StartupPolicy::from(machine),
-            &platform::windows::startup::current_user_sid().map_err(|err| err.message)?,
-        )
-        .map_err(|err| format!("{}: {}", err.code, err.message))
-    }
-
-    fn rollback(
-        &mut self,
-        snapshot: &Self::Snapshot,
-        progress: legacy_import::ApplyProgress,
-    ) -> Vec<String> {
-        let mut errors = Vec::new();
-        if progress.tray_attempted {
-            if let Err(err) = set_tray_visible(self.app, snapshot.tray_visible) {
-                errors.push(format!("tray restore failed: {err}"));
-            }
-        }
-        if progress.startup_attempted {
-            if let Err(err) =
-                platform::windows::startup::restore_with_elevation(&snapshot.startup, &snapshot.sid)
-            {
-                errors.push(format!("startup task restore failed: {}", err.message));
-            }
-        }
-        if progress.machine_attempted {
-            if let Err(err) = self.store.restore_machine_snapshot(&snapshot.files) {
-                errors.push(format!("machine file restore failed: {err}"));
-            }
-        }
-        if progress.config_attempted {
-            if let Err(err) = self.store.restore_config_snapshot(&snapshot.files) {
-                errors.push(format!("config file restore failed: {err}"));
-            }
-        }
-        if progress.hotkey_attempted {
-            if let Err(err) = replace_pause_hotkey_value(self.app, snapshot.hotkey.clone()) {
-                errors.push(format!("hotkey restore failed: {err}"));
-            }
-        }
-        errors
-    }
-
-    fn replace_engine_config(&mut self, document: ConfigDocument) {
-        self.engine.replace_config(document);
-    }
-}
-
-#[cfg(windows)]
-#[tauri::command]
-async fn legacy_import_apply(
-    document: ConfigDocument,
-    machine: MachineLocalSettings,
-    app: tauri::AppHandle,
-) -> Result<(), legacy_import::LegacyImportError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        legacy_import_apply_blocking(document, machine, &app)
-    })
-    .await
-    .map_err(|err| {
-        legacy_import::LegacyImportError::apply_failed(format!(
-            "legacy import worker failed: {err}"
-        ))
-    })?
-}
-
-#[cfg(windows)]
-fn legacy_import_apply_blocking(
-    document: ConfigDocument,
-    machine: MachineLocalSettings,
-    app: &tauri::AppHandle,
-) -> Result<(), legacy_import::LegacyImportError> {
-    let store = app.state::<Arc<ConfigStore>>();
-    let engine = app.state::<Arc<EngineShared>>();
-    let transaction = app.state::<ConfigTransaction>();
-    let _transaction = transaction.0.lock();
-    let mut effects = DesktopLegacyImportEffects {
-        store: store.inner(),
-        engine: engine.inner(),
-        app,
-    };
-    let result = legacy_import::apply_legacy_import(&mut effects, document, machine);
-    match &result {
-        Ok(()) => {
-            *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::healthy();
-        }
-        Err(err) if err.code == "rollback_incomplete" => {
-            let startup_error =
-                StartupError::rollback_incomplete(err.message.clone(), err.rollback_errors.clone());
-            *app.state::<MachineStatus>().0.lock() = MachineRuntimeStatus::failed(&startup_error);
-        }
-        Err(_) => {}
-    }
-    if let Err(err) = &result {
-        if err.code == "rollback_incomplete" {
-            log::error!(
-                "WGestures 导入回滚不完整: {}; {}",
-                err.message,
-                err.rollback_errors.join("; ")
-            );
-        } else {
-            log::warn!("WGestures 导入失败并已回滚: {}", err.message);
-        }
-    }
-    result
-}
-
-#[cfg(not(windows))]
-#[tauri::command]
-fn legacy_import_apply(
-    document: ConfigDocument,
-    machine: MachineLocalSettings,
-    transaction: tauri::State<ConfigTransaction>,
-) -> Result<(), legacy_import::LegacyImportError> {
-    let _transaction = transaction.0.lock();
-    let _ = (document, machine);
-    Err(legacy_import::LegacyImportError::unsupported())
 }
 
 #[tauri::command]
@@ -1773,17 +1650,7 @@ pub fn run() {
                 PluginWorkspace::new(config_dir.join("plugins")).map_err(std::io::Error::other)?,
             );
             let store = Arc::new(ConfigStore::new(config_dir));
-            let mut config = store.load_config();
-            if plugin_workspace
-                .export_embedded_plugins(
-                    &config.node_plugins,
-                    &config.referenced_node_plugin_actions(),
-                )
-                .map_err(std::io::Error::other)?
-            {
-                config.node_plugins.clear();
-                store.save_config(&config)?;
-            }
+            let config = store.load_config();
             #[cfg(windows)]
             let machine = store.load_machine();
             #[cfg(target_os = "macos")]
@@ -1942,6 +1809,7 @@ pub fn run() {
             node_plugins_get,
             node_plugins_rescan,
             node_plugins_directory,
+            node_plugin_install,
             log_level_get,
             log_level_set,
             log_write,
@@ -1951,7 +1819,6 @@ pub fn run() {
             machine_get,
             machine_set,
             machine_status,
-            legacy_import_apply,
             engine_toggle_pause,
             engine_is_paused,
             capture_start,

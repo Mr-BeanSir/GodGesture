@@ -15,6 +15,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ListSnapshotsResponse,
   ListSnapshotsQuery,
+  ConfigIndexResponse,
+  ConfigScopeResponse,
   PullConfigResponse,
   PushConfigRequest,
   PushConfigResponse,
@@ -37,6 +39,21 @@ export class SyncController {
   @ApiOperation({ summary: '拉取配置(version 0 = 账户尚无配置)' })
   pull(@CurrentUser() userId: string): Promise<PullConfigResponse> {
     return this.sync.pull(userId);
+  }
+
+  @Get('config/index')
+  @ApiOperation({ summary: '读取配置索引(分组和应用摘要,不返回手势列表)' })
+  configIndex(@CurrentUser() userId: string): Promise<ConfigIndexResponse> {
+    return this.sync.configIndex(userId);
+  }
+
+  @Get('config/scope/:scope')
+  @ApiOperation({ summary: '读取当前全局或应用的手势详情' })
+  configScope(
+    @CurrentUser() userId: string,
+    @Param('scope') scope: string,
+  ): Promise<ConfigScopeResponse> {
+    return this.sync.configScope(userId, scope);
   }
 
   @Put('config')

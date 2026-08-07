@@ -56,13 +56,9 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
                 let _ = input::synthesize_key_combo(modifiers, keys);
             }
         }
-        Command::SendText { steps, text } => {
+        Command::SendText { text } => {
             activate_target(ctx);
-            if !steps.is_empty() {
-                input::type_text_steps(steps);
-            } else if let Some(text) = text {
-                input::type_text_with_sleeps(text);
-            }
+            input::type_text_with_sleeps(text);
         }
         Command::TaskSwitcher => {
             input::tap_with_modifiers(TASK_SWITCHER_MODIFIERS, TASK_SWITCHER_KEY);
@@ -88,6 +84,11 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
             show_window,
             auto_set_working_dir,
         } => run_cmd(code, *show_window, *auto_set_working_dir, ctx),
+        Command::PowerShell {
+            code,
+            show_window,
+            auto_set_working_dir,
+        } => run_powershell(code, *show_window, *auto_set_working_dir, ctx),
     }
 }
 
@@ -585,6 +586,60 @@ fn run_cmd(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &Gest
     }
     if let Err(e) = command.spawn() {
         log::warn!("Cmd 执行失败: {e}");
+    }
+}
+
+fn run_powershell(code: &str, show_window: bool, auto_set_working_dir: bool, ctx: &GestureContext) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let code = code.trim();
+    if code.is_empty() {
+        return;
+    }
+    activate_target(ctx);
+    let selected_text = if code.contains("WG_SELECTED_TEXT") {
+        clipboard::get_selected_text().unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let interpreter = std::env::var_os("GODGESTURE_POWERSHELL")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "powershell.exe".into());
+    let mut command = std::process::Command::new(interpreter);
+    command
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass");
+    if show_window {
+        command.arg("-NoExit");
+    }
+    command.arg("-Command").arg(code);
+    command.env("WG_MOUSE_X", ctx.origin.x.to_string());
+    command.env("WG_MOUSE_Y", ctx.origin.y.to_string());
+    command.env("WG_STARTPOINT_X", ctx.origin.x.to_string());
+    command.env("WG_STARTPOINT_Y", ctx.origin.y.to_string());
+    command.env("WG_ENDPOINT_X", ctx.endpoint.x.to_string());
+    command.env("WG_ENDPOINT_Y", ctx.endpoint.y.to_string());
+    command.env("WG_SELECTED_TEXT", selected_text);
+    let info = hwnd_of(ctx).and_then(window::window_info);
+    if hwnd_of(ctx).is_some() {
+        command.env("WG_WINID", ctx.native_window.to_string());
+        command.env("WG_WINDOW_HWND", ctx.native_window.to_string());
+        if let Some(info) = &info {
+            command.env("WG_PROCID", info.pid.to_string());
+            command.env("WG_ACTIVE_EXE", &info.exe_name);
+            command.env("WG_ACTIVE_EXE_PATH", &info.exe_path);
+            command.env("WG_WINDOW_TITLE", &info.title);
+        }
+    }
+    if let Some(directory) = cmd_working_directory(auto_set_working_dir, info.as_ref()) {
+        command.current_dir(directory);
+    }
+    if !show_window {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    if let Err(error) = command.spawn() {
+        log::warn!("PowerShell 执行失败: {error}");
     }
 }
 

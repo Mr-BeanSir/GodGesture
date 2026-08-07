@@ -20,7 +20,7 @@ const { t } = useI18n();
       <div class="gg-field">
         <label class="gg-field-label">{{ t("gestures.colMnemonic") }}</label>
         <div class="boundary-editor__trigger-stack">
-          <BoundaryMnemonic :intent="intent" />
+          <BoundaryMnemonic :intent="intent" class="boundary-editor__mnemonic" />
           <div class="boundary-editor__actions">
             <el-button size="small" @click="emit('reRecord')">{{ t("actions.editSequence") }}</el-button>
             <el-tooltip :content="t('gestures.deleteIntent')">
@@ -67,6 +67,9 @@ const { t } = useI18n();
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+}
+.boundary-editor__mnemonic {
+  font-size: 20px;
 }
 .boundary-editor__actions {
   display: flex;

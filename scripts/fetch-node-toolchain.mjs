@@ -19,18 +19,21 @@ const NODE_ARTIFACTS = {
     archive: `node-v${NODE_VERSION}-win-x64.zip`,
     sha256: "ec56b84a7551893ab2324ebdfdc4ab974a63b4781162600b68a1293cc3e53765",
     executable: "node.exe",
+    npmCli: "node_modules/npm/bin/npm-cli.js",
     archiveType: "zip",
   },
   "macos-x64": {
     archive: `node-v${NODE_VERSION}-darwin-x64.tar.gz`,
     sha256: "6fb20fceacbb157c2f95825b80df4a454a0f6d81cdcd7bb81eeae9147e0e76ec",
     executable: "bin/node",
+    npmCli: "lib/node_modules/npm/bin/npm-cli.js",
     archiveType: "tar.gz",
   },
   "macos-arm64": {
     archive: `node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
     sha256: "eb02f7fab96d3d67de40c5ec8566096fcb4c2026728787683ae5a97eb612b941",
     executable: "bin/node",
+    npmCli: "lib/node_modules/npm/bin/npm-cli.js",
     archiveType: "tar.gz",
   },
 };
@@ -116,7 +119,14 @@ async function installNode(target, tempRoot) {
   await rm(output, { recursive: true, force: true });
   await mkdir(output, { recursive: true });
   await cp(source, join(output, target.startsWith("windows") ? "node.exe" : "node"));
+  await copyBundledNpm(extracted, artifact.npmCli, output);
   if (!target.startsWith("windows")) await execFileAsync("chmod", ["755", join(output, "node")]);
+}
+
+async function copyBundledNpm(extracted, npmCliPath, output) {
+  const cli = await findFile(extracted, npmCliPath);
+  const packageRoot = dirname(dirname(cli));
+  await cp(packageRoot, join(output, "npm"), { recursive: true, dereference: true });
 }
 
 async function installPnpm(target, tempRoot) {
@@ -171,4 +181,12 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
 
-export { NODE_ARTIFACTS, PNPM_SHA512, PNPM_VERSION, NODE_VERSION, extractArchive, targetNames };
+export {
+  NODE_ARTIFACTS,
+  PNPM_SHA512,
+  PNPM_VERSION,
+  NODE_VERSION,
+  copyBundledNpm,
+  extractArchive,
+  targetNames,
+};

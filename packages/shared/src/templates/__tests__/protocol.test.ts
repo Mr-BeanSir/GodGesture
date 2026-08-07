@@ -49,7 +49,7 @@ const entryValue = () => ({
   },
   risks: [],
   packageUrl:
-    "https://github.com/godgesture/gesture-templates/releases/download/v1/browser-navigation.json",
+    "https://github.com/Mr-BeanSir/GodGesture-Templates/releases/download/v1/browser-navigation.json",
 });
 
 describe("gesture template protocol", () => {
@@ -168,11 +168,20 @@ describe("gesture template protocol", () => {
       formatVersion: 1,
       slug: "risky-tools",
       version: "1.0.0",
+      plugins: [
+        {
+          pluginId: "00000000-0000-4000-8000-000000000001",
+          repositoryUrl: "https://github.com/Mr-BeanSir/GodGesture-Plugins",
+          ref: "main",
+          subdirectory: "gesture-demo",
+        },
+      ],
       target: {
         scope: "global",
         intents: [
-          intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001", actionId: "default" }),
+          intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001" }),
           intent("Shell", { type: "cmd", code: "echo ok" }),
+          intent("PowerShell", { type: "powershell", code: "Write-Output ok" }),
           intent("File", { type: "openFile", path: "tool.exe" }),
           intent("URL", { type: "gotoUrl", url: "https://example.com" }),
         ],
@@ -223,6 +232,81 @@ describe("gesture template protocol", () => {
       "target_mismatch",
     );
   });
+
+  it("requires template plugin sources and Node plugin commands to map to each other", () => {
+    expect(() =>
+      GestureTemplatePackage.parse({
+        formatVersion: 1,
+        slug: "plugin-command",
+        version: "1.0.0",
+        target: {
+          scope: "global",
+          intents: [
+            intent("Node plugin", {
+              type: "nodePlugin",
+              pluginId: "00000000-0000-4000-8000-000000000001",
+            }),
+          ],
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      GestureTemplatePackage.parse({
+        formatVersion: 1,
+        slug: "plugin-command",
+        version: "1.0.0",
+        plugins: [
+          {
+            pluginId: "00000000-0000-4000-8000-000000000001",
+            repositoryUrl: "https://github.com/owner/repository",
+            ref: "main",
+            subdirectory: "plugin",
+          },
+        ],
+        target: {
+          scope: "global",
+          intents: [
+            intent("Node plugin", {
+              type: "nodePlugin",
+              pluginId: "00000000-0000-4000-8000-000000000001",
+            }),
+          ],
+        },
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      GestureTemplatePackage.parse({
+        formatVersion: 1,
+        slug: "plugin-command",
+        version: "1.0.0",
+        plugins: [
+          {
+            pluginId: "00000000-0000-4000-8000-000000000001",
+            repositoryUrl: "https://github.com/owner/repository",
+            ref: "main",
+            subdirectory: "plugin",
+          },
+          {
+            pluginId: "00000000-0000-4000-8000-000000000002",
+            repositoryUrl: "https://github.com/owner/unused-plugin",
+            ref: "main",
+            subdirectory: "plugin",
+          },
+        ],
+        target: {
+          scope: "global",
+          intents: [
+            intent("Node plugin", {
+              type: "nodePlugin",
+              pluginId: "00000000-0000-4000-8000-000000000001",
+            }),
+          ],
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 function intent(name: string, command: Record<string, unknown>) {
@@ -230,7 +314,7 @@ function intent(name: string, command: Record<string, unknown>) {
     name,
     gesture: {
       trigger: "right",
-      strokes: [name === "Node plugin" ? "up" : name === "Shell" ? "right" : name === "File" ? "down" : "left"],
+      strokes: [name === "Node plugin" ? "up" : name === "Shell" ? "right" : name === "PowerShell" ? "rightUp" : name === "File" ? "down" : "left"],
       modifier: "none",
     },
     command,

@@ -2,7 +2,7 @@
 
 use super::{clipboard, input, window};
 use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
-use crate::engine::config::{Command, SendTextStep, WindowOperation};
+use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
 use objc2_app_kit::NSWorkspace;
@@ -16,15 +16,9 @@ pub fn execute(command: &Command, modifier: Modifier, context: &GestureContext) 
             activate_best_effort(context);
             input::synthesize_key_combo(modifiers, keys)
         }
-        Command::SendText { steps, text } => {
+        Command::SendText { text } => {
             activate_best_effort(context);
-            if !steps.is_empty() {
-                input::try_type_text_steps(steps)
-            } else if let Some(text) = text {
-                input::try_type_text_with_sleeps(text)
-            } else {
-                Ok(())
-            }
+            input::try_type_text_with_sleeps(text)
         }
         Command::TaskSwitcher => mission_control(),
         Command::WindowControl { operation } => {
@@ -43,6 +37,11 @@ pub fn execute(command: &Command, modifier: Modifier, context: &GestureContext) 
             show_window,
             auto_set_working_dir,
         } => run_command(code, *show_window, *auto_set_working_dir, context),
+        Command::PowerShell {
+            code,
+            show_window,
+            auto_set_working_dir,
+        } => run_powershell(code, *show_window, *auto_set_working_dir, context),
     };
     if let Err(error) = result {
         log::error!("macOS command {command:?} failed: {error}");
@@ -226,6 +225,96 @@ fn run_command(
             .map(|_| ())
             .map_err(|error| format!("launch zsh command: {error}"))
     }
+}
+
+fn run_powershell(
+    code: &str,
+    show_window: bool,
+    auto_set_working_dir: bool,
+    context: &GestureContext,
+) -> Result<(), String> {
+    let code = code.trim();
+    if code.is_empty() {
+        return Ok(());
+    }
+    activate_best_effort(context);
+    let selected = if code.contains("WG_SELECTED_TEXT") {
+        clipboard::get_selected_text().unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let target = window::target_for_token(context.native_window).ok();
+    let mut environment = vec![
+        ("WG_MOUSE_X", context.origin.x.to_string()),
+        ("WG_MOUSE_Y", context.origin.y.to_string()),
+        ("WG_STARTPOINT_X", context.origin.x.to_string()),
+        ("WG_STARTPOINT_Y", context.origin.y.to_string()),
+        ("WG_ENDPOINT_X", context.endpoint.x.to_string()),
+        ("WG_ENDPOINT_Y", context.endpoint.y.to_string()),
+        ("WG_SELECTED_TEXT", selected),
+        (
+            "WG_WINID",
+            target.map_or(0, |target| target.window_id).to_string(),
+        ),
+    ];
+    if let Some(target) = target {
+        environment.push(("WG_PROCID", target.pid.to_string()));
+    }
+    let executable = powershell_executable();
+    if show_window {
+        let exports = environment
+            .iter()
+            .map(|(key, value)| format!("export {key}={};", shell_quote(value)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let terminal_code = format!(
+            "{exports} {} -NoProfile -NoExit -Command {}",
+            shell_quote(&executable),
+            shell_quote(code)
+        );
+        let script = concat!(
+            "on run argv\n",
+            "tell application \"Terminal\"\n",
+            "activate\n",
+            "do script \"/bin/zsh -lc \" & quoted form of (item 1 of argv)\n",
+            "end tell\n",
+            "end run"
+        );
+        return std::process::Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(script)
+            .arg(&terminal_code)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("launch Terminal PowerShell command: {error}"));
+    }
+    let mut command = std::process::Command::new(executable);
+    command.arg("-NoProfile").arg("-Command").arg(code);
+    for (key, value) in environment {
+        command.env(key, value);
+    }
+    if auto_set_working_dir {
+        if let Some(directory) = desktop_directory() {
+            command.current_dir(directory);
+        }
+    }
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("launch PowerShell: {error}"))
+}
+
+fn powershell_executable() -> String {
+    if let Some(value) = std::env::var_os("GODGESTURE_POWERSHELL").filter(|value| !value.is_empty())
+    {
+        return value.to_string_lossy().into_owned();
+    }
+    for candidate in ["/opt/homebrew/bin/pwsh", "/usr/local/bin/pwsh"] {
+        if std::path::Path::new(candidate).is_file() {
+            return candidate.into();
+        }
+    }
+    "pwsh".into()
 }
 
 fn desktop_directory() -> Option<std::path::PathBuf> {

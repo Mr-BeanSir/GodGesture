@@ -12,7 +12,7 @@ import { useTemplatesStore } from "../stores/templates";
 import { gestureMnemonic } from "../utils/mnemonic";
 
 const DEFAULT_TEMPLATE_REPOSITORY_URL =
-  "https://github.com/Mr-BeanSir/gesture-templates";
+  "https://github.com/Mr-BeanSir/GodGesture-Templates";
 
 const { t, locale } = useI18n();
 const backend = useBackend();
@@ -36,7 +36,12 @@ const riskyIntents = computed(() =>
     (intent) => commandTemplateRisks(intent.command).length > 0,
   ),
 );
-const hasElevatedRisk = computed(() => riskyIntents.value.length > 0);
+const hasPluginInstall = computed(
+  () => (templates.adoptionPlan?.pluginSources.length ?? 0) > 0,
+);
+const hasElevatedRisk = computed(
+  () => riskyIntents.value.length > 0 || hasPluginInstall.value,
+);
 
 watch(
   () => templates.selectedEntry,
@@ -73,7 +78,10 @@ async function confirmAdoption() {
   if (!plan || (hasElevatedRisk.value && !riskConfirmed.value)) return;
   try {
     await ElMessageBox.confirm(
-      t("templates.adoption.confirmBody", plan.stats),
+      t("templates.adoption.confirmBody", {
+        ...plan.stats,
+        plugins: plan.pluginSources.length,
+      }),
       t("templates.adoption.confirmTitle"),
       {
         type: hasElevatedRisk.value ? "warning" : "info",
@@ -200,6 +208,9 @@ async function confirmAdoption() {
       width="min(720px, calc(100vw - 32px))"
       top="4vh"
       destroy-on-close
+      :close-on-click-modal="!templates.adopting"
+      :close-on-press-escape="!templates.adopting"
+      :show-close="!templates.adopting"
     >
       <el-skeleton v-if="templates.loadingPackage" :rows="7" animated />
       <el-result
@@ -268,6 +279,21 @@ async function confirmAdoption() {
           :title="t('templates.risk.lowDescription')"
         />
 
+        <el-alert
+          v-if="templates.adoptionPlan?.pluginSources.length"
+          class="template-detail__plugin-warning"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="t('templates.adoption.plugins', { count: templates.adoptionPlan.pluginSources.length })"
+        >
+          <ul class="template-detail__risk-list">
+            <li v-for="source in templates.adoptionPlan.pluginSources" :key="source.pluginId">
+              <code>{{ source.repositoryUrl }}<template v-if="source.subdirectory">/{{ source.subdirectory }}</template></code>
+            </li>
+          </ul>
+        </el-alert>
+
         <div class="template-detail__section-head">
           <h3>{{ t("templates.detail.gestures", { count: packageIntents.length }) }}</h3>
         </div>
@@ -322,7 +348,9 @@ async function confirmAdoption() {
       </template>
 
       <template #footer>
-        <el-button @click="detailVisible = false">{{ t("common.cancel") }}</el-button>
+        <el-button :disabled="templates.adopting" @click="detailVisible = false">
+          {{ t("common.cancel") }}
+        </el-button>
         <el-button
           type="primary"
           :icon="Download"

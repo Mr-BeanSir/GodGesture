@@ -5,21 +5,25 @@ import type {
   AppEntry,
   AppGroup,
   BoundaryIntent,
-  BoundaryToken,
   ConfigDocument,
   GestureIntent,
+  ConfigIndexResponse,
 } from "@godgesture/shared";
-import { pullConfig } from "../api/sync";
-import { gestureMnemonic } from "../utils/gesture";
+import { getConfigIndex, getConfigScope } from "../api/sync";
 import { errorMessageKey } from "../utils/errors";
+import GestureMnemonic from "../components/GestureMnemonic.vue";
+import BoundaryMnemonic from "../components/BoundaryMnemonic.vue";
 
-const GLOBAL = "__global__";
+const GLOBAL = "global";
 const { t } = useI18n();
 
 const loading = ref(true);
+const scopeLoading = ref(false);
 const errorKey = ref<string | null>(null);
 const doc = ref<ConfigDocument | null>(null);
 const selectedAppId = ref(GLOBAL);
+const totalActionCount = ref(0);
+const intentCountByApp = ref(new Map<string, number>());
 
 type ActionRow =
   | { kind: "gesture"; id: string; name: string; enabled: boolean; order: number; intent: GestureIntent }
@@ -100,6 +104,27 @@ const actionCountLabel = computed(() =>
 
 function selectApp(id: string): void {
   selectedAppId.value = id;
+  void loadScope(id);
+}
+
+async function loadScope(scope: string): Promise<void> {
+  scopeLoading.value = true;
+  try {
+    const result = await getConfigScope(scope);
+    if (!doc.value) return;
+    const scopeResult = result.scope;
+    if (scopeResult.kind === "global") {
+      doc.value.global = scopeResult.global;
+      doc.value.boundaryIntents = result.boundaryIntents;
+    } else {
+      const target = doc.value.apps.find((app) => app.id === scopeResult.app.id);
+      if (target) Object.assign(target, scopeResult.app);
+    }
+  } catch (err) {
+    errorKey.value = errorMessageKey(err);
+  } finally {
+    scopeLoading.value = false;
+  }
 }
 
 function boolLabel(value: boolean): string {
@@ -123,33 +148,23 @@ function appInitials(name: string): string {
     .toUpperCase();
 }
 
-function boundaryOriginLabel(intent: BoundaryIntent): string {
-  return intent.origin.kind === "hotCorner"
-    ? t(`config.corner.${intent.origin.corner}`)
-    : t(`config.edge.${intent.origin.edge}`);
-}
-
-function boundaryTokenLabel(token: BoundaryToken): string {
-  if (token.type === "wheel") return t(`config.token.wheel.${token.direction}`);
-  if (token.type === "button") return t(`config.token.button.${token.button}`);
-  return t(`config.token.stroke.${token.direction}`);
-}
-
-function boundaryMnemonic(intent: BoundaryIntent): string {
-  const origin = t(
-    intent.origin.kind === "hotCorner" ? "config.hotCornerOrigin" : "config.rubEdgeOrigin",
-    { location: boundaryOriginLabel(intent) },
-  );
-  if (!intent.sequence.length) return `${origin} ${t("config.immediate")}`;
-  return `${origin} ${t("config.sequenceArrow")} ${intent.sequence
-    .map(boundaryTokenLabel)
-    .join(" ")}`;
-}
-
 onMounted(async () => {
   try {
-    const pull = await pullConfig();
-    doc.value = pull.document;
+    const index: ConfigIndexResponse = await getConfigIndex();
+    intentCountByApp.value = new Map(index.apps.map((app) => [app.id, app.intentCount]));
+    totalActionCount.value = index.global.intentCount + index.boundaryIntentCount +
+      index.apps.reduce((sum, app) => sum + app.intentCount, 0);
+    doc.value = {
+      formatVersion: 8,
+      global: { ...index.global, intents: [] },
+      groups: index.groups,
+      apps: index.apps.map(({ intentCount: _count, ...app }) => ({ ...app, intents: [] })),
+      hotCorners: { ...index.hotCorners, commands: {} },
+      rubEdges: { ...index.rubEdges, commands: {} },
+      boundaryIntents: [],
+      preferences: index.preferences,
+    };
+    await loadScope(GLOBAL);
   } catch (err) {
     errorKey.value = errorMessageKey(err);
   } finally {
@@ -159,14 +174,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="config-view" v-loading="loading">
+  <div class="config-view" v-loading="loading || scopeLoading">
     <div class="config-heading">
       <div>
         <h2>{{ t("config.title") }}</h2>
         <p>{{ t("config.readOnlyHint") }}</p>
       </div>
       <el-tag v-if="doc" type="info" effect="plain">
-        {{ t("config.actionCount", { count: doc.global.intents.length + doc.boundaryIntents.length + doc.apps.reduce((sum, app) => sum + app.intents.length, 0) }) }}
+        {{ t("config.actionCount", { count: totalActionCount }) }}
       </el-tag>
     </div>
 
@@ -277,7 +292,7 @@ onMounted(async () => {
                   <span class="config-app__body">
                     <span class="config-app__name">{{ app.name }}</span>
                     <span class="config-app__meta">
-                      {{ t("config.actionCount", { count: app.intents.length }) }}
+                      {{ t("config.actionCount", { count: intentCountByApp.get(app.id) ?? app.intents.length }) }}
                     </span>
                   </span>
                   <el-tag v-if="!app.gesturingEnabled" type="danger" size="small">
@@ -352,8 +367,8 @@ onMounted(async () => {
               <el-table-column :label="t('config.intentName')" prop="name" min-width="150" show-overflow-tooltip />
               <el-table-column :label="t('config.mnemonic')" min-width="180" show-overflow-tooltip>
                 <template #default="{ row }">
-                  <span v-if="row.kind === 'gesture'" class="mnemonic">{{ gestureMnemonic(row.intent.gesture) }}</span>
-                  <span v-else class="boundary-mnemonic">{{ boundaryMnemonic(row.intent) }}</span>
+                  <GestureMnemonic v-if="row.kind === 'gesture'" :gesture="row.intent.gesture" />
+                  <BoundaryMnemonic v-else :intent="row.intent" />
                 </template>
               </el-table-column>
               <el-table-column :label="t('config.commandType')" min-width="140" show-overflow-tooltip>
@@ -625,11 +640,6 @@ p {
 
 .config-actions__table {
   width: 100%;
-}
-
-.boundary-mnemonic {
-  color: var(--el-text-color-regular);
-  font-size: 12px;
 }
 
 .provider-tag {

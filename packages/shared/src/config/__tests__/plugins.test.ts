@@ -52,15 +52,29 @@ describe("Node plugin configuration", () => {
           id: "40000000-0000-4000-8000-000000000001",
           name: "Run plugin",
           gesture: { trigger: "right", strokes: ["up"], modifier: "none" },
-          command: { type: "nodePlugin", pluginId: PLUGIN_ID, actionId: "default" },
+          command: { type: "nodePlugin", pluginId: PLUGIN_ID },
           order: 0,
         }],
       },
     });
 
-    expect(document.formatVersion).toBe(7);
+    expect(document.formatVersion).toBe(8);
     expect(document).not.toHaveProperty("nodePlugins");
     expect(document.global.intents[0]!.command.type).toBe("nodePlugin");
+  });
+
+  it("rejects the removed action reference field", () => {
+    expect(() => ConfigDocument.parse({
+      global: {
+        intents: [{
+          id: "40000000-0000-4000-8000-000000000003",
+          name: "Legacy plugin reference",
+          gesture: { trigger: "right", strokes: ["up"], modifier: "none" },
+          command: { type: "nodePlugin", pluginId: PLUGIN_ID, actionId: "default" },
+          order: 0,
+        }],
+      },
+    })).toThrow();
   });
 
   it("rejects missing entries, unsafe paths and invalid manifests", () => {
@@ -90,7 +104,7 @@ describe("Node plugin configuration", () => {
           id: "40000000-0000-4000-8000-000000000002",
           name: "Missing plugin",
           gesture: { trigger: "right", strokes: ["up"], modifier: "none" },
-          command: { type: "nodePlugin", pluginId: PLUGIN_ID, actionId: "default" },
+          command: { type: "nodePlugin", pluginId: PLUGIN_ID },
           order: 0,
         }],
       },

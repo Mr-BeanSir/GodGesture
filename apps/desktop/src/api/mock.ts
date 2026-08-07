@@ -185,7 +185,7 @@ export function createMockBackend(): Backend {
         path: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins\\gesture-demo",
         entry: "index.mjs",
         apiVersion: 1,
-        actions: [{ id: "default", name: "Execute", exportName: "onExecute" }],
+        lifecycles: ["onInit", "onExecute", "onGestureRecognized", "onModifierTriggered", "onEnd"],
         status: "ready",
         error: null,
         lastReloadAt: Date.now(),
@@ -197,9 +197,9 @@ export function createMockBackend(): Backend {
         path: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins\\broken-plugin",
         entry: "",
         apiVersion: 0,
-        actions: [],
+        lifecycles: [],
         status: "error",
-        error: "package.json godgesture.actions must not be empty",
+        error: "package.json godgesture.lifecycles must not be empty",
         lastReloadAt: null,
       },
     ],
@@ -250,6 +250,24 @@ export function createMockBackend(): Backend {
     },
     async nodePluginsDirectory() {
       return pluginSnapshot.root;
+    },
+    async nodePluginInstall(source) {
+      const existing = pluginSnapshot.plugins.find((plugin) => plugin.id === source.pluginId);
+      if (!existing) {
+        pluginSnapshot.plugins.push({
+          id: source.pluginId,
+          name: source.repositoryUrl.split("/").filter(Boolean).pop()?.replace(/\.git$/i, "") || "online-plugin",
+          version: "online",
+          path: `${pluginSnapshot.root}\\${source.pluginId}`,
+          entry: "index.mjs",
+          apiVersion: 1,
+          lifecycles: ["onExecute"],
+          status: "ready",
+          error: null,
+          lastReloadAt: Date.now(),
+        });
+      }
+      return structuredClone(pluginSnapshot);
     },
     async onNodePluginsChanged() {
       return () => undefined;
@@ -308,13 +326,6 @@ export function createMockBackend(): Backend {
     },
     async platformOpenPermissionSettings() {
       return undefined;
-    },
-    async legacyImportApply(document, settings) {
-      // Parse both values before either assignment so validation failure is atomic.
-      const nextDocument = ConfigDocument.parse(document);
-      const nextMachine = MachineLocalSettings.parse(settings);
-      doc = nextDocument;
-      machine = nextMachine;
     },
     async engineIsPaused() {
       return paused;

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   CircleCheck,
   Clock,
+  Download,
   FolderOpened,
+  Link,
   Refresh,
   Warning,
 } from "@element-plus/icons-vue";
@@ -14,6 +17,7 @@ const { t, locale } = useI18n();
 const plugins = usePluginsStore();
 
 const selected = computed(() => plugins.selected);
+const onlineEntries = computed(() => plugins.onlineEntries);
 
 const lastReload = computed(() => {
   const timestamp = selected.value?.lastReloadAt;
@@ -24,7 +28,43 @@ const lastReload = computed(() => {
   }).format(new Date(timestamp));
 });
 
-onMounted(() => void plugins.initialize());
+onMounted(() => {
+  void plugins.initialize();
+  void plugins.loadOnlineCatalog();
+});
+
+function localized(value: { "zh-CN": string; en: string }) {
+  return locale.value === "zh-CN" ? value["zh-CN"] : value.en;
+}
+
+async function installOnline(entry: (typeof onlineEntries.value)[number]) {
+  try {
+    await ElMessageBox.confirm(
+      t("plugins.online.confirmBody", {
+        name: localized(entry.title),
+        source: `${entry.repositoryUrl}${entry.subdirectory ? `/${entry.subdirectory}` : ""}`,
+        ref: entry.ref,
+      }),
+      t("plugins.online.confirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("plugins.online.install"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
+  } catch {
+    return;
+  }
+  if (await plugins.installOnline(entry)) {
+    ElMessage.success(t("plugins.online.success"));
+  } else {
+    ElMessage.error(t("plugins.online.failed"));
+  }
+}
+
+function openRepository(url: string) {
+  void plugins.backend?.openExternal(url);
+}
 </script>
 
 <template>
@@ -80,7 +120,7 @@ onMounted(() => void plugins.initialize());
               <strong>{{ plugin.name }}</strong>
               <span>
                 {{ plugin.status === "ready"
-                  ? t("plugins.actionCount", { count: plugin.actions.length })
+                  ? t("plugins.lifecycleCount", { count: plugin.lifecycles.length })
                   : t("plugins.invalid") }}
               </span>
               <span class="plugin-row__status-label">
@@ -145,16 +185,15 @@ onMounted(() => void plugins.initialize());
 
           <section class="plugin-detail__section">
             <div class="plugin-detail__section-head">
-              <h4>{{ t("plugins.actions") }}</h4>
+              <h4>{{ t("plugins.lifecycles") }}</h4>
               <span class="plugin-detail__live"><i />{{ t("plugins.hotReloadActive") }}</span>
             </div>
             <div class="plugin-actions">
-              <div v-for="action in selected.actions" :key="action.id" class="plugin-action">
+              <div v-for="lifecycle in selected.lifecycles" :key="lifecycle" class="plugin-action">
                 <div>
-                  <strong>{{ action.name }}</strong>
-                  <span>{{ action.id }}</span>
+                  <strong>{{ lifecycle }}</strong>
                 </div>
-                <code>{{ action.exportName }}</code>
+                <code>{{ lifecycle }}</code>
               </div>
             </div>
           </section>
@@ -170,6 +209,66 @@ onMounted(() => void plugins.initialize());
             </el-button>
           </div>
     </main>
+
+    <section class="plugins-online" aria-labelledby="online-plugin-title">
+      <header class="plugins-online__header">
+        <div>
+          <h3 id="online-plugin-title">{{ t("plugins.online.title") }}</h3>
+          <p class="gg-hint">{{ t("plugins.online.subtitle") }}</p>
+        </div>
+        <el-tooltip :content="t('plugins.online.refresh')" placement="top">
+          <el-button
+            circle
+            :icon="Refresh"
+            :loading="plugins.loadingOnlineCatalog"
+            :aria-label="t('plugins.online.refresh')"
+            @click="plugins.loadOnlineCatalog(true)"
+          />
+        </el-tooltip>
+      </header>
+      <el-alert
+        v-if="plugins.onlineCatalogError"
+        type="error"
+        show-icon
+        :closable="false"
+        :title="t('plugins.online.loadFailed')"
+      />
+      <el-skeleton v-else-if="plugins.loadingOnlineCatalog" :rows="2" animated />
+      <el-empty
+        v-else-if="onlineEntries.length === 0"
+        :image-size="42"
+        :description="t('plugins.online.empty')"
+      />
+      <div v-else class="plugins-online__list">
+        <article v-for="entry in onlineEntries" :key="`${entry.slug}@${entry.version}`" class="plugins-online__row">
+          <div class="plugins-online__identity">
+            <strong>{{ localized(entry.title) }}</strong>
+            <span>{{ localized(entry.summary) }}</span>
+            <code>{{ entry.repositoryUrl }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
+          </div>
+          <div class="plugins-online__actions">
+            <el-tag size="small" effect="plain">v{{ entry.version }}</el-tag>
+            <el-tag v-if="plugins.installedPluginIds.has(entry.pluginId)" size="small" type="success" effect="plain">
+              {{ t("plugins.online.installed") }}
+            </el-tag>
+            <el-button
+              v-else
+              type="primary"
+              size="small"
+              :icon="Download"
+              :loading="plugins.installingPluginId === entry.pluginId"
+              :disabled="Boolean(plugins.installingPluginId)"
+              @click="installOnline(entry)"
+            >
+              {{ plugins.installingPluginId === entry.pluginId ? t("plugins.online.installing") : t("plugins.online.install") }}
+            </el-button>
+            <el-tooltip :content="t('plugins.online.repository')" placement="top">
+              <el-button circle size="small" :icon="Link" :aria-label="t('plugins.online.repository')" @click="openRepository(entry.repositoryUrl)" />
+            </el-tooltip>
+          </div>
+        </article>
+      </div>
+    </section>
     </div>
   </div>
 </template>
@@ -180,12 +279,11 @@ onMounted(() => void plugins.initialize());
 .plugins-page__actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .plugins-page__content {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(320px, 1fr) auto;
   gap: 10px;
   min-width: 0;
   min-height: 0;
 }
-.plugins-page__content > .plugins-workspace:first-child { grid-row: 1 / -1; }
 .plugins-workspace {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
@@ -298,6 +396,34 @@ onMounted(() => void plugins.initialize());
 .plugin-detail--empty strong { font-size: 14px; }
 .plugin-detail--empty p { max-width: 320px; margin: 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .plugin-detail__empty-icon { width: 28px; height: 28px; color: var(--el-color-primary); }
+.plugins-online {
+  min-width: 0;
+  border-top: 1px solid var(--gg-border);
+  padding-top: 14px;
+}
+.plugins-online__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.plugins-online__header h3 { margin: 0; font-size: 14px; }
+.plugins-online__header p { margin: 3px 0 0; }
+.plugins-online__list { border-top: 1px solid var(--gg-border); }
+.plugins-online__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--gg-border);
+}
+.plugins-online__identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.plugins-online__identity strong { font-size: 13px; }
+.plugins-online__identity span { color: var(--el-text-color-secondary); font-size: 12px; }
+.plugins-online__identity code { overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.plugins-online__actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
 @media (max-width: 860px) {
   .plugins-workspace { grid-template-columns: 196px minmax(0, 1fr); }
   .plugin-detail { padding: 14px; }
@@ -307,8 +433,33 @@ onMounted(() => void plugins.initialize());
   .plugins-page__header { align-items: center; }
   .plugins-page__header p { display: none; }
   .plugins-page__actions > :first-child { padding-inline: 10px; }
-  .plugins-workspace { grid-template-columns: 180px minmax(0, 1fr); }
+  .plugins-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(170px, auto) minmax(220px, 1fr);
+    overflow-y: auto;
+  }
+  .plugins-workspace__rail {
+    min-height: 170px;
+    border-right: 0;
+    border-bottom: 1px solid var(--gg-border);
+  }
   .plugin-detail__header { align-items: center; }
   .plugin-detail__header > .el-button { width: 32px; padding: 0; font-size: 0; }
+  .plugins-online__identity { width: 100%; }
+  .plugins-online__identity code { max-width: 100%; }
+  .plugins-online__row { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .plugins-online__actions { width: 100%; justify-content: flex-end; }
+}
+@media (max-width: 480px) {
+  .plugins-page__header h2 { white-space: nowrap; }
+  .plugins-page__actions > :first-child {
+    width: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+  .plugins-page__actions > :first-child :deep(.el-icon) {
+    margin: 0;
+    font-size: 14px;
+  }
 }
 </style>

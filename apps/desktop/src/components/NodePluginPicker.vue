@@ -13,21 +13,11 @@ const plugins = usePluginsStore();
 const selectedPlugin = computed(() =>
   plugins.readyPlugins.find((plugin) => plugin.id === props.modelValue.pluginId) ?? null,
 );
-const referencedAction = computed(() =>
-  selectedPlugin.value?.actions.find((action) => action.id === props.modelValue.actionId) ?? null,
-);
-
 function selectPlugin(pluginId: string) {
-  const plugin = plugins.readyPlugins.find((candidate) => candidate.id === pluginId);
   emit("update:modelValue", {
     type: "nodePlugin",
     pluginId,
-    actionId: plugin?.actions[0]?.id ?? "default",
   });
-}
-
-function selectAction(actionId: string) {
-  emit("update:modelValue", { ...props.modelValue, actionId });
 }
 
 onMounted(() => void plugins.initialize());
@@ -72,26 +62,9 @@ onMounted(() => void plugins.initialize());
       </div>
     </div>
 
-    <div class="gg-field">
-      <label class="gg-field-label" for="node-plugin-action">{{ t("command.nodePlugin.action") }}</label>
-      <el-select
-        id="node-plugin-action"
-        :model-value="modelValue.actionId"
-        :disabled="!selectedPlugin"
-        :placeholder="t('command.nodePlugin.selectAction')"
-        @update:model-value="selectAction"
-      >
-        <el-option
-          v-for="action in selectedPlugin?.actions ?? []"
-          :key="action.id"
-          :label="action.name"
-          :value="action.id"
-        >
-          <span>{{ action.name }}</span>
-          <code class="node-plugin-picker__export">{{ action.exportName }}</code>
-        </el-option>
-      </el-select>
-    </div>
+    <p v-if="selectedPlugin" class="gg-hint">
+      {{ t("command.nodePlugin.lifecycleHint") }}
+    </p>
 
     <el-alert
       v-if="plugins.error"
@@ -108,13 +81,6 @@ onMounted(() => void plugins.initialize());
       :title="t('command.nodePlugin.missingPlugin', { id: props.modelValue.pluginId })"
     />
     <el-alert
-      v-else-if="selectedPlugin && !referencedAction"
-      type="warning"
-      show-icon
-      :closable="false"
-      :title="t('command.nodePlugin.missingAction', { id: props.modelValue.actionId })"
-    />
-    <el-alert
       v-else-if="plugins.readyPlugins.length === 0"
       type="info"
       show-icon
@@ -128,5 +94,4 @@ onMounted(() => void plugins.initialize());
 .node-plugin-picker { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
 .node-plugin-picker__row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .node-plugin-picker__select { flex: 1 1 auto; min-width: 0; }
-.node-plugin-picker__export { float: right; margin-left: 18px; color: var(--el-text-color-secondary); font-size: 11px; }
 </style>

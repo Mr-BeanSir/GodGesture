@@ -8,12 +8,14 @@ import {
   type GestureSpec,
 } from "../config/gestures.js";
 import { MAX_URL_LENGTH } from "../config/limits.js";
+import { OnlinePluginSource, type OnlinePluginSource as OnlinePluginSourceValue } from "../plugins/online.js";
 
 export const GESTURE_TEMPLATE_FORMAT_VERSION = 1;
 export const MAX_GESTURE_TEMPLATE_CATALOG_BYTES = 512 * 1024;
 export const MAX_GESTURE_TEMPLATE_PACKAGE_BYTES = 256 * 1024;
 export const MAX_GESTURE_TEMPLATE_CATALOG_ENTRIES = 256;
 export const MAX_GESTURE_TEMPLATE_TAGS = 8;
+export const MAX_GESTURE_TEMPLATE_PLUGINS = 32;
 
 const slug = z
   .string()
@@ -221,9 +223,44 @@ export const GestureTemplatePackage = z
     formatVersion: z.literal(GESTURE_TEMPLATE_FORMAT_VERSION),
     slug,
     version: semanticVersion,
+    plugins: z.array(OnlinePluginSource).max(MAX_GESTURE_TEMPLATE_PLUGINS).default([]),
     target: GestureTemplateTarget,
   })
-  .strict();
+  .strict()
+  .superRefine((templatePackage, ctx) => {
+    const sources = new Map<string, OnlinePluginSourceValue>();
+    for (const [index, source] of templatePackage.plugins.entries()) {
+      if (sources.has(source.pluginId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plugins", index, "pluginId"],
+          message: "Template plugin ids must be unique",
+        });
+      }
+      sources.set(source.pluginId, source);
+    }
+    const referencedPluginIds = new Set<string>();
+    for (const [index, intent] of templatePackage.target.intents.entries()) {
+      if (intent.command.type !== "nodePlugin") continue;
+      referencedPluginIds.add(intent.command.pluginId);
+      if (!sources.has(intent.command.pluginId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["target", "intents", index, "command", "pluginId"],
+          message: "Template nodePlugin commands must declare a matching plugin source",
+        });
+      }
+    }
+    for (const [index, source] of templatePackage.plugins.entries()) {
+      if (!referencedPluginIds.has(source.pluginId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plugins", index, "pluginId"],
+          message: "Template plugin sources must be referenced by a nodePlugin command",
+        });
+      }
+    }
+  });
 export type GestureTemplatePackage = z.infer<typeof GestureTemplatePackage>;
 
 export type GestureTemplateProtocolErrorCode =
@@ -317,6 +354,7 @@ export function commandTemplateRisks(command: z.infer<typeof Command>) {
     case "nodePlugin":
       return ["script"] as const;
     case "cmd":
+    case "powershell":
       return ["commandLine"] as const;
     case "openFile":
       return ["fileOrProgram"] as const;

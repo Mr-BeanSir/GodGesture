@@ -4,10 +4,10 @@
  * 对外 v-model 为 Command;切换类型时用 createDefaultCommand 生成默认值。
  * 被「手势」区(手势意图)与「触发角 & 摩擦边」区共用。
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, Plus } from "@element-plus/icons-vue";
-import type { Command } from "@godgesture/shared";
+import { QuestionFilled } from "@element-plus/icons-vue";
+import { parseSendTextDsl, type Command } from "@godgesture/shared";
 import {
   COMMAND_TYPES,
   WINDOW_OPERATIONS,
@@ -17,7 +17,6 @@ import {
 } from "../utils/commands";
 import HotkeyInput from "./HotkeyInput.vue";
 import NodePluginPicker from "./NodePluginPicker.vue";
-import type { HotkeyChord } from "./hotkey-recorder";
 import { usePluginsStore } from "../stores/plugins";
 import { newId } from "../utils/id";
 
@@ -42,7 +41,6 @@ const type = computed<CommandType>({
       emit("update:modelValue", {
         type: "nodePlugin",
         pluginId: plugin?.id ?? newId(),
-        actionId: plugin?.actions[0]?.id ?? "default",
       });
       return;
     }
@@ -58,72 +56,18 @@ const asOpenFile = computed(() => props.modelValue as CommandOfType<"openFile">)
 const asSendText = computed(() => props.modelValue as CommandOfType<"sendText">);
 const asGotoUrl = computed(() => props.modelValue as CommandOfType<"gotoUrl">);
 const asCmd = computed(() => props.modelValue as CommandOfType<"cmd">);
+const asPowerShell = computed(() => props.modelValue as CommandOfType<"powershell">);
 const asVolume = computed(() => props.modelValue as CommandOfType<"audioVolume">);
 
-type SendTextCommand = CommandOfType<"sendText">;
-type SendTextStep = NonNullable<SendTextCommand["steps"]>[number];
-
-/** Keep old SendKeys strings readable until the user edits the operation list. */
-const sendTextSteps = computed<SendTextStep[]>(() => {
-  if (Array.isArray(asSendText.value.steps)) return asSendText.value.steps;
-  if (asSendText.value.text !== undefined) {
-    return [{ type: "text", text: asSendText.value.text }];
+const sendTextHelpVisible = ref(false);
+const sendTextError = computed(() => {
+  try {
+    parseSendTextDsl(asSendText.value.text);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
-  return [];
 });
-
-function editableSendTextSteps(): SendTextStep[] {
-  return sendTextSteps.value.map((step) =>
-    step.type === "text"
-      ? { ...step }
-      : { ...step, modifiers: [...step.modifiers] },
-  );
-}
-
-function updateSendTextSteps(steps: SendTextStep[]) {
-  patch({ steps, text: undefined });
-}
-
-function addSendTextStep() {
-  updateSendTextSteps([
-    ...editableSendTextSteps(),
-    { type: "text", text: "" },
-  ]);
-}
-
-function removeSendTextStep(index: number) {
-  const steps = editableSendTextSteps();
-  steps.splice(index, 1);
-  updateSendTextSteps(steps);
-}
-
-function changeSendTextStepType(index: number, value: unknown) {
-  if (value !== "text" && value !== "key") return;
-  const steps = editableSendTextSteps();
-  steps[index] = value === "text"
-    ? { type: "text", text: "" }
-    : { type: "key", modifiers: [], key: "enter" };
-  updateSendTextSteps(steps);
-}
-
-function updateSendTextStepText(index: number, text: string) {
-  const steps = editableSendTextSteps();
-  const step = steps[index];
-  if (!step || step.type !== "text") return;
-  step.text = text;
-  updateSendTextSteps(steps);
-}
-
-function updateSendTextStepKey(index: number, value: HotkeyChord) {
-  const key = value.keys[0];
-  if (!key) return;
-  const steps = editableSendTextSteps();
-  const step = steps[index];
-  if (!step || step.type !== "key") return;
-  step.modifiers = [...value.modifiers];
-  step.key = key;
-  updateSendTextSteps(steps);
-}
 
 const useDefaultBrowser = computed<boolean>({
   get: () => asWebSearch.value.browser === null,
@@ -261,55 +205,35 @@ function updateVolumeDelta(value: unknown) {
     <!-- 按键/文字序列 -->
     <template v-else-if="type === 'sendText'">
       <div class="gg-field">
-        <label class="gg-field-label">{{ t("command.sendText.sequence") }}</label>
-        <div class="cmd-editor__send-text-steps">
-          <p v-if="sendTextSteps.length === 0" class="gg-hint">
-            {{ t("command.sendText.empty") }}
-          </p>
-          <div
-            v-for="(step, index) in sendTextSteps"
-            :key="index"
-            class="cmd-editor__send-text-step"
-          >
-            <span class="cmd-editor__step-index">{{ index + 1 }}</span>
-            <el-select
-              class="cmd-editor__step-type"
-              :model-value="step.type"
-              @update:model-value="changeSendTextStepType(index, $event)"
-            >
-              <el-option :label="t('command.sendText.textType')" value="text" />
-              <el-option :label="t('command.sendText.keyType')" value="key" />
-            </el-select>
-            <el-input
-              v-if="step.type === 'text'"
-              class="cmd-editor__step-value"
-              :model-value="step.text"
-              :placeholder="t('command.sendText.textPlaceholder')"
-              @update:model-value="updateSendTextStepText(index, $event)"
-            />
-            <HotkeyInput
-              v-else
-              class="cmd-editor__step-value"
-              :modifiers="step.modifiers"
-              :keys="[step.key]"
-              @complete="updateSendTextStepKey(index, $event)"
-            />
-            <el-tooltip :content="t('command.sendText.removeStep')">
-              <el-button
-                link
-                type="danger"
-                :icon="Delete"
-                :aria-label="t('command.sendText.removeStep')"
-                @click="removeSendTextStep(index)"
-              />
-            </el-tooltip>
-          </div>
-          <el-button size="small" :icon="Plus" @click="addSendTextStep">
-            {{ t("command.sendText.addStep") }}
+        <div class="cmd-editor__field-head">
+          <label class="gg-field-label">{{ t("command.sendText.sequence") }}</label>
+          <el-button link :icon="QuestionFilled" @click="sendTextHelpVisible = true">
+            {{ t("command.sendText.syntaxHelp") }}
           </el-button>
         </div>
+        <el-input
+          type="textarea"
+          :rows="8"
+          resize="vertical"
+          :model-value="asSendText.text"
+          :placeholder="t('command.sendText.dslPlaceholder')"
+          @update:model-value="patch({ text: $event })"
+        />
+        <p v-if="sendTextError" class="cmd-editor__syntax-error">{{ sendTextError }}</p>
         <p class="gg-hint">{{ t("command.sendText.hint") }}</p>
       </div>
+      <el-dialog v-model="sendTextHelpVisible" :title="t('command.sendText.syntaxTitle')" width="min(680px, 92vw)" append-to-body>
+        <div class="cmd-editor__syntax-guide">
+          <p>{{ t("command.sendText.syntaxIntro") }}</p>
+          <pre>{{ t("command.sendText.syntaxExample") }}</pre>
+          <ul>
+            <li>{{ t("command.sendText.syntaxText") }}</li>
+            <li>{{ t("command.sendText.syntaxKey") }}</li>
+            <li>{{ t("command.sendText.syntaxHotkey") }}</li>
+            <li>{{ t("command.sendText.syntaxSleep") }}</li>
+          </ul>
+        </div>
+      </el-dialog>
     </template>
 
     <!-- 打开网址 -->
@@ -324,7 +248,7 @@ function updateVolumeDelta(value: unknown) {
       </div>
     </template>
 
-    <!-- 命令行 -->
+    <!-- 命令行 (cmd / PowerShell) -->
     <template v-else-if="type === 'cmd'">
       <div class="gg-field">
         <label class="gg-field-label">{{ t("command.cmd.code") }}</label>
@@ -348,6 +272,26 @@ function updateVolumeDelta(value: unknown) {
           @update:model-value="patch({ autoSetWorkingDir: $event })"
         />
         <span>{{ t("command.cmd.autoSetWorkingDir") }}</span>
+      </div>
+    </template>
+
+    <template v-else-if="type === 'powershell'">
+      <div class="gg-field">
+        <label class="gg-field-label">{{ t("command.powershell.code") }}</label>
+        <el-input
+          type="textarea"
+          :autosize="{ minRows: 3 }"
+          :model-value="asPowerShell.code"
+          @update:model-value="patch({ code: $event })"
+        />
+      </div>
+      <div class="gg-switch-row">
+        <el-switch :model-value="asPowerShell.showWindow" @update:model-value="patch({ showWindow: $event })" />
+        <span>{{ t("command.powershell.showWindow") }}</span>
+      </div>
+      <div class="gg-switch-row">
+        <el-switch :model-value="asPowerShell.autoSetWorkingDir" @update:model-value="patch({ autoSetWorkingDir: $event })" />
+        <span>{{ t("command.powershell.autoSetWorkingDir") }}</span>
       </div>
     </template>
 
@@ -392,38 +336,29 @@ function updateVolumeDelta(value: unknown) {
   flex-wrap: wrap;
   gap: 6px;
 }
-.cmd-editor__send-text-steps {
+.cmd-editor__field-head {
   display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 8px;
-}
-.cmd-editor__send-text-step {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 24px minmax(84px, 110px) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
 }
-.cmd-editor__step-index {
-  color: var(--el-text-color-secondary);
+.cmd-editor__syntax-error {
+  margin: 6px 0 0;
+  color: var(--el-color-danger);
+  font-family: var(--el-font-family);
   font-size: 12px;
-  text-align: right;
 }
-.cmd-editor__step-type,
-.cmd-editor__step-value {
-  min-width: 0;
-  width: 100%;
+.cmd-editor__syntax-guide {
+  color: var(--el-text-color-regular);
+  line-height: 1.65;
 }
-@media (max-width: 560px) {
-  .cmd-editor__send-text-step {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-  }
-  .cmd-editor__step-type {
-    grid-column: 2;
-  }
-  .cmd-editor__step-value {
-    grid-column: 2;
-  }
+.cmd-editor__syntax-guide pre {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 </style>

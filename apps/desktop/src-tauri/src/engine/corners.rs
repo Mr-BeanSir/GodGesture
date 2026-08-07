@@ -9,10 +9,8 @@
 //! 与参考实现的**有意出入**(勿"改回去"):
 //!
 //! 1. 屏幕矩形用**闭区间**(`right`/`bottom` = 最后一个可达像素)。参考直接拿 C#
-//!    `Rectangle` 的开区间边界当角点,角点其实落在屏幕外 1px,靠 `TRIGGER_DIST = 2`
-//!    的余量兜住。闭区间更直白,但**触发范围并不完全等价**,右/下侧各宽 1px:
-//!    - 角:参考左上是 3×3、右下是 2×2(不对称);本实现四个角一律 3×3。
-//!      本实现的触发集是参考的超集 —— 只会更早触发,不会漏。
+//!    `Rectangle` 的开区间边界当角点,角点其实落在屏幕外 1px。当前立即动作只在
+//!    闭区间的精确角点触发,角序列另有独立近角区域,不会因为贴近角点就抢占立即动作。
 //!    - 边:参考左/上带宽 17px、右/下带宽 16px;本实现一律 17px。
 //!    - `dist_to_edge` 的右侧复位距离比参考短 1px(无实际影响)。
 //!
@@ -43,10 +41,12 @@ use super::types::Point;
 use std::time::{Duration, Instant};
 
 // --- 触发角常量(参考:HotCornerHitTest 的 TRIGGER_DIST / REST_DIST)---------
-/// 到角点的距离 ≤ 此值即触发(未按 DPI 缩放,与参考一致)
-const CORNER_TRIGGER_DIST: i32 = 2;
+/// 到角点的距离 ≤ 此值即触发(未按 DPI 缩放)。立即动作只允许精确角点。
+const CORNER_TRIGGER_DIST: i32 = 0;
 /// 触发后光标须离开该角点超过此距离才重新武装
 const CORNER_REARM_DIST: i32 = 40;
+/// 角序列的独立判定区域。边缘带在同一距离内排除,为角序列留出空间。
+const CORNER_SEQUENCE_DIST: i32 = EDGE_CORNER_EXCLUDE;
 
 // --- 摩擦边常量(参考:DetectRub 的同名局部常量)-----------------------------
 /// 边带厚度基数,实际厚度 = 此值 × DPI 缩放
@@ -258,7 +258,7 @@ impl CornerEdgeDetector {
             .or(edge.map(CornerEdgeHit::Edge))
     }
 
-    /// 返回光标当前所在的非角落边缘带,供带后续序列的边缘动作直接进入等待状态。
+    /// 返回光标当前所在的非角落边缘带。
     pub fn edge_at<F>(&mut self, pos: Point, now: Instant, screen_lookup: F) -> Option<ScreenEdge>
     where
         F: FnOnce() -> Option<ScreenInfo>,
@@ -270,6 +270,34 @@ impl CornerEdgeDetector {
         };
         let thick = (EDGE_THICK_BASE * screen.dpi_scale) as i32;
         active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
+    }
+
+    /// 返回可用于边角后续序列的区域。这个查询只读几何位置,不推进立即角或摩擦边状态。
+    /// 精确角点保留给空序列立即动作;其余近角区域交给按键/滚轮入口匹配。
+    pub fn sequence_at<F>(
+        &mut self,
+        pos: Point,
+        now: Instant,
+        screen_lookup: F,
+    ) -> Option<CornerEdgeHit>
+    where
+        F: FnOnce() -> Option<ScreenInfo>,
+    {
+        let screen = self.screen_for(pos, now, screen_lookup)?;
+        let local = Point {
+            x: pos.x - screen.bounds.left,
+            y: pos.y - screen.bounds.top,
+        };
+        if let Some(corner) = sequence_corner(local, screen.bounds) {
+            return Some(CornerEdgeHit::Corner(corner));
+        }
+        let thick = (EDGE_THICK_BASE * screen.dpi_scale) as i32;
+        active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
+            .map(CornerEdgeHit::Edge)
+    }
+
+    pub fn reset_rub(&mut self) {
+        self.rub = None;
     }
 
     fn screen_for<F>(&mut self, pos: Point, now: Instant, lookup: F) -> Option<ScreenInfo>
@@ -286,7 +314,7 @@ impl CornerEdgeDetector {
         Some(info)
     }
 
-    /// 触发角:光标进入角点 `CORNER_TRIGGER_DIST` 内触发,离开 `CORNER_REARM_DIST` 外重新武装。
+    /// 触发角:光标到达精确角点时触发,离开 `CORNER_REARM_DIST` 外重新武装。
     ///
     /// 遍历四个角、且不提前退出 —— 与参考一致:同一次移动里可能先在某个角完成重新武装,
     /// 再在后一个角完成触发(例如从左下角直奔右下角)。触发后 `corner_armed` 置假,
@@ -402,6 +430,21 @@ fn active_edge(local: Point, w: i32, h: i32, thick: i32) -> Option<ScreenEdge> {
     None
 }
 
+fn sequence_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
+    for corner in ScreenCorner::ALL {
+        let point = corner.point(bounds);
+        let dx = (local.x - point.x).abs();
+        let dy = (local.y - point.y).abs();
+        if dx <= CORNER_SEQUENCE_DIST
+            && dy <= CORNER_SEQUENCE_DIST
+            && int_distance(local, point) > CORNER_TRIGGER_DIST
+        {
+            return Some(corner);
+        }
+    }
+    None
+}
+
 /// 沿边轴向的位置(左右边取 y,上下边取 x)
 fn pos_on_edge(edge: ScreenEdge, local: Point) -> i32 {
     match edge {
@@ -506,7 +549,9 @@ mod tests {
     #[test]
     fn hot_corner_ignores_near_miss() {
         let mut s = Sim::new();
-        // 距角点 3px(>TRIGGER_DIST)不触发
+        // 立即动作只允许精确角点,离开 1px 也不触发。
+        assert_eq!(s.mv(1, 0), None);
+        assert_eq!(s.mv(0, 1), None);
         assert_eq!(s.mv(3, 0), None);
         assert_eq!(s.mv(0, 3), None);
     }
@@ -788,14 +833,37 @@ mod tests {
         );
         assert_eq!(active_edge(p(500, H - 1 - 17), W, H, 16), None);
 
-        // 角:到角点距离 2 触发、3 不触发(右下与左上一致的 3×3)
+        // 角:只有精确角点触发,近角位置保留给后续序列。
+        let mut s = Sim::new();
+        assert_eq!(s.mv(W - 2, H - 1), None);
         let mut s = Sim::new();
         assert_eq!(
-            s.mv(W - 3, H - 1),
+            s.mv(W - 1, H - 1),
             Some(CornerEdgeHit::Corner(ScreenCorner::RightBottom))
         );
-        let mut s = Sim::new();
-        assert_eq!(s.mv(W - 4, H - 1), None);
+    }
+
+    #[test]
+    fn boundary_sequence_zone_separates_corners_from_edges() {
+        let mut det = CornerEdgeDetector::new();
+        let t = Instant::now();
+        assert_eq!(
+            det.sequence_at(p(0, 0), t, || Some(screen())),
+            None,
+            "exact corner belongs to the immediate action"
+        );
+        assert_eq!(
+            det.sequence_at(p(1, 1), t, || Some(screen())),
+            Some(CornerEdgeHit::Corner(ScreenCorner::LeftTop))
+        );
+        assert_eq!(
+            det.sequence_at(p(0, 100), t, || Some(screen())),
+            Some(CornerEdgeHit::Corner(ScreenCorner::LeftTop))
+        );
+        assert_eq!(
+            det.sequence_at(p(0, 101), t, || Some(screen())),
+            Some(CornerEdgeHit::Edge(ScreenEdge::Left))
+        );
     }
 
     /// 下边缘 + 非零 top 偏移的显示器:参考实现在这里是坏的(见文件头出入说明 2),

@@ -39,7 +39,14 @@ vi.mock("../../templates/source", () => {
 
 import { useTemplatesStore } from "../templates";
 
-function fixture() {
+const pluginSource = {
+  pluginId: "40000000-0000-4000-8000-000000000001",
+  repositoryUrl: "https://github.com/owner/plugin-repository",
+  ref: "v1.0.0",
+  subdirectory: "plugin",
+};
+
+function fixture(withPlugin = false) {
   const entry = {
     slug: "global-basics",
     version: "1.0.0",
@@ -60,6 +67,7 @@ function fixture() {
     formatVersion: 1,
     slug: entry.slug,
     version: entry.version,
+    ...(withPlugin ? { plugins: [pluginSource] } : {}),
     target: {
       scope: "global",
       intents: [
@@ -70,7 +78,9 @@ function fixture() {
             strokes: ["up"],
             modifier: "none",
           },
-          command: { type: "doNothing" },
+          command: withPlugin
+            ? { type: "nodePlugin", pluginId: pluginSource.pluginId }
+            : { type: "doNothing" },
         },
       ],
     },
@@ -80,9 +90,19 @@ function fixture() {
 
 function makeConfig() {
   return {
-    backend: { isTauri: false },
+    backend: {
+      isTauri: false,
+      nodePluginInstall: vi.fn(
+        async (_source: unknown): Promise<void> => undefined,
+      ),
+    },
     doc: reactive(ConfigDocument.parse({})),
-    applyTemplateDocument: vi.fn(async () => true),
+    applyTemplateDocument: vi.fn(
+      async (
+        _document: ReturnType<typeof ConfigDocument.parse>,
+        _expectedDocument: ReturnType<typeof ConfigDocument.parse>,
+      ) => true,
+    ),
   };
 }
 
@@ -148,4 +168,78 @@ describe("templates store", () => {
     expect(store.adoptionError).toBe("template_config_changed");
     expect(store.adopted).toBe(false);
   });
+
+  it("installs template plugins before committing the planned configuration", async () => {
+    const values = fixture(true);
+    slots.source = makeSource(values.catalog, values.templatePackage);
+    const installation = deferred<void>();
+    slots.config!.backend.nodePluginInstall.mockImplementationOnce(
+      () => installation.promise,
+    );
+    const store = useTemplatesStore();
+    await store.loadCatalog();
+    await store.openDetails(store.entries[0]!);
+
+    const adoption = store.adopt();
+    expect(store.adopting).toBe(true);
+    expect(slots.config!.backend.nodePluginInstall).toHaveBeenCalledWith(pluginSource);
+    expect(slots.config!.applyTemplateDocument).not.toHaveBeenCalled();
+
+    installation.resolve();
+    await expect(adoption).resolves.toBe(true);
+    expect(slots.config!.applyTemplateDocument).toHaveBeenCalledTimes(1);
+    expect(store.adopted).toBe(true);
+    expect(store.adopting).toBe(false);
+  });
+
+  it("does not commit a template when a plugin installation fails", async () => {
+    const values = fixture(true);
+    slots.source = makeSource(values.catalog, values.templatePackage);
+    slots.config!.backend.nodePluginInstall.mockRejectedValueOnce(
+      Object.assign(new Error("plugin download failed"), {
+        code: "plugin_download_failed",
+      }),
+    );
+    const store = useTemplatesStore();
+    await store.loadCatalog();
+    await store.openDetails(store.entries[0]!);
+
+    await expect(store.adopt()).resolves.toBe(false);
+    expect(slots.config!.applyTemplateDocument).not.toHaveBeenCalled();
+    expect(store.adoptionError).toBe("template_plugin_install_failed");
+    expect(store.adopted).toBe(false);
+    expect(store.adopting).toBe(false);
+  });
+
+  it("commits the plan that was confirmed before plugin installation began", async () => {
+    const values = fixture(true);
+    slots.source = makeSource(values.catalog, values.templatePackage);
+    const installation = deferred<void>();
+    slots.config!.backend.nodePluginInstall.mockImplementationOnce(
+      () => installation.promise,
+    );
+    const store = useTemplatesStore();
+    await store.loadCatalog();
+    await store.openDetails(store.entries[0]!);
+    const confirmedIntentId = store.adoptionPlan!.document.global.intents[0]!.id;
+
+    const adoption = store.adopt();
+    store.setConflictPolicy("replaceExisting");
+    expect(store.adoptionPlan!.document.global.intents[0]!.id).not.toBe(
+      confirmedIntentId,
+    );
+
+    installation.resolve();
+    await expect(adoption).resolves.toBe(true);
+    const [appliedDocument] = slots.config!.applyTemplateDocument.mock.calls[0]!;
+    expect(appliedDocument.global.intents[0]!.id).toBe(confirmedIntentId);
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}

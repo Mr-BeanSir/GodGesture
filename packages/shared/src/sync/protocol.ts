@@ -3,6 +3,8 @@
  * REST 端点的请求/响应体;服务端与桌面端共用。
  */
 import { z } from "zod";
+import { AppEntry, AppGroup, BoundaryIntent, GlobalApp, HotCornersConfig, RubEdgesConfig } from "../config/gestures.js";
+import { SyncedPreferences } from "../config/preferences.js";
 import { ConfigDocument } from "../config/document.js";
 
 /** GET /sync/config 响应 */
@@ -79,6 +81,36 @@ export const ListSnapshotsResponse = z.object({
   totalPages: z.number().int().positive(),
 });
 export type ListSnapshotsResponse = z.infer<typeof ListSnapshotsResponse>;
+
+export const ConfigAppSummary = AppEntry.omit({ intents: true }).extend({
+  intentCount: z.number().int().nonnegative(),
+});
+export type ConfigAppSummary = z.infer<typeof ConfigAppSummary>;
+
+export const ConfigIndexResponse = z.object({
+  version: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime().nullable(),
+  groups: z.array(AppGroup),
+  apps: z.array(ConfigAppSummary),
+  global: GlobalApp.omit({ intents: true }).extend({
+    intentCount: z.number().int().nonnegative(),
+  }),
+  preferences: SyncedPreferences,
+  hotCorners: HotCornersConfig.omit({ commands: true }),
+  rubEdges: RubEdgesConfig.omit({ commands: true }),
+  boundaryIntentCount: z.number().int().nonnegative(),
+});
+export type ConfigIndexResponse = z.infer<typeof ConfigIndexResponse>;
+
+export const ConfigScopeResponse = z.object({
+  version: z.number().int().nonnegative(),
+  scope: z.union([
+    z.object({ kind: z.literal("global"), global: GlobalApp }),
+    z.object({ kind: z.literal("app"), app: AppEntry }),
+  ]),
+  boundaryIntents: z.array(BoundaryIntent),
+});
+export type ConfigScopeResponse = z.infer<typeof ConfigScopeResponse>;
 
 /** POST /sync/snapshots/:version/restore —— 回滚 = 以该快照为内容推进一个新版本 */
 export const RestoreSnapshotRequest = z.object({

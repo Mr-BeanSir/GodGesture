@@ -10,10 +10,25 @@ describe("command helpers", () => {
     );
   });
 
-  it("creates an empty ordered text and key sequence", () => {
+  it("creates an empty text DSL sequence", () => {
     expect(createDefaultCommand("sendText")).toEqual({
       type: "sendText",
-      steps: [],
+      text: 'text ""',
+    });
+  });
+
+  it("creates distinct cmd and PowerShell commands", () => {
+    expect(createDefaultCommand("cmd")).toEqual({
+      type: "cmd",
+      code: "",
+      showWindow: true,
+      autoSetWorkingDir: true,
+    });
+    expect(createDefaultCommand("powershell")).toEqual({
+      type: "powershell",
+      code: "",
+      showWindow: true,
+      autoSetWorkingDir: true,
     });
   });
 });

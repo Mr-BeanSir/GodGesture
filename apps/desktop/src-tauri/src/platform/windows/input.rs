@@ -4,7 +4,6 @@
 
 use super::hook::EXTRA_INFO_TAG;
 use super::keys;
-use crate::engine::config::SendTextStep;
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -365,7 +364,7 @@ pub fn tap_with_modifiers(mods: &[VIRTUAL_KEY], key: VIRTUAL_KEY) {
     }
 }
 
-/// 输入 SendKeys 序列。必须先完整解析成功才执行，避免在尾部语法错误时已经输入前缀。
+/// 输入 v8 按键/文字 DSL。必须先完整解析成功才执行，避免在尾部语法错误时已经输入前缀。
 pub fn type_text_with_sleeps(text: &str) {
     if let Err(error) = try_type_text_with_sleeps(text) {
         log::error!("SendText 命令执行失败，已停止剩余序列: {error}");
@@ -373,7 +372,7 @@ pub fn type_text_with_sleeps(text: &str) {
 }
 
 pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
-    let actions = parse_send_keys(text)?;
+    let actions = parse_sequence_dsl(text)?;
     for action in actions {
         let result = match action {
             SendTextAction::Text(text) => type_text(&text),
@@ -384,26 +383,6 @@ pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
             }
         };
         result?;
-    }
-    Ok(())
-}
-
-/// Execute the structured text/key sequence. The sequence is parsed and
-/// validated by the shared config schema before reaching this platform layer.
-pub fn type_text_steps(steps: &[SendTextStep]) {
-    if let Err(error) = try_type_text_steps(steps) {
-        log::error!("结构化文字/按键序列执行失败，已停止剩余序列: {error}");
-    }
-}
-
-pub fn try_type_text_steps(steps: &[SendTextStep]) -> Result<(), String> {
-    for step in steps {
-        match step {
-            SendTextStep::Text { text } => type_text(text)?,
-            SendTextStep::Key { modifiers, key } => {
-                synthesize_key_combo(modifiers, std::slice::from_ref(key))?
-            }
-        }
     }
     Ok(())
 }
@@ -458,167 +437,86 @@ enum SendTextAction {
     Sleep(u64),
 }
 
-/// 单个 `{sleep N}` 的最大生效时长
+/// 单个 sleep 语句的最大生效时长
 const MAX_SLEEP_MS: u64 = 10_000;
 
-enum BracedAtom {
-    Text(char),
-    Key(String),
-    Sleep(u64),
-}
-
-struct SendKeysParser<'a> {
-    source: &'a str,
-    position: usize,
-    actions: Vec<SendTextAction>,
-}
-
-fn parse_send_keys(source: &str) -> Result<Vec<SendTextAction>, String> {
-    SendKeysParser {
-        source,
-        position: 0,
-        actions: Vec::new(),
-    }
-    .parse()
-}
-
-impl SendKeysParser<'_> {
-    fn parse(mut self) -> Result<Vec<SendTextAction>, String> {
-        while let Some(ch) = self.peek() {
-            let modifiers = self.take_modifiers();
-            if !modifiers.is_empty() {
-                self.parse_modified_atom(modifiers)?;
-                continue;
+fn parse_sequence_dsl(source: &str) -> Result<Vec<SendTextAction>, String> {
+    let mut actions = Vec::new();
+    for (line_index, raw_line) in source.lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (keyword, argument) = line.split_once(' ').unwrap_or((line, ""));
+        let argument = argument.trim();
+        match keyword.to_ascii_lowercase().as_str() {
+            "text" => {
+                let text: String = serde_json::from_str(argument)
+                    .map_err(|_| format!("Line {line_number}: text must be a JSON string"))?;
+                actions.push(SendTextAction::Text(text));
             }
-            match ch {
-                '{' => match self.take_braced_atom()? {
-                    BracedAtom::Text(ch) => self.push_text(ch),
-                    BracedAtom::Key(key) => self.actions.push(SendTextAction::Key {
-                        modifiers: Vec::new(),
-                        key,
-                    }),
-                    BracedAtom::Sleep(ms) => self.actions.push(SendTextAction::Sleep(ms)),
-                },
-                '}' => return Err(self.error("未转义的右花括号；请写成 {}}")),
-                _ => {
-                    self.take();
-                    self.push_text(ch);
+            "key" => actions.push(SendTextAction::Key {
+                modifiers: Vec::new(),
+                key: dsl_key(argument).ok_or_else(|| format!("Line {line_number}: unknown key"))?,
+            }),
+            "hotkey" => {
+                let parts = argument
+                    .split('+')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>();
+                if parts.len() < 2 {
+                    return Err(format!(
+                        "Line {line_number}: hotkey requires modifiers and a key"
+                    ));
                 }
+                let key = dsl_key(parts[parts.len() - 1])
+                    .ok_or_else(|| format!("Line {line_number}: unknown key"))?;
+                let modifiers = parts[..parts.len() - 1]
+                    .iter()
+                    .map(|part| dsl_modifier(part))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| format!("Line {line_number}: unknown modifier"))?;
+                actions.push(SendTextAction::Key { modifiers, key });
             }
+            "sleep" => {
+                let milliseconds = argument
+                    .parse::<u64>()
+                    .map_err(|_| format!("Line {line_number}: sleep requires milliseconds"))?;
+                if milliseconds > MAX_SLEEP_MS {
+                    return Err(format!(
+                        "Line {line_number}: sleep is limited to {MAX_SLEEP_MS} ms"
+                    ));
+                }
+                actions.push(SendTextAction::Sleep(milliseconds));
+            }
+            _ => return Err(format!("Line {line_number}: unknown statement")),
         }
-        Ok(self.actions)
     }
+    Ok(actions)
+}
 
-    fn parse_modified_atom(&mut self, modifiers: Vec<String>) -> Result<(), String> {
-        let Some(ch) = self.peek() else {
-            return Err(self.error("修饰符后缺少按键"));
-        };
-        let key = if ch == '{' {
-            match self.take_braced_atom()? {
-                BracedAtom::Key(key) => key,
-                BracedAtom::Sleep(_) => return Err(self.error("sleep 不能带键盘修饰符")),
-                BracedAtom::Text(_) => return Err(self.error("转义字符不能带键盘修饰符")),
-            }
-        } else {
-            if ch == '}' {
-                return Err(self.error("未转义的右花括号；请写成 {}}"));
-            }
-            self.take();
+fn dsl_modifier(value: &str) -> Option<String> {
+    match value.to_ascii_lowercase().as_str() {
+        "ctrl" => Some("ctrl".into()),
+        "alt" => Some("alt".into()),
+        "shift" => Some("shift".into()),
+        "meta" | "win" | "cmd" => Some("win".into()),
+        _ => None,
+    }
+}
+
+fn dsl_key(value: &str) -> Option<String> {
+    named_key(value).or_else(|| {
+        let mut chars = value.chars();
+        let ch = chars.next()?;
+        if chars.next().is_none() {
             modified_char_key_name(ch)
-                .ok_or_else(|| self.error(&format!("修饰符不支持作用于字符 {ch:?}")))?
-        };
-        self.actions.push(SendTextAction::Key { modifiers, key });
-        Ok(())
-    }
-
-    fn take_modifiers(&mut self) -> Vec<String> {
-        let mut modifiers = Vec::new();
-        while let Some(ch) = self.peek() {
-            let modifier = match ch {
-                '^' => "ctrl",
-                '%' => "alt",
-                '+' => "shift",
-                _ => break,
-            };
-            self.take();
-            if !modifiers.iter().any(|existing| existing == modifier) {
-                modifiers.push(modifier.to_string());
-            }
+        } else {
+            None
         }
-        modifiers
-    }
-
-    fn take_braced_atom(&mut self) -> Result<BracedAtom, String> {
-        let rest = &self.source[self.position..];
-        for (syntax, literal) in [
-            ("{{}", '{'),
-            ("{}}", '}'),
-            ("{^}", '^'),
-            ("{%}", '%'),
-            ("{+}", '+'),
-        ] {
-            if rest.starts_with(syntax) {
-                self.position += syntax.len();
-                return Ok(BracedAtom::Text(literal));
-            }
-        }
-
-        let token_start = self.position;
-        self.take(); // '{'
-        let Some(end_offset) = self.source[self.position..].find('}') else {
-            return Err(self.error_at(token_start, "未闭合的命名键或 sleep token"));
-        };
-        let end = self.position + end_offset;
-        let token = &self.source[self.position..end];
-        self.position = end + 1;
-
-        if token
-            .get(.."sleep".len())
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("sleep"))
-        {
-            let digits = token["sleep".len()..].trim_start_matches(' ');
-            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(
-                    self.error_at(token_start, "sleep 必须写成 {sleep毫秒} 或 {sleep 毫秒}")
-                );
-            }
-            let ms = digits.bytes().fold(0u64, |value, byte| {
-                value
-                    .saturating_mul(10)
-                    .saturating_add((byte - b'0') as u64)
-            });
-            return Ok(BracedAtom::Sleep(ms.min(MAX_SLEEP_MS)));
-        }
-
-        named_key(token)
-            .map(BracedAtom::Key)
-            .ok_or_else(|| self.error_at(token_start, &format!("未知命名键 {{{token}}}")))
-    }
-
-    fn push_text(&mut self, ch: char) {
-        match self.actions.last_mut() {
-            Some(SendTextAction::Text(text)) => text.push(ch),
-            _ => self.actions.push(SendTextAction::Text(ch.to_string())),
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.source[self.position..].chars().next()
-    }
-
-    fn take(&mut self) -> Option<char> {
-        let ch = self.peek()?;
-        self.position += ch.len_utf8();
-        Some(ch)
-    }
-
-    fn error(&self, message: &str) -> String {
-        self.error_at(self.position, message)
-    }
-
-    fn error_at(&self, position: usize, message: &str) -> String {
-        format!("SendKeys 字节位置 {position}: {message}")
-    }
+    })
 }
 
 fn named_key(token: &str) -> Option<String> {
@@ -765,9 +663,16 @@ mod tests {
     }
 
     #[test]
-    fn send_keys_parser_builds_the_complete_ordered_sequence() {
+    fn dsl_parser_builds_the_complete_ordered_sequence() {
         assert_eq!(
-            parse_send_keys("before{sleep1}^c%{F4}after").unwrap(),
+            parse_sequence_dsl(
+                r#"text "before"
+sleep 1
+hotkey ctrl+c
+hotkey alt+f4
+text "after""#,
+            )
+            .unwrap(),
             [
                 SendTextAction::Text("before".to_string()),
                 SendTextAction::Sleep(1),
@@ -779,22 +684,20 @@ mod tests {
     }
 
     #[test]
-    fn send_keys_parser_keeps_plain_unicode_as_text() {
+    fn dsl_parser_keeps_escaped_unicode_as_text() {
         assert_eq!(
-            parse_send_keys("Hello 世界\r\n").unwrap(),
+            parse_sequence_dsl(r#"text "Hello 世界\r\n""#).unwrap(),
             [SendTextAction::Text("Hello 世界\r\n".to_string())]
         );
     }
 
     #[test]
-    fn send_keys_parser_supports_all_named_keys_case_insensitively() {
-        let source = concat!(
-            "{ENTER}{tab}{Esc}{BACKSPACE}{delete}",
-            "{LEFT}{UP}{RIGHT}{DOWN}",
-            "{F1}{f12}{F24}"
-        );
+    fn dsl_parser_supports_named_keys_case_insensitively() {
         assert_eq!(
-            parse_send_keys(source).unwrap(),
+            parse_sequence_dsl(
+                "key ENTER\nkey tab\nkey Esc\nkey BACKSPACE\nkey delete\nkey LEFT\nkey UP\nkey RIGHT\nkey DOWN\nkey F1\nkey f12\nkey F24",
+            )
+            .unwrap(),
             [
                 send_key(&[], "enter"),
                 send_key(&[], "tab"),
@@ -813,9 +716,12 @@ mod tests {
     }
 
     #[test]
-    fn send_keys_modifiers_apply_only_to_the_next_key() {
+    fn dsl_parser_supports_modifier_combinations() {
         assert_eq!(
-            parse_send_keys("^c%{F4}+{TAB}^+A").unwrap(),
+            parse_sequence_dsl(
+                "hotkey ctrl+c\nhotkey alt+f4\nhotkey shift+tab\nhotkey ctrl+shift+A"
+            )
+            .unwrap(),
             [
                 send_key(&["ctrl"], "c"),
                 send_key(&["alt"], "f4"),
@@ -826,49 +732,39 @@ mod tests {
     }
 
     #[test]
-    fn send_keys_parser_supports_reserved_character_escapes() {
+    fn dsl_parser_supports_json_text_escapes() {
         assert_eq!(
-            parse_send_keys("{{}{}}{^}{%}{+}").unwrap(),
+            parse_sequence_dsl(r#"text "{}^%+""#).unwrap(),
             [SendTextAction::Text("{}^%+".to_string())]
         );
     }
 
     #[test]
-    fn sleep_is_case_insensitive_allows_zero_spaces_and_is_bounded() {
+    fn dsl_sleep_is_case_insensitive_and_bounded() {
         assert_eq!(
-            parse_send_keys(
-                "{sleep0}{SLEEP10}{sLeEp 20}{sleep    999999999999999999999999999999999}"
-            )
-            .unwrap(),
+            parse_sequence_dsl("sleep 0\nSLEEP 10\nsLeEp 20").unwrap(),
             [
                 SendTextAction::Sleep(0),
                 SendTextAction::Sleep(10),
                 SendTextAction::Sleep(20),
-                SendTextAction::Sleep(MAX_SLEEP_MS),
             ]
         );
     }
 
     #[test]
-    fn syntax_errors_reject_the_entire_sequence_before_execution() {
+    fn dsl_syntax_errors_reject_the_entire_sequence_before_execution() {
         for source in [
-            "prefix{UNKNOWN}",
-            "prefix{ENTER",
-            "prefix}",
-            "prefix^",
-            "prefix{sleep}",
-            "prefix{sleep nope}",
-            "prefix{F25}",
-            "prefix^{sleep 1}",
+            "text nope",
+            "key UNKNOWN",
+            "hotkey ctrl",
+            "sleep 10001",
+            "unknown value",
         ] {
-            assert!(parse_send_keys(source).is_err(), "should reject {source:?}");
+            assert!(
+                parse_sequence_dsl(source).is_err(),
+                "should reject {source:?}"
+            );
         }
-    }
-
-    #[test]
-    fn modified_non_ascii_character_is_rejected() {
-        let error = parse_send_keys("^中").unwrap_err();
-        assert!(error.contains("不支持作用于字符"));
     }
 
     #[test]

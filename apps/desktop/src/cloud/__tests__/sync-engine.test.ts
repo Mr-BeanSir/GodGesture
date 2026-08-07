@@ -219,7 +219,7 @@ describe("cloud sync initial reconciliation", () => {
 });
 
 describe("cloud sync local changes and conflicts", () => {
-  it("debounces a local edit for three quiet seconds", async () => {
+  it("debounces a local edit for thirty quiet seconds", async () => {
     vi.useFakeTimers();
     const baseline = document("auto");
     const { engine, api, config } = harness({
@@ -232,7 +232,7 @@ describe("cloud sync local changes and conflicts", () => {
 
     config.setLocal(document("en"));
     engine.markLocalChange();
-    await vi.advanceTimersByTimeAsync(2_999);
+    await vi.advanceTimersByTimeAsync(29_999);
     expect(api.pushConfig).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
 
@@ -339,7 +339,7 @@ describe("cloud sync local changes and conflicts", () => {
     await syncing;
 
     expect(engine.currentStatus.phase).toBe("pending");
-    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(api.pushConfig).toHaveBeenLastCalledWith({
       baseVersion: 4,
       document: secondEdit,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import {
   NODE_VERSION,
   PNPM_SHA512,
   PNPM_VERSION,
+  copyBundledNpm,
   extractArchive,
   targetNames,
 } from "../fetch-node-toolchain.mjs";
@@ -30,12 +31,49 @@ test("ships the fixed TypeScript editor/runtime declarations with every target",
   assert.match(source, /realpath\(source\)/);
 });
 
+test("includes the generated Node toolchain in the desktop bundle", async () => {
+  const tauriConfig = JSON.parse(
+    await readFile(
+      new URL("../../apps/desktop/src-tauri/tauri.conf.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.ok(tauriConfig.bundle.resources.includes("resources/node-toolchain"));
+});
+
 test("maps supported release targets to exact Node archives", () => {
   assert.deepEqual(targetNames("windows-x64"), ["windows-x64"]);
   assert.deepEqual(targetNames("universal-apple-darwin"), ["macos-x64", "macos-arm64"]);
   for (const artifact of Object.values(NODE_ARTIFACTS)) {
     assert.match(artifact.sha256, /^[0-9a-f]{64}$/);
     assert.match(artifact.archive, new RegExp(`^node-v${NODE_VERSION}-`));
+    assert.match(artifact.npmCli, /npm\/bin\/npm-cli\.js$/);
+  }
+});
+
+test("copies the npm CLI package required by online plugin installation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "godgesture-toolchain-test-"));
+  const extracted = join(root, "node-distribution");
+  const output = join(root, "output");
+  const npmCli = join(extracted, "node_modules", "npm", "bin", "npm-cli.js");
+  try {
+    await mkdir(join(extracted, "node_modules", "npm", "bin"), { recursive: true });
+    await mkdir(join(extracted, "node_modules", "npm", "lib"), { recursive: true });
+    await writeFile(npmCli, "require('../lib/cli.js')\n");
+    await writeFile(join(extracted, "node_modules", "npm", "lib", "cli.js"), "module.exports = {}\n");
+
+    await copyBundledNpm(extracted, "node_modules/npm/bin/npm-cli.js", output);
+
+    assert.equal(
+      await readFile(join(output, "npm", "bin", "npm-cli.js"), "utf8"),
+      "require('../lib/cli.js')\n",
+    );
+    assert.equal(
+      await readFile(join(output, "npm", "lib", "cli.js"), "utf8"),
+      "module.exports = {}\n",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -919,7 +919,6 @@ struct PersistedLevel {
 fn normalize_target(target: &str) -> String {
     let target = match target {
         "capture" | "hotkey" => "gesture.capture",
-        "legacy-import" => "config",
         "window" => "app.lifecycle",
         value if value.contains("node_host") => "node.supervisor",
         value if value.contains("node_service") || value.contains("node_packages") => {

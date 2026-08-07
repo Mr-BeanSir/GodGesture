@@ -48,6 +48,18 @@ export function findBoundaryConflict(
 ): { kind: "exact" | "prefix"; intent: BoundaryIntent } | null {
   for (const intent of intents) {
     if (intent.id === excludeId || !sameOrigin(intent.origin, origin)) continue;
+
+    // An immediate edge action is the fallback for the same origin. It can
+    // coexist with a longer sequence because the runtime waits briefly for a
+    // token before falling back to the immediate action. Two immediate
+    // actions are still an exact conflict.
+    if (intent.sequence.length === 0 || sequence.length === 0) {
+      if (intent.sequence.length === 0 && sequence.length === 0) {
+        return { kind: "exact", intent };
+      }
+      continue;
+    }
+
     const existingPrefix = isPrefix(intent.sequence, sequence);
     const nextPrefix = isPrefix(sequence, intent.sequence);
     if (existingPrefix && nextPrefix) return { kind: "exact", intent };

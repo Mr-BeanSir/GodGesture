@@ -55,6 +55,8 @@ physical-device observations below.
 - [ ] A preloaded Node plugin handles the first gesture without starting another process, loading its entry module, installing dependencies, or accessing the package registry on the gesture path.
 - [ ] A plugin imports `node:fs/promises`, uses global `fetch`, imports `@godgesture/sdk`, and exercises input, window, clipboard, and status calls through the async SDK.
 - [ ] A plugin with multiple source files and an npm dependency runs from its exact lockfile. After the package store is warm, rebuilding the same plugin revision succeeds with network access disabled.
+- [ ] From the online plugin directory, confirm installation of a GitHub plugin with a production dependency. The app validates the repository/ref/subdirectory and manifest ID, installs it into the local workspace, and the plugin runs without a dependency operation on the gesture path.
+- [ ] Cancel an online-plugin or template-plugin confirmation, then force download, manifest-validation, and dependency-install failures. No project is created or replaced on cancellation/failure, and a template failure does not write its gesture configuration.
 - [ ] Forcing a plugin Worker to exit or time out produces a bounded diagnostic; the next invocation reloads the Worker, reruns `init`, and succeeds without interrupting the native mouse hook.
 - [ ] Forcing the Node supervisor to exit does not block or crash the native mouse hook. The service restarts it, reloads enabled plugins, and later gestures execute in order.
 

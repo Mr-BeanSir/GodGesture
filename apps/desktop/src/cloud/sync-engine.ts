@@ -8,7 +8,7 @@ import type { Backend, SyncMetadata } from "../api/backend";
 import type { CloudApi } from "./api";
 import { CloudError, normalizeCloudError } from "./errors";
 
-const DEFAULT_PUSH_DEBOUNCE_MS = 3_000;
+const DEFAULT_PUSH_DEBOUNCE_MS = 30_000;
 const DEFAULT_PULL_INTERVAL_MS = 30 * 60 * 1_000;
 const DEFAULT_RETRY_DELAYS_MS = [
   5_000,

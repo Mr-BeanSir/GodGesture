@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, Download, Setting } from "@element-plus/icons-vue";
+import {
+  CaretBottom,
+  CaretRight,
+  Delete,
+  Download,
+  Setting,
+} from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useLogsStore } from "../stores/logs";
 import type { LogLevel } from "../api/backend";
@@ -123,14 +129,21 @@ onMounted(() => void logs.initialize());
           :key="entry.key"
           class="log-line"
           :class="[`is-${entry.level}`, { 'has-trace': entry.hasTrace, 'is-expanded': entry.expanded }]"
-          :tabindex="entry.hasTrace ? 0 : undefined"
-          :role="entry.hasTrace ? 'button' : undefined"
-          :aria-expanded="entry.hasTrace ? entry.expanded : undefined"
-          @click="entry.hasTrace && toggleTrace(entry.key)"
-          @keydown.enter.prevent="entry.hasTrace && toggleTrace(entry.key)"
-          @keydown.space.prevent="entry.hasTrace && toggleTrace(entry.key)"
         >
-          <span class="log-line__caret" aria-hidden="true">{{ entry.hasTrace ? (entry.expanded ? "▾" : "▸") : "" }}</span>
+          <button
+            v-if="entry.hasTrace"
+            type="button"
+            class="log-line__toggle"
+            :aria-label="t(entry.expanded ? 'logs.collapseTrace' : 'logs.expandTrace')"
+            :aria-expanded="entry.expanded"
+            @click.stop="toggleTrace(entry.key)"
+          >
+            <el-icon>
+              <CaretBottom v-if="entry.expanded" />
+              <CaretRight v-else />
+            </el-icon>
+          </button>
+          <span v-else class="log-line__caret-spacer" aria-hidden="true" />
           <time class="log-line__time">{{ entry.time }}</time>
           <span class="log-line__level">{{ entry.level.toUpperCase() }}</span>
           <span class="log-line__target">{{ entry.target }}</span>
@@ -167,11 +180,12 @@ onMounted(() => void logs.initialize());
 .logs-meta__live.is-off i { background: var(--el-text-color-placeholder); box-shadow: none; }
 .logs-meta__live:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 3px; border-radius: 2px; }
 .logs-viewer { min-width: 0; min-height: 0; overflow: auto; padding: 8px 12px; border: 1px solid var(--gg-border); border-radius: 5px; background: var(--gg-panel-muted); color: var(--el-text-color-regular); font: 11px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
-.log-line { display: grid; grid-template-columns: 14px 76px 42px minmax(92px, 155px) minmax(0, 1fr); gap: 9px; min-width: 654px; padding: 7px 0; border-bottom: 1px solid var(--gg-border); }
+.log-line { display: grid; grid-template-columns: 28px 76px 42px minmax(92px, 155px) minmax(0, 1fr); gap: 9px; min-width: 668px; padding: 7px 0; border-bottom: 1px solid var(--gg-border); }
 .log-line:last-child { border-bottom: 0; }
-.log-line.has-trace { cursor: pointer; }
-.log-line.has-trace:hover, .log-line.has-trace:focus-visible { background: var(--gg-title-control-hover); outline: none; }
-.log-line__caret { color: var(--el-text-color-placeholder); font-size: 12px; line-height: 18px; text-align: center; }
+.log-line__toggle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; color: var(--el-text-color-placeholder); background: transparent; cursor: pointer; }
+.log-line__toggle:hover, .log-line__toggle:focus-visible { color: var(--el-text-color-primary); background: var(--gg-title-control-hover); outline: none; }
+.log-line__toggle .el-icon { font-size: 18px; }
+.log-line__caret-spacer { display: block; width: 24px; height: 24px; }
 .log-line__time { color: var(--el-text-color-placeholder); }
 .log-line__level { font-weight: 700; color: var(--el-text-color-secondary); }
 .log-line__target { overflow: hidden; text-overflow: ellipsis; color: var(--el-color-primary); }
@@ -183,5 +197,5 @@ onMounted(() => void logs.initialize());
 .log-line.is-info .log-line__level { color: var(--el-color-success); }
 .log-line.is-debug .log-line__level { color: var(--el-color-primary); }
 .logs-export-path { margin: 0; overflow-wrap: anywhere; color: var(--el-text-color-secondary); font-size: 11px; }
-@media (max-width: 760px) { .logs-toolbar__filter { margin-left: 0; }.logs-toolbar > .el-input { flex: 1 1 160px; width: auto; }.log-line { grid-template-columns: 14px 68px 42px minmax(86px, 130px) minmax(0, 1fr); gap: 7px; min-width: 600px; } }
+@media (max-width: 760px) { .logs-toolbar__filter { margin-left: 0; }.logs-toolbar > .el-input { flex: 1 1 160px; width: auto; }.log-line { grid-template-columns: 28px 68px 42px minmax(86px, 130px) minmax(0, 1fr); gap: 7px; min-width: 614px; } }
 </style>

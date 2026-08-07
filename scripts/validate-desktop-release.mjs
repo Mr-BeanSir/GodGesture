@@ -134,7 +134,7 @@ const productionFiles = [
   "apps/desktop/src/templates/source.ts",
   "apps/desktop/src/views/AboutView.vue",
   "apps/desktop/src/views/TemplatesView.vue",
-  "distribution/gesture-templates/README.md",
+  "distribution/templates/README.md",
 ];
 const productionSources = await Promise.all(
   productionFiles.map((path) => readFile(resolve(root, path), "utf8")),
@@ -153,12 +153,12 @@ assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
   `https://github.com/${PRODUCTION_REPOSITORY}/releases/latest/download/latest.json`,
 ]);
 const templateCatalog = JSON.parse(
-  await readFile(resolve(root, "distribution/gesture-templates/catalog.json"), "utf8"),
+  await readFile(resolve(root, "distribution/templates/catalog.json"), "utf8"),
 );
 for (const entry of templateCatalog.entries) {
   assert.match(
     entry.packageUrl,
-    /^https:\/\/github\.com\/Mr-BeanSir\/gesture-templates\/releases\/latest\/download\//,
+    /^https:\/\/github\.com\/Mr-BeanSir\/GodGesture-Templates\/releases\/latest\/download\//,
   );
 }
 console.log(

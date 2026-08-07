@@ -66,7 +66,7 @@ pub enum Action {
     },
     /// 路径生长(渲染与识别都从这里喂)
     PathGrow(Point),
-    /// 修饰触发
+    /// 附加输入候选;运行时再按配置判断为有序步骤或独立修饰符
     ModifierFired { modifier: Modifier, pos: Point },
     /// 键盘输入按下,由运行时追加到有序输入序列
     KeyFired { key: String },

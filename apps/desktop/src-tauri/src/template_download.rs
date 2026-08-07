@@ -14,6 +14,7 @@ const MAX_REDIRECTS: usize = 5;
 pub enum TemplateResourceKind {
     Catalog,
     Package,
+    PluginCatalog,
 }
 
 impl TemplateResourceKind {
@@ -21,6 +22,7 @@ impl TemplateResourceKind {
         match self {
             Self::Catalog => CATALOG_MAX_BYTES,
             Self::Package => PACKAGE_MAX_BYTES,
+            Self::PluginCatalog => CATALOG_MAX_BYTES,
         }
     }
 
@@ -28,6 +30,7 @@ impl TemplateResourceKind {
         match self {
             Self::Catalog => "catalog_too_large",
             Self::Package => "package_too_large",
+            Self::PluginCatalog => "catalog_too_large",
         }
     }
 }
@@ -200,7 +203,7 @@ mod tests {
     use super::*;
 
     const PRODUCTION_CATALOG_URL: &str =
-        "https://github.com/Mr-BeanSir/gesture-templates/releases/latest/download/catalog.json";
+        "https://github.com/Mr-BeanSir/GodGesture-Templates/releases/latest/download/catalog.json";
 
     #[test]
     fn resource_kinds_have_fixed_protocol_limits() {

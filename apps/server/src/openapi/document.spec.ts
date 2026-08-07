@@ -44,6 +44,8 @@ const EXPECTED_OPERATIONS: ReadonlyArray<readonly [HttpMethod, string]> = [
   ['patch', '/devices/{id}'],
   ['get', '/sync/config'],
   ['put', '/sync/config'],
+  ['get', '/sync/config/index'],
+  ['get', '/sync/config/scope/{scope}'],
   ['get', '/sync/snapshots'],
   ['post', '/sync/snapshots/{version}/restore'],
 ];
@@ -59,6 +61,8 @@ const PROTECTED_OPERATIONS = new Set([
   'patch /devices/{id}',
   'delete /devices/{id}',
   'get /sync/config',
+  'get /sync/config/index',
+  'get /sync/config/scope/{scope}',
   'put /sync/config',
   'get /sync/snapshots',
   'post /sync/snapshots/{version}/restore',

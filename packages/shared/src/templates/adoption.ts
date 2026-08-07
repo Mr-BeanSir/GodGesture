@@ -21,6 +21,7 @@ import {
   gestureTemplatePackageRisks,
   type GestureTemplateRisk,
 } from "./protocol.js";
+import type { OnlinePluginSource } from "../plugins/online.js";
 
 export type TemplateConflictPolicy = "keepExisting" | "replaceExisting";
 
@@ -43,6 +44,7 @@ export interface TemplateAdoptionPlan {
   conflicts: TemplateGestureConflict[];
   stats: TemplateAdoptionStats;
   risks: GestureTemplateRisk[];
+  pluginSources: OnlinePluginSource[];
 }
 
 export type TemplateAdoptionErrorCode =
@@ -345,5 +347,6 @@ function finishPlan(
     conflicts: planned.conflicts,
     stats: planned.stats,
     risks: gestureTemplatePackageRisks(templatePackage),
+    pluginSources: templatePackage.plugins,
   };
 }

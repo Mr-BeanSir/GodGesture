@@ -1,10 +1,11 @@
 //! User-owned filesystem workspace for Node plugins.
 
 use super::config::{NodePlugin, NodePluginAction};
-use parking_lot::Mutex;
-use serde::Deserialize;
+use parking_lot::{Mutex, MutexGuard};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,14 +17,15 @@ const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_LOCKFILE_BYTES: u64 = 512 * 1024;
 const IGNORED_DIRECTORIES: &[&str] = &["node_modules", ".git", ".godgesture", "target"];
+const IGNORED_PROJECT_DIRECTORIES: &[&str] =
+    &[".operations", "windows-x64", "macos-x64", "macos-arm64"];
 
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginActionSummary {
-    pub id: String,
-    pub name: String,
-    pub export_name: String,
-}
+/// The online installer keeps a small, durable intent record in each operation
+/// directory.  The journal is intentionally separate from the transient
+/// checkout/cache directories used by `node_packages`.
+pub(crate) const OPERATION_JOURNAL_FILE: &str = "journal.json";
+pub(crate) const OPERATION_COMMITTED_FILE: &str = "committed";
+pub(crate) const OPERATION_JOURNAL_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +36,7 @@ pub struct PluginProjectSummary {
     pub path: String,
     pub entry: String,
     pub api_version: u32,
-    pub actions: Vec<PluginActionSummary>,
+    pub lifecycles: Vec<String>,
     pub status: &'static str,
     pub error: Option<String>,
     pub last_reload_at: Option<u64>,
@@ -53,26 +55,56 @@ struct WorkspaceState {
     snapshot: Option<PluginWorkspaceSnapshot>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginOperationJournal {
+    pub(crate) version: u8,
+    pub(crate) plugin_id: String,
+    /// A portable path relative to the plugin workspace root.
+    pub(crate) target: String,
+}
+
+/// A guard held for the complete duration of a filesystem installation
+/// transaction.  Keeping the guard private prevents callers from faking the
+/// "already locked" precondition for `rescan_during_installation`.
+pub(crate) struct PluginInstallationGuard<'a> {
+    _guard: MutexGuard<'a, ()>,
+}
+
 pub struct PluginWorkspace {
     root: PathBuf,
     state: Mutex<WorkspaceState>,
+    installation: Mutex<()>,
 }
 
 impl PluginWorkspace {
     pub fn new(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root)
             .map_err(|error| format!("create plugin workspace '{}': {error}", root.display()))?;
-        seed_demo_if_empty(&root)?;
         let workspace = Self {
             root,
             state: Mutex::new(WorkspaceState::default()),
+            installation: Mutex::new(()),
         };
+        workspace.rescan();
+        // Recovery runs before seeding the bundled example.  A stale
+        // `.operations` directory must never make the workspace look empty and
+        // cause an unrelated demo project to be created over the recovery
+        // state.
+        seed_demo_if_empty(&workspace.root)?;
         workspace.rescan();
         Ok(workspace)
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Serializes online installation transactions without blocking workspace reads.
+    pub(crate) fn lock_installation(&self) -> PluginInstallationGuard<'_> {
+        PluginInstallationGuard {
+            _guard: self.installation.lock(),
+        }
     }
 
     pub fn plugins(&self) -> Vec<NodePlugin> {
@@ -90,106 +122,30 @@ impl PluginWorkspace {
             })
     }
 
-    pub fn export_embedded_plugins(
-        &self,
-        plugins: &[NodePlugin],
-        referenced_actions: &HashMap<String, Vec<String>>,
-    ) -> Result<bool, String> {
-        if plugins.is_empty() {
-            return Ok(false);
-        }
-        let installed_ids = self
-            .plugins()
-            .into_iter()
-            .map(|plugin| plugin.id)
-            .collect::<std::collections::HashSet<_>>();
-        let mut wrote_project = false;
-        for plugin in plugins {
-            if installed_ids.contains(&plugin.id) {
-                continue;
-            }
-            let folder_name = safe_folder_name(&plugin.name, &plugin.id);
-            let root = self.root.join(folder_name);
-            fs::create_dir_all(&root)
-                .map_err(|error| format!("create exported plugin directory: {error}"))?;
-            let mut manifest = serde_json::from_str::<serde_json::Value>(&plugin.package_json)
-                .map_err(|error| format!("parse embedded plugin package.json: {error}"))?;
-            let object = manifest
-                .as_object_mut()
-                .ok_or_else(|| "embedded plugin package.json must be an object".to_string())?;
-            object.insert(
-                "name".into(),
-                serde_json::Value::String(safe_package_name(&plugin.name)),
-            );
-            object.insert("version".into(), serde_json::Value::String("0.1.0".into()));
-            let actions = if plugin.actions.is_empty() {
-                referenced_actions
-                    .get(&plugin.id)
-                    .cloned()
-                    .filter(|actions| !actions.is_empty())
-                    .unwrap_or_else(|| vec!["onExecute".into()])
-                    .into_iter()
-                    .map(|action| {
-                        serde_json::json!({
-                            "id": action,
-                            "name": action,
-                            "export": action,
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                plugin
-                    .actions
-                    .iter()
-                    .map(|action| {
-                        serde_json::json!({
-                            "id": action.id,
-                            "name": action.name,
-                            "export": action.export_name,
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            };
-            object.insert(
-                "godgesture".into(),
-                serde_json::json!({
-                    "id": plugin.id,
-                    "apiVersion": API_VERSION,
-                    "entry": plugin.entry,
-                    "actions": actions,
-                    "allowLifecycleScripts": plugin.allow_lifecycle_scripts,
-                }),
-            );
-            fs::write(
-                root.join("package.json"),
-                serde_json::to_vec_pretty(&manifest).expect("JSON values serialize"),
-            )
-            .map_err(|error| format!("write exported plugin package.json: {error}"))?;
-            for (relative, source) in &plugin.files {
-                let target = root.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
-                if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        format!("create exported plugin source directory: {error}")
-                    })?;
-                }
-                fs::write(&target, source).map_err(|error| {
-                    format!("write exported plugin source '{relative}': {error}")
-                })?;
-            }
-            if let Some(lockfile) = &plugin.lockfile {
-                fs::write(root.join("pnpm-lock.yaml"), lockfile)
-                    .map_err(|error| format!("write exported plugin lockfile: {error}"))?;
-            }
-            wrote_project = true;
-        }
-        if wrote_project {
-            self.rescan();
-        }
-        Ok(true)
-    }
-
     /// Returns true when the public snapshot or a runnable plugin changed.
     pub fn rescan(&self) -> bool {
+        let installation = self.lock_installation();
+        self.rescan_during_installation(&installation, None)
+    }
+
+    /// Rescans while the caller already owns the installation guard.  The
+    /// active operation is excluded from recovery because its journal is
+    /// intentionally still uncommitted until validation completes.
+    pub(crate) fn rescan_during_installation(
+        &self,
+        _installation: &PluginInstallationGuard<'_>,
+        active_operation: Option<&Path>,
+    ) -> bool {
+        if !self.recover_interrupted_operations(active_operation) {
+            // Keep the last published state while recovery is blocked.  This
+            // is what prevents a watcher tick from publishing the temporary
+            // target-missing state after a crashed swap.
+            return false;
+        }
+        self.rescan_projects()
+    }
+
+    fn rescan_projects(&self) -> bool {
         let previous = self.state.lock();
         let previous_plugins = previous
             .plugins
@@ -226,6 +182,13 @@ impl PluginWorkspace {
                     .file_type()
                     .ok()
                     .filter(|kind| kind.is_dir())
+                    .filter(|_| {
+                        let folder = entry.file_name();
+                        let folder = folder.to_string_lossy();
+                        !IGNORED_PROJECT_DIRECTORIES
+                            .iter()
+                            .any(|ignored| folder.eq_ignore_ascii_case(ignored))
+                    })
                     .map(|_| entry.path())
             })
             .collect::<Vec<_>>();
@@ -245,7 +208,7 @@ impl PluginWorkspace {
                     path,
                     entry: String::new(),
                     api_version: 0,
-                    actions: Vec::new(),
+                    lifecycles: Vec::new(),
                     status: "error",
                     error: Some(format!(
                         "plugin workspace supports at most {MAX_PLUGINS} projects"
@@ -291,7 +254,7 @@ impl PluginWorkspace {
                         path,
                         entry: String::new(),
                         api_version: 0,
-                        actions: Vec::new(),
+                        lifecycles: Vec::new(),
                         status: "error",
                         error: Some(error),
                         last_reload_at: None,
@@ -310,35 +273,229 @@ impl PluginWorkspace {
         state.snapshot = Some(snapshot);
         changed
     }
-}
 
-fn safe_folder_name(name: &str, id: &str) -> String {
-    let normalized = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-                character.to_ascii_lowercase()
-            } else {
-                '-'
+    /// Replays or cleans every durable online-install operation except the
+    /// operation currently being executed by the caller.  The filesystem
+    /// layout is the source of truth; the journal only records the target and
+    /// whether the transaction reached its commit point.
+    fn recover_interrupted_operations(&self, active_operation: Option<&Path>) -> bool {
+        let operations_root = self.root.join(".operations");
+        let entries = match fs::read_dir(&operations_root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return true,
+            Err(error) => {
+                log::warn!(
+                    "read plugin operation directory '{}': {error}",
+                    operations_root.display()
+                );
+                return false;
             }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string();
-    let fallback = id.split('-').next().unwrap_or("plugin");
-    if normalized.is_empty() {
-        fallback.into()
-    } else {
-        normalized
+        };
+
+        let mut clear = true;
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    log::warn!(
+                        "defer plugin operation recovery under '{}': {error}",
+                        operations_root.display()
+                    );
+                    clear = false;
+                    continue;
+                }
+            };
+            let operation = entry.path();
+            if active_operation.is_some_and(|active| active == operation.as_path()) {
+                continue;
+            }
+            let kind = match entry.file_type() {
+                Ok(kind) => kind,
+                Err(error) => {
+                    log::warn!(
+                        "defer plugin operation recovery '{}': inspect operation: {error}",
+                        operation.display()
+                    );
+                    clear = false;
+                    continue;
+                }
+            };
+            if !kind.is_dir() {
+                continue;
+            }
+            let journal_path = operation.join(OPERATION_JOURNAL_FILE);
+            match fs::symlink_metadata(&journal_path) {
+                Ok(metadata) if metadata.is_file() => {}
+                Ok(_) => {
+                    log::warn!(
+                        "defer plugin operation recovery '{}': journal is not a regular file",
+                        operation.display()
+                    );
+                    clear = false;
+                    continue;
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    // Other short-lived operation directories (for example
+                    // the Node package cache) deliberately have no journal.
+                    continue;
+                }
+                Err(error) => {
+                    log::warn!(
+                        "defer plugin operation recovery '{}': inspect journal: {error}",
+                        operation.display()
+                    );
+                    clear = false;
+                    continue;
+                }
+            }
+            let journal = match read_operation_journal(&journal_path) {
+                Ok(journal) => journal,
+                Err(error) => {
+                    log::warn!(
+                        "defer plugin operation recovery '{}': {error}",
+                        operation.display()
+                    );
+                    clear = false;
+                    continue;
+                }
+            };
+            if let Err(error) = validate_operation_journal(&journal) {
+                log::warn!(
+                    "defer plugin operation recovery '{}': {error}",
+                    operation.display()
+                );
+                clear = false;
+                continue;
+            }
+            let committed = operation.join(OPERATION_COMMITTED_FILE).is_file();
+            match recover_operation(&self.root, &operation, &journal, committed) {
+                Ok(()) => {
+                    if let Err(error) = fs::remove_dir_all(&operation) {
+                        log::warn!(
+                            "defer cleanup of recovered plugin operation '{}': {error}",
+                            operation.display()
+                        );
+                        clear = false;
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "defer plugin operation recovery '{}': {error}",
+                        operation.display()
+                    );
+                    clear = false;
+                }
+            }
+        }
+        clear
     }
 }
 
-fn safe_package_name(name: &str) -> String {
-    let value = safe_folder_name(name, "plugin");
-    if value.is_empty() {
-        "godgesture-plugin".into()
-    } else {
-        value
+fn read_operation_journal(path: &Path) -> Result<PluginOperationJournal, String> {
+    let metadata = fs::metadata(path).map_err(|error| format!("read journal metadata: {error}"))?;
+    if metadata.len() > 8 * 1024 {
+        return Err("journal exceeds 8192 bytes".into());
+    }
+    let contents = fs::read_to_string(path).map_err(|error| format!("read journal: {error}"))?;
+    serde_json::from_str(&contents).map_err(|error| format!("parse journal: {error}"))
+}
+
+fn validate_operation_journal(journal: &PluginOperationJournal) -> Result<(), String> {
+    if journal.version != OPERATION_JOURNAL_VERSION {
+        return Err(format!("unsupported journal version {}", journal.version));
+    }
+    uuid::Uuid::parse_str(&journal.plugin_id)
+        .map_err(|_| "journal plugin id is not a UUID".to_string())?;
+    let path = Path::new(&journal.target);
+    if path.is_absolute()
+        || path.components().count() != 1
+        || !matches!(
+            path.components().next(),
+            Some(std::path::Component::Normal(_))
+        )
+    {
+        return Err("journal target must name one direct workspace directory".into());
+    }
+    Ok(())
+}
+
+fn recover_operation(
+    workspace_root: &Path,
+    operation: &Path,
+    journal: &PluginOperationJournal,
+    committed: bool,
+) -> Result<(), String> {
+    let target = workspace_root.join(&journal.target);
+    let backup = operation.join("previous");
+    let staged = operation.join("project");
+    let checkout = operation.join("checkout");
+    let quarantine = operation.join("activated");
+
+    if committed {
+        // The new project was validated before the commit marker was made
+        // durable.  Keep it active and only discard swap leftovers.
+        remove_path_if_exists(&backup)?;
+        remove_path_if_exists(&staged)?;
+        remove_path_if_exists(&checkout)?;
+        remove_path_if_exists(&quarantine)?;
+        return Ok(());
+    }
+
+    if backup.exists() {
+        // A previous project is authoritative until commit.  If activation
+        // already occupied the target, move it aside before restoring the old
+        // directory.  Moving (rather than deleting) preserves an unexpected
+        // target if a user changed files while the app was stopped.
+        if target.exists() {
+            if quarantine.exists() {
+                return Err(
+                    "target is occupied while an earlier recovery quarantine remains".into(),
+                );
+            }
+            fs::rename(&target, &quarantine)
+                .map_err(|error| format!("quarantine activated plugin: {error}"))?;
+        }
+        if !target.exists() {
+            fs::rename(&backup, &target)
+                .map_err(|error| format!("restore previous plugin: {error}"))?;
+        }
+        // If a quarantine directory is present, restoration has completed;
+        // its contents are uncommitted and can be discarded after the old
+        // target is visible again.
+        remove_path_if_exists(&quarantine)?;
+    } else if quarantine.exists() {
+        // Previous recovery may have restored the old target and crashed while
+        // deleting the quarantined activation.  Never treat the restored
+        // target as a new activation.
+        remove_path_if_exists(&quarantine)?;
+    } else if staged.exists() {
+        // The target was never displaced.  Leave any existing user project
+        // untouched and discard only the staged download.
+    } else if target.exists() {
+        // No previous project existed and activation reached the target.  Move
+        // it to the operation directory before cleanup so a failed cleanup
+        // cannot destroy an unrelated path.
+        fs::rename(&target, &quarantine)
+            .map_err(|error| format!("quarantine uncommitted plugin: {error}"))?;
+        remove_path_if_exists(&quarantine)?;
+    }
+
+    remove_path_if_exists(&staged)?;
+    remove_path_if_exists(&checkout)?;
+    Ok(())
+}
+
+fn remove_path_if_exists(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            fs::remove_dir_all(path)
+                .map_err(|error| format!("remove '{}': {error}", path.display()))
+        }
+        Ok(_) => {
+            fs::remove_file(path).map_err(|error| format!("remove '{}': {error}", path.display()))
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("inspect '{}': {error}", path.display())),
     }
 }
 
@@ -354,17 +511,17 @@ fn seed_demo_if_empty(root: &Path) -> Result<(), String> {
     fs::create_dir_all(&demo).map_err(|error| format!("create gesture demo directory: {error}"))?;
     fs::write(
         demo.join("package.json"),
-        include_str!("../../../../../plugins/gesture-demo/package.json"),
+        include_str!("../../../../../distribution/plugins/gesture-demo/package.json"),
     )
     .map_err(|error| format!("write gesture demo package.json: {error}"))?;
     fs::write(
         demo.join("index.mjs"),
-        include_str!("../../../../../plugins/gesture-demo/index.mjs"),
+        include_str!("../../../../../distribution/plugins/gesture-demo/index.mjs"),
     )
     .map_err(|error| format!("write gesture demo entry: {error}"))?;
     fs::write(
         demo.join("README.md"),
-        include_str!("../../../../../plugins/gesture-demo/README.md"),
+        include_str!("../../../../../distribution/plugins/gesture-demo/README.md"),
     )
     .map_err(|error| format!("write gesture demo README: {error}"))
 }
@@ -388,13 +545,13 @@ struct GodGestureManifest {
     #[serde(default)]
     actions: Vec<PluginActionManifest>,
     #[serde(default)]
+    lifecycles: Vec<String>,
+    #[serde(default)]
     allow_lifecycle_scripts: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct PluginActionManifest {
-    id: String,
-    name: String,
     #[serde(rename = "export")]
     export_name: String,
 }
@@ -423,19 +580,26 @@ fn read_project(root: &Path) -> Result<(NodePlugin, PluginProjectSummary), Strin
         ));
     }
     validate_relative_path(&manifest.godgesture.entry)?;
-    if manifest.godgesture.actions.is_empty() {
-        return Err("package.json godgesture.actions must not be empty".into());
+    let declared_lifecycles = if !manifest.godgesture.lifecycles.is_empty() {
+        manifest.godgesture.lifecycles.clone()
+    } else {
+        manifest
+            .godgesture
+            .actions
+            .iter()
+            .map(|action| action.export_name.clone())
+            .collect::<Vec<_>>()
+    };
+    if declared_lifecycles.is_empty() {
+        return Err("package.json godgesture.lifecycles must not be empty".into());
     }
-    let mut action_ids = std::collections::HashSet::new();
-    for action in &manifest.godgesture.actions {
-        if !is_action_id(&action.id)
-            || action.name.is_empty()
-            || !is_identifier(&action.export_name)
-        {
-            return Err("plugin action id, name, or export is invalid".into());
+    let mut lifecycle_names = std::collections::HashSet::new();
+    for lifecycle in &declared_lifecycles {
+        if !is_lifecycle(lifecycle) {
+            return Err(format!("unsupported plugin lifecycle '{lifecycle}'"));
         }
-        if !action_ids.insert(action.id.as_str()) {
-            return Err(format!("duplicate plugin action id '{}'", action.id));
+        if !lifecycle_names.insert(lifecycle.as_str()) {
+            return Err(format!("duplicate plugin lifecycle '{lifecycle}'"));
         }
     }
 
@@ -447,28 +611,14 @@ fn read_project(root: &Path) -> Result<(NodePlugin, PluginProjectSummary), Strin
             manifest.godgesture.entry
         ));
     }
-    let lockfile_path = root.join("pnpm-lock.yaml");
-    let lockfile = match fs::metadata(&lockfile_path) {
-        Ok(metadata) if metadata.len() > MAX_LOCKFILE_BYTES => {
-            return Err(format!("pnpm-lock.yaml exceeds {MAX_LOCKFILE_BYTES} bytes"));
-        }
-        Ok(_) => Some(
-            fs::read_to_string(&lockfile_path)
-                .map_err(|error| format!("read pnpm-lock.yaml: {error}"))?,
-        ),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(format!("read pnpm-lock.yaml metadata: {error}")),
+    let lockfile = read_lockfile(root, "pnpm-lock.yaml")?;
+    // Preserve the established pnpm contract when both files are present. npm
+    // installations otherwise provide package-lock.json for the runtime cache.
+    let npm_lockfile = if lockfile.is_none() {
+        read_lockfile(root, "package-lock.json")?
+    } else {
+        None
     };
-    let actions = manifest
-        .godgesture
-        .actions
-        .iter()
-        .map(|action| PluginActionSummary {
-            id: action.id.clone(),
-            name: action.name.clone(),
-            export_name: action.export_name.clone(),
-        })
-        .collect::<Vec<_>>();
     let plugin = NodePlugin {
         id: manifest.godgesture.id.clone(),
         name: manifest.name.clone(),
@@ -476,15 +626,14 @@ fn read_project(root: &Path) -> Result<(NodePlugin, PluginProjectSummary), Strin
         files,
         package_json,
         lockfile,
+        npm_lockfile,
         allow_lifecycle_scripts: manifest.godgesture.allow_lifecycle_scripts,
-        actions: manifest
-            .godgesture
-            .actions
+        actions: declared_lifecycles
             .iter()
-            .map(|action| NodePluginAction {
-                id: action.id.clone(),
-                name: action.name.clone(),
-                export_name: action.export_name.clone(),
+            .map(|lifecycle| NodePluginAction {
+                id: lifecycle.clone(),
+                name: lifecycle.clone(),
+                export_name: lifecycle.clone(),
             })
             .collect(),
     };
@@ -495,12 +644,26 @@ fn read_project(root: &Path) -> Result<(NodePlugin, PluginProjectSummary), Strin
         path: root.to_string_lossy().into_owned(),
         entry: manifest.godgesture.entry,
         api_version: manifest.godgesture.api_version,
-        actions,
+        lifecycles: declared_lifecycles,
         status: "ready",
         error: None,
         last_reload_at: None,
     };
     Ok((plugin, summary))
+}
+
+fn read_lockfile(root: &Path, filename: &str) -> Result<Option<String>, String> {
+    let path = root.join(filename);
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.len() > MAX_LOCKFILE_BYTES => {
+            Err(format!("{filename} exceeds {MAX_LOCKFILE_BYTES} bytes"))
+        }
+        Ok(_) => fs::read_to_string(&path)
+            .map(Some)
+            .map_err(|error| format!("read {filename}: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("read {filename} metadata: {error}")),
+    }
 }
 
 fn collect_files(
@@ -530,7 +693,12 @@ fn collect_files(
             collect_files(root, &entry.path(), files)?;
             continue;
         }
-        if !file_type.is_file() || matches!(name.as_ref(), "package.json" | "pnpm-lock.yaml") {
+        if !file_type.is_file()
+            || matches!(
+                name.as_ref(),
+                "package.json" | "pnpm-lock.yaml" | "package-lock.json"
+            )
+        {
             continue;
         }
         let relative = entry
@@ -597,23 +765,11 @@ fn validate_relative_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn is_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    chars
-        .next()
-        .is_some_and(|character| character.is_ascii_alphabetic() || matches!(character, '_' | '$'))
-        && chars
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '$'))
-}
-
-fn is_action_id(value: &str) -> bool {
-    value.len() <= 64
-        && value.chars().next().is_some_and(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '$')
-        })
-        && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '$' | '.' | '-')
-        })
+fn is_lifecycle(value: &str) -> bool {
+    matches!(
+        value,
+        "onInit" | "onExecute" | "onGestureRecognized" | "onModifierTriggered" | "onEnd"
+    )
 }
 
 fn now_millis() -> u64 {
@@ -626,6 +782,9 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{mpsc, Arc};
+    use std::thread;
+    use std::time::Duration;
 
     struct TestDir(PathBuf);
 
@@ -650,7 +809,7 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(
             root.join("package.json"),
-            r#"{"name":"demo","version":"0.1.0","type":"module","godgesture":{"id":"30000000-0000-4000-8000-000000000001","apiVersion":1,"entry":"src/index.mjs","actions":[{"id":"default","name":"Execute","export":"onExecute"}]}}"#,
+            r#"{"name":"demo","version":"0.1.0","type":"module","godgesture":{"id":"30000000-0000-4000-8000-000000000001","apiVersion":1,"entry":"src/index.mjs","lifecycles":["onExecute"]}}"#,
         )
         .unwrap();
         fs::write(root.join("src/index.mjs"), source).unwrap();
@@ -663,8 +822,46 @@ mod tests {
         let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
         let snapshot = workspace.snapshot();
         assert_eq!(snapshot.plugins.len(), 1);
-        assert_eq!(snapshot.plugins[0].actions[0].export_name, "onExecute");
+        assert_eq!(snapshot.plugins[0].lifecycles, vec!["onExecute"]);
         assert!(workspace.plugins()[0].files.contains_key("src/index.mjs"));
+    }
+
+    #[test]
+    fn reads_npm_package_lock_when_no_pnpm_lock_exists() {
+        let dir = TestDir::new();
+        let project = dir.0.join("demo");
+        write_project(&project, "export function onExecute() {}");
+        fs::write(
+            &project.join("package-lock.json"),
+            r#"{"lockfileVersion":3}"#,
+        )
+        .unwrap();
+
+        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
+        let plugin = &workspace.plugins()[0];
+        assert_eq!(plugin.lockfile, None);
+        assert_eq!(
+            plugin.npm_lockfile.as_deref(),
+            Some(r#"{"lockfileVersion":3}"#)
+        );
+    }
+
+    #[test]
+    fn prefers_pnpm_lock_when_both_lockfile_formats_exist() {
+        let dir = TestDir::new();
+        let project = dir.0.join("demo");
+        write_project(&project, "export function onExecute() {}");
+        fs::write(&project.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\n").unwrap();
+        fs::write(
+            &project.join("package-lock.json"),
+            r#"{"lockfileVersion":3}"#,
+        )
+        .unwrap();
+
+        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
+        let plugin = &workspace.plugins()[0];
+        assert_eq!(plugin.lockfile.as_deref(), Some("lockfileVersion: '9.0'\n"));
+        assert_eq!(plugin.npm_lockfile, None);
     }
 
     #[test]
@@ -698,35 +895,134 @@ mod tests {
         assert_eq!(workspace.snapshot().plugins[0].status, "error");
     }
 
-    #[test]
-    fn exports_legacy_handlers_as_stable_actions() {
-        let dir = TestDir::new();
-        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
-        let legacy = NodePlugin {
-            id: "50000000-0000-4000-8000-000000000010".into(),
-            name: "Legacy custom".into(),
-            entry: "index.mjs".into(),
-            files: HashMap::from([(
-                "index.mjs".into(),
-                "export function customHandler() {}".into(),
-            )]),
-            package_json: r#"{"private":true,"type":"module"}"#.into(),
-            lockfile: None,
-            allow_lifecycle_scripts: false,
-            actions: Vec::new(),
-        };
-        let references = HashMap::from([(legacy.id.clone(), vec!["customHandler".into()])]);
+    fn write_journal(operation: &Path, target: &str) {
+        fs::write(
+            operation.join(OPERATION_JOURNAL_FILE),
+            serde_json::to_vec(&PluginOperationJournal {
+                version: OPERATION_JOURNAL_VERSION,
+                plugin_id: "30000000-0000-4000-8000-000000000001".into(),
+                target: target.into(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+    }
 
-        assert!(workspace
-            .export_embedded_plugins(&[legacy], &references)
-            .unwrap());
-        let exported = workspace
-            .snapshot()
-            .plugins
-            .into_iter()
-            .find(|plugin| plugin.id == "50000000-0000-4000-8000-000000000010")
-            .unwrap();
-        assert_eq!(exported.actions[0].id, "customHandler");
-        assert_eq!(exported.actions[0].export_name, "customHandler");
+    #[test]
+    fn startup_recovers_previous_project_after_interrupted_activation() {
+        let dir = TestDir::new();
+        let target = dir.0.join("demo");
+        write_project(&target, "export function onExecute() { return 'old'; }");
+
+        let operation = dir.0.join(".operations").join("interrupted");
+        fs::create_dir_all(&operation).unwrap();
+        fs::rename(&target, operation.join("previous")).unwrap();
+        write_project(
+            &operation.join("project"),
+            "export function onExecute() { return 'new'; }",
+        );
+        fs::rename(operation.join("project"), &target).unwrap();
+        write_journal(&operation, "demo");
+
+        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("src/index.mjs")).unwrap(),
+            "export function onExecute() { return 'old'; }"
+        );
+        assert!(!operation.exists());
+        assert_eq!(workspace.plugins().len(), 1);
+    }
+
+    #[test]
+    fn startup_keeps_new_project_after_durable_commit_marker() {
+        let dir = TestDir::new();
+        let target = dir.0.join("demo");
+        write_project(&target, "export function onExecute() { return 'new'; }");
+
+        let operation = dir.0.join(".operations").join("committed");
+        fs::create_dir_all(&operation).unwrap();
+        write_project(
+            &operation.join("previous"),
+            "export function onExecute() { return 'old'; }",
+        );
+        write_journal(&operation, "demo");
+        fs::write(operation.join(OPERATION_COMMITTED_FILE), b"committed\n").unwrap();
+
+        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("src/index.mjs")).unwrap(),
+            "export function onExecute() { return 'new'; }"
+        );
+        assert!(!operation.exists());
+        assert_eq!(workspace.plugins().len(), 1);
+    }
+
+    #[test]
+    fn rescan_keeps_last_state_when_operation_recovery_is_blocked() {
+        let dir = TestDir::new();
+        let target = dir.0.join("demo");
+        write_project(&target, "export function onExecute() {} ");
+        let workspace = PluginWorkspace::new(dir.0.clone()).unwrap();
+        let previous = workspace.plugins();
+
+        let operation = dir.0.join(".operations").join("malformed");
+        fs::create_dir_all(&operation).unwrap();
+        fs::write(operation.join(OPERATION_JOURNAL_FILE), b"{not-json").unwrap();
+        fs::rename(&target, operation.join("previous")).unwrap();
+
+        assert!(!workspace.rescan());
+        assert_eq!(workspace.plugins(), previous);
+        assert!(operation.exists());
+    }
+
+    #[test]
+    fn watcher_rescan_waits_through_the_target_swap_gap() {
+        let dir = TestDir::new();
+        let target = dir.0.join("demo");
+        write_project(&target, "export function onExecute() {} ");
+        let workspace = Arc::new(PluginWorkspace::new(dir.0.clone()).unwrap());
+        let operation = dir.0.join(".operations").join("active");
+        fs::create_dir_all(&operation).unwrap();
+        write_journal(&operation, "demo");
+
+        let installation = workspace.lock_installation();
+        fs::rename(&target, operation.join("previous")).unwrap();
+        let (done_tx, done_rx) = mpsc::channel();
+        let watcher_workspace = Arc::clone(&workspace);
+        thread::spawn(move || {
+            done_tx.send(watcher_workspace.rescan()).unwrap();
+        });
+
+        assert!(done_rx.recv_timeout(Duration::from_millis(100)).is_err());
+        drop(installation);
+        assert!(done_rx.recv_timeout(Duration::from_secs(2)).is_ok());
+        assert!(target.join("package.json").is_file());
+        assert!(!operation.exists());
+    }
+
+    #[test]
+    fn installation_lock_serializes_workspace_transactions() {
+        let workspace = Arc::new(PluginWorkspace {
+            root: PathBuf::from("workspace"),
+            state: Mutex::new(WorkspaceState::default()),
+            installation: Mutex::new(()),
+        });
+        let first = workspace.lock_installation();
+        let (attempted_tx, attempted_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let waiting_workspace = Arc::clone(&workspace);
+        let waiting = thread::spawn(move || {
+            attempted_tx.send(()).unwrap();
+            let _second = waiting_workspace.lock_installation();
+            acquired_tx.send(()).unwrap();
+        });
+
+        attempted_rx.recv().unwrap();
+        assert!(acquired_rx.try_recv().is_err());
+        drop(first);
+        acquired_rx.recv().unwrap();
+        waiting.join().unwrap();
     }
 }

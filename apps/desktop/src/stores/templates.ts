@@ -21,6 +21,31 @@ import { useConfigStore } from "./config";
 export type TemplateScopeFilter = "all" | "global" | "app";
 export type TemplateRiskFilter = "all" | "low" | "elevated";
 
+function adoptionErrorCode(error: unknown) {
+  const code = errorCode(error, "template_apply_failed");
+  return code.startsWith("plugin_") || code === "rollback_incomplete"
+    ? "template_plugin_install_failed"
+    : code;
+}
+
+function errorCode(error: unknown, fallback: string) {
+  if (
+    error instanceof TemplateSourceError ||
+    error instanceof TemplateAdoptionError
+  ) {
+    return error.code;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    return (error as { code: string }).code;
+  }
+  return fallback;
+}
+
 export const useTemplatesStore = defineStore("templates", () => {
   const config = useConfigStore();
   const source: GestureTemplateSource = createGestureTemplateSource(
@@ -70,16 +95,6 @@ export const useTemplatesStore = defineStore("templates", () => {
       ].some((value) => value.toLocaleLowerCase().includes(needle));
     });
   });
-
-  function errorCode(error: unknown, fallback: string) {
-    if (
-      error instanceof TemplateSourceError ||
-      error instanceof TemplateAdoptionError
-    ) {
-      return error.code;
-    }
-    return fallback;
-  }
 
   async function loadCatalog(force = false) {
     if (catalogRequest && !force) return catalogRequest;
@@ -170,13 +185,18 @@ export const useTemplatesStore = defineStore("templates", () => {
   }
 
   async function adopt() {
-    if (!adoptionPlan.value || !expectedDocument || adopting.value) return false;
+    const plan = adoptionPlan.value;
+    const expected = expectedDocument;
+    if (!plan || !expected || adopting.value) return false;
     adopting.value = true;
     adoptionError.value = null;
     try {
+      for (const pluginSource of plan.pluginSources) {
+        await config.backend.nodePluginInstall(pluginSource);
+      }
       const applied = await config.applyTemplateDocument(
-        adoptionPlan.value.document,
-        expectedDocument,
+        plan.document,
+        expected,
       );
       if (!applied) {
         adoptionError.value = "template_config_changed";
@@ -185,7 +205,7 @@ export const useTemplatesStore = defineStore("templates", () => {
       adopted.value = true;
       return true;
     } catch (error) {
-      adoptionError.value = errorCode(error, "template_apply_failed");
+      adoptionError.value = adoptionErrorCode(error);
       return false;
     } finally {
       adopting.value = false;

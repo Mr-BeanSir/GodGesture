@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="trigger-right" viewBox="0 0 20 26">
+      <rect x="2" y="1" width="16" height="24" rx="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="1.5" />
+      <path d="M10 2v7" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.2" />
+      <path d="M10 2h2a6 6 0 0 1 6 6v1h-8V2Z" fill="currentColor" />
+    </symbol>
+    <symbol id="trigger-middle" viewBox="0 0 20 26">
+      <rect x="2" y="1" width="16" height="24" rx="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="1.5" />
+      <path d="M10 2v7" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.2" />
+      <circle cx="10" cy="6" r="2.5" fill="currentColor" />
+    </symbol>
+    <symbol id="trigger-x1" viewBox="0 0 20 26">
+      <rect x="2" y="1" width="16" height="24" rx="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="1.5" />
+      <path d="M10 2v7" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.2" />
+      <text x="10" y="15" fill="currentColor" font-family="Segoe UI, sans-serif" font-size="4.2" font-weight="700" text-anchor="middle" textLength="7" lengthAdjust="spacingAndGlyphs">X1</text>
+    </symbol>
+    <symbol id="trigger-x2" viewBox="0 0 20 26">
+      <rect x="2" y="1" width="16" height="24" rx="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-width="1.5" />
+      <path d="M10 2v7" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.2" />
+      <text x="10" y="15" fill="currentColor" font-family="Segoe UI, sans-serif" font-size="4.2" font-weight="700" text-anchor="middle" textLength="7" lengthAdjust="spacingAndGlyphs">X2</text>
+    </symbol>
+
+    <symbol id="stroke-up" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" />
+    </symbol>
+    <symbol id="stroke-right-up" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(45 12 12)" />
+    </symbol>
+    <symbol id="stroke-right" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(90 12 12)" />
+    </symbol>
+    <symbol id="stroke-right-down" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(135 12 12)" />
+    </symbol>
+    <symbol id="stroke-down" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(180 12 12)" />
+    </symbol>
+    <symbol id="stroke-left-down" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(225 12 12)" />
+    </symbol>
+    <symbol id="stroke-left" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(270 12 12)" />
+    </symbol>
+    <symbol id="stroke-left-up" viewBox="0 0 24 24">
+      <path d="M12 20V4M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" transform="rotate(315 12 12)" />
+    </symbol>
+
+    <symbol id="button-left" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".65" stroke-width="1.4" />
+      <path d="M12 4a8 8 0 0 0 0 16V4Z" fill="currentColor" />
+    </symbol>
+    <symbol id="button-middle" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".65" stroke-width="1.4" />
+      <circle cx="12" cy="12" r="4" fill="currentColor" />
+    </symbol>
+    <symbol id="button-right" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".65" stroke-width="1.4" />
+      <path d="M12 4a8 8 0 0 1 0 16V4Z" fill="currentColor" />
+    </symbol>
+    <symbol id="button-x1" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".65" stroke-width="1.4" />
+      <text x="12" y="14" fill="currentColor" font-family="Segoe UI, sans-serif" font-size="6" font-weight="700" text-anchor="middle" textLength="8" lengthAdjust="spacingAndGlyphs">X1</text>
+    </symbol>
+    <symbol id="button-x2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".65" stroke-width="1.4" />
+      <text x="12" y="14" fill="currentColor" font-family="Segoe UI, sans-serif" font-size="6" font-weight="700" text-anchor="middle" textLength="8" lengthAdjust="spacingAndGlyphs">X2</text>
+    </symbol>
+
+    <symbol id="wheel-up" viewBox="0 0 32 48">
+      <rect x="6" y="2" width="20" height="44" rx="10" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".70" stroke-width="1.5" />
+      <path d="M16 15v18" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.25" />
+      <path d="M16 3a9 9 0 0 1 9 9H7a9 9 0 0 1 9-9Z" fill="currentColor" />
+    </symbol>
+    <symbol id="wheel-down" viewBox="0 0 32 48">
+      <rect x="6" y="2" width="20" height="44" rx="10" fill="currentColor" fill-opacity=".10" stroke="currentColor" stroke-opacity=".70" stroke-width="1.5" />
+      <path d="M16 15v18" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-linecap="round" stroke-width="1.25" />
+      <path d="M7 36h18v1a9 9 0 0 1-18 0Z" fill="currentColor" />
+    </symbol>
+    <symbol id="wheel-up-pressed" viewBox="0 0 32 48">
+      <use href="#wheel-up" />
+      <rect x="10" y="20" width="12" height="8" rx="4" fill="currentColor" />
+    </symbol>
+    <symbol id="wheel-down-pressed" viewBox="0 0 32 48">
+      <use href="#wheel-down" />
+      <rect x="10" y="20" width="12" height="8" rx="4" fill="currentColor" />
+    </symbol>
+
+    <symbol id="boundary-frame" viewBox="0 0 24 24">
+      <path
+        d="M4 4h16M20 4v16M20 20H4M4 20V4"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="2.5"
+      />
+    </symbol>
+    <symbol id="boundary-edge-top" viewBox="0 0 24 24">
+      <path d="M4 4h16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-edge-right" viewBox="0 0 24 24">
+      <path d="M20 4v16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-edge-bottom" viewBox="0 0 24 24">
+      <path d="M20 20H4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-edge-left" viewBox="0 0 24 24">
+      <path d="M4 20V4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-corner-leftTop" viewBox="0 0 24 24">
+      <path d="M4 11V4h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-corner-rightTop" viewBox="0 0 24 24">
+      <path d="M13 4h7v7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-corner-leftBottom" viewBox="0 0 24 24">
+      <path d="M4 13v7h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="boundary-corner-rightBottom" viewBox="0 0 24 24">
+      <path d="M13 20h7v-7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" />
+    </symbol>
+    <symbol id="immediate" viewBox="0 0 24 24">
+      <path d="M13 2 5 13h6l-1 9 8-11h-6l1-9Z" fill="currentColor" />
+    </symbol>
+  </defs>
+</svg>

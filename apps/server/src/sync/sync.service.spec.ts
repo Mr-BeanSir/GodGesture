@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import {
   ConfigDocument as ConfigDocumentSchema,
+  MAX_COMMAND_TEXT_LENGTH,
   MAX_CONFIG_DOCUMENT_BYTES,
   configDocumentSizeBytes,
   type ConfigDocument,
@@ -18,14 +19,34 @@ import {
 } from './sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** 文档内容本身不在 Service 层校验(由控制器的 ZodValidationPipe 负责) */
-const doc = { formatVersion: 1, apps: [] } as unknown as ConfigDocument;
+const doc = ConfigDocumentSchema.parse({});
 
 function sizedDocument(targetBytes: number): ConfigDocument {
-  const shell = ConfigDocumentSchema.parse({});
-  const padding = targetBytes - configDocumentSizeBytes(shell) - 13;
-  if (padding < 0) throw new Error('target is smaller than the document shell');
-  const document = { ...shell, padding: 'x'.repeat(padding) } as ConfigDocument;
+  const document = ConfigDocumentSchema.parse({
+    global: {
+      intents: Array.from({ length: 256 }, (_, index) => ({
+        id: `30000000-0000-4000-8000-${(index + 1).toString().padStart(12, '0')}`,
+        name: `padding-${index}`,
+        gesture: { trigger: 'right', strokes: [], modifier: 'none' },
+        command: { type: 'sendText', text: 'text ""' },
+        order: index,
+      })),
+    },
+  });
+  let remaining = targetBytes - configDocumentSizeBytes(document);
+  if (remaining < 0) throw new Error('target is smaller than the document shell');
+
+  for (const intent of document.global.intents) {
+    if (intent.command.type !== 'sendText') continue;
+    const capacity = MAX_COMMAND_TEXT_LENGTH - intent.command.text.length;
+    const length = Math.min(capacity, remaining);
+    intent.command.text = `text "${'x'.repeat(length)}"`;
+    remaining -= length;
+    if (remaining === 0) break;
+  }
+  if (remaining !== 0) throw new Error('could not fit the requested document size');
+
+  ConfigDocumentSchema.parse(document);
   if (configDocumentSizeBytes(document) !== targetBytes) {
     throw new Error('could not construct an exact-size valid document');
   }
@@ -322,7 +343,10 @@ describe('SyncService(乐观并发 + 快照)', () => {
 
   describe('restoreSnapshot', () => {
     it('回滚 = 以快照内容推进新版本,自身入快照', async () => {
-      const snapshotDoc = { formatVersion: 1, apps: ['old'] };
+      const snapshotDoc = ConfigDocumentSchema.parse({
+        formatVersion: 8,
+        apps: [],
+      });
       tx.configSnapshot.findUnique.mockResolvedValue({
         userId: 'user-1',
         version: 3,
@@ -428,6 +452,45 @@ describe('SyncService(乐观并发 + 快照)', () => {
       expect((error as UnauthorizedException).getResponse()).toEqual({
         error: 'invalid_access_token',
       });
+    });
+  });
+
+  describe('config read projections', () => {
+    it('索引只返回应用摘要和计数', async () => {
+      prisma.userConfig.findUnique.mockResolvedValue({
+        version: 4,
+        updatedAt: new Date('2026-08-06T10:00:00.000Z'),
+        document: doc,
+      });
+
+      const result = await service.configIndex('user-1');
+
+      expect(result.version).toBe(4);
+      expect(result.apps).toEqual([]);
+      expect(result.global).not.toHaveProperty('intents');
+    });
+
+    it('按 scope 返回全局或选中应用的手势', async () => {
+      const app = ConfigDocumentSchema.parse({
+        apps: [{
+          id: '60000000-0000-4000-8000-000000000001',
+          name: 'Selected app',
+          groupId: '20000000-0000-4000-8000-000000000001',
+          intents: [],
+        }],
+      }).apps[0]!;
+      prisma.userConfig.findUnique.mockResolvedValue({
+        version: 4,
+        updatedAt: new Date('2026-08-06T10:00:00.000Z'),
+        document: { ...doc, apps: [app] },
+      });
+
+      const global = await service.configScope('user-1', 'global');
+      const selected = await service.configScope('user-1', app.id);
+
+      expect(global.scope.kind).toBe('global');
+      expect(selected.scope.kind).toBe('app');
+      if (selected.scope.kind === 'app') expect(selected.scope.app.id).toBe(app.id);
     });
   });
 

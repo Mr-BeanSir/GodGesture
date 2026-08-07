@@ -3,13 +3,14 @@
 use super::config::NodePlugin;
 use super::node_host::{default_supervisor_path, InvocationResult, NodeHost};
 use super::node_packages::write_builtin_sdk;
+use super::node_toolchain::NodeToolchain;
 use super::script_host::{ScriptHost, ScriptInvocation, ScriptSlot};
 use crossbeam_channel::{bounded, Sender, TrySendError};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,6 +24,12 @@ const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 const MAX_LOCKFILE_BYTES: usize = 512 * 1024;
 const PACKAGE_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageManager {
+    Pnpm,
+    Npm,
+}
 
 #[derive(Debug, Clone)]
 pub struct NodeInvocationOutcome {
@@ -66,6 +73,7 @@ pub struct NodePluginCacheStatus {
 
 struct ServiceState {
     node: PathBuf,
+    npm: PathBuf,
     pnpm: PathBuf,
     supervisor: PathBuf,
     workspace: PathBuf,
@@ -79,14 +87,19 @@ struct ServiceState {
 
 impl NodeScriptService {
     pub fn start(
-        node: PathBuf,
-        pnpm: PathBuf,
-        supervisor: PathBuf,
+        toolchain: NodeToolchain,
         workspace: PathBuf,
         script_host: Arc<dyn ScriptHost>,
         outcome_sink: OutcomeSink,
         initial_plugins: Vec<NodePlugin>,
     ) -> Result<Self, String> {
+        let NodeToolchain {
+            node,
+            npm,
+            pnpm,
+            supervisor,
+            ..
+        } = toolchain;
         let (sender, receiver) = bounded(SERVICE_QUEUE_CAPACITY);
         let service = Self { sender };
         std::thread::Builder::new()
@@ -94,6 +107,7 @@ impl NodeScriptService {
             .spawn(move || {
                 let mut state = ServiceState {
                     node,
+                    npm,
                     pnpm,
                     supervisor,
                     workspace,
@@ -137,9 +151,13 @@ impl NodeScriptService {
         initial_plugins: Vec<NodePlugin>,
     ) -> Result<Self, String> {
         Self::start(
-            PathBuf::from("node"),
-            PathBuf::from("pnpm"),
-            default_supervisor_path(),
+            NodeToolchain {
+                node: PathBuf::from("node"),
+                npm: PathBuf::from("npm"),
+                pnpm: PathBuf::from("pnpm"),
+                supervisor: default_supervisor_path(),
+                typescript: PathBuf::from("typescript/lib/tsc.js"),
+            },
             workspace,
             script_host,
             outcome_sink,
@@ -233,7 +251,8 @@ impl ServiceState {
                     .collect()
             };
             next_actions.insert(id.clone(), action_map);
-            match prepare_plugin_cache(&self.workspace, &self.node, &self.pnpm, &plugin) {
+            match prepare_plugin_cache(&self.workspace, &self.node, &self.npm, &self.pnpm, &plugin)
+            {
                 Ok(prepared) => {
                     next_plugins.insert(id, prepared);
                 }
@@ -462,7 +481,11 @@ pub(crate) fn node_error_code(error: &str) -> &'static str {
         "plugin_not_configured"
     } else if lower.contains("not declared") {
         "action_not_declared"
-    } else if lower.contains("prepare") || lower.contains("dependency") || lower.contains("pnpm") {
+    } else if lower.contains("prepare")
+        || lower.contains("dependency")
+        || lower.contains("pnpm")
+        || lower.contains("npm")
+    {
         "prepare_failed"
     } else if lower.contains("import") {
         "import_failed"
@@ -476,6 +499,7 @@ pub(crate) fn node_error_code(error: &str) -> &'static str {
 fn prepare_plugin_cache(
     workspace: &Path,
     node: &Path,
+    npm: &Path,
     pnpm: &Path,
     plugin: &NodePlugin,
 ) -> Result<PreparedPlugin, String> {
@@ -505,6 +529,10 @@ fn prepare_plugin_cache(
             fs::write(plugin_root.join("pnpm-lock.yaml"), lockfile)
                 .map_err(|error| format!("write pnpm-lock.yaml: {error}"))?;
         }
+        if let Some(lockfile) = &plugin.npm_lockfile {
+            fs::write(plugin_root.join("package-lock.json"), lockfile)
+                .map_err(|error| format!("write package-lock.json: {error}"))?;
+        }
         for (path, source) in &plugin.files {
             let target = plugin_root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
             if let Some(parent) = target.parent() {
@@ -514,7 +542,7 @@ fn prepare_plugin_cache(
             fs::write(&target, source)
                 .map_err(|error| format!("write plugin source '{path}': {error}"))?;
         }
-        install_dependencies(workspace, &plugin_root, node, pnpm, plugin, &manifest)?;
+        install_dependencies(workspace, &plugin_root, node, npm, pnpm, plugin, &manifest)?;
         write_builtin_sdk(&plugin_root)?;
         fs::write(&ready, revision.to_string())
             .map_err(|error| format!("mark plugin project ready: {error}"))?;
@@ -522,6 +550,24 @@ fn prepare_plugin_cache(
     Ok(PreparedPlugin {
         entry_path: plugin_root.join(plugin.entry.replace('/', std::path::MAIN_SEPARATOR_STR)),
     })
+}
+
+/// Prepare an isolated runtime cache and verify that every declared lifecycle
+/// resolves to a function export. Online installation uses this before keeping
+/// a newly downloaded project active.
+pub fn preflight_plugin_runtime(
+    cache_workspace: &Path,
+    toolchain: &NodeToolchain,
+    plugin: &NodePlugin,
+) -> Result<(), String> {
+    let prepared = prepare_plugin_cache(
+        cache_workspace,
+        &toolchain.node,
+        &toolchain.npm,
+        &toolchain.pnpm,
+        plugin,
+    )?;
+    validate_lifecycle_exports(&toolchain.node, &prepared.entry_path, plugin)
 }
 
 pub fn plugin_cache_status(
@@ -545,7 +591,7 @@ pub fn plugin_cache_status(
             revision: revision_hex,
         });
     }
-    if plugin.lockfile.is_none() {
+    if package_manager(plugin).is_none() {
         return Ok(NodePluginCacheStatus {
             state: "lockfileMissing".into(),
             revision: revision_hex,
@@ -571,31 +617,41 @@ fn install_dependencies(
     workspace: &Path,
     plugin_root: &Path,
     node: &Path,
+    npm: &Path,
     pnpm: &Path,
     plugin: &NodePlugin,
     manifest: &Value,
 ) -> Result<(), String> {
-    let has_dependencies = ["dependencies", "optionalDependencies"].iter().any(|key| {
-        manifest
-            .get(key)
-            .and_then(Value::as_object)
-            .is_some_and(|deps| !deps.is_empty())
-    });
-    if !has_dependencies {
+    if !has_dependencies(manifest) {
         return Ok(());
     }
-    if plugin.lockfile.is_none() {
-        return Err("plugin dependencies require an exact pnpm lockfile".into());
-    }
-    let store = super::node_toolchain::platform_cache_root(workspace).join(".pnpm-store");
-    fs::create_dir_all(&store).map_err(|error| format!("create pnpm store: {error}"))?;
-    let mut command = super::node_toolchain::pnpm_command(node, pnpm);
+    let manager = package_manager(plugin).ok_or_else(|| {
+        "plugin dependencies require an exact pnpm-lock.yaml or package-lock.json".to_string()
+    })?;
+    let mut command = match manager {
+        PackageManager::Pnpm => {
+            let store = super::node_toolchain::platform_cache_root(workspace).join(".pnpm-store");
+            fs::create_dir_all(&store).map_err(|error| format!("create pnpm store: {error}"))?;
+            let mut command = super::node_toolchain::pnpm_command(node, pnpm);
+            command
+                .arg("install")
+                .arg("--frozen-lockfile")
+                .arg("--prod")
+                .arg("--store-dir")
+                .arg(store);
+            command
+        }
+        PackageManager::Npm => {
+            let mut command = super::node_toolchain::npm_command(node, npm);
+            command
+                .arg("ci")
+                .arg("--omit=dev")
+                .arg("--no-audit")
+                .arg("--no-fund");
+            command
+        }
+    };
     command
-        .arg("install")
-        .arg("--frozen-lockfile")
-        .arg("--prod")
-        .arg("--store-dir")
-        .arg(&store)
         .current_dir(plugin_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -612,11 +668,11 @@ fn install_dependencies(
     );
     let mut child = command
         .spawn()
-        .map_err(|_| "start bundled pnpm failed".to_string())?;
+        .map_err(|_| format!("start bundled {} failed", package_manager_name(manager)))?;
     loop {
         if let Some(status) = child
             .try_wait()
-            .map_err(|error| format!("wait for pnpm: {error}"))?
+            .map_err(|error| format!("wait for {}: {error}", package_manager_name(manager)))?
         {
             if status.success() {
                 log::info!(
@@ -633,7 +689,7 @@ fn install_dependencies(
                 safe_log_identifier(&plugin.id),
                 started.elapsed().as_millis()
             );
-            return Err("pnpm install failed".into());
+            return Err(format!("{} install failed", package_manager_name(manager)));
         }
         if started.elapsed() >= PACKAGE_INSTALL_TIMEOUT {
             let _ = child.kill();
@@ -644,7 +700,93 @@ fn install_dependencies(
                 safe_log_identifier(&plugin.id),
                 started.elapsed().as_millis()
             );
-            return Err("pnpm install timeout".into());
+            return Err(format!("{} install timeout", package_manager_name(manager)));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn has_dependencies(manifest: &Value) -> bool {
+    ["dependencies", "optionalDependencies"].iter().any(|key| {
+        manifest
+            .get(key)
+            .and_then(Value::as_object)
+            .is_some_and(|deps| !deps.is_empty())
+    })
+}
+
+fn package_manager(plugin: &NodePlugin) -> Option<PackageManager> {
+    if plugin.lockfile.is_some() {
+        Some(PackageManager::Pnpm)
+    } else if plugin.npm_lockfile.is_some() {
+        Some(PackageManager::Npm)
+    } else {
+        None
+    }
+}
+
+fn package_manager_name(manager: PackageManager) -> &'static str {
+    match manager {
+        PackageManager::Pnpm => "pnpm",
+        PackageManager::Npm => "npm",
+    }
+}
+
+fn validate_lifecycle_exports(
+    node: &Path,
+    entry_path: &Path,
+    plugin: &NodePlugin,
+) -> Result<(), String> {
+    let exports = if plugin.actions.is_empty() {
+        vec!["onExecute"]
+    } else {
+        plugin
+            .actions
+            .iter()
+            .map(|action| action.export_name.as_str())
+            .collect()
+    };
+    let exports = serde_json::to_string(&exports)
+        .map_err(|error| format!("encode declared lifecycle exports: {error}"))?;
+    let parent = entry_path
+        .parent()
+        .ok_or_else(|| "plugin entry has no parent directory".to_string())?;
+    let mut command = Command::new(node);
+    command
+        .arg("--input-type=module")
+        .arg("--eval")
+        .arg(
+            "const { pathToFileURL } = await import('node:url'); \
+             const module = await import(pathToFileURL(process.argv[1]).href); \
+             const names = JSON.parse(process.argv[2]); \
+             const invalid = names.filter((name) => typeof module[name] !== 'function'); \
+             if (invalid.length) throw new Error(`missing lifecycle exports: ${invalid.join(', ')}`);",
+        )
+        .arg(entry_path)
+        .arg(exports)
+        .current_dir(parent)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let started = Instant::now();
+    let mut child = command
+        .spawn()
+        .map_err(|_| "start bundled Node import validation failed".to_string())?;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("wait for Node import validation: {error}"))?
+        {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err("plugin import validation failed".into())
+            };
+        }
+        if started.elapsed() >= PACKAGE_INSTALL_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("plugin import validation timeout".into());
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -674,12 +816,13 @@ fn validate_plugin(plugin: &NodePlugin) -> Result<(), String> {
     if plugin.package_json.len() > MAX_MANIFEST_BYTES {
         return Err(format!("package.json exceeds {MAX_MANIFEST_BYTES} bytes"));
     }
-    if plugin
-        .lockfile
-        .as_ref()
-        .is_some_and(|lockfile| lockfile.len() > MAX_LOCKFILE_BYTES)
-    {
-        return Err(format!("lockfile exceeds {MAX_LOCKFILE_BYTES} bytes"));
+    for (name, lockfile) in [
+        ("pnpm-lock.yaml", plugin.lockfile.as_ref()),
+        ("package-lock.json", plugin.npm_lockfile.as_ref()),
+    ] {
+        if lockfile.is_some_and(|lockfile| lockfile.len() > MAX_LOCKFILE_BYTES) {
+            return Err(format!("{name} exceeds {MAX_LOCKFILE_BYTES} bytes"));
+        }
     }
     let manifest: Value = serde_json::from_str(&plugin.package_json)
         .map_err(|error| format!("invalid package.json: {error}"))?;
@@ -696,6 +839,7 @@ fn validate_source_path(path: &str) -> Result<(), String> {
     let lower = path.to_ascii_lowercase();
     if lower == "package.json"
         || lower == "pnpm-lock.yaml"
+        || lower == "package-lock.json"
         || lower.split('/').next() == Some("node_modules")
     {
         return Err(format!("plugin source path '{path}' is reserved"));
@@ -736,6 +880,11 @@ fn plugin_fingerprint(plugin: &NodePlugin) -> u64 {
         },
     );
     if let Some(lockfile) = &plugin.lockfile {
+        hash_bytes(&mut hash, b"pnpm-lock.yaml");
+        hash_bytes(&mut hash, lockfile.as_bytes());
+    }
+    if let Some(lockfile) = &plugin.npm_lockfile {
+        hash_bytes(&mut hash, b"package-lock.json");
         hash_bytes(&mut hash, lockfile.as_bytes());
     }
     let mut files = plugin.files.iter().collect::<Vec<_>>();
@@ -830,6 +979,7 @@ mod tests {
             files: [("index.mjs".into(), source.into())].into_iter().collect(),
             package_json: r#"{"private":true,"type":"module"}"#.into(),
             lockfile: None,
+            npm_lockfile: None,
             allow_lifecycle_scripts: false,
             actions: Vec::new(),
         }
@@ -841,6 +991,7 @@ mod tests {
         let first = prepare_plugin_cache(
             &dir.0,
             Path::new("node"),
+            Path::new("npm"),
             Path::new("pnpm"),
             &plugin("export function onExecute() {}"),
         )
@@ -849,6 +1000,7 @@ mod tests {
         let second = prepare_plugin_cache(
             &dir.0,
             Path::new("node"),
+            Path::new("npm"),
             Path::new("pnpm"),
             &plugin("export function onExecute() { return 2 }"),
         )
@@ -858,11 +1010,15 @@ mod tests {
         let mut unsafe_plugin = plugin("");
         unsafe_plugin.entry = "../escape.mjs".into();
         unsafe_plugin.files = [("../escape.mjs".into(), "".into())].into_iter().collect();
-        assert!(
-            prepare_plugin_cache(&dir.0, Path::new("node"), Path::new("pnpm"), &unsafe_plugin)
-                .unwrap_err()
-                .contains("not portable")
-        );
+        assert!(prepare_plugin_cache(
+            &dir.0,
+            Path::new("node"),
+            Path::new("npm"),
+            Path::new("pnpm"),
+            &unsafe_plugin,
+        )
+        .unwrap_err()
+        .contains("not portable"));
     }
 
     #[test]
@@ -890,6 +1046,77 @@ mod tests {
                 .state,
             "missing"
         );
+    }
+
+    #[test]
+    fn npm_package_lock_is_accepted_for_dependency_preparation() {
+        let dir = TestDir::new();
+        let mut dependency_plugin = plugin("export function onExecute() {}");
+        dependency_plugin.package_json =
+            r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#.into();
+        dependency_plugin.npm_lockfile = Some(r#"{"lockfileVersion":3}"#.into());
+        assert_eq!(
+            package_manager(&dependency_plugin),
+            Some(PackageManager::Npm)
+        );
+        assert_eq!(
+            plugin_cache_status(&dir.0, &dependency_plugin)
+                .unwrap()
+                .state,
+            "missing"
+        );
+    }
+
+    #[test]
+    fn npm_package_lock_uses_ci_with_production_flags() {
+        let dir = TestDir::new();
+        let fake_npm = dir.0.join("fake-npm.mjs");
+        fs::write(
+            &fake_npm,
+            "import { existsSync, writeFileSync } from 'node:fs';\nif (!existsSync('package-lock.json')) process.exit(17);\nwriteFileSync('.npm-args', JSON.stringify(process.argv.slice(2)));\n",
+        )
+        .unwrap();
+        let mut dependency_plugin = plugin("export function onExecute() {}");
+        dependency_plugin.package_json =
+            r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#.into();
+        dependency_plugin.npm_lockfile = Some(r#"{"lockfileVersion":3}"#.into());
+
+        let prepared = prepare_plugin_cache(
+            &dir.0,
+            Path::new("node"),
+            &fake_npm,
+            Path::new("unused-pnpm"),
+            &dependency_plugin,
+        )
+        .unwrap();
+        let args_path = prepared.entry_path.parent().unwrap().join(".npm-args");
+        let args: Vec<String> =
+            serde_json::from_str(&fs::read_to_string(args_path).unwrap()).unwrap();
+        assert_eq!(args.first().map(String::as_str), Some("ci"));
+        assert!(args.iter().any(|arg| arg == "--omit=dev"));
+        assert!(args.iter().any(|arg| arg == "--no-audit"));
+        assert!(args.iter().any(|arg| arg == "--no-fund"));
+        assert!(args.iter().any(|arg| arg == "--ignore-scripts"));
+    }
+
+    #[test]
+    fn preflight_rejects_a_missing_declared_lifecycle_export() {
+        let dir = TestDir::new();
+        let mut invalid = plugin("export function onExecute() {}\n");
+        invalid.actions = vec![super::super::config::NodePluginAction {
+            id: "onEnd".into(),
+            name: "onEnd".into(),
+            export_name: "onEnd".into(),
+        }];
+        let toolchain = NodeToolchain {
+            node: PathBuf::from("node"),
+            npm: PathBuf::from("npm"),
+            pnpm: PathBuf::from("pnpm"),
+            supervisor: PathBuf::from("unused-supervisor"),
+            typescript: PathBuf::from("unused-typescript"),
+        };
+        let error = preflight_plugin_runtime(&dir.0, &toolchain, &invalid).unwrap_err();
+        assert!(error.contains("import validation"));
     }
 
     #[test]

@@ -5,17 +5,13 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { InfoFilled, Loading, UploadFilled } from "@element-plus/icons-vue";
+import { InfoFilled, Loading } from "@element-plus/icons-vue";
 import type { HotkeyKeyName, MachineLocalSettings } from "@godgesture/shared";
 import { useConfigStore } from "../stores/config";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
 import type { HotkeyChord } from "../components/hotkey-recorder";
 import ArgbColorPicker from "../components/ArgbColorPicker.vue";
-
-const emit = defineEmits<{
-  "open-legacy-import": [];
-}>();
 
 const { t } = useI18n();
 const store = useConfigStore();
@@ -306,14 +302,6 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
       </div>
     </section>
 
-    <section class="gg-section">
-      <h3 class="gg-section-title">{{ t("options.legacyImport.sectionTitle") }}</h3>
-      <div>
-        <el-button :icon="UploadFilled" @click="emit('open-legacy-import')">
-          {{ t("options.legacyImport.openAction") }}
-        </el-button>
-      </div>
-      </section>
       </div>
     </div>
   </div>

@@ -1,73 +1,37 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from "vue";
+import MnemonicIcon from "./MnemonicIcon.vue";
+
+const props = defineProps<{
   direction?: "up" | "down";
   /** 滚轮按下时突出中央按键区域。 */
   pressed?: boolean;
   label?: string;
 }>();
+
+const symbol = computed(() =>
+  `wheel-${props.direction ?? "up"}${props.pressed ? "-pressed" : ""}`,
+);
 </script>
 
 <template>
-  <svg
+  <MnemonicIcon
+    :symbol="symbol"
+    view-box="0 0 32 48"
     class="wheel-modifier-icon"
-    viewBox="0 0 32 48"
     role="img"
-    :aria-label="label"
-    :aria-hidden="label ? undefined : true"
-  >
-    <rect class="wheel-modifier-icon__body" x="6" y="2" width="20" height="44" rx="10" />
-    <path class="wheel-modifier-icon__groove" d="M16 15v18" />
-    <path
-      v-if="direction === 'up'"
-      class="wheel-modifier-icon__active"
-      d="M16 3a9 9 0 0 1 9 9H7a9 9 0 0 1 9-9Z"
-    />
-    <path
-      v-else-if="direction === 'down'"
-      class="wheel-modifier-icon__active"
-      d="M7 36h18v1a9 9 0 0 1-18 0Z"
-    />
-    <rect
-      v-if="pressed"
-      class="wheel-modifier-icon__pressed"
-      x="10"
-      y="20"
-      width="12"
-      height="8"
-      rx="4"
-    />
-  </svg>
+    :aria-label="props.label"
+    :aria-hidden="props.label ? undefined : true"
+  />
 </template>
 
 <style scoped>
 .wheel-modifier-icon {
   display: inline-block;
-  width: 0.72em;
-  height: 1.08em;
-  vertical-align: -0.18em;
+  width: 0.9em;
+  height: 1.35em;
+  flex: 0 0 auto;
+  vertical-align: middle;
   overflow: visible;
-}
-
-.wheel-modifier-icon__body {
-  fill: var(--el-fill-color-light);
-  stroke: var(--el-text-color-secondary);
-  stroke-width: 1.5;
-}
-
-.wheel-modifier-icon__groove {
-  fill: none;
-  stroke: var(--el-border-color);
-  stroke-width: 1.25;
-  stroke-linecap: round;
-}
-
-.wheel-modifier-icon__active {
-  fill: var(--wheel-modifier-accent, var(--el-color-primary));
-}
-
-.wheel-modifier-icon__pressed {
-  fill: var(--wheel-modifier-accent, var(--el-color-primary));
-  stroke: var(--wheel-modifier-accent, var(--el-color-primary));
-  stroke-width: 0.75;
 }
 </style>

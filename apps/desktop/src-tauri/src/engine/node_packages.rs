@@ -413,16 +413,8 @@ fn run_command(
         .map_err(|error| format!("start bundled Node command: {error}"))?;
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
-    let stdout_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = std::io::BufReader::new(stdout).read_to_end(&mut bytes);
-        bytes
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = std::io::BufReader::new(stderr).read_to_end(&mut bytes);
-        bytes
-    });
+    let stdout_reader = thread::spawn(move || read_bounded_output(std::io::BufReader::new(stdout)));
+    let stderr_reader = thread::spawn(move || read_bounded_output(std::io::BufReader::new(stderr)));
     let started = Instant::now();
     loop {
         if let Some(status) = child
@@ -449,6 +441,21 @@ fn run_command(
         }
         thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn read_bounded_output(mut reader: impl Read) -> Vec<u8> {
+    let mut retained = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    while let Ok(read) = reader.read(&mut buffer) {
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_OUTPUT_BYTES.saturating_sub(retained.len());
+        if remaining > 0 {
+            retained.extend_from_slice(&buffer[..read.min(remaining)]);
+        }
+    }
+    retained
 }
 
 fn append_output(output: &mut String, command: &Output) {
@@ -487,6 +494,7 @@ fn validate_plugin(plugin: &NodePlugin) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::io::Cursor;
     use std::path::PathBuf;
 
     #[test]
@@ -504,6 +512,13 @@ mod tests {
     }
 
     #[test]
+    fn process_output_reader_keeps_only_a_bounded_prefix() {
+        let source = vec![b'x'; MAX_OUTPUT_BYTES + 8192];
+        let retained = read_bounded_output(Cursor::new(source));
+        assert_eq!(retained.len(), MAX_OUTPUT_BYTES);
+    }
+
+    #[test]
     fn rejects_invalid_manifest() {
         let plugin = NodePlugin {
             id: "30000000-0000-4000-8000-000000000001".into(),
@@ -512,6 +527,7 @@ mod tests {
             files: HashMap::from([(String::from("index.mjs"), String::new())]),
             package_json: "{}".into(),
             lockfile: None,
+            npm_lockfile: None,
             allow_lifecycle_scripts: false,
             actions: Vec::new(),
         };
@@ -533,11 +549,13 @@ mod tests {
             )]),
             package_json: r#"{"private":true,"type":"module"}"#.into(),
             lockfile: None,
+            npm_lockfile: None,
             allow_lifecycle_scripts: false,
             actions: Vec::new(),
         };
         let toolchain = NodeToolchain {
             node: PathBuf::from("node"),
+            npm: PathBuf::from("npm"),
             pnpm: PathBuf::from("pnpm"),
             supervisor: PathBuf::from("unused"),
             typescript: PathBuf::from("typescript/lib/tsc.js"),
@@ -565,11 +583,13 @@ mod tests {
             package_json: r#"{"private":true,"type":"module","dependencies":{"zod":"4.4.3"}}"#
                 .into(),
             lockfile: None,
+            npm_lockfile: None,
             allow_lifecycle_scripts: false,
             actions: Vec::new(),
         };
         let toolchain = NodeToolchain {
             node: PathBuf::from("unused-node"),
+            npm: PathBuf::from("unused-npm"),
             pnpm: PathBuf::from("unused-pnpm"),
             supervisor: PathBuf::from("unused"),
             typescript: PathBuf::from("typescript/lib/tsc.js"),

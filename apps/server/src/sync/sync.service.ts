@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type {
-  ConfigDocument,
+  ConfigIndexResponse,
+  ConfigScopeResponse,
   ListSnapshotsQuery,
   ListSnapshotsResponse,
   PullConfigResponse,
@@ -18,6 +19,7 @@ import type {
   RestoreSnapshotResponse,
 } from '@godgesture/shared';
 import {
+  ConfigDocument,
   MAX_CONFIG_DOCUMENT_BYTES,
   configDocumentSizeBytes,
 } from '@godgesture/shared';
@@ -49,11 +51,47 @@ export class SyncService {
         document: null,
       };
     }
+    const document = ConfigDocument.parse(config.document);
     return {
       version: config.version,
       updatedAt: config.updatedAt.toISOString(),
       updatedByDeviceId: config.updatedByDeviceId,
-      document: config.document as ConfigDocument,
+      document,
+    };
+  }
+
+  async configIndex(userId: string): Promise<ConfigIndexResponse> {
+    const config = await this.prisma.userConfig.findUnique({ where: { userId } });
+    const document = ConfigDocument.parse(config?.document ?? {});
+    return {
+      version: config?.version ?? 0,
+      updatedAt: config?.updatedAt.toISOString() ?? null,
+      groups: document.groups,
+      apps: document.apps.map(({ intents, ...app }) => ({ ...app, intentCount: intents.length })),
+      global: { gesturingEnabled: document.global.gesturingEnabled, intentCount: document.global.intents.length },
+      preferences: document.preferences,
+      hotCorners: { enabled: document.hotCorners.enabled },
+      rubEdges: { enabled: document.rubEdges.enabled },
+      boundaryIntentCount: document.boundaryIntents.length,
+    };
+  }
+
+  async configScope(userId: string, scope: string): Promise<ConfigScopeResponse> {
+    const config = await this.prisma.userConfig.findUnique({ where: { userId } });
+    const document = ConfigDocument.parse(config?.document ?? {});
+    if (scope === 'global') {
+      return {
+        version: config?.version ?? 0,
+        scope: { kind: 'global', global: document.global },
+        boundaryIntents: document.boundaryIntents,
+      };
+    }
+    const app = document.apps.find((candidate) => candidate.id === scope);
+    if (!app) throw new NotFoundException('App not found');
+    return {
+      version: config?.version ?? 0,
+      scope: { kind: 'app', app },
+      boundaryIntents: [],
     };
   }
 
@@ -62,7 +100,11 @@ export class SyncService {
     deviceId: string,
     dto: PushConfigRequest,
   ): Promise<PushConfigResponse> {
+    // Apply the size limit to the received payload before schema parsing.
     const sizeBytes = this.assertConfigSize(dto.document);
+    // The pipe already returns the shared type, but parse again at the service
+    // boundary so direct callers receive the same v8 validation and defaults.
+    const document = ConfigDocument.parse(dto.document);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const result = await this.advanceVersion(
@@ -70,7 +112,7 @@ export class SyncService {
           userId,
           deviceId,
           dto.baseVersion,
-          dto.document,
+          document,
           sizeBytes,
           `配置同步推送；基于云端版本 v${dto.baseVersion}。`,
         );
@@ -168,6 +210,7 @@ export class SyncService {
         if (!snapshot) {
           throw new NotFoundException({ error: 'snapshot_not_found' });
         }
+        const document = ConfigDocument.parse(snapshot.document);
         // 使用用户确认时看到的版本推进。advanceVersion 会在同一事务先校验当前
         // 版本，再以 updateMany(userId, version) 抵御确认后的并发写。
         return this.advanceVersion(
@@ -175,8 +218,8 @@ export class SyncService {
           userId,
           deviceId,
           dto.baseVersion,
-          snapshot.document as ConfigDocument,
-          this.assertConfigSize(snapshot.document),
+          document,
+          this.assertConfigSize(document),
           `从配置快照 v${version} 回滚；回滚前云端版本为 v${dto.baseVersion}。`,
         );
       });

@@ -34,7 +34,6 @@ import {
   resolveQuickGuideStorage,
   shouldShowQuickGuide,
 } from "./onboarding/quick-guide";
-import LegacyImportDialog from "./components/LegacyImportDialog.vue";
 import QuickStartDialog from "./components/QuickStartDialog.vue";
 import WindowControls from "./components/WindowControls.vue";
 import OptionsView from "./views/OptionsView.vue";
@@ -59,7 +58,6 @@ const toggleDark = useToggle(isDark);
 
 const active = ref<Section>("gestures");
 const quickStartVisible = ref(false);
-const legacyImportVisible = ref(false);
 const quickGuideStorage = resolveQuickGuideStorage();
 let unlistenSingleInstance: (() => void) | undefined;
 const SECTION_VIEWS = {
@@ -82,9 +80,6 @@ const NAV_ITEMS = [
 ] as const satisfies ReadonlyArray<{ id: Section; icon: typeof MagicStick }>;
 const currentView = computed(() => SECTION_VIEWS[active.value]);
 const currentViewBindings = computed(() => {
-  if (active.value === "options") {
-    return { onOpenLegacyImport: openLegacyImport };
-  }
   if (active.value === "about") {
     return { onOpenQuickStart: openQuickStart };
   }
@@ -128,12 +123,6 @@ function openGuideDestination(destination: "gestures" | "templates") {
   setQuickStartVisible(false);
 }
 
-function openLegacyImport() {
-  active.value = "options";
-  setQuickStartVisible(false);
-  legacyImportVisible.value = true;
-}
-
 // 配置载入后应用已保存的语言
 watch(
   () => store.doc?.preferences.locale,
@@ -147,9 +136,9 @@ watchEffect(() => {
 });
 
 watch(
-  [() => updates.automaticPromptPending, quickStartVisible, legacyImportVisible],
-  async ([pending, guideVisible, importVisible]) => {
-    if (!pending || guideVisible || importVisible || !updates.metadata) return;
+  [() => updates.automaticPromptPending, quickStartVisible],
+  async ([pending, guideVisible]) => {
+    if (!pending || guideVisible || !updates.metadata) return;
     updates.dismissAutomaticPrompt();
     try {
       await ElMessageBox.confirm(
@@ -310,9 +299,7 @@ onUnmounted(() => unlistenSingleInstance?.());
       :intents="quickStartIntents"
       @update:model-value="setQuickStartVisible"
       @navigate="openGuideDestination"
-      @open-legacy-import="openLegacyImport"
     />
-    <LegacyImportDialog v-model="legacyImportVisible" />
     </el-container>
   </el-config-provider>
 </template>
@@ -424,6 +411,34 @@ onUnmounted(() => unlistenSingleInstance?.());
 }
 .app__save--err {
   color: var(--el-color-danger);
+}
+@media (max-width: 600px) {
+  .app__header {
+    padding: 0 8px;
+  }
+  .app__brand {
+    gap: 4px;
+    font-size: 12px;
+  }
+  .app__brand span {
+    max-width: 76px;
+    line-height: 1.1;
+  }
+  .app__actions {
+    gap: 4px;
+  }
+  .app__actions > .el-button:first-child {
+    width: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+  .app__actions > .el-button:first-child :deep(.el-icon) {
+    margin: 0;
+    font-size: 14px;
+  }
+  .app__lang {
+    width: 84px;
+  }
 }
 </style>
 

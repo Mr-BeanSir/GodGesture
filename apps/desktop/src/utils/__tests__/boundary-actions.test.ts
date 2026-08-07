@@ -71,13 +71,30 @@ describe("boundary action conflicts", () => {
     ).toBeNull();
   });
 
-  it("treats empty immediate actions as prefixes", () => {
+  it("allows an immediate fallback beside a non-empty sequence", () => {
     expect(
       findBoundaryConflict(
         [intent("immediate", [])],
         { kind: "hotCorner", corner: "leftTop" },
         [wheel],
       ),
-    ).toMatchObject({ kind: "prefix", intent: { id: "immediate" } });
+    ).toBeNull();
+    expect(
+      findBoundaryConflict(
+        [intent("wheel", [wheel])],
+        { kind: "hotCorner", corner: "leftTop" },
+        [],
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps duplicate immediate actions as exact conflicts", () => {
+    expect(
+      findBoundaryConflict(
+        [intent("immediate", [])],
+        { kind: "hotCorner", corner: "leftTop" },
+        [],
+      ),
+    ).toMatchObject({ kind: "exact", intent: { id: "immediate" } });
   });
 });

@@ -2,6 +2,8 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { BoundaryIntent, BoundaryToken } from "@godgesture/shared";
+import MnemonicIcon from "./MnemonicIcon.vue";
+import MnemonicToken from "./MnemonicToken.vue";
 
 const props = defineProps<{ intent: BoundaryIntent }>();
 const { t } = useI18n();
@@ -17,46 +19,54 @@ const origin = computed(() =>
     ? t(`corners.corner.${props.intent.origin.corner}`)
     : t(`corners.edge.${props.intent.origin.edge}`),
 );
-const activeEdge = computed(() =>
-  props.intent.origin.kind === "rubEdge" ? props.intent.origin.edge : null,
+
+const boundarySymbol = computed(() =>
+  props.intent.origin.kind === "hotCorner"
+    ? `boundary-corner-${props.intent.origin.corner}`
+    : `boundary-edge-${props.intent.origin.edge}`,
 );
-const activeCorner = computed(() =>
-  props.intent.origin.kind === "hotCorner" ? props.intent.origin.corner : null,
-);
+
+const ariaLabel = computed(() => {
+  const steps = props.intent.sequence.map(tokenLabel);
+  return [origin.value, steps.length ? "" : t("actions.immediate"), ...steps]
+    .filter(Boolean)
+    .join(" ");
+});
 </script>
 
 <template>
-  <span class="boundary-mnemonic">
-    <svg
-      class="boundary-mnemonic__screen"
-      viewBox="0 0 24 24"
-      role="img"
-      :aria-label="origin"
-    >
-      <g class="boundary-mnemonic__frame">
-        <line x1="4" y1="4" x2="20" y2="4" />
-        <line x1="20" y1="4" x2="20" y2="20" />
-        <line x1="20" y1="20" x2="4" y2="20" />
-        <line x1="4" y1="20" x2="4" y2="4" />
-      </g>
-      <g class="boundary-mnemonic__active">
-        <line v-if="activeEdge === 'top'" x1="4" y1="4" x2="20" y2="4" />
-        <line v-else-if="activeEdge === 'right'" x1="20" y1="4" x2="20" y2="20" />
-        <line v-else-if="activeEdge === 'bottom'" x1="20" y1="20" x2="4" y2="20" />
-        <line v-else-if="activeEdge === 'left'" x1="4" y1="20" x2="4" y2="4" />
-        <path v-if="activeCorner === 'leftTop'" d="M 4 11 L 4 4 L 11 4" />
-        <path v-else-if="activeCorner === 'rightTop'" d="M 13 4 L 20 4 L 20 11" />
-        <path v-else-if="activeCorner === 'leftBottom'" d="M 4 13 L 4 20 L 11 20" />
-        <path v-else-if="activeCorner === 'rightBottom'" d="M 13 20 L 20 20 L 20 13" />
-      </g>
-    </svg>
+  <span
+    class="boundary-mnemonic"
+    role="img"
+    :aria-label="ariaLabel"
+    :title="ariaLabel"
+  >
+    <span class="boundary-mnemonic__screen" aria-hidden="true">
+      <MnemonicIcon
+        symbol="boundary-frame"
+        view-box="0 0 24 24"
+        class="boundary-mnemonic__screen-frame"
+      />
+      <MnemonicIcon
+        :symbol="boundarySymbol"
+        view-box="0 0 24 24"
+        class="boundary-mnemonic__screen-active"
+      />
+    </span>
     <template v-if="intent.sequence.length">
-      <span class="boundary-mnemonic__arrow">›</span>
-      <span v-for="(token, index) in intent.sequence" :key="index" class="boundary-mnemonic__token">
-        {{ tokenLabel(token) }}
-      </span>
+      <MnemonicToken
+        v-for="(token, index) in intent.sequence"
+        :key="`${token.type}-${index}`"
+        :token="token"
+        :label="tokenLabel(token)"
+      />
     </template>
-    <span v-else class="boundary-mnemonic__token">{{ t("actions.immediate") }}</span>
+    <MnemonicIcon
+      v-else
+      symbol="immediate"
+      view-box="0 0 24 24"
+      class="boundary-mnemonic__immediate"
+    />
   </span>
 </template>
 
@@ -64,38 +74,45 @@ const activeCorner = computed(() =>
 .boundary-mnemonic {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   min-width: 0;
   max-width: 100%;
+  gap: 5px;
   flex-wrap: wrap;
+  color: var(--el-text-color-primary);
 }
+
 .boundary-mnemonic__screen {
-  width: 22px;
-  height: 22px;
+  position: relative;
+  display: block;
+  width: 1.35em;
+  height: 1.35em;
   flex: 0 0 auto;
   overflow: visible;
 }
-.boundary-mnemonic__frame line {
-  stroke: var(--el-border-color-darker);
-  stroke-width: 2.5;
-  stroke-linecap: round;
+
+.boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-frame),
+.boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-active) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
-.boundary-mnemonic__active line,
-.boundary-mnemonic__active path {
-  fill: none;
-  stroke: var(--el-color-primary);
-  stroke-width: 3.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+
+.boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-frame) {
+  color: var(--el-border-color-darker);
 }
-.boundary-mnemonic__arrow {
-  color: var(--el-text-color-placeholder);
+
+.boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-active) {
+  color: var(--el-color-primary);
 }
-.boundary-mnemonic__token {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  font-size: 12px;
+
+.boundary-mnemonic__immediate {
+  display: block;
+  width: 1.35em;
+  height: 1.35em;
+  flex: 0 0 auto;
+  fill: var(--el-color-warning);
+  color: var(--el-color-warning);
+  overflow: visible;
 }
 </style>

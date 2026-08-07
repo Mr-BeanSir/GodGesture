@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Collection,
-  UploadFilled,
 } from "@element-plus/icons-vue";
 import type { GestureIntent } from "@godgesture/shared";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
@@ -20,7 +19,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   navigate: [destination: "gestures" | "templates"];
-  "open-legacy-import": [];
 }>();
 
 const { t } = useI18n();
@@ -102,9 +100,6 @@ function navigate(destination: "gestures" | "templates") {
   emit("navigate", destination);
 }
 
-function openLegacyImport() {
-  emit("open-legacy-import");
-}
 </script>
 
 <template>
@@ -202,15 +197,6 @@ function openLegacyImport() {
               <span>{{ t("quickGuide.personalize.templatesDesc") }}</span>
             </div>
             <el-button :icon="Collection" @click="navigate('templates')">
-              {{ t("quickGuide.personalize.open") }}
-            </el-button>
-          </div>
-          <div class="quick-guide__destination">
-            <div>
-              <strong>{{ t("quickGuide.personalize.legacyImport") }}</strong>
-              <span>{{ t("quickGuide.personalize.legacyImportDesc") }}</span>
-            </div>
-            <el-button :icon="UploadFilled" @click="openLegacyImport">
               {{ t("quickGuide.personalize.open") }}
             </el-button>
           </div>

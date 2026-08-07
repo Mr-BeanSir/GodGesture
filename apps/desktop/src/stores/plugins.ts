@@ -1,8 +1,18 @@
 import { computed, onScopeDispose, ref } from "vue";
 import { defineStore } from "pinia";
+import type { OnlinePluginCatalogEntry } from "@godgesture/shared";
 import { type PluginWorkspaceSnapshot, useBackend } from "../api/backend";
+import {
+  OnlinePluginSourceError,
+  createOnlinePluginSource,
+} from "../plugins/source";
 
-export type PluginErrorOperation = "initialize" | "refresh" | "openRoot" | "openProject";
+export type PluginErrorOperation =
+  | "initialize"
+  | "refresh"
+  | "openRoot"
+  | "openProject"
+  | "installOnline";
 
 export interface PluginErrorDiagnostic {
   operation: PluginErrorOperation;
@@ -79,12 +89,18 @@ function capturePluginError(
 
 export const usePluginsStore = defineStore("plugins", () => {
   const backend = useBackend();
+  const onlineSource = createOnlinePluginSource(!backend.isTauri);
   const snapshot = ref<PluginWorkspaceSnapshot>({ root: "", plugins: [] });
   const loading = ref(false);
   const error = ref<PluginErrorDiagnostic | null>(null);
   const selectedPath = ref<string | null>(null);
+  const onlineEntries = ref<OnlinePluginCatalogEntry[]>([]);
+  const loadingOnlineCatalog = ref(false);
+  const onlineCatalogError = ref<string | null>(null);
+  const installingPluginId = ref<string | null>(null);
   let initialized = false;
   let initializePromise: Promise<void> | null = null;
+  let onlineCatalogRequest: Promise<void> | null = null;
   let unlisten: (() => void) | undefined;
 
   const plugins = computed(() => snapshot.value.plugins);
@@ -94,6 +110,7 @@ export const usePluginsStore = defineStore("plugins", () => {
   const selected = computed(() =>
     plugins.value.find((plugin) => plugin.path === selectedPath.value) ?? plugins.value[0] ?? null,
   );
+  const installedPluginIds = computed(() => new Set(readyPlugins.value.map((plugin) => plugin.id)));
 
   function apply(next: PluginWorkspaceSnapshot) {
     snapshot.value = next;
@@ -122,6 +139,55 @@ export const usePluginsStore = defineStore("plugins", () => {
       error.value = capturePluginError(cause, "refresh", snapshot.value.root || null);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function loadOnlineCatalog(force = false) {
+    if (onlineCatalogRequest && !force) return onlineCatalogRequest;
+    if (onlineEntries.value.length > 0 && !force) return;
+    const request = (async () => {
+      loadingOnlineCatalog.value = true;
+      onlineCatalogError.value = null;
+      try {
+        const catalog = await onlineSource.loadCatalog();
+        onlineEntries.value = catalog.entries;
+      } catch (cause) {
+        onlineCatalogError.value =
+          cause instanceof OnlinePluginSourceError
+            ? cause.code
+            : errorMessage(cause, "plugin_catalog_failed");
+      } finally {
+        loadingOnlineCatalog.value = false;
+      }
+    })();
+    onlineCatalogRequest = request;
+    try {
+      await request;
+    } finally {
+      if (onlineCatalogRequest === request) onlineCatalogRequest = null;
+    }
+  }
+
+  async function installOnline(entry: OnlinePluginCatalogEntry) {
+    if (installingPluginId.value) return false;
+    if (installedPluginIds.value.has(entry.pluginId)) return true;
+    installingPluginId.value = entry.pluginId;
+    error.value = null;
+    try {
+      apply(
+        await backend.nodePluginInstall({
+          pluginId: entry.pluginId,
+          repositoryUrl: entry.repositoryUrl,
+          ref: entry.ref,
+          subdirectory: entry.subdirectory,
+        }),
+      );
+      return true;
+    } catch (cause) {
+      error.value = capturePluginError(cause, "installOnline", entry.repositoryUrl);
+      return false;
+    } finally {
+      installingPluginId.value = null;
     }
   }
 
@@ -167,15 +233,23 @@ export const usePluginsStore = defineStore("plugins", () => {
   onScopeDispose(() => unlisten?.());
 
   return {
+    backend,
     snapshot,
     plugins,
     readyPlugins,
+    onlineEntries,
+    installedPluginIds,
     selected,
     selectedPath,
     loading,
     error,
+    loadingOnlineCatalog,
+    onlineCatalogError,
+    installingPluginId,
     initialize,
     refresh,
+    loadOnlineCatalog,
+    installOnline,
     openRoot,
     openProject,
   };

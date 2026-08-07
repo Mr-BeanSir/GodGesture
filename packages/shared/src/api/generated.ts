@@ -341,6 +341,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sync/config/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read groups and application summaries without gesture lists */
+        get: operations["getConfigIndex"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/config/scope/{scope}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the global or selected application gesture scope */
+        get: operations["getConfigScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync/snapshots": {
         parameters: {
             query?: never;
@@ -456,18 +490,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -483,8 +506,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -577,18 +606,7 @@ export interface components {
                     /** @enum {string} */
                     type: "openFile";
                 } | {
-                    steps?: ({
-                        text: string;
-                        /** @enum {string} */
-                        type: "text";
-                    } | {
-                        /** @enum {string} */
-                        key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                        modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                        /** @enum {string} */
-                        type: "key";
-                    })[];
-                    text?: string;
+                    text: string;
                     /** @enum {string} */
                     type: "sendText";
                 } | {
@@ -604,8 +622,14 @@ export interface components {
                     /** @enum {string} */
                     type: "cmd";
                 } | {
-                    /** @default default */
-                    actionId: string;
+                    /** @default true */
+                    autoSetWorkingDir: boolean;
+                    code: string;
+                    /** @default true */
+                    showWindow: boolean;
+                    /** @enum {string} */
+                    type: "powershell";
+                } | {
                     /** Format: uuid */
                     pluginId: string;
                     /** @enum {string} */
@@ -653,10 +677,10 @@ export interface components {
                 })[];
             }[];
             /**
-             * @default 7
+             * @default 8
              * @enum {number}
              */
-            formatVersion: 7;
+            formatVersion: 8;
             /** @default {} */
             global: {
                 /** @default true */
@@ -691,18 +715,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -718,8 +731,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -817,18 +836,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -844,8 +852,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -884,18 +898,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -911,8 +914,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -951,18 +960,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -978,8 +976,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1018,18 +1022,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1045,8 +1038,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1163,18 +1162,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1190,8 +1178,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1230,18 +1224,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1257,8 +1240,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1297,18 +1286,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1324,8 +1302,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1364,18 +1348,7 @@ export interface components {
                         /** @enum {string} */
                         type: "openFile";
                     } | {
-                        steps?: ({
-                            text: string;
-                            /** @enum {string} */
-                            type: "text";
-                        } | {
-                            /** @enum {string} */
-                            key: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash";
-                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
-                            /** @enum {string} */
-                            type: "key";
-                        })[];
-                        text?: string;
+                        text: string;
                         /** @enum {string} */
                         type: "sendText";
                     } | {
@@ -1391,8 +1364,14 @@ export interface components {
                         /** @enum {string} */
                         type: "cmd";
                     } | {
-                        /** @default default */
-                        actionId: string;
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
                         /** Format: uuid */
                         pluginId: string;
                         /** @enum {string} */
@@ -1407,6 +1386,465 @@ export interface components {
                 /** @default true */
                 enabled: boolean;
             };
+        };
+        ConfigIndexResponse: {
+            apps: {
+                /** @default true */
+                gesturingEnabled: boolean;
+                /** Format: uuid */
+                groupId: string;
+                /** Format: uuid */
+                id: string;
+                /** @default true */
+                inheritGlobalGestures: boolean;
+                intentCount: number;
+                mac?: {
+                    bundleId: string;
+                };
+                name: string;
+                /** @default 0 */
+                order: number;
+                windows?: {
+                    aumid?: string;
+                    exactPath?: string;
+                    exeName: string;
+                    /** @default false */
+                    matchByExactPath: boolean;
+                };
+            }[];
+            boundaryIntentCount: number;
+            global: {
+                /** @default true */
+                gesturingEnabled: boolean;
+                intentCount: number;
+            };
+            groups: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @default 0 */
+                order: number;
+            }[];
+            hotCorners: {
+                /** @default true */
+                enabled: boolean;
+            };
+            preferences: {
+                /** @default true */
+                autoCheckForUpdate: boolean;
+                /** @default {} */
+                gestureView: {
+                    /** @default true */
+                    fadeOut: boolean;
+                    /** @default #FF2DE0FF */
+                    middleButtonPathColor: string;
+                    /** @default #FF27E518 */
+                    rightButtonPathColor: string;
+                    /** @default true */
+                    showCommandName: boolean;
+                    /** @default true */
+                    showPath: boolean;
+                    /** @default #FFFF8040 */
+                    unrecognizedPathColor: string;
+                    /** @default #FF667EE9 */
+                    xButtonPathColor: string;
+                };
+                /**
+                 * @default auto
+                 * @enum {string}
+                 */
+                locale: "auto" | "zh-CN" | "en";
+                /** @default {} */
+                pathTracker: {
+                    /** @default false */
+                    disableInFullscreen: boolean;
+                    /** @default true */
+                    enable8Directions: boolean;
+                    /** @default false */
+                    enableWindowsKeyGesturing: boolean;
+                    /** @default false */
+                    initialStayTimeout: boolean;
+                    /** @default 200 */
+                    initialStayTimeoutMs: number;
+                    /** @default 4 */
+                    initialValidMovePx: number;
+                    /** @default true */
+                    preferCursorWindow: boolean;
+                    /** @default false */
+                    stayTimeout: boolean;
+                    /** @default 500 */
+                    stayTimeoutMs: number;
+                    /**
+                     * @default [
+                     *       "right",
+                     *       "middle",
+                     *       "x1",
+                     *       "x2"
+                     *     ]
+                     */
+                    triggerButtons: ("right" | "middle" | "x1" | "x2")[];
+                };
+                /** @default {} */
+                pauseHotkey: {
+                    /** @default w */
+                    key: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash") | "";
+                    /**
+                     * @default [
+                     *       "ctrl",
+                     *       "shift",
+                     *       "alt"
+                     *     ]
+                     */
+                    modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                };
+            };
+            rubEdges: {
+                /** @default true */
+                enabled: boolean;
+            };
+            /** Format: date-time */
+            updatedAt: string | null;
+            version: number;
+        };
+        ConfigScopeResponse: {
+            boundaryIntents: {
+                command: {
+                    /** @enum {string} */
+                    type: "doNothing";
+                } | {
+                    keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                    modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                    /** @enum {string} */
+                    type: "hotKey";
+                } | {
+                    /** @default null */
+                    browser: string | null;
+                    engineName: string;
+                    engineUrl: string;
+                    /** @enum {string} */
+                    type: "webSearch";
+                } | {
+                    /** @enum {string} */
+                    operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                    /** @enum {string} */
+                    type: "windowControl";
+                } | {
+                    /** @enum {string} */
+                    type: "taskSwitcher";
+                } | {
+                    path: string;
+                    /** @enum {string} */
+                    type: "openFile";
+                } | {
+                    text: string;
+                    /** @enum {string} */
+                    type: "sendText";
+                } | {
+                    /** @enum {string} */
+                    type: "gotoUrl";
+                    url: string;
+                } | {
+                    /** @default true */
+                    autoSetWorkingDir: boolean;
+                    code: string;
+                    /** @default true */
+                    showWindow: boolean;
+                    /** @enum {string} */
+                    type: "cmd";
+                } | {
+                    /** @default true */
+                    autoSetWorkingDir: boolean;
+                    code: string;
+                    /** @default true */
+                    showWindow: boolean;
+                    /** @enum {string} */
+                    type: "powershell";
+                } | {
+                    /** Format: uuid */
+                    pluginId: string;
+                    /** @enum {string} */
+                    type: "nodePlugin";
+                } | {
+                    /** @default 1 */
+                    delta: number;
+                    /** @enum {string} */
+                    type: "audioVolume";
+                };
+                /** @default true */
+                enabled: boolean;
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @default 0 */
+                order: number;
+                origin: {
+                    /** @enum {string} */
+                    corner: "leftTop" | "rightTop" | "leftBottom" | "rightBottom";
+                    /** @enum {string} */
+                    kind: "hotCorner";
+                } | {
+                    /** @enum {string} */
+                    edge: "left" | "top" | "right" | "bottom";
+                    /** @enum {string} */
+                    kind: "rubEdge";
+                };
+                /** @default [] */
+                sequence: ({
+                    /** @enum {string} */
+                    direction: "forward" | "backward";
+                    /** @enum {string} */
+                    type: "wheel";
+                } | {
+                    /** @enum {string} */
+                    button: "left" | "middle" | "right" | "x1" | "x2";
+                    /** @enum {string} */
+                    type: "button";
+                } | {
+                    /** @enum {string} */
+                    direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                    /** @enum {string} */
+                    type: "stroke";
+                })[];
+            }[];
+            scope: {
+                global: {
+                    /** @default true */
+                    gesturingEnabled: boolean;
+                    /** @default [] */
+                    intents: {
+                        command: {
+                            /** @enum {string} */
+                            type: "doNothing";
+                        } | {
+                            keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "hotKey";
+                        } | {
+                            /** @default null */
+                            browser: string | null;
+                            engineName: string;
+                            engineUrl: string;
+                            /** @enum {string} */
+                            type: "webSearch";
+                        } | {
+                            /** @enum {string} */
+                            operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                            /** @enum {string} */
+                            type: "windowControl";
+                        } | {
+                            /** @enum {string} */
+                            type: "taskSwitcher";
+                        } | {
+                            path: string;
+                            /** @enum {string} */
+                            type: "openFile";
+                        } | {
+                            text: string;
+                            /** @enum {string} */
+                            type: "sendText";
+                        } | {
+                            /** @enum {string} */
+                            type: "gotoUrl";
+                            url: string;
+                        } | {
+                            /** @default true */
+                            autoSetWorkingDir: boolean;
+                            code: string;
+                            /** @default true */
+                            showWindow: boolean;
+                            /** @enum {string} */
+                            type: "cmd";
+                        } | {
+                            /** @default true */
+                            autoSetWorkingDir: boolean;
+                            code: string;
+                            /** @default true */
+                            showWindow: boolean;
+                            /** @enum {string} */
+                            type: "powershell";
+                        } | {
+                            /** Format: uuid */
+                            pluginId: string;
+                            /** @enum {string} */
+                            type: "nodePlugin";
+                        } | {
+                            /** @default 1 */
+                            delta: number;
+                            /** @enum {string} */
+                            type: "audioVolume";
+                        };
+                        /** @default true */
+                        enabled: boolean;
+                        gesture: {
+                            inputs?: ({
+                                /** @enum {string} */
+                                direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                                /** @enum {string} */
+                                type: "stroke";
+                            } | {
+                                /** @enum {string} */
+                                button: "left" | "middle" | "right" | "x1" | "x2";
+                                /** @enum {string} */
+                                type: "button";
+                            } | {
+                                /** @enum {string} */
+                                direction: "forward" | "backward";
+                                /** @enum {string} */
+                                type: "wheel";
+                            } | {
+                                key: string;
+                                /** @enum {string} */
+                                type: "key";
+                            })[];
+                            /**
+                             * @default none
+                             * @enum {string}
+                             */
+                            modifier: "none" | "wheelForward" | "wheelBackward" | "leftButtonDown" | "middleButtonDown" | "rightButtonDown" | "x1Down" | "x2Down";
+                            strokes: ("up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp")[];
+                            /** @enum {string} */
+                            trigger: "right" | "middle" | "x1" | "x2";
+                        };
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        /** @default 0 */
+                        order: number;
+                    }[];
+                };
+                /** @enum {string} */
+                kind: "global";
+            } | {
+                app: {
+                    /** @default true */
+                    gesturingEnabled: boolean;
+                    /** Format: uuid */
+                    groupId: string;
+                    /** Format: uuid */
+                    id: string;
+                    /** @default true */
+                    inheritGlobalGestures: boolean;
+                    /** @default [] */
+                    intents: {
+                        command: {
+                            /** @enum {string} */
+                            type: "doNothing";
+                        } | {
+                            keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                            modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                            /** @enum {string} */
+                            type: "hotKey";
+                        } | {
+                            /** @default null */
+                            browser: string | null;
+                            engineName: string;
+                            engineUrl: string;
+                            /** @enum {string} */
+                            type: "webSearch";
+                        } | {
+                            /** @enum {string} */
+                            operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                            /** @enum {string} */
+                            type: "windowControl";
+                        } | {
+                            /** @enum {string} */
+                            type: "taskSwitcher";
+                        } | {
+                            path: string;
+                            /** @enum {string} */
+                            type: "openFile";
+                        } | {
+                            text: string;
+                            /** @enum {string} */
+                            type: "sendText";
+                        } | {
+                            /** @enum {string} */
+                            type: "gotoUrl";
+                            url: string;
+                        } | {
+                            /** @default true */
+                            autoSetWorkingDir: boolean;
+                            code: string;
+                            /** @default true */
+                            showWindow: boolean;
+                            /** @enum {string} */
+                            type: "cmd";
+                        } | {
+                            /** @default true */
+                            autoSetWorkingDir: boolean;
+                            code: string;
+                            /** @default true */
+                            showWindow: boolean;
+                            /** @enum {string} */
+                            type: "powershell";
+                        } | {
+                            /** Format: uuid */
+                            pluginId: string;
+                            /** @enum {string} */
+                            type: "nodePlugin";
+                        } | {
+                            /** @default 1 */
+                            delta: number;
+                            /** @enum {string} */
+                            type: "audioVolume";
+                        };
+                        /** @default true */
+                        enabled: boolean;
+                        gesture: {
+                            inputs?: ({
+                                /** @enum {string} */
+                                direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                                /** @enum {string} */
+                                type: "stroke";
+                            } | {
+                                /** @enum {string} */
+                                button: "left" | "middle" | "right" | "x1" | "x2";
+                                /** @enum {string} */
+                                type: "button";
+                            } | {
+                                /** @enum {string} */
+                                direction: "forward" | "backward";
+                                /** @enum {string} */
+                                type: "wheel";
+                            } | {
+                                key: string;
+                                /** @enum {string} */
+                                type: "key";
+                            })[];
+                            /**
+                             * @default none
+                             * @enum {string}
+                             */
+                            modifier: "none" | "wheelForward" | "wheelBackward" | "leftButtonDown" | "middleButtonDown" | "rightButtonDown" | "x1Down" | "x2Down";
+                            strokes: ("up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp")[];
+                            /** @enum {string} */
+                            trigger: "right" | "middle" | "x1" | "x2";
+                        };
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        /** @default 0 */
+                        order: number;
+                    }[];
+                    mac?: {
+                        bundleId: string;
+                    };
+                    name: string;
+                    /** @default 0 */
+                    order: number;
+                    windows?: {
+                        aumid?: string;
+                        exactPath?: string;
+                        exeName: string;
+                        /** @default false */
+                        matchByExactPath: boolean;
+                    };
+                };
+                /** @enum {string} */
+                kind: "app";
+            };
+            version: number;
         };
         ConfigTooLargeResponse: {
             /** @enum {string} */
@@ -2657,6 +3095,93 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigTooLargeResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    getConfigIndex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configuration index. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigIndexResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    getConfigScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The selected configuration scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigScopeResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description The request rate limit was exceeded. */

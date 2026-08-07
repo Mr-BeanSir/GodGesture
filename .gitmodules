@@ -1,0 +1,6 @@
+[submodule "distribution/plugins"]
+	path = distribution/plugins
+	url = https://github.com/Mr-BeanSir/GodGesture-Plugins.git
+[submodule "distribution/templates"]
+	path = distribution/templates
+	url = https://github.com/Mr-BeanSir/GodGesture-Templates.git

@@ -1,6 +1,8 @@
 import {
   ListSnapshotsQuery,
   ListSnapshotsResponse,
+  ConfigIndexResponse,
+  ConfigScopeResponse,
   PullConfigResponse,
   RestoreSnapshotRequest,
   RestoreSnapshotResponse,
@@ -13,6 +15,14 @@ import { apiRequest } from "./client";
 
 export function pullConfig(): Promise<PullConfigResponse> {
   return apiRequest(PullConfigResponse, "/sync/config");
+}
+
+export function getConfigIndex(): Promise<ConfigIndexResponse> {
+  return apiRequest(ConfigIndexResponse, "/sync/config/index");
+}
+
+export function getConfigScope(scope: string): Promise<ConfigScopeResponse> {
+  return apiRequest(ConfigScopeResponse, `/sync/config/scope/${encodeURIComponent(scope)}`);
 }
 
 export function listSnapshots(

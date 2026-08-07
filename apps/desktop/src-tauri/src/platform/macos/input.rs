@@ -1,7 +1,6 @@
 // CoreGraphics input synthesis with event-tap re-entry tagging.
 
 use super::keys;
-use crate::engine::config::SendTextStep;
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
 use objc2_core_foundation::CGPoint;
@@ -238,24 +237,12 @@ pub fn type_text_with_sleeps(text: &str) {
 }
 
 pub fn try_type_text_with_sleeps(text: &str) -> Result<(), String> {
-    for action in parse_send_keys(text)? {
+    for action in parse_sequence_dsl(text)? {
         match action {
             SendTextAction::Text(text) => type_unicode(&text)?,
             SendTextAction::Key { modifiers, key } => synthesize_key_combo(&modifiers, &[key])?,
             SendTextAction::Sleep(milliseconds) => {
                 std::thread::sleep(std::time::Duration::from_millis(milliseconds));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub fn try_type_text_steps(steps: &[SendTextStep]) -> Result<(), String> {
-    for step in steps {
-        match step {
-            SendTextStep::Text { text } => type_unicode(text)?,
-            SendTextStep::Key { modifiers, key } => {
-                synthesize_key_combo(modifiers, std::slice::from_ref(key))?
             }
         }
     }
@@ -271,169 +258,82 @@ enum SendTextAction {
 
 const MAX_SLEEP_MS: u64 = 10_000;
 
-enum BracedAtom {
-    Text(char),
-    Key(String),
-    Sleep(u64),
-}
-
-struct SendKeysParser<'a> {
-    source: &'a str,
-    position: usize,
-    actions: Vec<SendTextAction>,
-}
-
-fn parse_send_keys(source: &str) -> Result<Vec<SendTextAction>, String> {
-    SendKeysParser {
-        source,
-        position: 0,
-        actions: Vec::new(),
-    }
-    .parse()
-}
-
-impl SendKeysParser<'_> {
-    fn parse(mut self) -> Result<Vec<SendTextAction>, String> {
-        while let Some(character) = self.peek() {
-            let modifiers = self.take_modifiers();
-            if !modifiers.is_empty() {
-                self.parse_modified_atom(modifiers)?;
-                continue;
-            }
-            match character {
-                '{' => match self.take_braced_atom()? {
-                    BracedAtom::Text(character) => self.push_text(character),
-                    BracedAtom::Key(key) => self.actions.push(SendTextAction::Key {
-                        modifiers: Vec::new(),
-                        key,
-                    }),
-                    BracedAtom::Sleep(milliseconds) => {
-                        self.actions.push(SendTextAction::Sleep(milliseconds))
-                    }
-                },
-                '}' => return Err(self.error("unescaped right brace; use {}}")),
-                _ => {
-                    self.take();
-                    self.push_text(character);
-                }
-            }
+fn parse_sequence_dsl(source: &str) -> Result<Vec<SendTextAction>, String> {
+    let mut actions = Vec::new();
+    for (line_index, raw_line) in source.lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
         }
-        Ok(self.actions)
-    }
-
-    fn parse_modified_atom(&mut self, modifiers: Vec<String>) -> Result<(), String> {
-        let Some(character) = self.peek() else {
-            return Err(self.error("modifier is missing a key"));
-        };
-        let key = if character == '{' {
-            match self.take_braced_atom()? {
-                BracedAtom::Key(key) => key,
-                BracedAtom::Sleep(_) => return Err(self.error("sleep cannot have modifiers")),
-                BracedAtom::Text(_) => {
-                    return Err(self.error("escaped characters cannot have modifiers"))
+        let (keyword, argument) = line.split_once(' ').unwrap_or((line, ""));
+        let argument = argument.trim();
+        match keyword.to_ascii_lowercase().as_str() {
+            "text" => actions.push(SendTextAction::Text(
+                serde_json::from_str(argument)
+                    .map_err(|_| format!("line {line_number}: text must be a JSON string"))?,
+            )),
+            "key" => actions.push(SendTextAction::Key {
+                modifiers: Vec::new(),
+                key: dsl_key(argument).ok_or_else(|| format!("line {line_number}: unknown key"))?,
+            }),
+            "hotkey" => {
+                let parts = argument
+                    .split('+')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>();
+                if parts.len() < 2 {
+                    return Err(format!(
+                        "line {line_number}: hotkey requires modifiers and a key"
+                    ));
                 }
+                let key = dsl_key(parts[parts.len() - 1])
+                    .ok_or_else(|| format!("line {line_number}: unknown key"))?;
+                let modifiers = parts[..parts.len() - 1]
+                    .iter()
+                    .map(|part| dsl_modifier(part))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| format!("line {line_number}: unknown modifier"))?;
+                actions.push(SendTextAction::Key { modifiers, key });
             }
+            "sleep" => {
+                let milliseconds = argument
+                    .parse::<u64>()
+                    .map_err(|_| format!("line {line_number}: sleep requires milliseconds"))?;
+                if milliseconds > MAX_SLEEP_MS {
+                    return Err(format!(
+                        "line {line_number}: sleep is limited to {MAX_SLEEP_MS} ms"
+                    ));
+                }
+                actions.push(SendTextAction::Sleep(milliseconds));
+            }
+            _ => return Err(format!("line {line_number}: unknown statement")),
+        }
+    }
+    Ok(actions)
+}
+
+fn dsl_modifier(value: &str) -> Option<String> {
+    match value.to_ascii_lowercase().as_str() {
+        "ctrl" => Some("ctrl".into()),
+        "alt" => Some("alt".into()),
+        "shift" => Some("shift".into()),
+        "meta" | "cmd" => Some("command".into()),
+        _ => None,
+    }
+}
+
+fn dsl_key(value: &str) -> Option<String> {
+    named_key(value).or_else(|| {
+        let mut chars = value.chars();
+        let ch = chars.next()?;
+        if chars.next().is_none() {
+            modified_char_key_name(ch)
         } else {
-            if character == '}' {
-                return Err(self.error("unescaped right brace; use {}}"));
-            }
-            self.take();
-            modified_char_key_name(character).ok_or_else(|| {
-                self.error(&format!("unsupported modified character {character:?}"))
-            })?
-        };
-        self.actions.push(SendTextAction::Key { modifiers, key });
-        Ok(())
-    }
-
-    fn take_modifiers(&mut self) -> Vec<String> {
-        let mut modifiers = Vec::new();
-        while let Some(character) = self.peek() {
-            let modifier = match character {
-                '^' => "ctrl",
-                '%' => "alt",
-                '+' => "shift",
-                _ => break,
-            };
-            self.take();
-            if !modifiers.iter().any(|existing| existing == modifier) {
-                modifiers.push(modifier.to_string());
-            }
+            None
         }
-        modifiers
-    }
-
-    fn take_braced_atom(&mut self) -> Result<BracedAtom, String> {
-        let rest = &self.source[self.position..];
-        for (syntax, literal) in [
-            ("{{}", '{'),
-            ("{}}", '}'),
-            ("{^}", '^'),
-            ("{%}", '%'),
-            ("{+}", '+'),
-        ] {
-            if rest.starts_with(syntax) {
-                self.position += syntax.len();
-                return Ok(BracedAtom::Text(literal));
-            }
-        }
-
-        let token_start = self.position;
-        self.take();
-        let Some(end_offset) = self.source[self.position..].find('}') else {
-            return Err(self.error_at(token_start, "unclosed named key or sleep token"));
-        };
-        let end = self.position + end_offset;
-        let token = &self.source[self.position..end];
-        self.position = end + 1;
-
-        if token
-            .get(.."sleep".len())
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("sleep"))
-        {
-            let digits = token["sleep".len()..].trim_start_matches(' ');
-            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(self.error_at(token_start, "sleep must contain milliseconds"));
-            }
-            let milliseconds = digits.bytes().fold(0_u64, |value, byte| {
-                value
-                    .saturating_mul(10)
-                    .saturating_add((byte - b'0') as u64)
-            });
-            return Ok(BracedAtom::Sleep(milliseconds.min(MAX_SLEEP_MS)));
-        }
-
-        named_key(token)
-            .map(BracedAtom::Key)
-            .ok_or_else(|| self.error_at(token_start, &format!("unknown named key {{{token}}}")))
-    }
-
-    fn push_text(&mut self, character: char) {
-        match self.actions.last_mut() {
-            Some(SendTextAction::Text(text)) => text.push(character),
-            _ => self
-                .actions
-                .push(SendTextAction::Text(character.to_string())),
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.source[self.position..].chars().next()
-    }
-
-    fn take(&mut self) -> Option<char> {
-        let character = self.peek()?;
-        self.position += character.len_utf8();
-        Some(character)
-    }
-
-    fn error(&self, message: &str) -> String {
-        self.error_at(self.position, message)
-    }
-
-    fn error_at(&self, position: usize, message: &str) -> String {
-        format!("SendKeys byte position {position}: {message}")
-    }
+    })
 }
 
 fn named_key(token: &str) -> Option<String> {
@@ -496,9 +396,16 @@ mod tests {
     }
 
     #[test]
-    fn send_keys_parser_builds_ordered_actions() {
+    fn dsl_parser_builds_ordered_actions() {
         assert_eq!(
-            parse_send_keys("before{sleep1}^c%{F4}after").unwrap(),
+            parse_sequence_dsl(
+                r#"text "before"
+sleep 1
+hotkey ctrl+c
+hotkey alt+f4
+text "after""#,
+            )
+            .unwrap(),
             [
                 SendTextAction::Text("before".into()),
                 SendTextAction::Sleep(1),
@@ -516,9 +423,12 @@ mod tests {
     }
 
     #[test]
-    fn syntax_errors_are_rejected_before_execution() {
-        for source in ["prefix{UNKNOWN}", "prefix{ENTER", "prefix}", "prefix^"] {
-            assert!(parse_send_keys(source).is_err(), "should reject {source:?}");
+    fn dsl_syntax_errors_are_rejected_before_execution() {
+        for source in ["text nope", "key UNKNOWN", "hotkey ctrl", "sleep 10001"] {
+            assert!(
+                parse_sequence_dsl(source).is_err(),
+                "should reject {source:?}"
+            );
         }
     }
 }

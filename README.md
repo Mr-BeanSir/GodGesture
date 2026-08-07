@@ -37,12 +37,12 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 
 - 右键、中键、X1、X2 触发键，首笔 8 方向、后续 4 方向；
 - 有序输入步骤、按应用意图、全局继承与黑名单；
-- 窗口、快捷键、文本、文件、URL、命令行、音量与任务切换等 11 类命令；
+- 窗口、快捷键、文本、文件、URL、cmd/PowerShell 命令行、音量与任务切换等 12 类命令；
 - 原生轨迹与命令提示覆盖层；
 - Node.js 插件脚本、npm 依赖与外部 IDE 开发工具链；Node.js 是唯一脚本运行时；
-- WGestures `gestures.wg2` / `config.plist` 导入；
 - 可选账户、整库同步、设备管理与配置快照；
-- 独立 [手势模板仓库](https://github.com/Mr-BeanSir/gesture-templates)；
+- 独立 [手势模板仓库](https://github.com/Mr-BeanSir/GodGesture-Templates)；
+- 独立 [在线插件目录](https://github.com/Mr-BeanSir/GodGesture-Plugins)；
 - Windows x64 与 macOS universal 原生更新。
 
 ## 本地开发
@@ -76,8 +76,8 @@ apps/server                   NestJS + Prisma + PostgreSQL 同步后端
 apps/web-console              只读 Web 控制台
 packages/shared               配置、认证、同步与模板共享协议
 packages/sdk                  @godgesture/sdk 可公开发布的插件开发包
-plugins/gesture-demo          中文生命周期示例插件
-distribution/gesture-templates  独立模板仓库种子
+distribution/plugins             插件示例 submodule
+distribution/templates         手势模板 submodule
 docs/adr                      架构决策记录
 ```
 
@@ -91,14 +91,20 @@ docs/adr                      架构决策记录
 等外部 IDE 创建和维护项目:
 
 ```shell
-# 从 GodGesture 仓库复制 plugins/gesture-demo 为自己的项目后执行
+# 从 GodGesture 仓库复制 distribution/plugins/gesture-demo 为自己的项目后执行
 cd my-plugin
 npm install --save-dev @godgesture/sdk
 ```
 
 `@godgesture/sdk` 作为开发依赖为 IDE 提供 `PluginContext` 类型和补全；App 执行时使用随包
 SDK 注入的运行副本,不需要从 npm 下载。源码、`package.json` 和锁文件不参与云同步,手势命令只同步
-`pluginId`/`actionId` 引用。App 会自动扫描并热更新文件,候选版本失败时保留最后一份可用版本。
+`pluginId` 引用。插件 manifest 声明实际提供的生命周期导出,App 会自动扫描并热更新文件,候选版本
+失败时保留最后一份可用版本。
+
+“插件”页也会读取公开的 GitHub 在线插件目录。用户确认后,App 会校验 HTTPS GitHub 仓库、插件
+ID 和可选子目录,在临时目录下载项目并执行随应用提供的 `npm install` 安装生产依赖；所有步骤
+成功后才把项目原子地放入本机插件工作区。下载、校验或依赖安装失败不会覆盖已有插件,也不会
+写入同步配置。在线插件是第三方代码和依赖,安装前应审阅仓库和依赖风险。
 完整 manifest、生命周期、demo 复制方式和 Windows/macOS 路径见
 [脚本开发指南](docs/SCRIPTING.md)。
 

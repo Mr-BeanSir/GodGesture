@@ -7,7 +7,6 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import {
   ConfigDocument,
   MachineLocalSettings,
-  type LegacyImportResult,
 } from "@godgesture/shared";
 import {
   BackendError,
@@ -49,7 +48,6 @@ export const useConfigStore = defineStore("config", () => {
   let docSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let saveGeneration = 0;
   let machineEditVersion = 0;
-  let applyingImport = false;
   let applyingDocumentBarrier = false;
   let unlistenPause: (() => void) | null = null;
   let pauseEventVersion = 0;
@@ -261,16 +259,12 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   function scheduleDocSave() {
-    if (applyingImport || applyingDocumentBarrier) return;
+    if (applyingDocumentBarrier) return;
     if (docSaveTimer) clearTimeout(docSaveTimer);
     const generation = saveGeneration;
     docSaveTimer = setTimeout(() => {
       docSaveTimer = null;
-      if (
-        !applyingImport &&
-        !applyingDocumentBarrier &&
-        generation === saveGeneration
-      ) {
+      if (!applyingDocumentBarrier && generation === saveGeneration) {
         void persistDoc().catch(() => undefined);
       }
     }, 500);
@@ -349,39 +343,6 @@ export const useConfigStore = defineStore("config", () => {
     return applyWholeDocument(document, expectedLocalDocument);
   }
 
-  async function applyLegacyImport(result: LegacyImportResult) {
-    if (!doc.value || !machine.value) throw new Error("config is not ready");
-    const importedDoc = ConfigDocument.parse(result.document);
-    const importedMachine = MachineLocalSettings.parse(result.machineLocal);
-    const nextMachine = MachineLocalSettings.parse({
-      ...machine.value,
-      autoStart: importedMachine.autoStart,
-      trayIconVisible: importedMachine.trayIconVisible,
-    });
-
-    applyingImport = true;
-    clearSaveTimers();
-    saveGeneration += 1;
-    try {
-      await flushPendingSaves();
-      await backend.legacyImportApply(importedDoc, nextMachine);
-
-      lastPersistedDoc = JSON.stringify(importedDoc);
-      lastPersistedMachine = JSON.stringify(nextMachine);
-      doc.value = importedDoc;
-      machine.value = nextMachine;
-      saveState.value = "saved";
-    } catch (err) {
-      if (err instanceof BackendError && err.code === "rollback_incomplete") {
-        await load();
-      }
-      throw err;
-    } finally {
-      applyingImport = false;
-      saveGeneration += 1;
-    }
-  }
-
   async function togglePause() {
     paused.value = await backend.engineTogglePause();
   }
@@ -404,7 +365,6 @@ export const useConfigStore = defineStore("config", () => {
     preferences,
     load,
     togglePause,
-    applyLegacyImport,
     flushPendingSaves,
     flushDocumentSaves,
     applySyncedDocument,

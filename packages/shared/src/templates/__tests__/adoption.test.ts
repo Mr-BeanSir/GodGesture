@@ -18,10 +18,16 @@ describe("gesture template adoption", () => {
   it("adds global intents with fresh IDs and preserves unrelated config", () => {
     const document = ConfigDocument.parse({
       preferences: { locale: "en" },
-      hotCorners: {
-        enabled: true,
-        commands: { leftTop: { type: "pause" } },
-      },
+      boundaryIntents: [
+        {
+          id: "10000000-0000-4000-8000-000000000001",
+          name: "Left top corner",
+          origin: { kind: "hotCorner", corner: "leftTop" },
+          sequence: [],
+          command: { type: "doNothing" },
+          order: 0,
+        },
+      ],
     });
     const plan = planGestureTemplateAdoption(
       document,
@@ -81,6 +87,7 @@ describe("gesture template adoption", () => {
         {
           id: "20000000-0000-4000-8000-000000000001",
           name: "Existing",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "existing.exe" },
           order: 7,
         },
@@ -140,11 +147,13 @@ describe("gesture template adoption", () => {
         {
           id: "20000000-0000-4000-8000-000000000001",
           name: "Windows Browser",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "browser.exe" },
         },
         {
           id: "20000000-0000-4000-8000-000000000002",
           name: "Mac Browser",
+          groupId: DEFAULT_APP_GROUP_ID,
           mac: { bundleId: "com.example.browser" },
         },
       ],
@@ -166,6 +175,7 @@ describe("gesture template adoption", () => {
         {
           id: "20000000-0000-4000-8000-000000000001",
           name: "Browser",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "other.exe" },
           mac: { bundleId: "com.example.browser" },
         },
@@ -189,11 +199,13 @@ describe("gesture template adoption", () => {
         {
           id: "20000000-0000-4000-8000-000000000001",
           name: "Store One",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "application-frame-host.exe", aumid: "Store.One" },
         },
         {
           id: targetId,
           name: "Store Two",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "application-frame-host.exe", aumid: "Store.Two" },
         },
       ],
@@ -220,6 +232,7 @@ describe("gesture template adoption", () => {
         {
           id: "20000000-0000-4000-8000-000000000001",
           name: "Store One",
+          groupId: DEFAULT_APP_GROUP_ID,
           windows: { exeName: "application-frame-host.exe", aumid: "Store.One" },
           mac: { bundleId: "com.example.store" },
         },

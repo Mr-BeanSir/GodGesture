@@ -20,6 +20,7 @@ export const COMMAND_TYPES: CommandType[] = [
   "sendText",
   "gotoUrl",
   "cmd",
+  "powershell",
   "nodePlugin",
   "audioVolume",
 ];
@@ -54,11 +55,13 @@ export function createDefaultCommand(type: CommandType): Command {
     case "openFile":
       return { type: "openFile", path: "" };
     case "sendText":
-      return { type: "sendText", steps: [] };
+      return { type: "sendText", text: 'text ""' };
     case "gotoUrl":
       return { type: "gotoUrl", url: "" };
     case "cmd":
       return { type: "cmd", code: "", showWindow: true, autoSetWorkingDir: true };
+    case "powershell":
+      return { type: "powershell", code: "", showWindow: true, autoSetWorkingDir: true };
     case "nodePlugin":
       throw new Error("Node plugin commands require an existing plugin selection");
     case "audioVolume":

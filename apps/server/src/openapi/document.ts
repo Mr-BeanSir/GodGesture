@@ -5,6 +5,8 @@ import {
 } from '@asteasolutions/zod-to-openapi';
 import {
   ConfigDocument,
+  ConfigIndexResponse,
+  ConfigScopeResponse,
   ConfigTooLargeResponse,
   AdminAccountStateRequest,
   AdminRoleRequest,
@@ -52,6 +54,8 @@ const configDocumentSchema = registry.register(
     'ConfigTooLargeResponse',
     ConfigTooLargeResponse,
   ),
+  ConfigIndexResponse: registry.register('ConfigIndexResponse', ConfigIndexResponse),
+  ConfigScopeResponse: registry.register('ConfigScopeResponse', ConfigScopeResponse),
   AdminAccountStateRequest: registry.register(
     'AdminAccountStateRequest',
     AdminAccountStateRequest,
@@ -581,6 +585,36 @@ registry.registerPath({
       schemas.PullConfigResponse,
     ),
     401: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/sync/config/index',
+  tags: ['sync'],
+  operationId: 'getConfigIndex',
+  summary: 'Read groups and application summaries without gesture lists',
+  security: bearerSecurity,
+  responses: {
+    200: jsonResponse('The configuration index.', schemas.ConfigIndexResponse),
+    401: genericError,
+    429: rateLimited,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/sync/config/scope/{scope}',
+  tags: ['sync'],
+  operationId: 'getConfigScope',
+  summary: 'Read the global or selected application gesture scope',
+  security: bearerSecurity,
+  request: { params: z.object({ scope: z.string().min(1) }) },
+  responses: {
+    200: jsonResponse('The selected configuration scope.', schemas.ConfigScopeResponse),
+    401: genericError,
+    404: genericError,
     429: rateLimited,
   },
 });

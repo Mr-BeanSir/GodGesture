@@ -9,7 +9,7 @@ import {
 
 const root = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../distribution/gesture-templates",
+  "../distribution/templates",
 );
 const packagesDirectory = join(root, "packages");
 const catalog = parseGestureTemplateCatalog(

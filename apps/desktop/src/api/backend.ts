@@ -10,7 +10,6 @@
  * - machine_get(): MachineLocalSettings
  * - machine_set(settings: MachineLocalSettings)
  * - machine_status(): MachineRuntimeStatus
- * - legacy_import_apply(document, machine)       // 双配置批量应用与进程内回滚
  * - engine_is_paused(): boolean
  * - engine_toggle_pause(): boolean
  *     + Tauri event "pause-changed", payload: boolean
@@ -28,6 +27,7 @@ import type {
   DevicePlatform,
   GestureInput,
   MachineLocalSettings,
+  OnlinePluginSource,
 } from "@godgesture/shared";
 import { createMockBackend } from "./mock";
 
@@ -61,14 +61,12 @@ export interface AppFileDropEvent {
   paths: string[];
 }
 
-export type TemplateResourceKind = "catalog" | "package";
+export type TemplateResourceKind = "catalog" | "package" | "pluginCatalog";
 
 export interface AppIconRequest {
   windowsExeName?: string;
   macBundleId?: string;
 }
-
-export type LegacyImportApplyErrorCode = "apply_failed" | "rollback_incomplete";
 
 export interface MachineRuntimeStatus {
   healthy: boolean;
@@ -115,12 +113,6 @@ export interface UpdateMetadata {
   publishedAt: string | null;
 }
 
-export interface PluginActionSummary {
-  id: string;
-  name: string;
-  exportName: string;
-}
-
 export interface PluginProjectSummary {
   id: string;
   name: string;
@@ -128,7 +120,7 @@ export interface PluginProjectSummary {
   path: string;
   entry: string;
   apiVersion: number;
-  actions: PluginActionSummary[];
+  lifecycles: string[];
   status: "ready" | "error";
   error: string | null;
   lastReloadAt: number | null;
@@ -196,6 +188,7 @@ export interface Backend {
   nodePluginsGet(): Promise<PluginWorkspaceSnapshot>;
   nodePluginsRescan(): Promise<PluginWorkspaceSnapshot>;
   nodePluginsDirectory(): Promise<string>;
+  nodePluginInstall(source: OnlinePluginSource): Promise<PluginWorkspaceSnapshot>;
   onNodePluginsChanged(
     handler: (snapshot: PluginWorkspaceSnapshot) => void,
   ): Promise<() => void>;
@@ -214,12 +207,6 @@ export interface Backend {
   platformStatus(): Promise<PlatformRuntimeStatus>;
   platformRequestPermissions(): Promise<PlatformRuntimeStatus>;
   platformOpenPermissionSettings(): Promise<void>;
-  /** Atomically applies a legacy import, or restores the previous backend state. */
-  legacyImportApply(
-    document: ConfigDocument,
-    machine: MachineLocalSettings,
-  ): Promise<void>;
-
   engineIsPaused(): Promise<boolean>;
   engineTogglePause(): Promise<boolean>;
   onPauseChanged(handler: (paused: boolean) => void): Promise<() => void>;
@@ -342,6 +329,16 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<string>("node_plugins_directory");
     },
+    async nodePluginInstall(source) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<PluginWorkspaceSnapshot>("node_plugin_install", {
+          source,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
     async onNodePluginsChanged(handler) {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<PluginWorkspaceSnapshot>("node-plugins-changed", (event) =>
@@ -403,14 +400,6 @@ function createTauriBackend(): Backend {
     async platformOpenPermissionSettings() {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("platform_open_permission_settings");
-    },
-    async legacyImportApply(document, machine) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      try {
-        await invoke("legacy_import_apply", { document, machine });
-      } catch (error) {
-        throw normalizeBackendError(error);
-      }
     },
     async engineIsPaused() {
       const { invoke } = await import("@tauri-apps/api/core");

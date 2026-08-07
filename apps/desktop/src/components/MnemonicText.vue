@@ -3,19 +3,15 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { GestureInput, GestureSpec } from "@godgesture/shared";
 import {
-  BUTTON_SYMBOLS,
-  DIRECTION_ARROWS,
   gestureModifierInput,
-  keyLabel,
-  TRIGGER_SYMBOLS,
   gestureInputs,
 } from "../utils/mnemonic";
-import WheelModifierIcon from "./WheelModifierIcon.vue";
+import MnemonicToken from "./MnemonicToken.vue";
+import MnemonicTrigger from "./MnemonicTrigger.vue";
 
 const props = defineProps<{ gesture: GestureSpec }>();
 const { t } = useI18n();
 
-const triggerSymbol = computed(() => TRIGGER_SYMBOLS[props.gesture.trigger]);
 const baseInputs = computed(() => gestureInputs(props.gesture));
 const modifierInput = computed(() => gestureModifierInput(props.gesture.modifier));
 const inputs = computed(() => {
@@ -23,39 +19,32 @@ const inputs = computed(() => {
 });
 
 function inputLabel(input: GestureInput): string {
-  if (input.type === "stroke") return input.direction;
+  if (input.type === "stroke") return t(`actions.token.stroke.${input.direction}`);
   if (input.type === "key") return input.key;
   if (input.type === "wheel") return t(`modifier.${input.direction === "forward" ? "wheelForward" : "wheelBackward"}`);
   return t(`modifier.${input.button === "x1" ? "x1Down" : input.button === "x2" ? "x2Down" : `${input.button}ButtonDown`}`);
 }
+
+const ariaLabel = computed(() =>
+  [props.gesture.trigger, ...inputs.value.map(inputLabel)].join(" "),
+);
 </script>
 
 <template>
-  <span class="mnemonic">
-    <span class="mnemonic__trigger">{{ triggerSymbol }}</span>
+  <span
+    class="mnemonic"
+    role="img"
+    :aria-label="ariaLabel"
+    :title="ariaLabel"
+  >
+    <MnemonicTrigger :trigger="gesture.trigger" />
     <span
       v-for="(input, index) in inputs"
       :key="`${input.type}-${index}`"
       class="mnemonic__input"
       :class="{ 'mnemonic__input--modifier': index >= baseInputs.length }"
     >
-      <span v-if="input.type === 'stroke'" :aria-label="inputLabel(input)">
-        {{ DIRECTION_ARROWS[input.direction] }}
-      </span>
-      <kbd v-else-if="input.type === 'key'" class="mnemonic__key" :aria-label="inputLabel(input)">
-        {{ keyLabel(input.key) }}
-      </kbd>
-      <WheelModifierIcon
-        v-else-if="input.type === 'wheel'"
-        :direction="input.direction === 'forward' ? 'up' : 'down'"
-        :label="inputLabel(input)"
-      />
-      <WheelModifierIcon
-        v-else-if="input.button === 'middle'"
-        pressed
-        :label="inputLabel(input)"
-      />
-      <span v-else :aria-label="inputLabel(input)">{{ BUTTON_SYMBOLS[input.button] }}</span>
+      <MnemonicToken :token="input" :label="inputLabel(input)" />
     </span>
   </span>
 </template>
@@ -64,31 +53,27 @@ function inputLabel(input: GestureInput): string {
 .mnemonic {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-weight: 600;
-  letter-spacing: 1px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 5px;
   flex-wrap: wrap;
+  color: var(--el-text-color-primary);
 }
-.mnemonic__trigger {
-  color: var(--el-color-primary);
-}
+
 .mnemonic__input {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   color: var(--el-text-color-primary);
-  letter-spacing: 0;
 }
+
 .mnemonic__input--modifier {
   --wheel-modifier-accent: var(--el-color-warning);
+  color: var(--el-color-warning);
 }
-.mnemonic__key {
-  padding: 1px 4px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 3px;
-  background: var(--el-fill-color-blank);
-  color: var(--el-text-color-primary);
-  font: inherit;
-  font-size: 0.8em;
-  letter-spacing: 0;
+
+.mnemonic__input--modifier :deep(.mnemonic-token),
+.mnemonic__input--modifier :deep(.mnemonic-icon) {
+  color: var(--el-color-warning);
 }
 </style>

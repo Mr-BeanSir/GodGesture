@@ -10,12 +10,12 @@ import {
   MAX_BOUNDARY_SEQUENCE_TOKENS,
   MAX_HOTKEY_KEYS,
   MAX_HOTKEY_MODIFIERS,
-  MAX_SEND_TEXT_STEPS,
   MAX_INTENTS_PER_SCOPE,
   MAX_PATH_LENGTH,
   MAX_URL_LENGTH,
 } from "./limits.js";
 import { NodePluginCommand } from "./plugins.js";
+import { parseSendTextDsl } from "./send-text-dsl.js";
 
 /** 触发键:按住即进入手势状态的鼠标键 */
 export const TriggerButton = z.enum(["right", "middle", "x1", "x2"]);
@@ -125,20 +125,18 @@ export const OpenFileCommand = z.object({
 
 export const SendTextCommand = z.object({
   ...base("sendText"),
-  /** 新协议:按实际执行顺序排列的文字/按键操作。 */
-  steps: z.array(
-    z.discriminatedUnion("type", [
-      z.object({ type: z.literal("text"), text: z.string().max(MAX_COMMAND_TEXT_LENGTH) }),
-      z.object({
-        type: z.literal("key"),
-        modifiers: z.array(HotkeyModifier).max(MAX_HOTKEY_MODIFIERS),
-        key: HotkeyKeyName,
-      }),
-    ]),
-  ).max(MAX_SEND_TEXT_STEPS).optional(),
-  /** 旧版兼容字段;新配置不再写入,保留以便旧的 SendKeys 语法继续可执行。 */
-  text: z.string().max(MAX_COMMAND_TEXT_LENGTH).optional(),
-});
+  /** 按键/文字序列 DSL,每行一个 text/key/hotkey/sleep 语句。 */
+  text: z.string().max(MAX_COMMAND_TEXT_LENGTH).superRefine((source, ctx) => {
+    try {
+      parseSendTextDsl(source);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error instanceof Error ? error.message : "Invalid key/text sequence",
+      });
+    }
+  }),
+}).strict();
 
 export const GotoUrlCommand = z.object({
   ...base("gotoUrl"),
@@ -147,6 +145,13 @@ export const GotoUrlCommand = z.object({
 
 export const CmdCommand = z.object({
   ...base("cmd"),
+  code: z.string().max(MAX_COMMAND_TEXT_LENGTH),
+  showWindow: z.boolean().default(true),
+  autoSetWorkingDir: z.boolean().default(true),
+});
+
+export const PowerShellCommand = z.object({
+  ...base("powershell"),
   code: z.string().max(MAX_COMMAND_TEXT_LENGTH),
   showWindow: z.boolean().default(true),
   autoSetWorkingDir: z.boolean().default(true),
@@ -168,6 +173,7 @@ export const Command = z.discriminatedUnion("type", [
     SendTextCommand,
     GotoUrlCommand,
     CmdCommand,
+    PowerShellCommand,
     NodePluginCommand,
     AudioVolumeCommand,
   ]);
@@ -187,7 +193,7 @@ export const GestureIntent = z.object({
   command: Command,
   /** UI 排序 */
   order: z.number().int().default(0),
-});
+}).strict();
 export type GestureIntent = z.infer<typeof GestureIntent>;
 
 /**
