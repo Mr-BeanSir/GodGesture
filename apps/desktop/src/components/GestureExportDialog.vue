@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowDown, ArrowRight, Download, Search } from "@element-plus/icons-vue";
 import type { AppEntry, AppGroup, ConfigDocument } from "@godgesture/shared";
 import {
@@ -303,6 +303,17 @@ async function exportSelected(submitPublic = false) {
     const serialized = `${JSON.stringify(packageValue, null, 2)}\n`;
     if (submitPublic) {
       if (!canSubmitPublic.value) return;
+      await ElMessageBox.confirm(
+        t("gestures.exportDialog.reviewNotice", {
+          title: details.title,
+          author: details.author,
+          targets: selectedTargets.value.length,
+          gestures: selectedGestureCount.value,
+          plugins: selectedPluginIds.value.length ? selectedPluginIds.value.join(", ") : t("common.none"),
+        }),
+        t("gestures.exportDialog.reviewTitle"),
+        { type: "warning", confirmButtonText: t("gestures.exportDialog.confirmSubmit"), cancelButtonText: t("common.cancel") },
+      );
       await account.submitPublicTemplate(packageValue);
     } else if (backend.isTauri) {
       const savedPath = await backend.gestureTemplateSave(
