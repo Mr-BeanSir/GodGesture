@@ -8,6 +8,14 @@
 
 **Tech Stack:** pnpm workspace, Tauri 2 + Rust + Vue 3 + Element Plus, NestJS 11, Prisma 6, PostgreSQL 17, RustFS S3 API, REST/OpenAPI, Zod, Git submodules, GitHub Actions, 1Panel docker-compose.
 
+## Execution Status (2026-08-09)
+
+Tasks 0-7 and 10 are implemented and verified. Task 11 seed handling, API artifact
+regeneration, documentation reconciliation, and targeted/full verification are also
+complete. Tasks 8 and 9 remain at the UI design gate: the required brainstorming
+visual-companion approval has not been explicitly granted, so no new submission-review
+or moderation-detail layout has been implemented.
+
 ---
 
 ## Locked product decisions
