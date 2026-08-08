@@ -43,6 +43,8 @@ export function createOfficialApiGestureTemplateSource(
 ): GestureTemplateSource {
   const base = `${apiOrigin.replace(/\/$/, "")}/api/v1/public/templates`;
   const packageEndpoints = new Map<string, string>();
+  const etags = new Map<string, string>();
+  const cachedPages = new Map<string, { entries: unknown[]; nextCursor: string | null }>();
   const keyFor = (entry: GestureTemplateCatalogEntry) => `${entry.id}@${entry.versionNumber}`;
   return {
     async loadCatalog() {
@@ -51,11 +53,27 @@ export function createOfficialApiGestureTemplateSource(
       // Request enough pages for the desktop view while preserving server-side pagination.
       for (let page = 0; page < 6 && url; page += 1) {
         let response: Response;
-        try { response = await fetchImpl(url, { headers: { Accept: "application/json" } }); } catch (error) { throw new TemplateSourceError("template_network", "Template catalog request failed", error); }
+        const headers = new Headers({ Accept: "application/json" });
+        const cachedEtag = etags.get(url);
+        if (cachedEtag) headers.set("If-None-Match", cachedEtag);
+        try { response = await fetchImpl(url, { headers }); } catch (error) { throw new TemplateSourceError("template_network", "Template catalog request failed", error); }
+        if (response.status === 304) {
+          const cached = cachedPages.get(url);
+          if (!cached) throw new TemplateSourceError("template_network", "Template catalog cache is unavailable");
+          entries.push(...cached.entries);
+          url = cached.nextCursor ? `${base}?limit=50&sort=newest&cursor=${encodeURIComponent(cached.nextCursor)}` : "";
+          continue;
+        }
         if (!response.ok) throw new TemplateSourceError("template_http", `Template catalog request failed (${response.status})`);
         const payload = await response.json() as { entries?: unknown[]; nextCursor?: string | null };
-        entries.push(...(payload.entries ?? []));
-        url = payload.nextCursor ? `${base}?limit=50&sort=newest&cursor=${encodeURIComponent(payload.nextCursor)}` : "";
+        const pageEntries = payload.entries ?? [];
+        const nextCursor = payload.nextCursor ?? null;
+        const pageUrl = url;
+        entries.push(...pageEntries);
+        const etag = response.headers.get("ETag");
+        if (etag) etags.set(pageUrl, etag);
+        cachedPages.set(pageUrl, { entries: pageEntries, nextCursor });
+        url = nextCursor ? `${base}?limit=50&sort=newest&cursor=${encodeURIComponent(nextCursor)}` : "";
       }
       try {
         const catalog = parseGestureTemplateCatalog(JSON.stringify({ formatVersion: 2, generatedAt: new Date().toISOString(), entries }));
