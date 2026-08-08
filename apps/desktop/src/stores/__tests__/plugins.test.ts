@@ -46,15 +46,11 @@ const ready = {
 };
 
 const onlineEntry = {
-  slug: "online-plugin",
-  version: "1.0.0",
-  author: "GodGesture",
-  title: { "zh-CN": "在线插件", en: "Online plugin" },
-  summary: { "zh-CN": "用于安装测试", en: "Used for installation tests" },
+  title: "Online plugin",
+  summary: "Used for installation tests",
   pluginId: "50000000-0000-4000-8000-000000000001",
-  repositoryUrl: "https://github.com/owner/online-plugin",
-  ref: "v1.0.0",
   subdirectory: "packages/plugin",
+  disabled: false,
 };
 
 function makeBackend() {
@@ -156,8 +152,8 @@ describe("plugins store", () => {
     await expect(store.installOnline(onlineEntry)).resolves.toBe(true);
     expect(slots.backend!.nodePluginInstall).toHaveBeenCalledWith({
       pluginId: onlineEntry.pluginId,
-      repositoryUrl: onlineEntry.repositoryUrl,
-      ref: onlineEntry.ref,
+      repositoryUrl: "https://github.com/Mr-BeanSir/GodGesture-Plugins",
+      ref: "main",
       subdirectory: onlineEntry.subdirectory,
     });
     expect(store.installedPluginIds.has(onlineEntry.pluginId)).toBe(true);
@@ -212,7 +208,7 @@ describe("plugins store", () => {
     await expect(store.installOnline(onlineEntry)).resolves.toBe(false);
     expect(store.error).toMatchObject({
       operation: "installOnline",
-      path: onlineEntry.repositoryUrl,
+      path: onlineEntry.subdirectory,
       code: "plugin_manifest_mismatch",
       message: "manifest id mismatch",
     });

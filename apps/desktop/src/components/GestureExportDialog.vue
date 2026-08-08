@@ -12,6 +12,7 @@ import {
   type GestureExportTarget,
 } from "../utils/gesture-export";
 import { useBackend } from "../api/backend";
+import { useAccountStore } from "../stores/account";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const backend = useBackend();
+const account = useAccountStore();
 
 const visible = computed({
   get: () => props.modelValue,
@@ -31,18 +33,12 @@ const visible = computed({
 });
 
 interface ExportForm {
-  slug: string;
-  version: string;
-  author: string;
   title: string;
   summary: string;
   tags: string;
 }
 
 const form = reactive<ExportForm>({
-  slug: "",
-  version: "1.0.0",
-  author: "",
   title: "",
   summary: "",
   tags: "",
@@ -196,6 +192,7 @@ const selectedPluginIds = computed(() => [
 const canExport = computed(() =>
   !exporting.value && selectedTargets.value.length > 0 && selectedPluginIds.value.length === 0,
 );
+const canSubmitPublic = computed(() => account.endpointMode === "official" && account.phase === "signedIn" && Boolean(account.user?.emailVerified));
 
 function selectAll() {
   selectedIds.value = [...allSelectableIds.value];
@@ -206,9 +203,6 @@ function clearSelection() {
 }
 
 function reset() {
-  form.slug = "";
-  form.version = "1.0.0";
-  form.author = "";
   form.title = "";
   form.summary = "";
   form.tags = "";
@@ -230,7 +224,7 @@ watch(
 );
 
 watch(
-  () => [form.slug, form.version, form.author, form.title, form.summary, form.tags, selectedIds.value],
+  () => [form.title, form.summary, form.tags, selectedIds.value],
   () => {
     validationError.value = null;
   },
@@ -246,18 +240,11 @@ function parseTags(): string[] {
 }
 
 function metadata(): GestureExportMetadata | null {
-  const slug = form.slug.trim();
-  const version = form.version.trim();
-  const author = form.author.trim();
   const title = form.title.trim();
   const summary = form.summary.trim();
   const tags = parseTags();
 
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-    validationError.value = t("gestures.exportDialog.invalidSlug");
-  } else if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)) {
-    validationError.value = t("gestures.exportDialog.invalidVersion");
-  } else if (!author || !title || !summary) {
+  if (!title || !summary) {
     validationError.value = t("gestures.exportDialog.requiredFields");
   } else if (title.length > 120 || summary.length > 512) {
     validationError.value = t("gestures.exportDialog.invalidTextLength");
@@ -265,9 +252,6 @@ function metadata(): GestureExportMetadata | null {
     validationError.value = t("gestures.exportDialog.invalidTags");
   } else {
     return {
-      slug,
-      version,
-      author,
       title,
       summary,
       tags,
@@ -291,7 +275,7 @@ function downloadJson(filename: string, value: unknown) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-async function exportSelected() {
+async function exportSelected(submitPublic = false) {
   const details = metadata();
   if (!details) return;
   if (selectedTargets.value.length === 0) {
@@ -315,15 +299,18 @@ async function exportSelected() {
       details,
     );
     const serialized = `${JSON.stringify(packageValue, null, 2)}\n`;
-    if (backend.isTauri) {
+    if (submitPublic) {
+      if (!canSubmitPublic.value) return;
+      await account.submitPublicTemplate(packageValue);
+    } else if (backend.isTauri) {
       const savedPath = await backend.gestureTemplateSave(
-        `${packageValue.slug}.json`,
+        `${packageValue.title.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 64) || "gesture-template"}.json`,
         serialized,
         t("gestures.exportDialog.saveTitle"),
       );
       if (!savedPath) return;
     } else {
-      downloadJson(`${packageValue.slug}.json`, packageValue);
+      downloadJson(`${packageValue.title.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 64) || "gesture-template"}.json`, packageValue);
     }
     ElMessage.success(t("gestures.exportDialog.success", {
       targets: selectedTargets.value.length,
@@ -363,15 +350,6 @@ async function exportSelected() {
         </div>
         <el-form label-position="top" class="gesture-export__form" @submit.prevent="exportSelected">
           <div class="gesture-export__form-grid gesture-export__form-grid--identity">
-            <el-form-item :label="t('gestures.exportDialog.slug')">
-              <el-input v-model="form.slug" :placeholder="t('gestures.exportDialog.slugPlaceholder')" />
-            </el-form-item>
-            <el-form-item :label="t('gestures.exportDialog.version')">
-              <el-input v-model="form.version" placeholder="1.0.0" />
-            </el-form-item>
-            <el-form-item :label="t('gestures.exportDialog.author')">
-              <el-input v-model="form.author" :placeholder="t('gestures.exportDialog.authorPlaceholder')" />
-            </el-form-item>
             <el-form-item :label="t('gestures.exportDialog.tags')">
               <el-input v-model="form.tags" :placeholder="t('gestures.exportDialog.tagsPlaceholder')" />
             </el-form-item>
@@ -503,6 +481,15 @@ async function exportSelected() {
 
     <template #footer>
       <el-button :disabled="exporting" @click="visible = false">{{ t("common.cancel") }}</el-button>
+      <el-button
+        v-if="canSubmitPublic"
+        type="success"
+        :loading="exporting"
+        :disabled="!canExport"
+        @click="exportSelected(true)"
+      >
+        {{ t("gestures.exportDialog.submitPublic") }}
+      </el-button>
       <el-button
         type="primary"
         :icon="Download"

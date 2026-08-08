@@ -90,10 +90,8 @@ export const useTemplatesStore = defineStore("templates", () => {
       if (riskFilter.value === "elevated" && !elevated) return false;
       if (!needle) return true;
       return [
-        entry.title["zh-CN"],
-        entry.title.en,
-        entry.summary["zh-CN"],
-        entry.summary.en,
+        entry.title,
+        entry.summary,
         entry.author,
         ...entry.tags,
       ].some((value) => value.toLocaleLowerCase().includes(needle));
@@ -164,7 +162,7 @@ export const useTemplatesStore = defineStore("templates", () => {
     adopted.value = false;
     loadingPackage.value = true;
     try {
-      const key = `${entry.slug}@${entry.version}`;
+      const key = `${entry.id}@${entry.versionNumber}`;
       const cached = packageCache.get(key);
       const templatePackage = cached ?? (await source.loadPackage(entry));
       if (!cached) packageCache.set(key, templatePackage);

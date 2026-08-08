@@ -12,6 +12,7 @@ import {
   Warning,
 } from "@element-plus/icons-vue";
 import { usePluginsStore } from "../stores/plugins";
+import { OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL } from "@godgesture/shared";
 
 const { t, locale } = useI18n();
 const plugins = usePluginsStore();
@@ -34,8 +35,8 @@ onMounted(() => {
   void plugins.loadOnlineCatalog();
 });
 
-function localized(value: { "zh-CN": string; en: string }) {
-  return locale.value === "zh-CN" ? value["zh-CN"] : value.en;
+function localized(value: string) {
+  return value;
 }
 
 async function installOnline(entry: (typeof onlineEntries.value)[number]) {
@@ -43,7 +44,7 @@ async function installOnline(entry: (typeof onlineEntries.value)[number]) {
     await ElMessageBox.confirm(
       t("plugins.online.confirmBody", {
         name: localized(entry.title),
-        source: `${entry.repositoryUrl}${entry.subdirectory ? `/${entry.subdirectory}` : ""}`,
+        source: `${OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL}${entry.subdirectory ? `/${entry.subdirectory}` : ""}`,
         ref: entry.ref,
       }),
       t("plugins.online.confirmTitle"),
@@ -269,7 +270,7 @@ function openOnlinePlugins() {
             <div class="plugins-online__identity">
               <strong>{{ localized(entry.title) }}</strong>
               <span>{{ localized(entry.summary) }}</span>
-              <code>{{ entry.repositoryUrl }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
+                <code>{{ OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
             </div>
             <div class="plugins-online__actions">
               <el-tag size="small" effect="plain">v{{ entry.version }}</el-tag>
@@ -287,8 +288,8 @@ function openOnlinePlugins() {
               >
                 {{ plugins.installingPluginId === entry.pluginId ? t("plugins.online.installing") : t("plugins.online.install") }}
               </el-button>
-              <el-tooltip :content="t('plugins.online.repository')" placement="top">
-                <el-button circle size="small" :icon="Link" :aria-label="t('plugins.online.repository')" @click="openRepository(entry.repositoryUrl)" />
+                <el-tooltip :content="t('plugins.online.repository')" placement="top">
+                <el-button circle size="small" :icon="Link" :aria-label="t('plugins.online.repository')" @click="openRepository(OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL)" />
               </el-tooltip>
             </div>
           </article>

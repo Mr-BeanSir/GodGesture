@@ -223,6 +223,7 @@ export default {
       selectTarget: "Select at least one export target that contains gestures.",
       pluginSourceMissing: "The selected gestures reference Node.js plugins without declared online sources: {ids}. Remove those gestures or provide plugin sources first.",
       export: "Export JSON",
+      submitPublic: "Submit to public directory",
       saveTitle: "Save gesture template",
       success: "Exported {gestures} gesture(s) from {targets} target(s) into one JSON file",
       failed: "Could not export gesture templates",

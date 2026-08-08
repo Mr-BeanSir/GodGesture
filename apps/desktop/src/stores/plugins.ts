@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, ref } from "vue";
 import { defineStore } from "pinia";
-import type { OnlinePluginCatalogEntry } from "@godgesture/shared";
+import { officialOnlinePluginSource, type OnlinePluginCatalogEntry } from "@godgesture/shared";
 import { type PluginWorkspaceSnapshot, useBackend } from "../api/backend";
 import {
   OnlinePluginSourceError,
@@ -185,16 +185,11 @@ export const usePluginsStore = defineStore("plugins", () => {
     error.value = null;
     try {
       apply(
-        await backend.nodePluginInstall({
-          pluginId: entry.pluginId,
-          repositoryUrl: entry.repositoryUrl,
-          ref: entry.ref,
-          subdirectory: entry.subdirectory,
-        }),
+        await backend.nodePluginInstall(officialOnlinePluginSource(entry)),
       );
       return true;
     } catch (cause) {
-      error.value = capturePluginError(cause, "installOnline", entry.repositoryUrl);
+      error.value = capturePluginError(cause, "installOnline", entry.subdirectory);
       return false;
     } finally {
       installingPluginId.value = null;

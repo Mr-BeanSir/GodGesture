@@ -223,6 +223,7 @@ export default {
       selectTarget: "请至少选择一个包含手势的导出目标。",
       pluginSourceMissing: "所选手势引用了尚未声明在线来源的 Node.js 插件: {ids}。请先移除这些手势或补充插件来源。",
       export: "导出 JSON",
+      submitPublic: "提交到公共目录",
       saveTitle: "保存手势模板",
       success: "已将 {targets} 个目标、{gestures} 个手势导出为一个 JSON 文件",
       failed: "导出手势模板失败",

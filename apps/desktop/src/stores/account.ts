@@ -366,6 +366,19 @@ export const useAccountStore = defineStore("account", () => {
     await loadSnapshots();
   }
 
+  async function submitPublicTemplate(templatePackage: unknown): Promise<void> {
+    if (endpointMode.value !== "official" || phase.value !== "signedIn") {
+      throw new CloudError(403, "official_endpoint_login_required");
+    }
+    const cloud = ensureCloud();
+    const response = await cloud.session.authenticatedFetch(`${cloud.session.apiBase}/public/templates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ package: templatePackage }),
+    });
+    if (!response.ok) throw normalizeCloudError(await response.json().catch(() => null));
+  }
+
   async function logout(): Promise<LogoutOutcome> {
     if (authBusy.value) return "local_only";
     authBusy.value = true;
@@ -437,6 +450,7 @@ export const useAccountStore = defineStore("account", () => {
     syncNow,
     loadSnapshots,
     restoreSnapshot,
+    submitPublicTemplate,
     logout,
     discardStoredSession,
   };

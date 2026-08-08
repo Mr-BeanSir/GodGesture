@@ -19,7 +19,7 @@ import {
 } from "./fixtures";
 
 export const DEFAULT_GESTURE_TEMPLATE_CATALOG_URL =
-  "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/catalog.min.json";
+  "https://api.godgesture.com";
 
 const TEMPLATE_REPOSITORY_OWNER = "Mr-BeanSir";
 const TEMPLATE_REPOSITORY_NAME = "GodGesture-Templates";
@@ -322,6 +322,7 @@ export function createRemoteGestureTemplateSource(
       }
     },
     async loadPackage(entry) {
+      if (!entry.packageUrl) throw new TemplateSourceError("invalid_package", "Template package URL is missing");
       const text = await loadRemoteText(entry.packageUrl, "package", transport);
       try {
         return verifyGestureTemplatePackage(
@@ -344,11 +345,11 @@ export function createFixtureGestureTemplateSource(): GestureTemplateSource {
       return structuredClone(catalog);
     },
     async loadPackage(entry) {
-      const fixture = gestureTemplatePackageFixtures[entry.slug as keyof typeof gestureTemplatePackageFixtures];
+      const fixture = gestureTemplatePackageFixtures[entry.id as keyof typeof gestureTemplatePackageFixtures];
       if (!fixture) {
         throw new TemplateSourceError(
           "template_fixture_missing",
-          `No browser fixture exists for ${entry.slug}`,
+          `No browser fixture exists for ${entry.id}`,
         );
       }
       try {
@@ -398,5 +399,38 @@ export function createGestureTemplateSource(
 ): GestureTemplateSource {
   return browserPreview
     ? createFixtureGestureTemplateSource()
-    : createRemoteGestureTemplateSource(undefined, undefined, useBackend());
+    : createOfficialApiGestureTemplateSource();
+}
+
+/** Official catalog is always read from the fixed API origin, anonymously. */
+export function createOfficialApiGestureTemplateSource(
+  apiOrigin = (import.meta.env.GODGESTURE_API ?? import.meta.env.VITE_API_BASE_URL ?? DEFAULT_GESTURE_TEMPLATE_CATALOG_URL).replace(/\/$/, ""),
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+): GestureTemplateSource {
+  const base = `${apiOrigin}/api/v1/public/templates`;
+  const packageEndpoints = new Map<string, string>();
+  const keyFor = (entry: GestureTemplateCatalogEntry) => `${entry.id}@${entry.versionNumber}`;
+  return {
+    async loadCatalog() {
+      const response = await fetchImpl(`${base}?limit=50&sort=newest`, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new TemplateSourceError("template_http", `Template catalog request failed (${response.status})`);
+      const payload = await response.json() as { entries?: GestureTemplateCatalogEntry[] };
+      const entries = (payload.entries ?? []).map((entry) => ({
+        ...entry,
+        targets: entry.targets?.length ? entry.targets : [{ scope: "global" as const }],
+      }));
+      const catalog = parseGestureTemplateCatalog(JSON.stringify({ formatVersion: 2, generatedAt: new Date().toISOString(), entries }));
+      catalog.entries.forEach((catalogEntry) => packageEndpoints.set(keyFor(catalogEntry), `${base}/${catalogEntry.id}/versions/${catalogEntry.versionNumber}/package`));
+      return catalog;
+    },
+    async loadPackage(entry) {
+      const response = await fetchImpl(packageEndpoints.get(keyFor(entry)) ?? `${base}/${entry.id}/versions/${entry.versionNumber}/package`, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new TemplateSourceError("template_http", `Template package request failed (${response.status})`);
+      const signed = await response.json() as { url?: string };
+      if (!signed.url) throw new TemplateSourceError("invalid_package", "Template package URL is missing");
+      const packageResponse = await fetchImpl(signed.url, { headers: { Accept: "application/json" } });
+      if (!packageResponse.ok) throw new TemplateSourceError("template_http", `Template package download failed (${packageResponse.status})`);
+      return parseGestureTemplatePackage(await packageResponse.text(), entry);
+    },
+  };
 }

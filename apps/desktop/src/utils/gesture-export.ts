@@ -11,9 +11,10 @@ export type GestureExportTarget =
   | { scope: "app"; id: string; app: AppEntry };
 
 export interface GestureExportMetadata {
-  slug: string;
-  version: string;
-  author: string;
+  /** Legacy local-export fields are accepted by callers but ignored by v2. */
+  slug?: string;
+  version?: string;
+  author?: string;
   title: string;
   summary: string;
   tags: string[];
@@ -79,11 +80,9 @@ export function buildGestureTemplatePackage(
 
   return GestureTemplatePackage.parse({
     formatVersion: GESTURE_TEMPLATE_FORMAT_VERSION,
-    slug: metadata.slug,
-    version: metadata.version,
-    author: metadata.author,
-    title: { "zh-CN": metadata.title, en: metadata.title },
-    summary: { "zh-CN": metadata.summary, en: metadata.summary },
+    author: "-",
+    title: metadata.title,
+    summary: metadata.summary,
     tags: metadata.tags,
     plugins: [],
     targets: packageTargets,

@@ -274,7 +274,7 @@ async function confirmAdoption() {
       <template v-else>
         <button
           v-for="entry in templates.filteredEntries"
-          :key="`${entry.slug}@${entry.version}`"
+          :key="`${entry.id}@${entry.versionNumber}`"
           type="button"
           class="templates-view__row"
           @click="openDetails(entry)"
@@ -350,7 +350,7 @@ async function confirmAdoption() {
         <header class="template-detail__hero">
           <div class="template-detail__hero-copy">
             <div class="template-detail__eyebrow">
-              <code>{{ templates.selectedEntry.slug }}</code>
+              <code>{{ templates.selectedEntry.id }}</code>
               <el-tag size="small" effect="plain">v{{ templates.selectedEntry.version }}</el-tag>
               <el-tag size="small" type="info" effect="plain">{{ templates.selectedEntry.author }}</el-tag>
             </div>
