@@ -37,6 +37,14 @@ describe("gesture export", () => {
     expect(gestureTemplateExportFileName()).not.toContain("浏览器");
     expect(gestureTemplateExportFileName()).toMatch(/^gesture-template-[0-9a-f-]+\.json$/);
   });
+
+  it("uses an automatically resolved author when supplied by the signed-in account", () => {
+    const result = buildGestureTemplatePackage(
+      [{ target: { scope: "global", id: "__global__" }, intents: [intent] }],
+      { ...metadata, author: "Bean" },
+    );
+    expect(result.author).toBe("Bean");
+  });
   it("creates a valid app template and removes local identity fields", () => {
     const result = buildGestureTemplatePackage(
       [{

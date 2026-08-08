@@ -253,6 +253,7 @@ function metadata(): GestureExportMetadata | null {
     validationError.value = t("gestures.exportDialog.invalidTags");
   } else {
     return {
+      author: account.user?.displayName?.trim() || account.user?.email || "-",
       title,
       summary,
       tags,

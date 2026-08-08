@@ -11,6 +11,8 @@ export type GestureExportTarget =
   | { scope: "app"; id: string; app: AppEntry };
 
 export interface GestureExportMetadata {
+  /** Resolved automatically from the signed-in account; never shown as an input. */
+  author?: string;
   title: string;
   summary: string;
   tags: string[];
@@ -81,7 +83,7 @@ export function buildGestureTemplatePackage(
 
   return GestureTemplatePackage.parse({
     formatVersion: GESTURE_TEMPLATE_FORMAT_VERSION,
-    author: "-",
+    author: metadata.author?.trim() || "-",
     title: metadata.title,
     summary: metadata.summary,
     tags: metadata.tags,
