@@ -111,20 +111,21 @@ GodGesture 在系统应用配置目录下管理的唯一插件根目录 `plugins
 
 **在线插件目录 (Online Plugin Catalog)**:
 由 `Mr-BeanSir/GodGesture-Plugins` 仓库根目录 `catalog.min.json` 提供的公开 JSON 目录,每个条目
-包含插件稳定 `pluginId`、作者、HTTPS GitHub 仓库 URL、Git ref 和指向 `plugins/<slug>/` 的可移植子目录。Desktop
-只接受符合协议和大小限制的目录,不把目录内容写入用户配置。仓库通过 PR 校验 JSON 和插件
-manifest,合并到 `main` 后自动生成格式化 `catalog.json` 与压缩版 `catalog.min.json`。
+包含稳定 `pluginId`、单一字符串标题/摘要和指向 `plugins/<subdirectory>/` 的子目录。仓库和 ref
+固定为 `Mr-BeanSir/GodGesture-Plugins` 的 `main`；Desktop 只接受符合协议、已启用且大小受限的
+目录,不把目录内容写入用户配置。仓库通过审核和 PR 校验 manifest,合并到 `main` 后自动生成
+格式化 `catalog.json` 与压缩版 `catalog.min.json`。
 
 **在线插件源 (Online Plugin Source)**:
-在线插件目录或手势模板包中声明的一组下载信息。用户明确确认后,App 在临时目录取得指定
-仓库和 ref,验证 `package.json.godgesture.id` 与 `pluginId` 一致,运行受限的 `npm install`
+由官方插件目录按 `pluginId` 解析出的固定仓库、`main` ref 与子目录。用户明确确认后,App 在
+临时目录取得该项目,验证 `package.json.godgesture.id` 与 `pluginId` 一致,运行受限的 `npm install`
 准备生产依赖,再原子激活到本机插件工作区。任何下载、校验或安装失败都不得覆盖现有项目。
 
 **在线目录缓存 (Online Catalog Cache)**:
-模板仓库和插件仓库根目录 `catalog.min.json` 的本机快照,分别保存到 Tauri `app_config_dir/catalogs`
-下的独立文件。Desktop 启动或用户手动刷新时先从 GitHub 取得并通过 shared 协议校验,校验成功后
-原子替换缓存;网络失败时只使用上一份有效快照,不会用损坏内容覆盖缓存。浏览器预览使用源码 fixture,
-不访问或写入该缓存。
+官方公共模板目录分页结果和官方插件仓库根目录 `catalog.min.json` 的本机有效快照,分别保存到
+Tauri `app_config_dir/catalogs` 下的独立文件。模板始终从固定官方 Server origin 读取；插件从
+GitHub 读取。刷新后只有通过 shared 协议校验的结果才能原子替换缓存;网络失败时只使用上一份
+有效快照,不会用损坏内容覆盖缓存。浏览器预览使用源码 fixture,不访问或写入该缓存。
 
 **Node 插件动作 (Node Plugin Action)**:
 Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供的固定生命周期导出。
@@ -139,15 +140,39 @@ Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供�
 ### 同步领域
 
 **手势模板 (Gesture Template)**:
-托管在专门 GitHub 仓库中的预置手势配置包;用户下载采纳后并入个人配置,自此视同用户自己的数据参与同步。
-模板目录从 `Mr-BeanSir/GodGesture-Templates` 根目录的 `catalog.min.json` 读取;每个模板包必须声明
-`author` 以及目录生成所需的本地化标题、摘要和标签。仓库通过 PR 校验模板 JSON,合并到 `main` 后
-自动生成 `catalog.json` 与 `catalog.min.json`。模板包使用 `targets` 数组,一个 JSON 可以同时包含
-全局手势和多个应用目标;每个应用目标保留跨平台绑定与该应用的手势意图。
-模板包可以通过 `plugins` 字段声明在线插件源,其 `nodePlugin` 命令必须引用同一 `pluginId`。
-每个声明的插件源也必须至少被一个 `nodePlugin` 命令引用,不能借模板安装无关项目。
-采纳前先取得用户确认并安装所有被引用插件,安装成功后才写入配置;同步文档仍只保存 `pluginId`。
+由官方公共模板目录发布的可采纳手势配置包;用户下载采纳后并入个人配置,自此视同用户自己的
+数据参与同步。模板使用 Server UUID 身份，标题可以重复，包含单一字符串标题/摘要、标签和
+`targets` 数组；一个 JSON 可以同时包含全局手势和多个应用目标，每个应用目标保留跨平台绑定与
+该应用的手势意图。公开作者由用户当前 `displayName`（为空时用已验证 email）实时解析，不进入
+模板包或版本快照。模板只引用官方在线插件目录中已启用的 `pluginId`，不能声明任意仓库、ref 或
+子目录。采纳前先取得用户确认并安装所有被引用插件,安装成功后才写入配置;同步文档仍只保存
+`pluginId`。
 _避免_: 默认手势、预设(预设指出厂内置的初始配置)
+
+**官方公共模板目录 (Official Public Template Catalog)**:
+固定官方 Server origin 提供的匿名可读、服务端分页的模板目录。支持搜索和按最新、下载次数、
+热度排序；自定义同步端点不提供该目录。
+
+**模板投稿 (Template Submission)**:
+仅官方端点登录用户把本地导出模板提交为待审核不可变版本的操作。它不属于配置同步，用户不手填
+作者；禁用账户不能投稿。
+
+**模板审核 (Template Review)**:
+管理员对待审核版本作出的通过或拒绝决定，并保留最小审核记录。管理员可以管理举报、下架、恢复
+和配额，不能修改模板内容。
+
+**模板版本 (Template Version)**:
+同一模板下的不可变内容和元数据版本。任何修改都创建并审核新版本；已发布版本可撤回或下架。
+
+**模板撤回 (Template Withdrawal)**:
+作者使自己的已发布模板不再出现在公共目录中的操作，不删除历史版本或对象。
+
+**模板下架 (Template Suspension)**:
+管理员因治理原因使模板或版本不再出现在公共目录中的操作；可后续恢复，不能改写内容。
+
+**模板下载次数 (Template Download Count)**:
+模板版本的匿名聚合采纳/下载指标。服务端使用每日轮换 HMAC 与短期去重记录减少重复计数，
+不保存用户或设备下载历史。
 
 **Web 控制台 (Web Console)**:
 浏览器中登录账户后使用的管理界面:只读查看手势库与设置、管理设备、查看与回滚配置快照、账户安全操作;不提供配置编辑。

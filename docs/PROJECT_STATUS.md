@@ -14,9 +14,9 @@
 | M2 Windows 命令与设置 | 已完成 | 任务切换等 Windows 专属能力显式标注，脚本能力归 Node 插件运行时 |
 | M3 脚本引擎 | 已完成 | ADR-0012 的常驻 Node.js supervisor/Worker 是唯一生产脚本链 |
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、全局输入、覆盖层、多屏、AX、Keychain、插件和安装升级需真实 Mac 证据 |
-| M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；Server 只存用户数据 |
+| M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；公共模板服务扩展尚未实现 |
 | M6 云同步 | 已完成 | 整库 v8 文档、乐观并发、后写胜出、快照和离线优先 |
-| M7 Web Console 与分发 | 已完成 | 私有 Web Console 子模块；模板迁移至官方服务尚未实现，Updater 和 OpenAPI 已接入 |
+| M7 Web Console 与分发 | 进行中 | 私有 Web Console 子模块已接入；官方公共模板服务的 ADR 已采纳，运行时迁移、审核与 RustFS 部署尚未实现 |
 | M8 打磨与发布 | stable 基线已完成 | 当前工作区含 stable 之后的本地改动，未因此宣称已有新发布物 |
 
 ## 部件地图
@@ -53,24 +53,18 @@
 - Desktop 自动同步使用 30 秒尾随防抖、启动/定时拉取和手动立即同步；refresh token 只进 Windows Credential Manager/macOS Keychain，不进 WebView。
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
-- 插件示例与公开模板分别由 `distribution/plugins` 和 `distribution/templates` Git submodule 管理；插件仓库的
-  项目统一位于 `plugins/<slug>/`，根目录只保留目录、文档、Workflow 和复用脚本。两者都从对应仓库
-  `main/catalog.min.json` 读取；Tauri Desktop 启动时强制刷新两个目录，校验通过后写入
-  `app_config_dir/catalogs` 的独立缓存文件，网络不可用时回退到上一份有效缓存，模板页和插件
-  在线目录弹窗都提供手动强制刷新。浏览器预览使用 Desktop 源码内 fixture，不读取 distribution。
-  模板包和插件 manifest 均要求 `author`。两个
-  仓库的 PR Workflow 校验 JSON、协议和目录内容；合并后自动生成格式化 `catalog.json` 与压缩版
-  `catalog.min.json`，Desktop 的模板/插件目录不再依赖公开 Releases 资产；模板详情对旧官方
-  `gesture-templates/releases/latest/download/*.json` 地址保留一次性迁移回退，并用 catalog 条目的
-  元数据归一化旧 v1 包；早期官方 Releases 目录地址也只保留一次性迁移回退，官方 raw 请求失败时
-  可尝试 jsDelivr 镜像，正式发布仍只接受新仓库的 `packages/` 包地址。
+- `distribution/plugins` 仍是官方插件仓库 submodule，项目统一位于 `plugins/<subdirectory>/`；Desktop
+  从固定 `Mr-BeanSir/GodGesture-Plugins` 的 `main/catalog.min.json` 读取插件目录并在校验后缓存。
+  `distribution/templates` 仅保留为历史迁移/验证现场，不能再作为新的公共模板协议或目标运行时来源。
+  ADR-0014 已确定官方公共目录将从固定 Server origin 匿名分页读取，并使用 PostgreSQL + RustFS 管理；
+  Desktop、Shared、Server 和 Web Console 的运行时迁移尚未实现。浏览器预览继续使用 Desktop 源码 fixture。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
 
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
-- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和在线插件目录通过 GitHub 分发。公共模板目录迁移至 Server 的实现尚未开始，迁移完成前 Server 不代理公开模板内容。
+- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和官方在线插件目录通过 GitHub 分发。公共模板目录将由 Server 的 PostgreSQL + RustFS 管理；当前仅完成架构记录，RustFS 编排、对象存储和 API 尚未实现。
 
 ## 已知边界
 

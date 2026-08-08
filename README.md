@@ -41,7 +41,7 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 - 原生轨迹与命令提示覆盖层；
 - Node.js 插件脚本、npm 依赖与外部 IDE 开发工具链；Node.js 是唯一脚本运行时；
 - 可选账户、整库同步、设备管理与配置快照；
-- 官方公共目录将由 Server 管理；当前迁移期仍兼容 [手势模板仓库](https://github.com/Mr-BeanSir/GodGesture-Templates)；
+- 官方公共手势模板目录由 Server 的 PostgreSQL 元数据和 RustFS 不可变包管理；可匿名浏览和采纳，登录到官方端点后可投稿并等待审核；
 - 独立 [在线插件目录](https://github.com/Mr-BeanSir/GodGesture-Plugins)；
 - Windows x64 与 macOS universal 原生更新。
 
