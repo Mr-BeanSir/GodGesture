@@ -217,7 +217,7 @@ export default {
       pluginSourceMissing: "The selected gestures reference Node.js plugins without declared online sources: {ids}. Remove those gestures or provide plugin sources first.",
       export: "Export JSON",
         submitPublic: "Submit to public directory",
-        reviewTitle: "Review before submission", confirmSubmit: "Submit for review", reviewNotice: "Title: {title}\nAuthor: {author}\nTargets: {targets}\nGestures: {gestures}\nPlugins: {plugins}\nThe submission enters manual review and cannot be edited afterward.",
+        reviewTitle: "Review before submission", confirmSubmit: "Submit for review", moderationNotice: "The submission enters manual review and cannot be edited afterward.", submitted: "Template {id} submitted for review.", reviewAuthor: "Author", reviewTargets: "Targets / gestures", reviewRisks: "Risks", reviewPlugins: "Required plugins", reviewNotice: "Title: {title}\nAuthor: {author}\nTargets: {targets}\nGestures: {gestures}\nPlugins: {plugins}",
       saveTitle: "Save gesture template",
       success: "Exported {gestures} gesture(s) from {targets} target(s) into one JSON file",
       failed: "Could not export gesture templates",

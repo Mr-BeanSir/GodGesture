@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import {
   ConfigDocument,
   DEFAULT_SNAPSHOT_PAGE_SIZE,
+  PublicTemplateSubmissionResponse,
   type MeResponse,
   type OAuthProvider,
   type SnapshotMeta,
@@ -384,8 +385,8 @@ export const useAccountStore = defineStore("account", () => {
     await loadSnapshots();
   }
 
-  async function submitPublicTemplate(templatePackage: unknown): Promise<void> {
-    if (endpointMode.value !== "official" || phase.value !== "signedIn") {
+  async function submitPublicTemplate(templatePackage: unknown) {
+    if (endpointMode.value !== "official" || phase.value !== "signedIn" || !user.value?.emailVerified) {
       throw new CloudError(403, "official_endpoint_login_required");
     }
     const cloud = ensureCloud();
@@ -395,6 +396,9 @@ export const useAccountStore = defineStore("account", () => {
       body: JSON.stringify({ package: templatePackage }),
     });
     if (!response.ok) throw normalizeCloudError(await response.json().catch(() => null));
+    const parsed = PublicTemplateSubmissionResponse.safeParse(await response.json().catch(() => null));
+    if (!parsed.success) throw new CloudError(response.status, "invalid_server_response");
+    return parsed.data;
   }
 
   async function updateDisplayName(displayName: string): Promise<void> {

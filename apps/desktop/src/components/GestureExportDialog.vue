@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { ArrowDown, ArrowRight, Download, Search } from "@element-plus/icons-vue";
-import type { AppEntry, AppGroup, ConfigDocument } from "@godgesture/shared";
+import { gestureTemplatePackageRisks, type AppEntry, type AppGroup, type ConfigDocument } from "@godgesture/shared";
 import {
   buildGestureTemplatePackage,
   intentsForGestureExportTarget,
@@ -14,6 +14,8 @@ import {
 } from "../utils/gesture-export";
 import { useBackend } from "../api/backend";
 import { useAccountStore } from "../stores/account";
+import TemplateSubmissionReview from "./TemplateSubmissionReview.vue";
+import { canSubmitPublicTemplate, submissionAuthor } from "../utils/template-submission";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -49,6 +51,10 @@ const selectedIds = ref<string[]>([]);
 const expandedGroups = ref<Record<string, boolean>>({});
 const validationError = ref<string | null>(null);
 const exporting = ref(false);
+const reviewVisible = ref(false);
+const pendingPackage = ref<unknown>(null);
+const pendingReview = ref<{ title: string; summary: string; author: string } | null>(null);
+const pendingRisks = ref<string[]>([]);
 
 const sortedGroups = computed(() =>
   [...props.config.groups].sort((left, right) => left.order - right.order),
@@ -193,7 +199,7 @@ const selectedPluginIds = computed(() => [
 const canExport = computed(() =>
   !exporting.value && selectedTargets.value.length > 0 && selectedPluginIds.value.length === 0,
 );
-const canSubmitPublic = computed(() => account.endpointMode === "official" && account.phase === "signedIn" && Boolean(account.user?.emailVerified));
+const canSubmitPublic = computed(() => canSubmitPublicTemplate({ endpointMode: account.endpointMode, phase: account.phase, emailVerified: Boolean(account.user?.emailVerified) }));
 
 function selectAll() {
   selectedIds.value = [...allSelectableIds.value];
@@ -213,6 +219,10 @@ function reset() {
     sortedGroups.value.map((group) => [group.id, false]),
   );
   validationError.value = null;
+  reviewVisible.value = false;
+  pendingPackage.value = null;
+  pendingReview.value = null;
+  pendingRisks.value = [];
 }
 
 watch(
@@ -253,7 +263,7 @@ function metadata(): GestureExportMetadata | null {
     validationError.value = t("gestures.exportDialog.invalidTags");
   } else {
     return {
-      author: account.user?.displayName?.trim() || account.user?.email || "-",
+      author: submissionAuthor(account.user?.displayName, account.user?.email),
       title,
       summary,
       tags,
@@ -303,18 +313,11 @@ async function exportSelected(submitPublic = false) {
     const serialized = `${JSON.stringify(packageValue, null, 2)}\n`;
     if (submitPublic) {
       if (!canSubmitPublic.value) return;
-      await ElMessageBox.confirm(
-        t("gestures.exportDialog.reviewNotice", {
-          title: details.title,
-          author: details.author,
-          targets: selectedTargets.value.length,
-          gestures: selectedGestureCount.value,
-          plugins: selectedPluginIds.value.length ? selectedPluginIds.value.join(", ") : t("common.none"),
-        }),
-        t("gestures.exportDialog.reviewTitle"),
-        { type: "warning", confirmButtonText: t("gestures.exportDialog.confirmSubmit"), cancelButtonText: t("common.cancel") },
-      );
-      await account.submitPublicTemplate(packageValue);
+      pendingPackage.value = packageValue;
+      pendingReview.value = { title: details.title, summary: details.summary, author: details.author ?? "-" };
+      pendingRisks.value = gestureTemplatePackageRisks(packageValue);
+      reviewVisible.value = true;
+      return;
     } else if (backend.isTauri) {
       const savedPath = await backend.gestureTemplateSave(
         gestureTemplateExportFileName(),
@@ -335,6 +338,14 @@ async function exportSelected(submitPublic = false) {
   } finally {
     exporting.value = false;
   }
+}
+
+async function confirmPublicSubmission() {
+  if (!pendingPackage.value) return;
+  exporting.value = true;
+  try { const result = await account.submitPublicTemplate(pendingPackage.value); ElMessage.success(t("gestures.exportDialog.submitted", { id: result.id })); reviewVisible.value = false; visible.value = false; }
+  catch { validationError.value = t("gestures.exportDialog.failed"); }
+  finally { exporting.value = false; }
 }
 </script>
 
@@ -514,6 +525,18 @@ async function exportSelected(submitPublic = false) {
       </el-button>
     </template>
   </el-dialog>
+  <TemplateSubmissionReview
+    v-if="pendingReview"
+    v-model="reviewVisible"
+    :title="pendingReview.title"
+    :summary="pendingReview.summary"
+    :author="pendingReview.author"
+    :targets="selectedTargets.length"
+    :gestures="selectedGestureCount"
+    :risks="pendingRisks"
+    :plugins="selectedPluginIds"
+    @confirm="confirmPublicSubmission"
+  />
 </template>
 
 <style scoped>
