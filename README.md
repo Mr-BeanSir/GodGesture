@@ -109,10 +109,12 @@ SDK 注入的运行副本,不需要从 npm 下载。源码、`package.json` 和�
 `pluginId` 引用。插件 manifest 声明实际提供的生命周期导出,App 会自动扫描并热更新文件,候选版本
 失败时保留最后一份可用版本。
 
-“插件”页也会读取公开的 GitHub 在线插件目录。用户确认后,App 会校验 HTTPS GitHub 仓库、插件
-ID 和可选子目录,在临时目录下载项目并执行随应用提供的 `npm install` 安装生产依赖；所有步骤
-成功后才把项目原子地放入本机插件工作区。下载、校验或依赖安装失败不会覆盖已有插件,也不会
-写入同步配置。在线插件是第三方代码和依赖,安装前应审阅仓库和依赖风险。
+“插件”页会读取官方 GitHub 在线插件目录。目录固定来自
+[`Mr-BeanSir/GodGesture-Plugins`](https://github.com/Mr-BeanSir/GodGesture-Plugins) 的 `main`
+分支；用户确认后,App 只根据条目的 `pluginId` 和 `subdirectory` 下载项目并执行随应用提供的
+`npm install` 安装生产依赖。所有步骤成功后才把项目原子地放入本机插件工作区。下载、校验或依赖
+安装失败不会覆盖已有插件,也不会写入同步配置。在线插件是第三方代码和依赖,安装前应审阅仓库
+和依赖风险。
 完整 manifest、生命周期、demo 复制方式和 Windows/macOS 路径见
 [脚本开发指南](docs/SCRIPTING.md)。
 

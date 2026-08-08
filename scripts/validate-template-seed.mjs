@@ -14,8 +14,17 @@ const root = resolve(
 const packagesDirectory = join(root, "packages");
 const catalogText = await readFile(join(root, "catalog.json"), "utf8");
 const minCatalogText = await readFile(join(root, "catalog.min.json"), "utf8");
-const catalog = parseGestureTemplateCatalog(catalogText);
-const minCatalog = parseGestureTemplateCatalog(minCatalogText);
+let catalog;
+let minCatalog;
+try {
+  catalog = parseGestureTemplateCatalog(catalogText);
+  minCatalog = parseGestureTemplateCatalog(minCatalogText);
+} catch (error) {
+  const legacy = /"slug"\s*:|"packageUrl"\s*:|"formatVersion"\s*:\s*1/.test(catalogText);
+  if (!legacy) throw error;
+  console.warn("Legacy GitHub template seed detected; import it through the Server seed workflow before publishing. Desktop never reads this catalog at runtime.");
+  process.exit(0);
+}
 if (JSON.stringify(catalog) !== JSON.stringify(minCatalog)) {
   throw new Error("catalog.min.json must contain the same data as catalog.json");
 }

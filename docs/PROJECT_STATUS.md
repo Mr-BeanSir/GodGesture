@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-08。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-09。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 `docs/ROADMAP.md` 只记录 stable `v0.1.0` 的历史里程碑。本文不记录逐日开发流水，历史过程以 Git
 提交和保留的 ADR/QA 证据为准。
@@ -49,7 +49,7 @@
 - `sendText` 只接受 [`SEND_TEXT_DSL.md`](SEND_TEXT_DSL.md) 定义的 `text`、`key`、`hotkey`、`sleep` 语句。
 - 命令行分为 `cmd` 与 `powershell` 两类；Windows 分别调用系统 cmd/PowerShell，macOS 的 PowerShell
   分支要求本机可执行 `pwsh`，缺失时不回退到 zsh。
-- Node 插件使用 `app_config_dir/plugins` 下的直接子项目；`package.json.godgesture.lifecycles` 声明 `onInit`、`onExecute`、`onGestureRecognized`、`onModifierTriggered`、`onEnd`。插件页可在用户确认后从 GitHub 在线目录下载指定 ref/子目录，校验 manifest ID 并安装生产依赖；模板采纳也会先安装其声明的插件。源码、依赖和锁文件不进入云同步，命令只同步 `pluginId`。
+- Node 插件使用 `app_config_dir/plugins` 下的直接子项目；`package.json.godgesture.lifecycles` 声明 `onInit`、`onExecute`、`onGestureRecognized`、`onModifierTriggered`、`onEnd`。插件页可在用户确认后从固定官方仓库 `Mr-BeanSir/GodGesture-Plugins` 的 `main` 目录按 `pluginId`/`subdirectory` 下载，校验 manifest ID 并安装生产依赖；模板采纳也会先安装其声明的插件。源码、依赖和锁文件不进入云同步，命令只同步 `pluginId`。
 - Desktop 自动同步使用 30 秒尾随防抖、启动/定时拉取和手动立即同步；refresh token 只进 Windows Credential Manager/macOS Keychain，不进 WebView。
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
 - OAuth 已绑定身份继续使用一次性授权码 + PKCE 登录；首次出现的第三方身份不会依据提供方邮箱自动创建或关联账户，必须先通过 GodGesture 邮箱验证码完成绑定。Desktop 与 Web Console 均支持该 pending OAuth 流程。
@@ -59,14 +59,17 @@
   模板和配置仅保存 `pluginId`，安装时由目录解析固定仓库、`main` 和子目录。
 - 官方公共模板目录已由 Server 的 PostgreSQL 元数据、审核/配额/指标模型和 RustFS 不可变对象实现；
   Desktop 始终从固定官方 Server origin 分页读取并通过短期签名 URL 下载包，官方端点登录后可投稿。
-  `distribution/templates` 仅保留历史迁移/验证现场，不参与 Desktop 运行时。浏览器预览继续使用源码 fixture。
+  匿名用户可浏览和采纳，网络失败时只使用上一份有效分页缓存；自定义端点不提供目录或投稿。
+  公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
+  聚合和短期去重，不保留用户/设备下载历史。`distribution/templates` 仅保留历史迁移/验证现场，
+  不参与 Desktop 运行时。浏览器预览继续使用源码 fixture。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
 
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
-- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和官方在线插件目录通过 GitHub 分发。公共模板目录使用 Server 的 PostgreSQL + RustFS：RustFS 仅在内部 Docker 网络运行，包对象不可变，公开下载使用五分钟签名 URL；数据库与对象存储必须同窗口备份和恢复演练。
+- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和官方在线插件目录通过 GitHub 分发。公共模板目录使用 Server 的 PostgreSQL + RustFS：RustFS 仅在内部 Docker 网络运行，包对象不可变，公开下载使用五分钟签名 URL；数据库与对象存储必须同窗口备份和恢复演练。匿名用户可读取官方目录，投稿仅限已验证邮箱的官方端点登录用户；自定义端点不提供公共目录或投稿。
 
 ## 已知边界
 
@@ -86,7 +89,7 @@
 - `pnpm test`：Shared `86/86`、SDK `1/1`、Desktop `140/140`、Server `97/97`；Web Console 当前无测试，脚本正常退出。
 - `pnpm typecheck`：Shared、SDK、Desktop、Server、Web Console 全部通过；`pnpm --filter @godgesture/desktop build` 的 `vue-tsc` 与 Vite 生产构建通过。
 - `pnpm check:api`：OpenAPI 生成检查与 `packages/shared` 产物一致。
-- `pnpm validate:templates`、`pnpm validate:plugins`、`pnpm validate:plugin-demo`、`pnpm validate:release`：分别验证 2 个模板、插件目录与 5 个插件生命周期和 10 个发布合同测试通过；两个子模块的 `scripts/validate-content.mjs` 同时校验 `catalog.json` 与 `catalog.min.json`。
+- `pnpm validate:templates` 严格校验新格式 seed；当前维护者保留的旧 GitHub seed 会明确报告为待 Server 导入，不参与 Desktop 运行时。`pnpm validate:plugins`、`pnpm validate:plugin-demo`、`pnpm validate:release` 分别验证插件目录、5 个插件生命周期和发布合同；插件子模块的 `scripts/validate-content.mjs` 同时校验 `catalog.json` 与 `catalog.min.json`。
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`：`251 passed, 3 ignored`；忽略项为性能、Task Scheduler 和实时 GitHub smoke，未将其计入自动化通过数。
 - `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- -D warnings`、`cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`、`git diff --check`：通过。
 - Vite 构建仅保留既有 VueUse 注释、较大 chunk 和 Tauri identifier 建议警告；未出现新的编译错误。
