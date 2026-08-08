@@ -266,14 +266,13 @@ function openOnlinePlugins() {
           :description="t('plugins.online.empty')"
         />
         <div v-else class="plugins-online__list">
-          <article v-for="entry in onlineEntries" :key="`${entry.slug}@${entry.version}`" class="plugins-online__row">
+          <article v-for="entry in onlineEntries" :key="entry.pluginId" class="plugins-online__row">
             <div class="plugins-online__identity">
               <strong>{{ localized(entry.title) }}</strong>
               <span>{{ localized(entry.summary) }}</span>
                 <code>{{ OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL }}<template v-if="entry.subdirectory">/{{ entry.subdirectory }}</template></code>
             </div>
             <div class="plugins-online__actions">
-              <el-tag size="small" effect="plain">v{{ entry.version }}</el-tag>
               <el-tag v-if="plugins.installedPluginIds.has(entry.pluginId)" size="small" type="success" effect="plain">
                 {{ t("plugins.online.installed") }}
               </el-tag>

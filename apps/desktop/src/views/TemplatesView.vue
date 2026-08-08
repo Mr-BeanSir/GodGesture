@@ -2,29 +2,21 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Download, Link, Refresh, Search } from "@element-plus/icons-vue";
+import { Download, Refresh, Search } from "@element-plus/icons-vue";
 import {
   commandTemplateRisks,
   gestureIdentityKey,
   type GestureTemplateCatalogEntry,
   type GestureTemplateIntent,
 } from "@godgesture/shared";
-import { useBackend } from "../api/backend";
 import { useTemplatesStore } from "../stores/templates";
 import AppIcon from "../components/AppIcon.vue";
 import MnemonicText from "../components/MnemonicText.vue";
 
-const DEFAULT_TEMPLATE_REPOSITORY_URL =
-  "https://github.com/Mr-BeanSir/GodGesture-Templates";
-
-const { t, locale } = useI18n();
-const backend = useBackend();
+const { t } = useI18n();
 const templates = useTemplatesStore();
 const riskConfirmed = ref(false);
 
-const repositoryUrl =
-  import.meta.env.VITE_GESTURE_TEMPLATE_REPOSITORY_URL?.trim() ||
-  DEFAULT_TEMPLATE_REPOSITORY_URL;
 const detailVisible = computed({
   get: () => templates.selectedEntry !== null,
   set: (visible) => {
@@ -94,8 +86,8 @@ onMounted(() => {
   void templates.loadCatalog();
 });
 
-function localized(value: { "zh-CN": string; en: string }) {
-  return locale.value === "zh-CN" ? value["zh-CN"] : value.en;
+function localized(value: string) {
+  return value;
 }
 
 function entryScope(entry: GestureTemplateCatalogEntry): "global" | "app" | "mixed" {
@@ -175,9 +167,6 @@ function errorText(code: string) {
   return translated === key ? t("templates.errors.unknown") : translated;
 }
 
-function openRepository() {
-  void backend.openExternal(repositoryUrl);
-}
 
 async function confirmAdoption() {
   const plan = templates.adoptionPlan;
@@ -221,9 +210,6 @@ async function confirmAdoption() {
             @click="templates.loadCatalog(true)"
           />
         </el-tooltip>
-        <el-tooltip :content="t('templates.repository')" placement="bottom">
-          <el-button circle :icon="Link" @click="openRepository" />
-        </el-tooltip>
       </div>
     </header>
 
@@ -258,9 +244,6 @@ async function confirmAdoption() {
           <el-button link type="primary" :icon="Refresh" @click="templates.loadCatalog(true)">
             {{ t("common.retry") }}
           </el-button>
-          <el-button link :icon="Link" @click="openRepository">
-            {{ t("templates.repository") }}
-          </el-button>
         </div>
       </template>
     </el-alert>
@@ -282,7 +265,7 @@ async function confirmAdoption() {
           <span class="templates-view__row-main">
             <span class="templates-view__row-title">
               {{ localized(entry.title) }}
-              <el-tag size="small" effect="plain" disable-transitions>v{{ entry.version }}</el-tag>
+              <el-tag size="small" effect="plain" disable-transitions>v{{ entry.versionNumber }}</el-tag>
             </span>
             <span class="templates-view__summary">{{ localized(entry.summary) }}</span>
             <span class="templates-view__tags">
@@ -351,7 +334,7 @@ async function confirmAdoption() {
           <div class="template-detail__hero-copy">
             <div class="template-detail__eyebrow">
               <code>{{ templates.selectedEntry.id }}</code>
-              <el-tag size="small" effect="plain">v{{ templates.selectedEntry.version }}</el-tag>
+              <el-tag size="small" effect="plain">v{{ templates.selectedEntry.versionNumber }}</el-tag>
               <el-tag size="small" type="info" effect="plain">{{ templates.selectedEntry.author }}</el-tag>
             </div>
             <h3>{{ localized(templates.selectedEntry.title) }}</h3>
@@ -536,7 +519,7 @@ async function confirmAdoption() {
         >
           <ul class="template-detail__risk-list">
             <li v-for="source in templates.adoptionPlan.pluginSources" :key="source.pluginId">
-              <code>{{ source.repositoryUrl }}<template v-if="source.subdirectory">/{{ source.subdirectory }}</template></code>
+              <code>{{ source.pluginId }}<template v-if="source.subdirectory"> / {{ source.subdirectory }}</template></code>
             </li>
           </ul>
         </el-alert>
