@@ -187,3 +187,20 @@ export const AdminRoleRequest = z.object({
   role: UserRole,
 });
 export type AdminRoleRequest = z.infer<typeof AdminRoleRequest>;
+
+export const TemplatePolicyLimits = z.object({
+  dailySubmissionLimit: z.number().int().min(0),
+  pendingVersionLimit: z.number().int().min(0),
+  publishedTemplateLimit: z.number().int().min(0),
+  maxPackageBytes: z.number().int().min(0),
+});
+export type TemplatePolicyLimits = z.infer<typeof TemplatePolicyLimits>;
+export const TemplatePolicyResponse = TemplatePolicyLimits.extend({
+  hardDailySubmissionMax: z.number().int().positive(),
+  hardPendingVersionMax: z.number().int().positive(),
+  hardPublishedMax: z.number().int().positive(),
+  hardPackageBytesMax: z.number().int().positive(),
+});
+export type TemplatePolicyResponse = z.infer<typeof TemplatePolicyResponse>;
+export const TemplatePolicyUpdateRequest = TemplatePolicyLimits.partial().strict();
+export type TemplatePolicyUpdateRequest = z.infer<typeof TemplatePolicyUpdateRequest>;
