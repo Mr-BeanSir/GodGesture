@@ -23,24 +23,29 @@ describe("desktop OAuth helpers", () => {
     expect(attempt.challenge).not.toBe(attempt.verifier);
   });
 
-  it("accepts exactly one code or one normalized callback error", () => {
+  it("accepts exactly one code, pending binding, or normalized callback error", () => {
     expect(
-      parseOAuthLoopbackResult({ code: "one-time-code", error: null }),
+      parseOAuthLoopbackResult({ code: "one-time-code", pendingOAuth: null, error: null }),
     ).toEqual({
       code: "one-time-code",
+      pendingOAuth: null,
       error: null,
     });
     expect(
-      parseOAuthLoopbackResult({ code: null, error: "oauth_access_denied" }),
-    ).toEqual({ code: null, error: "oauth_access_denied" });
+      parseOAuthLoopbackResult({ code: null, pendingOAuth: null, error: "oauth_access_denied" }),
+    ).toEqual({ code: null, pendingOAuth: null, error: "oauth_access_denied" });
+    expect(
+      parseOAuthLoopbackResult({ code: null, pendingOAuth: "binding-id", error: null }),
+    ).toEqual({ code: null, pendingOAuth: "binding-id", error: null });
     expect(() =>
       parseOAuthLoopbackResult({
         code: "code",
+        pendingOAuth: null,
         error: "oauth_callback_failed",
       }),
     ).toThrowError(expect.objectContaining({ code: "invalid_oauth_callback" }));
     expect(() =>
-      parseOAuthLoopbackResult({ code: null, error: "provider_raw_error" }),
+      parseOAuthLoopbackResult({ code: null, pendingOAuth: null, error: "provider_raw_error" }),
     ).toThrow();
   });
 });

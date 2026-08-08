@@ -1,4 +1,22 @@
 export interface paths {
+    "/admin/template-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read global public template submission limits */
+        get: operations["getTemplatePolicy"];
+        put?: never;
+        /** Update global public template submission limits */
+        post: operations["updateTemplatePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -180,6 +198,40 @@ export interface paths {
         put?: never;
         /** Exchange a one-time OAuth code for a token pair */
         post: operations["exchangeOAuthCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oauth/pending/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify an email and finish binding a pending OAuth identity */
+        post: operations["completePendingOAuthBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oauth/pending/{id}/email-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a registration email code for a pending OAuth identity */
+        post: operations["requestPendingOAuthEmailCode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1905,6 +1957,7 @@ export interface components {
         MeResponse: {
             /** Format: date-time */
             createdAt: string;
+            displayName: string;
             /** Format: email */
             email: string | null;
             emailVerified: boolean;
@@ -1922,6 +1975,21 @@ export interface components {
                 /** @enum {string} */
                 platform: "windows" | "macos" | "web";
             };
+        };
+        OAuthPendingBindingCompleteRequest: {
+            codeVerifier: string;
+            device: {
+                name: string;
+                /** @enum {string} */
+                platform: "windows" | "macos" | "web";
+            };
+            /** Format: email */
+            email: string;
+            verificationCode: string;
+        };
+        OAuthPendingBindingEmailCodeRequest: {
+            /** Format: email */
+            email: string;
         };
         OAuthProvidersResponse: {
             providers: ("github" | "google" | "wechat" | "qq")[];
@@ -1998,6 +2066,22 @@ export interface components {
             updatedAt: string;
             version: number;
         };
+        TemplatePolicyResponse: {
+            dailySubmissionLimit: number;
+            hardDailySubmissionMax: number;
+            hardPackageBytesMax: number;
+            hardPendingVersionMax: number;
+            hardPublishedMax: number;
+            maxPackageBytes: number;
+            pendingVersionLimit: number;
+            publishedTemplateLimit: number;
+        };
+        TemplatePolicyUpdateRequest: {
+            dailySubmissionLimit?: number;
+            maxPackageBytes?: number;
+            pendingVersionLimit?: number;
+            publishedTemplateLimit?: number;
+        };
         TokenPairResponse: {
             accessToken: string;
             accessTokenExpiresIn: number;
@@ -2020,6 +2104,122 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getTemplatePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The template policy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePolicyResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    updateTemplatePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplatePolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated template policy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatePolicyResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
     listAdminUsers: {
         parameters: {
             query?: never;
@@ -2580,6 +2780,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    completePendingOAuthBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthPendingBindingCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description A token pair was issued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    requestPendingOAuthEmailCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthPendingBindingEmailCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The verification code was accepted for delivery. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestEmailCodeResponse"];
                 };
             };
             /** @description Request validation failed. */

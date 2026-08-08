@@ -43,6 +43,7 @@ pub struct OAuthLoopbackStart {
 #[serde(rename_all = "camelCase")]
 pub struct OAuthLoopbackResult {
     pub code: Option<String>,
+    pub pending_oauth: Option<String>,
     pub error: Option<String>,
 }
 
@@ -505,11 +506,13 @@ fn parse_callback_target(
     }
     let mut state = None;
     let mut code = None;
+    let mut pending_oauth = None;
     let mut error = None;
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
             "state" if state.is_none() => state = Some(value.into_owned()),
             "code" if code.is_none() => code = Some(value.into_owned()),
+            "pending_oauth" if pending_oauth.is_none() => pending_oauth = Some(value.into_owned()),
             "error" if error.is_none() => error = Some(value.into_owned()),
             _ => {}
         }
@@ -520,18 +523,25 @@ fn parse_callback_target(
             "OAuth callback state does not match",
         ));
     }
-    match (code, error) {
-        (Some(code), None) if !code.is_empty() && code.len() <= 512 => Ok(OAuthLoopbackResult {
+    match (code, pending_oauth, error) {
+        (Some(code), None, None) if !code.is_empty() && code.len() <= 512 => Ok(OAuthLoopbackResult {
             code: Some(code),
+            pending_oauth: None,
             error: None,
         }),
-        (None, Some(error)) if !error.is_empty() && error.len() <= 128 => Ok(OAuthLoopbackResult {
+        (None, Some(pending_oauth), None) if !pending_oauth.is_empty() && pending_oauth.len() <= 128 => Ok(OAuthLoopbackResult {
             code: None,
+            pending_oauth: Some(pending_oauth),
+            error: None,
+        }),
+        (None, None, Some(error)) if !error.is_empty() && error.len() <= 128 => Ok(OAuthLoopbackResult {
+            code: None,
+            pending_oauth: None,
             error: Some(error),
         }),
         _ => Err(NativeAccountError::new(
             "invalid_oauth_callback",
-            "OAuth callback must contain exactly one code or error",
+            "OAuth callback must contain exactly one code, pending_oauth, or error",
         )),
     }
 }
@@ -581,6 +591,19 @@ mod tests {
             .unwrap(),
             OAuthLoopbackResult {
                 code: Some("one-time-code".into()),
+                pending_oauth: None,
+                error: None,
+            }
+        );
+        assert_eq!(
+            parse_callback_target(
+                &format!("{CALLBACK_PATH}?pending_oauth=binding-id&state={STATE}"),
+                STATE,
+            )
+            .unwrap(),
+            OAuthLoopbackResult {
+                code: None,
+                pending_oauth: Some("binding-id".into()),
                 error: None,
             }
         );
@@ -592,6 +615,7 @@ mod tests {
             .unwrap(),
             OAuthLoopbackResult {
                 code: None,
+                pending_oauth: None,
                 error: Some("oauth_access_denied".into()),
             }
         );

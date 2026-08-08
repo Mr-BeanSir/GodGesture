@@ -4,6 +4,9 @@ import {
   LoginRequest,
   MeResponse,
   OAuthExchangeRequest,
+  OAuthPendingBindingCompleteRequest,
+  OAuthPendingBindingEmailCodeRequest,
+  RequestEmailCodeResponse,
   OAuthProvidersResponse,
   PullConfigResponse,
   PushConfigRequest,
@@ -51,6 +54,17 @@ export class CloudApi {
       this.session.publicClient.POST("/auth/oauth/exchange", { body }),
       "/auth/oauth/exchange",
     );
+    await this.session.installTokenPair(pair);
+  }
+
+  requestPendingOAuthEmailCode(bindingId: string, input: OAuthPendingBindingEmailCodeRequest): Promise<RequestEmailCodeResponse> {
+    const body = OAuthPendingBindingEmailCodeRequest.parse(input);
+    return apiData(RequestEmailCodeResponse, this.session.publicClient.POST('/auth/oauth/pending/{id}/email-code', { params: { path: { id: bindingId } }, body }), '/auth/oauth/pending/email-code');
+  }
+
+  async completePendingOAuthBinding(bindingId: string, input: OAuthPendingBindingCompleteRequest): Promise<void> {
+    const body = OAuthPendingBindingCompleteRequest.parse(input);
+    const pair = await apiData(TokenPairResponse, this.session.publicClient.POST('/auth/oauth/pending/{id}/complete', { params: { path: { id: bindingId } }, body }), '/auth/oauth/pending/complete');
     await this.session.installTokenPair(pair);
   }
 

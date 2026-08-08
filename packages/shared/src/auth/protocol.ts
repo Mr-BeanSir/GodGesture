@@ -137,6 +137,27 @@ export const OAuthExchangeRequest = z.object({
 });
 export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequest>;
 
+/** First-time OAuth identities must prove control of a GodGesture email before binding. */
+export const OAuthPendingBindingEmailCodeRequest = z.object({
+  email: EmailAddress,
+}).strict();
+export type OAuthPendingBindingEmailCodeRequest = z.infer<
+  typeof OAuthPendingBindingEmailCodeRequest
+>;
+
+export const OAuthPendingBindingCompleteRequest = z.object({
+  email: EmailAddress,
+  verificationCode: z.string().regex(/^\d{6}$/),
+  codeVerifier: OAuthCodeVerifier,
+  device: z.object({
+    name: DeviceName,
+    platform: DevicePlatform,
+  }),
+}).strict();
+export type OAuthPendingBindingCompleteRequest = z.infer<
+  typeof OAuthPendingBindingCompleteRequest
+>;
+
 /** OAuth 邮箱撞上密码账户时的结构化错误载荷。禁止按邮箱自动关联。 */
 export const OAuthEmailConflictResponse = z.object({
   error: z.literal("oauth_email_conflict"),

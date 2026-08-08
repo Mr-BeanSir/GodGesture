@@ -55,6 +55,7 @@ export const useAccountStore = defineStore("account", () => {
   const authErrorCode = ref<string | null>(null);
   const cloudConfigured = ref(false);
   const providers = ref<OAuthProvider[]>([]);
+  const pendingOAuth = ref<{ bindingId: string; verifier: string } | null>(null);
   const providersLoading = ref(false);
   const providersError = ref(false);
   const syncStatus = ref<CloudSyncStatus>({ ...SIGNED_OUT_SYNC_STATUS });
@@ -238,8 +239,12 @@ export const useAccountStore = defineStore("account", () => {
       );
       attemptId = null;
       if (callback.error) throw new CloudError(0, callback.error);
+      if (callback.pendingOAuth) {
+        pendingOAuth.value = { bindingId: callback.pendingOAuth, verifier: pkce.verifier };
+        return;
+      }
       await cloud.api.exchangeOAuth({
-        code: callback.code,
+        code: callback.code!,
         codeVerifier: pkce.verifier,
         device: makeDevicePayload(),
       });
@@ -253,6 +258,19 @@ export const useAccountStore = defineStore("account", () => {
     } finally {
       authBusy.value = false;
     }
+  }
+
+  async function requestPendingOAuthEmailCode(email: string): Promise<void> {
+    if (!pendingOAuth.value) throw new CloudError(0, "oauth_pending_missing");
+    await ensureCloud().api.requestPendingOAuthEmailCode(pendingOAuth.value.bindingId, { email });
+  }
+
+  async function completePendingOAuth(email: string, verificationCode: string): Promise<void> {
+    const pending = pendingOAuth.value;
+    if (!pending) throw new CloudError(0, "oauth_pending_missing");
+    await ensureCloud().api.completePendingOAuthBinding(pending.bindingId, { email, verificationCode, codeVerifier: pending.verifier, device: makeDevicePayload() });
+    pendingOAuth.value = null;
+    await finishLogin();
   }
 
   async function finishLogin(): Promise<void> {
@@ -460,6 +478,9 @@ export const useAccountStore = defineStore("account", () => {
     loadProviders,
     loginWithPassword,
     loginWithOAuth,
+    pendingOAuth,
+    requestPendingOAuthEmailCode,
+    completePendingOAuth,
     syncNow,
     loadSnapshots,
     restoreSnapshot,

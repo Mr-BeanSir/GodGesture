@@ -7,6 +7,8 @@ import {
   OAuthCallbackErrorCode,
   OAuthEmailConflictResponse,
   OAuthExchangeRequest,
+  OAuthPendingBindingCompleteRequest,
+  OAuthPendingBindingEmailCodeRequest,
   OAuthProvidersResponse,
   RateLimitedResponse,
   RefreshRotationRaceResponse,
@@ -87,6 +89,18 @@ describe("OAuth PKCE contract", () => {
         device: { name: "Browser", platform: "web" },
       }),
     ).toThrow();
+  });
+
+  it("requires a normalized email, six-digit code, PKCE verifier, and device for pending OAuth binding", () => {
+    expect(OAuthPendingBindingEmailCodeRequest.parse({ email: " USER@example.com " })).toEqual({ email: "user@example.com" });
+    expect(OAuthPendingBindingCompleteRequest.parse({
+      email: "USER@example.com", verificationCode: "123456", codeVerifier: "v".repeat(43),
+      device: { name: "Desktop", platform: "windows" },
+    }).email).toBe("user@example.com");
+    expect(() => OAuthPendingBindingCompleteRequest.parse({
+      email: "user@example.com", verificationCode: "invalid", codeVerifier: "v".repeat(43),
+      device: { name: "Desktop", platform: "windows" },
+    })).toThrow();
   });
 });
 

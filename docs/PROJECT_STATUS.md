@@ -52,6 +52,7 @@
 - Node 插件使用 `app_config_dir/plugins` 下的直接子项目；`package.json.godgesture.lifecycles` 声明 `onInit`、`onExecute`、`onGestureRecognized`、`onModifierTriggered`、`onEnd`。插件页可在用户确认后从 GitHub 在线目录下载指定 ref/子目录，校验 manifest ID 并安装生产依赖；模板采纳也会先安装其声明的插件。源码、依赖和锁文件不进入云同步，命令只同步 `pluginId`。
 - Desktop 自动同步使用 30 秒尾随防抖、启动/定时拉取和手动立即同步；refresh token 只进 Windows Credential Manager/macOS Keychain，不进 WebView。
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
+- OAuth 已绑定身份继续使用一次性授权码 + PKCE 登录；首次出现的第三方身份不会依据提供方邮箱自动创建或关联账户，必须先通过 GodGesture 邮箱验证码完成绑定。Desktop 与 Web Console 均支持该 pending OAuth 流程。
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
 - `distribution/plugins` 仍是官方插件仓库 submodule，项目统一位于 `plugins/<subdirectory>/`；Desktop
   固定从 `Mr-BeanSir/GodGesture-Plugins` 的 `main/catalog.min.json` 读取插件目录并在校验后缓存。

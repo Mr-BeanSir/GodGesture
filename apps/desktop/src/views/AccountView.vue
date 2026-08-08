@@ -19,6 +19,8 @@ const account = useAccountStore();
 
 const email = ref("");
 const password = ref("");
+const pendingEmail = ref("");
+const pendingCode = ref("");
 const endpointChoice = ref(account.endpointMode);
 const customEndpointDraft = ref(account.customApiOrigin);
 const displayNameDraft = ref("");
@@ -128,6 +130,16 @@ async function onOAuth(provider: OAuthProvider): Promise<void> {
   } catch {
     ElMessage.error(errorText(account.authErrorCode));
   }
+}
+
+async function sendPendingCode(): Promise<void> {
+  try { await account.requestPendingOAuthEmailCode(pendingEmail.value); ElMessage.success(t("account.oauthCodeSent")); }
+  catch { ElMessage.error(errorText(account.authErrorCode)); }
+}
+
+async function completePending(): Promise<void> {
+  try { await account.completePendingOAuth(pendingEmail.value, pendingCode.value); ElMessage.success(t("account.loginSuccess")); pendingEmail.value = ""; pendingCode.value = ""; }
+  catch { ElMessage.error(errorText(account.authErrorCode)); }
 }
 
 async function saveDisplayName(): Promise<void> {
@@ -309,6 +321,18 @@ function providerLabel(provider: OAuthProvider): string {
       />
 
       <div class="account__login-grid">
+        <div v-if="account.pendingOAuth" class="account__credentials">
+          <div class="account__form">
+            <h3>{{ t("account.oauthEmailTitle") }}</h3>
+            <p class="account__provider-status">{{ t("account.oauthEmailHint") }}</p>
+            <el-input v-model="pendingEmail" type="email" :placeholder="t('account.emailPlaceholder')" />
+            <div class="account__code-row">
+              <el-input v-model="pendingCode" maxlength="6" inputmode="numeric" :placeholder="t('account.verificationCode')" />
+              <el-button :disabled="!pendingEmail" @click="sendPendingCode">{{ t("account.sendCode") }}</el-button>
+            </div>
+            <el-button type="primary" :disabled="pendingCode.length !== 6" @click="completePending">{{ t("account.oauthEmailContinue") }}</el-button>
+          </div>
+        </div>
         <div class="account__credentials">
           <div class="account__form">
             <div class="gg-field">

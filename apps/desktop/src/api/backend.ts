@@ -107,6 +107,7 @@ export interface OAuthLoopbackStart {
 
 export interface OAuthLoopbackResult {
   code: string | null;
+  pendingOAuth: string | null;
   error: string | null;
 }
 
