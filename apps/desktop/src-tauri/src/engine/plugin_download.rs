@@ -30,6 +30,8 @@ const MAX_REDIRECTS: usize = 5;
 const MAX_REPOSITORY_URL_BYTES: usize = 4096;
 const MAX_GIT_REF_BYTES: usize = 128;
 const MAX_SUBDIRECTORY_BYTES: usize = 256;
+const OFFICIAL_PLUGIN_REPOSITORY_URL: &str = "https://github.com/Mr-BeanSir/GodGesture-Plugins";
+const OFFICIAL_PLUGIN_REF: &str = "main";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -655,7 +657,8 @@ fn validate_source(source: &OnlinePluginSource) -> Result<(), PluginInstallError
     let url = Url::parse(&source.repository_url).map_err(|_| {
         PluginInstallError::new("plugin_source_invalid", "plugin repository URL is invalid")
     })?;
-    if source.repository_url.len() > MAX_REPOSITORY_URL_BYTES
+    if source.repository_url != OFFICIAL_PLUGIN_REPOSITORY_URL
+        || source.repository_url.len() > MAX_REPOSITORY_URL_BYTES
         || url.scheme() != "https"
         || !matches!(url.host_str(), Some("github.com" | "www.github.com"))
         || !url.username().is_empty()
@@ -671,10 +674,11 @@ fn validate_source(source: &OnlinePluginSource) -> Result<(), PluginInstallError
     {
         return Err(PluginInstallError::new(
             "plugin_source_invalid",
-            "plugin repository URL must be an HTTPS GitHub repository",
+            "plugin repository URL must be the official GodGesture plugin repository",
         ));
     }
-    if source.git_ref.len() > MAX_GIT_REF_BYTES
+    if source.git_ref != OFFICIAL_PLUGIN_REF
+        || source.git_ref.len() > MAX_GIT_REF_BYTES
         || source.git_ref.is_empty()
         || source.git_ref.starts_with('-')
         || source.git_ref.contains("..")
@@ -686,7 +690,7 @@ fn validate_source(source: &OnlinePluginSource) -> Result<(), PluginInstallError
     {
         return Err(PluginInstallError::new(
             "plugin_source_invalid",
-            "plugin Git ref contains unsupported characters",
+            "plugin Git ref must be main",
         ));
     }
     validate_subdirectory(&source.subdirectory)
@@ -903,9 +907,12 @@ mod tests {
     }
 
     #[test]
-    fn validates_github_repository_sources() {
-        assert!(validate_source(&source("https://github.com/owner/repo")).is_ok());
+    fn validates_only_the_official_repository_and_main_ref() {
+        assert!(
+            validate_source(&source("https://github.com/Mr-BeanSir/GodGesture-Plugins")).is_ok()
+        );
         for url in [
+            "https://github.com/owner/repo",
             "http://github.com/owner/repo",
             "https://example.com/owner/repo",
             "https://github.com/owner/repo/tree/main",
@@ -916,21 +923,27 @@ mod tests {
                 "plugin_source_invalid"
             );
         }
+        let mut custom_ref = source("https://github.com/Mr-BeanSir/GodGesture-Plugins");
+        custom_ref.git_ref = "develop".into();
+        assert_eq!(
+            validate_source(&custom_ref).unwrap_err().code,
+            "plugin_source_invalid"
+        );
     }
 
     #[test]
-    fn normalizes_case_insensitive_git_repository_suffixes() {
-        let value = source("https://github.com/owner/repository.GIT");
+    fn builds_the_official_archive_url() {
+        let value = source("https://github.com/Mr-BeanSir/GodGesture-Plugins");
         assert!(validate_source(&value).is_ok());
         assert_eq!(
             github_archive_url(&value).unwrap().as_str(),
-            "https://api.github.com/repos/owner/repository/zipball/main"
+            "https://api.github.com/repos/Mr-BeanSir/GodGesture-Plugins/zipball/main"
         );
     }
 
     #[test]
     fn rejects_traversal_subdirectories_and_refs() {
-        let mut value = source("https://github.com/owner/repo");
+        let mut value = source("https://github.com/Mr-BeanSir/GodGesture-Plugins");
         value.subdirectory = "../outside".into();
         assert!(validate_source(&value).is_err());
         value.subdirectory = "plugins/demo".into();
