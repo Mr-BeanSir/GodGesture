@@ -8,6 +8,7 @@ import {
   buildGestureTemplatePackage,
   intentsForGestureExportTarget,
   nodePluginIdsInIntents,
+  gestureTemplateExportFileName,
   type GestureExportMetadata,
   type GestureExportTarget,
 } from "../utils/gesture-export";
@@ -304,13 +305,13 @@ async function exportSelected(submitPublic = false) {
       await account.submitPublicTemplate(packageValue);
     } else if (backend.isTauri) {
       const savedPath = await backend.gestureTemplateSave(
-        `${packageValue.title.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 64) || "gesture-template"}.json`,
+        gestureTemplateExportFileName(),
         serialized,
         t("gestures.exportDialog.saveTitle"),
       );
       if (!savedPath) return;
     } else {
-      downloadJson(`${packageValue.title.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 64) || "gesture-template"}.json`, packageValue);
+      downloadJson(gestureTemplateExportFileName(), packageValue);
     }
     ElMessage.success(t("gestures.exportDialog.success", {
       targets: selectedTargets.value.length,

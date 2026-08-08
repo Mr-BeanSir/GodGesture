@@ -11,13 +11,14 @@ export type GestureExportTarget =
   | { scope: "app"; id: string; app: AppEntry };
 
 export interface GestureExportMetadata {
-  /** Legacy local-export fields are accepted by callers but ignored by v2. */
-  slug?: string;
-  version?: string;
-  author?: string;
   title: string;
   summary: string;
   tags: string[];
+}
+
+export function gestureTemplateExportFileName(): string {
+  const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  return `gesture-template-${id}.json`;
 }
 
 export interface GestureExportSelection {

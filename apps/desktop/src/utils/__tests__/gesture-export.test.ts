@@ -2,14 +2,12 @@ import { describe, expect, it } from "vitest";
 import { GestureTemplatePackage } from "@godgesture/shared";
 import {
   buildGestureTemplatePackage,
+  gestureTemplateExportFileName,
   nodePluginIdsInIntents,
   type GestureExportMetadata,
 } from "../gesture-export";
 
 const metadata: GestureExportMetadata = {
-  slug: "browser-basics",
-  version: "1.0.0",
-  author: "GodGesture",
   title: "浏览器基础",
   summary: "浏览器手势",
   tags: ["browser"],
@@ -30,6 +28,15 @@ const intent = {
 };
 
 describe("gesture export", () => {
+  it("uses the unsigned author placeholder and a neutral export filename", () => {
+    const result = buildGestureTemplatePackage(
+      [{ target: { scope: "global", id: "__global__" }, intents: [intent] }],
+      metadata,
+    );
+    expect(result.author).toBe("-");
+    expect(gestureTemplateExportFileName()).not.toContain("浏览器");
+    expect(gestureTemplateExportFileName()).toMatch(/^gesture-template-[0-9a-f-]+\.json$/);
+  });
   it("creates a valid app template and removes local identity fields", () => {
     const result = buildGestureTemplatePackage(
       [{
