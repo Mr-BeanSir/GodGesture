@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   GestureTemplateCatalog,
   GestureTemplatePackage,
+  gestureTemplatePackagePlatforms,
+  gestureTemplateTargetSummaries,
   MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
   parseGestureTemplatePackage,
 } from "../../index.js";
@@ -40,6 +42,25 @@ const validEntry = () => ({
 });
 
 describe("gesture template protocol", () => {
+  it("derives public target summaries and supported platforms", () => {
+    const value = GestureTemplatePackage.parse({
+      ...validPackage(),
+      targets: [
+        globalTarget,
+        {
+          scope: "app",
+          name: "Finder",
+          mac: { bundleId: "com.apple.finder" },
+          intents: globalTarget.intents,
+        },
+      ],
+    });
+    expect(gestureTemplateTargetSummaries(value)).toEqual([
+      { scope: "global" },
+      { scope: "app", name: "Finder", mac: { bundleId: "com.apple.finder" } },
+    ]);
+    expect(gestureTemplatePackagePlatforms(value)).toEqual(["windows", "macos"]);
+  });
   it("uses single plain-text title and summary without a slug", () => {
     const templatePackage = GestureTemplatePackage.parse(validPackage());
     expect(templatePackage).toMatchObject({

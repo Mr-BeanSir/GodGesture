@@ -226,3 +226,24 @@ export const TemplatePolicyResponse = TemplatePolicyLimits.extend({
 export type TemplatePolicyResponse = z.infer<typeof TemplatePolicyResponse>;
 export const TemplatePolicyUpdateRequest = TemplatePolicyLimits.partial().strict();
 export type TemplatePolicyUpdateRequest = z.infer<typeof TemplatePolicyUpdateRequest>;
+
+const adminPolicyUserId = z.string().uuid();
+export const TemplateUserPolicyResponse = TemplatePolicyLimits.extend({
+  userId: adminPolicyUserId,
+  overrides: TemplatePolicyLimits.partial().strict(),
+}).strict();
+export type TemplateUserPolicyResponse = z.infer<typeof TemplateUserPolicyResponse>;
+export const TemplateUserPolicyUpdateRequest = TemplatePolicyLimits.partial().strict();
+export type TemplateUserPolicyUpdateRequest = z.infer<typeof TemplateUserPolicyUpdateRequest>;
+
+const moderationText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value), 'contains unsafe control text');
+export const TemplateModerationReport = z.object({
+  id: z.string().uuid(), templateVersionId: z.string().uuid(), templateId: z.string().uuid(),
+  title: z.string(), reason: z.string(), status: z.enum(['open','resolved','dismissed']),
+  createdAt: z.string().datetime({ offset: true }), resolution: z.string().nullable(), resolvedAt: z.string().datetime({ offset: true }).nullable(),
+}).strict();
+export type TemplateModerationReport = z.infer<typeof TemplateModerationReport>;
+export const TemplateModerationReportListResponse = z.object({ reports: z.array(TemplateModerationReport) }).strict();
+export type TemplateModerationReportListResponse = z.infer<typeof TemplateModerationReportListResponse>;
+export const TemplateReportResolutionRequest = z.object({ resolution: moderationText(2000) }).strict();
+export type TemplateReportResolutionRequest = z.infer<typeof TemplateReportResolutionRequest>;

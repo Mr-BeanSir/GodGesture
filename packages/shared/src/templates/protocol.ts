@@ -220,9 +220,30 @@ function targetSummary(target: GestureTemplateTarget): GestureTemplateTargetSumm
   return { scope: "app", name: target.name, ...(target.windows ? { windows: target.windows } : {}), ...(target.mac ? { mac: target.mac } : {}) };
 }
 
+export function gestureTemplateTargetSummaries(
+  templatePackage: GestureTemplatePackage,
+): GestureTemplateTargetSummary[] {
+  return templatePackage.targets.map(targetSummary);
+}
+
+export function gestureTemplatePackagePlatforms(
+  templatePackage: GestureTemplatePackage,
+): Array<"windows" | "macos"> {
+  if (templatePackage.targets.some((target) => target.scope === "global")) {
+    return ["windows", "macos"];
+  }
+  const windows = templatePackage.targets.some(
+    (target) => target.scope === "app" && target.windows != null,
+  );
+  const macos = templatePackage.targets.some(
+    (target) => target.scope === "app" && target.mac != null,
+  );
+  return [...(windows ? ["windows" as const] : []), ...(macos ? ["macos" as const] : [])];
+}
+
 export function verifyGestureTemplatePackage(entry: GestureTemplateCatalogEntry, templatePackage: GestureTemplatePackage): GestureTemplatePackage {
   if (entry.title !== templatePackage.title || entry.summary !== templatePackage.summary || JSON.stringify(entry.tags) !== JSON.stringify(templatePackage.tags)) throw new GestureTemplateProtocolError("metadata_mismatch", "Template package metadata does not match its catalog entry");
-  if (JSON.stringify(entry.targets) !== JSON.stringify(templatePackage.targets.map(targetSummary))) throw new GestureTemplateProtocolError("target_mismatch", "Template package target does not match its catalog entry");
+  if (JSON.stringify(entry.targets) !== JSON.stringify(gestureTemplateTargetSummaries(templatePackage))) throw new GestureTemplateProtocolError("target_mismatch", "Template package target does not match its catalog entry");
   if (JSON.stringify(entry.risks) !== JSON.stringify(gestureTemplatePackageRisks(templatePackage))) throw new GestureTemplateProtocolError("risk_mismatch", "Template package risks do not match its catalog entry");
   return templatePackage;
 }

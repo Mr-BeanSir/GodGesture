@@ -97,6 +97,8 @@
 
 ## 当前工作区备注
 
+- 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供举报处理入口。Server 与 Web Console 继续作为私有子模块维护。
+
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
 - `apps/server` 与 `apps/web-console` 是私有 Git 子模块；开发、CI 与 1Panel 检出都必须运行 `git submodule update --init --recursive` 并具备两个私有仓库的只读权限。它们仍依赖根工作区的 `@godgesture/shared`，协议/OpenAPI/Docker 构建不独立化；理由见 ADR-0015。
 - `distribution/templates` 子模块存在未提交改动：目录仍引用已删除的
