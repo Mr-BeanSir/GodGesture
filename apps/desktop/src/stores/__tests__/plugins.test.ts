@@ -186,7 +186,6 @@ describe("plugins store", () => {
     await expect(
       store.installOnline({
         ...onlineEntry,
-        slug: "another-online-plugin",
         pluginId: "50000000-0000-4000-8000-000000000002",
       }),
     ).resolves.toBe(false);

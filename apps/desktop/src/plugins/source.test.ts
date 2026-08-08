@@ -9,18 +9,14 @@ import {
 const catalog = JSON.stringify({
   formatVersion: 1,
   generatedAt: "2026-08-07T08:00:00Z",
-  entries: [
-    {
-      slug: "demo-plugin",
-      version: "1.0.0",
-      author: "GodGesture",
-      title: { "zh-CN": "演示插件", en: "Demo plugin" },
-      summary: { "zh-CN": "用于测试", en: "For testing" },
-      pluginId: "30000000-0000-4000-8000-000000000001",
-      repositoryUrl: "https://github.com/owner/repository",
-      ref: "main",
-      subdirectory: "plugin",
-    },
+    entries: [
+      {
+        pluginId: "30000000-0000-4000-8000-000000000001",
+        subdirectory: "plugins/plugin",
+        title: "Demo plugin",
+        summary: "For testing",
+        disabled: false,
+      },
   ],
 });
 
@@ -33,7 +29,7 @@ describe("online plugin source", () => {
 
     const source = createRemoteOnlinePluginSource(undefined, transport);
     await expect(source.loadCatalog()).resolves.toMatchObject({
-      entries: [{ slug: "demo-plugin" }],
+      entries: [{ pluginId: "30000000-0000-4000-8000-000000000001" }],
     });
     expect(transport).toHaveBeenCalledOnce();
   });
@@ -46,7 +42,7 @@ describe("online plugin source", () => {
 
     const source = createRemoteOnlinePluginSource(undefined, transport);
     await expect(source.loadCatalog()).resolves.toMatchObject({
-      entries: [{ slug: "demo-plugin" }],
+      entries: [{ pluginId: "30000000-0000-4000-8000-000000000001" }],
     });
     expect(transport).toHaveBeenCalledOnce();
   });
@@ -66,11 +62,11 @@ describe("online plugin source", () => {
     );
 
     await expect(source.loadCatalog()).resolves.toMatchObject({
-      entries: [{ slug: "demo-plugin" }],
+      entries: [{ pluginId: "30000000-0000-4000-8000-000000000001" }],
     });
     expect(transport).not.toHaveBeenCalled();
     await expect(source.loadCatalog(true)).resolves.toMatchObject({
-      entries: [{ slug: "demo-plugin" }],
+      entries: [{ pluginId: "30000000-0000-4000-8000-000000000001" }],
     });
     expect(transport).toHaveBeenCalledOnce();
     expect(cache.catalogCacheSet).not.toHaveBeenCalled();

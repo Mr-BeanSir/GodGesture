@@ -203,5 +203,6 @@ export function localizedPluginText(
   value: OnlinePluginCatalogEntry["title"],
   locale: string,
 ) {
-  return locale === "zh-CN" ? value["zh-CN"] : value.en;
+  void locale;
+  return value;
 }

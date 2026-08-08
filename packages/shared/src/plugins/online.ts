@@ -37,18 +37,7 @@ export const OnlinePluginCatalogEntry = z.object({
   summary: text(512, "Plugin summary"),
   disabled: z.boolean(),
 }).strict();
-type PlainTextCompat = any;
-export type OnlinePluginCatalogEntry = Omit<z.infer<typeof OnlinePluginCatalogEntry>, "disabled"> & {
-  /** @deprecated catalog entries no longer publish package versions or authors. */
-  slug?: string;
-  version?: string;
-  author?: string;
-  repositoryUrl?: string;
-  ref?: string;
-  disabled?: boolean;
-  title: PlainTextCompat;
-  summary: PlainTextCompat;
-};
+export type OnlinePluginCatalogEntry = z.infer<typeof OnlinePluginCatalogEntry>;
 export const OnlinePluginCatalog = z.object({
   formatVersion: z.literal(ONLINE_PLUGIN_CATALOG_FORMAT_VERSION),
   generatedAt: z.string().datetime({ offset: true }),

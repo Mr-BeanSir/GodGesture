@@ -45,7 +45,6 @@ async function installOnline(entry: (typeof onlineEntries.value)[number]) {
       t("plugins.online.confirmBody", {
         name: localized(entry.title),
         source: `${OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL}${entry.subdirectory ? `/${entry.subdirectory}` : ""}`,
-        ref: entry.ref,
       }),
       t("plugins.online.confirmTitle"),
       {

@@ -689,7 +689,7 @@ export default {
       installing: "Installing",
       repository: "Open repository",
       confirmTitle: "Install online plugin",
-      confirmBody: "Download {name} from {source} at {ref} and run npm install for its production dependencies?",
+      confirmBody: "Download {name} from the official repository at {source} (main) and run npm install for its production dependencies?",
       success: "Plugin installed",
       failed: "Plugin installation failed",
     },

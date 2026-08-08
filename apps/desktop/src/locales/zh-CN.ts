@@ -689,7 +689,7 @@ export default {
       installing: "安装中",
       repository: "打开仓库",
       confirmTitle: "安装在线插件",
-      confirmBody: "将从 {source}（{ref}）下载 {name} 并执行 npm install 安装生产依赖，是否继续？",
+      confirmBody: "将从官方仓库 {source}（main）下载 {name} 并执行 npm install 安装生产依赖，是否继续？",
       success: "插件已安装",
       failed: "插件安装失败",
     },
