@@ -45,6 +45,7 @@ export interface TemplateAdoptionPlan {
   conflicts: TemplateGestureConflict[];
   stats: TemplateAdoptionStats;
   risks: GestureTemplateRisk[];
+  /** Derived install descriptors; package JSON itself only contains plugin IDs. */
   pluginSources: OnlinePluginSource[];
 }
 
@@ -52,6 +53,7 @@ export type TemplateAdoptionErrorCode =
   | "ambiguous_app_target"
   | "app_binding_conflict"
   | "invalid_id_factory"
+  | "plugin_source_unresolved"
   | "capacity_exceeded"
   | "document_too_large";
 
@@ -69,6 +71,7 @@ export class TemplateAdoptionError extends Error {
 export interface PlanTemplateAdoptionOptions {
   conflictPolicy: TemplateConflictPolicy;
   createId: () => string;
+  resolvePluginSource?: (pluginId: string) => OnlinePluginSource | null;
 }
 
 function normalized(value: string): string {
@@ -315,6 +318,7 @@ export function planGestureTemplateAdoption(
     targetAppIds,
     createdApp,
     aggregate,
+    options.resolvePluginSource,
   );
 }
 
@@ -328,6 +332,7 @@ function finishPlan(
     conflicts: TemplateGestureConflict[];
     stats: TemplateAdoptionStats;
   },
+  resolvePluginSource?: (pluginId: string) => OnlinePluginSource | null,
 ): TemplateAdoptionPlan {
   const parsed = ConfigDocument.safeParse(document);
   if (!parsed.success) {
@@ -343,6 +348,16 @@ function finishPlan(
       `Template adoption exceeds ${MAX_CONFIG_DOCUMENT_BYTES} bytes`,
     );
   }
+  const pluginSources = templatePackage.plugins.map((pluginId) => {
+    const source = resolvePluginSource?.(pluginId);
+    if (!source) {
+      throw new TemplateAdoptionError(
+        "plugin_source_unresolved",
+        `No enabled official plugin catalog entry exists for ${pluginId}`,
+      );
+    }
+    return source;
+  });
   return {
     document: parsed.data,
     targetAppId,
@@ -351,6 +366,6 @@ function finishPlan(
     conflicts: planned.conflicts,
     stats: planned.stats,
     risks: gestureTemplatePackageRisks(templatePackage),
-    pluginSources: templatePackage.plugins,
+    pluginSources,
   };
 }

@@ -1,102 +1,48 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_ONLINE_PLUGIN_CATALOG_BYTES,
+  OFFICIAL_ONLINE_PLUGIN_REF,
+  OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL,
   OnlinePluginCatalog,
-  OnlinePluginCatalogProtocolError,
   parseOnlinePluginCatalog,
 } from "../../index.js";
 
 const entry = {
-  slug: "demo-plugin",
-  version: "1.0.0",
-  author: "GodGesture",
-  title: { "zh-CN": "演示插件", en: "Demo plugin" },
-  summary: { "zh-CN": "用于测试", en: "For testing" },
   pluginId: "30000000-0000-4000-8000-000000000001",
-  repositoryUrl: "https://github.com/owner/repository",
-  ref: "main",
   subdirectory: "plugins/demo",
+  title: "Demo plugin",
+  summary: "A plugin used for testing.",
+  disabled: false,
 };
 
 describe("online plugin catalog protocol", () => {
-  it("parses a GitHub plugin source with a portable subdirectory", () => {
-    const catalog = parseOnlinePluginCatalog(
-      JSON.stringify({
-        formatVersion: 1,
-        generatedAt: "2026-08-07T08:00:00Z",
-        entries: [entry],
-      }),
-    );
+  it("uses single plain-text metadata and the official fixed source", () => {
+    const catalog = parseOnlinePluginCatalog(JSON.stringify({
+      formatVersion: 1,
+      generatedAt: "2026-08-08T00:00:00Z",
+      entries: [entry],
+    }));
     expect(catalog.entries[0]).toMatchObject(entry);
+    expect(OFFICIAL_ONLINE_PLUGIN_REPOSITORY_URL).toBe("https://github.com/Mr-BeanSir/GodGesture-Plugins");
+    expect(OFFICIAL_ONLINE_PLUGIN_REF).toBe("main");
+    expect(() => OnlinePluginCatalog.parse({
+      formatVersion: 1,
+      generatedAt: "2026-08-08T00:00:00Z",
+      entries: [{ ...entry, title: { "zh-CN": "演示", en: "Demo" } }],
+    })).toThrow();
   });
 
-  it("rejects non-GitHub repositories, unsafe refs, and traversal paths", () => {
-    for (const source of [
-      { ...entry, repositoryUrl: "https://example.com/owner/repository" },
-      { ...entry, ref: "feature..unsafe" },
-      { ...entry, subdirectory: "../outside" },
-    ]) {
-      expect(() =>
-        OnlinePluginCatalog.parse({
-          formatVersion: 1,
-          generatedAt: "2026-08-07T08:00:00Z",
-          entries: [source],
-        }),
-      ).toThrow();
+  it("requires unique plugin IDs and safe non-empty subdirectories", () => {
+    expect(() => OnlinePluginCatalog.parse({
+      formatVersion: 1,
+      generatedAt: "2026-08-08T00:00:00Z",
+      entries: [entry, { ...entry, subdirectory: "plugins/other" }],
+    })).toThrow();
+    for (const subdirectory of ["", "../outside", "CON", "plugins/\u202Ehidden"]) {
+      expect(() => OnlinePluginCatalog.parse({
+        formatVersion: 1,
+        generatedAt: "2026-08-08T00:00:00Z",
+        entries: [{ ...entry, subdirectory }],
+      })).toThrow();
     }
-  });
-
-  it("requires an author in every catalog entry", () => {
-    expect(() =>
-      OnlinePluginCatalog.parse({
-        formatVersion: 1,
-        generatedAt: "2026-08-07T08:00:00Z",
-        entries: [{ ...entry, author: undefined }],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects Windows reserved subdirectory names and oversized source fields", () => {
-    for (const subdirectory of ["CON", "nested/PRN.txt", "com1", "LPT9.log"]) {
-      expect(() =>
-        OnlinePluginCatalog.parse({
-          formatVersion: 1,
-          generatedAt: "2026-08-07T08:00:00Z",
-          entries: [{ ...entry, subdirectory }],
-        }),
-      ).toThrow();
-    }
-    expect(() =>
-      OnlinePluginCatalog.parse({
-        formatVersion: 1,
-        generatedAt: "2026-08-07T08:00:00Z",
-        entries: [{ ...entry, ref: "x".repeat(129) }],
-      }),
-    ).toThrow();
-    expect(() =>
-      OnlinePluginCatalog.parse({
-        formatVersion: 1,
-        generatedAt: "2026-08-07T08:00:00Z",
-        entries: [{ ...entry, subdirectory: "x".repeat(257) }],
-      }),
-    ).toThrow();
-  });
-
-  it("uses stable errors for oversized and malformed catalog payloads", () => {
-    expectProtocolCode(
-      () => parseOnlinePluginCatalog("x".repeat(MAX_ONLINE_PLUGIN_CATALOG_BYTES + 1)),
-      "catalog_too_large",
-    );
-    expectProtocolCode(() => parseOnlinePluginCatalog("{"), "invalid_json");
   });
 });
-
-function expectProtocolCode(operation: () => unknown, code: string) {
-  try {
-    operation();
-    throw new Error("expected operation to fail");
-  } catch (error) {
-    expect(error).toBeInstanceOf(OnlinePluginCatalogProtocolError);
-    expect((error as OnlinePluginCatalogProtocolError).code).toBe(code);
-  }
-}

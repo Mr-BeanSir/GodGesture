@@ -118,8 +118,6 @@ describe("gesture template adoption", () => {
     const document = ConfigDocument.parse({});
     const template = GestureTemplatePackage.parse({
       formatVersion: 2,
-      slug: "multi-target",
-      version: "1.0.0",
       author: "GodGesture",
       targets: [
         {
@@ -324,6 +322,27 @@ describe("gesture template adoption", () => {
     );
   });
 
+  it("requires an official catalog resolver before installing referenced plugins", () => {
+    const pluginId = "40000000-0000-4000-8000-000000000001";
+    const template = GestureTemplatePackage.parse({
+      formatVersion: 2,
+      author: "-",
+      title: "Plugin template",
+      summary: "Uses an official plugin.",
+      tags: [],
+      plugins: [pluginId],
+      targets: [{ scope: "global", intents: [{
+        name: "Plugin",
+        gesture: { trigger: "right", strokes: ["left"], modifier: "none" },
+        command: { type: "nodePlugin", pluginId },
+      }] }],
+    });
+    expectAdoptionCode(
+      () => planGestureTemplateAdoption(ConfigDocument.parse({}), template, options("keepExisting")),
+      "plugin_source_unresolved",
+    );
+  });
+
 });
 
 function options(conflictPolicy: "keepExisting" | "replaceExisting") {
@@ -350,8 +369,6 @@ function existingIntent(name: string, strokes: string[], order: number) {
 function globalPackage(intents: ReturnType<typeof templateIntent>[]) {
   return GestureTemplatePackage.parse({
     formatVersion: 2,
-    slug: "global-navigation",
-    version: "1.0.0",
     author: "GodGesture",
     targets: [{ scope: "global", intents }],
   });
@@ -365,8 +382,6 @@ function appPackage(
 ) {
   return GestureTemplatePackage.parse({
     formatVersion: 2,
-    slug: "browser-navigation",
-    version: "1.0.0",
     author: "GodGesture",
     targets: [{
       scope: "app",
