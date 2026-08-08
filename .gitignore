@@ -9,6 +9,7 @@ Thumbs.db
 # --- reference clone (not part of this repo) ---
 /WGestures/
 /.codex/
+/.worktrees/
 
 # --- node ---
 node_modules/
