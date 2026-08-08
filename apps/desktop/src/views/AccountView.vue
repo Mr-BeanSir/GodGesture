@@ -21,6 +21,7 @@ const email = ref("");
 const password = ref("");
 const endpointChoice = ref(account.endpointMode);
 const customEndpointDraft = ref(account.customApiOrigin);
+const displayNameDraft = ref("");
 const narrowLayout = useMediaQuery("(max-width: 640px)");
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -126,6 +127,15 @@ async function onOAuth(provider: OAuthProvider): Promise<void> {
     ElMessage.success(t("account.loginSuccess"));
   } catch {
     ElMessage.error(errorText(account.authErrorCode));
+  }
+}
+
+async function saveDisplayName(): Promise<void> {
+  try {
+    await account.updateDisplayName(displayNameDraft.value);
+    ElMessage.success(t("account.displayNameSaved"));
+  } catch {
+    ElMessage.error(errorText("profile_update_failed"));
   }
 }
 
@@ -388,6 +398,13 @@ function providerLabel(provider: OAuthProvider): string {
           <div class="account__row">
             <dt>{{ t("account.loggedInAs") }}</dt>
             <dd>{{ account.user?.email || t("account.providerAccount") }}</dd>
+          </div>
+          <div class="account__row">
+            <dt>{{ t("account.displayName") }}</dt>
+            <dd class="account__display-name">
+              <el-input v-model="displayNameDraft" :placeholder="account.user?.displayName || account.user?.email" :maxlength="32" @focus="displayNameDraft ||= account.user?.displayName || ''" />
+              <el-button size="small" @click="saveDisplayName">{{ t("common.save") }}</el-button>
+            </dd>
           </div>
           <div class="account__row">
             <dt>{{ t("account.device") }}</dt>
@@ -707,6 +724,8 @@ function providerLabel(provider: OAuthProvider): string {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
+.account__display-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.account__display-name :deep(.el-input) { max-width: 260px; }
 .account__snapshots :deep(.el-table) {
   width: 100%;
 }

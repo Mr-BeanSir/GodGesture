@@ -411,6 +411,8 @@ export default {
   },
   account: {
     title: "账户与同步",
+    displayName: "显示名称",
+    displayNameSaved: "显示名称已保存",
     loginTitle: "登录 GodGesture 账户",
     loginSubtitle: "登录后你的手势配置将在多设备间自动同步",
     endpointLabel: "同步端点",

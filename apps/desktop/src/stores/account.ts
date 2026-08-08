@@ -379,6 +379,19 @@ export const useAccountStore = defineStore("account", () => {
     if (!response.ok) throw normalizeCloudError(await response.json().catch(() => null));
   }
 
+  async function updateDisplayName(displayName: string): Promise<void> {
+    if (phase.value !== "signedIn" || !user.value) throw new CloudError(401, "session_expired");
+    const cloud = ensureCloud();
+    const response = await cloud.session.authenticatedFetch(`${cloud.session.apiBase}/account/profile`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ displayName }),
+    });
+    if (!response.ok) throw new CloudError(response.status, "profile_update_failed");
+    const profile = await response.json() as { displayName: string };
+    user.value = { ...user.value, displayName: profile.displayName };
+  }
+
   async function logout(): Promise<LogoutOutcome> {
     if (authBusy.value) return "local_only";
     authBusy.value = true;
@@ -451,6 +464,7 @@ export const useAccountStore = defineStore("account", () => {
     loadSnapshots,
     restoreSnapshot,
     submitPublicTemplate,
+    updateDisplayName,
     logout,
     discardStoredSession,
   };

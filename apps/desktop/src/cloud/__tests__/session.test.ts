@@ -18,6 +18,7 @@ const PAIR_B: TokenPairResponse = {
 const USER: MeResponse = {
   id: "10000000-0000-4000-8000-000000000001",
   email: "user@example.test",
+  displayName: "",
   createdAt: "2026-07-28T00:00:00.000Z",
   linkedProviders: [],
   role: "user",

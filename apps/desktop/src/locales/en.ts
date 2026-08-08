@@ -411,6 +411,8 @@ export default {
   },
   account: {
     title: "Account & Sync",
+    displayName: "Display name",
+    displayNameSaved: "Display name saved",
     loginTitle: "Sign in to GodGesture",
     loginSubtitle: "Your gesture configuration syncs across devices after signing in",
     endpointLabel: "Sync endpoint",

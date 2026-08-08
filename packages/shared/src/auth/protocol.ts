@@ -154,6 +154,7 @@ export type RateLimitedResponse = z.infer<typeof RateLimitedResponse>;
 export const MeResponse = z.object({
   id: z.string().uuid(),
   email: z.string().email().nullable(),
+  displayName: z.string(),
   createdAt: z.string().datetime(),
   linkedProviders: z.array(OAuthProvider),
   role: UserRole,
