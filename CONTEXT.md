@@ -120,6 +120,12 @@ manifest,合并到 `main` 后自动生成格式化 `catalog.json` 与压缩版 `
 仓库和 ref,验证 `package.json.godgesture.id` 与 `pluginId` 一致,运行受限的 `npm install`
 准备生产依赖,再原子激活到本机插件工作区。任何下载、校验或安装失败都不得覆盖现有项目。
 
+**在线目录缓存 (Online Catalog Cache)**:
+模板仓库和插件仓库根目录 `catalog.min.json` 的本机快照,分别保存到 Tauri `app_config_dir/catalogs`
+下的独立文件。Desktop 启动或用户手动刷新时先从 GitHub 取得并通过 shared 协议校验,校验成功后
+原子替换缓存;网络失败时只使用上一份有效快照,不会用损坏内容覆盖缓存。浏览器预览使用源码 fixture,
+不访问或写入该缓存。
+
 **Node 插件动作 (Node Plugin Action)**:
 Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供的固定生命周期导出。
 手势命令只保存 `pluginId`;插件文件缺失时命令保留引用但在本机不可执行。当前配置引用的
@@ -136,7 +142,8 @@ Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供�
 托管在专门 GitHub 仓库中的预置手势配置包;用户下载采纳后并入个人配置,自此视同用户自己的数据参与同步。
 模板目录从 `Mr-BeanSir/GodGesture-Templates` 根目录的 `catalog.min.json` 读取;每个模板包必须声明
 `author` 以及目录生成所需的本地化标题、摘要和标签。仓库通过 PR 校验模板 JSON,合并到 `main` 后
-自动生成 `catalog.json` 与 `catalog.min.json`。
+自动生成 `catalog.json` 与 `catalog.min.json`。模板包使用 `targets` 数组,一个 JSON 可以同时包含
+全局手势和多个应用目标;每个应用目标保留跨平台绑定与该应用的手势意图。
 模板包可以通过 `plugins` 字段声明在线插件源,其 `nodePlugin` 命令必须引用同一 `pluginId`。
 每个声明的插件源也必须至少被一个 `nodePlugin` 命令引用,不能借模板安装无关项目。
 采纳前先取得用户确认并安装所有被引用插件,安装成功后才写入配置;同步文档仍只保存 `pluginId`。

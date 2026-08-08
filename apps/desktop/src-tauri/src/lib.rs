@@ -18,8 +18,9 @@ use engine::plugin_workspace::{PluginWorkspace, PluginWorkspaceSnapshot};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script_host::{ScriptInvocation, ScriptSlot};
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(target_os = "macos")]
 use platform::macos::startup::{MachineRuntimeStatus, StartupError};
@@ -1343,6 +1344,48 @@ async fn app_icon(request: AppIconRequest) -> Option<String> {
     None
 }
 
+#[tauri::command]
+async fn gesture_template_save(
+    app: tauri::AppHandle,
+    file_name: String,
+    contents: String,
+    title: String,
+) -> Result<Option<String>, String> {
+    let default_name = Path::new(file_name.trim())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("gestures.json")
+        .to_owned();
+    if contents.is_empty() {
+        return Err("gesture template content is empty".into());
+    }
+    if contents.len() > 512 * 1024 {
+        return Err("gesture template content is too large".into());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title(title)
+            .set_file_name(default_name)
+            .add_filter("JSON", &["json"])
+            .blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|error| format!("resolve selected save path: {error}"))?;
+        std::fs::write(&path, contents)
+            .map_err(|error| format!("write gesture template: {error}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|error| format!("save gesture template task failed: {error}"))?
+}
+
 /// 托盘:暂停/继续 · 设置 · 退出(对齐 WGestures 托盘菜单)
 #[cfg(any(windows, target_os = "macos"))]
 fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>, visible: bool) -> tauri::Result<()> {
@@ -1594,6 +1637,7 @@ pub fn run() {
     let setup_mode = early_mode;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -1831,7 +1875,10 @@ pub fn run() {
             platform_status,
             platform_request_permissions,
             platform_open_permission_settings,
+            gesture_template_save,
             template_download::download_template_text,
+            template_download::catalog_cache_get,
+            template_download::catalog_cache_set,
             account::account_credential_get,
             account::account_credential_set,
             account::account_credential_delete,

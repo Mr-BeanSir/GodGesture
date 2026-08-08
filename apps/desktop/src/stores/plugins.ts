@@ -101,6 +101,7 @@ export const usePluginsStore = defineStore("plugins", () => {
   let initialized = false;
   let initializePromise: Promise<void> | null = null;
   let onlineCatalogRequest: Promise<void> | null = null;
+  let onlineCatalogRequestForced = false;
   let unlisten: (() => void) | undefined;
 
   const plugins = computed(() => snapshot.value.plugins);
@@ -143,13 +144,18 @@ export const usePluginsStore = defineStore("plugins", () => {
   }
 
   async function loadOnlineCatalog(force = false) {
-    if (onlineCatalogRequest && !force) return onlineCatalogRequest;
+    if (onlineCatalogRequest) {
+      const pending = onlineCatalogRequest;
+      if (!force || onlineCatalogRequestForced) return pending;
+      await pending;
+      return loadOnlineCatalog(true);
+    }
     if (onlineEntries.value.length > 0 && !force) return;
     const request = (async () => {
       loadingOnlineCatalog.value = true;
       onlineCatalogError.value = null;
       try {
-        const catalog = await onlineSource.loadCatalog();
+        const catalog = await onlineSource.loadCatalog(force);
         onlineEntries.value = catalog.entries;
       } catch (cause) {
         onlineCatalogError.value =
@@ -161,11 +167,15 @@ export const usePluginsStore = defineStore("plugins", () => {
       }
     })();
     onlineCatalogRequest = request;
-    try {
-      await request;
-    } finally {
-      if (onlineCatalogRequest === request) onlineCatalogRequest = null;
-    }
+    onlineCatalogRequestForced = force;
+    const clearRequest = () => {
+      if (onlineCatalogRequest === request) {
+        onlineCatalogRequest = null;
+        onlineCatalogRequestForced = false;
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
   }
 
   async function installOnline(entry: OnlinePluginCatalogEntry) {

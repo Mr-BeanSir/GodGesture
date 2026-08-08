@@ -54,22 +54,22 @@ function fixture(withPlugin = false) {
     summary: { "zh-CN": "窗口操作", en: "Window commands" },
     author: "GodGesture",
     tags: ["window"],
-    target: { scope: "global" as const },
+    targets: [{ scope: "global" as const }],
     risks: [],
     packageUrl: "https://example.com/global-basics.json",
   };
   const catalog = GestureTemplateCatalog.parse({
-    formatVersion: 1,
+    formatVersion: 2,
     generatedAt: "2026-07-28T15:00:00Z",
     entries: [entry],
   });
   const templatePackage = GestureTemplatePackage.parse({
-    formatVersion: 1,
+    formatVersion: 2,
     slug: entry.slug,
     version: entry.version,
     author: "GodGesture",
     ...(withPlugin ? { plugins: [pluginSource] } : {}),
-    target: {
+    targets: [{
       scope: "global",
       intents: [
         {
@@ -84,7 +84,7 @@ function fixture(withPlugin = false) {
             : { type: "doNothing" },
         },
       ],
-    },
+    }],
   });
   return { catalog, entry: catalog.entries[0]!, templatePackage };
 }

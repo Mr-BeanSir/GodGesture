@@ -1,7 +1,13 @@
 use futures_util::StreamExt;
 use reqwest::{header, redirect::Policy, Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use tauri::Manager;
 use url::Url;
 
 const CATALOG_MAX_BYTES: usize = 512 * 1024;
@@ -31,6 +37,22 @@ impl TemplateResourceKind {
             Self::Catalog => "catalog_too_large",
             Self::Package => "package_too_large",
             Self::PluginCatalog => "catalog_too_large",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CatalogCacheKind {
+    Templates,
+    Plugins,
+}
+
+impl CatalogCacheKind {
+    fn file_name(self) -> &'static str {
+        match self {
+            Self::Templates => "templates-catalog.min.json",
+            Self::Plugins => "plugins-catalog.min.json",
         }
     }
 }
@@ -66,6 +88,136 @@ pub async fn download_template_text(
     tokio::time::timeout(REQUEST_TIMEOUT, future)
         .await
         .map_err(|_| TemplateDownloadError::new("template_timeout", "template request timed out"))?
+}
+
+#[tauri::command]
+pub fn catalog_cache_get(
+    app: tauri::AppHandle,
+    kind: CatalogCacheKind,
+) -> Result<Option<String>, TemplateDownloadError> {
+    let path = catalog_cache_path(&app, kind)?;
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.len() > CATALOG_MAX_BYTES as u64 => {
+            return Err(TemplateDownloadError::too_large(
+                TemplateResourceKind::Catalog,
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            log::warn!(
+                "inspect online catalog cache failed for {:?}: {error}",
+                path
+            );
+            return Err(TemplateDownloadError::new(
+                "catalog_cache_unavailable",
+                "online catalog cache could not be read",
+            ));
+        }
+    }
+    match fs::read_to_string(&path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) => {
+            log::warn!("read online catalog cache failed for {:?}: {error}", path);
+            Err(TemplateDownloadError::new(
+                "catalog_cache_unavailable",
+                "online catalog cache could not be read",
+            ))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn catalog_cache_set(
+    app: tauri::AppHandle,
+    kind: CatalogCacheKind,
+    contents: String,
+) -> Result<(), TemplateDownloadError> {
+    if contents.len() > CATALOG_MAX_BYTES {
+        return Err(TemplateDownloadError::too_large(
+            TemplateResourceKind::Catalog,
+        ));
+    }
+    let path = catalog_cache_path(&app, kind)?;
+    let parent = path.parent().ok_or_else(|| {
+        TemplateDownloadError::new(
+            "catalog_cache_unavailable",
+            "online catalog cache directory is unavailable",
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        log::warn!("create online catalog cache directory failed: {error}");
+        TemplateDownloadError::new(
+            "catalog_cache_unavailable",
+            "online catalog cache directory could not be created",
+        )
+    })?;
+
+    let temporary = path.with_extension("json.tmp");
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = File::create(&temporary)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        replace_file(&temporary, &path)
+    })();
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temporary);
+        log::warn!("write online catalog cache failed for {:?}: {error}", path);
+        return Err(TemplateDownloadError::new(
+            "catalog_cache_unavailable",
+            "online catalog cache could not be written",
+        ));
+    }
+    Ok(())
+}
+
+fn catalog_cache_path(
+    app: &tauri::AppHandle,
+    kind: CatalogCacheKind,
+) -> Result<PathBuf, TemplateDownloadError> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("catalogs").join(kind.file_name()))
+        .map_err(|error| {
+            log::warn!("resolve online catalog cache directory failed: {error}");
+            TemplateDownloadError::new(
+                "catalog_cache_unavailable",
+                "online catalog cache directory is unavailable",
+            )
+        })
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|_| std::io::Error::last_os_error())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    fs::rename(source, target)
 }
 
 fn default_client() -> Result<Client, TemplateDownloadError> {
@@ -273,7 +425,7 @@ mod tests {
             .expect("production catalog should download");
             let catalog: serde_json::Value =
                 serde_json::from_str(&catalog_text).expect("catalog should be JSON");
-            assert_eq!(catalog["formatVersion"], 1);
+            assert_eq!(catalog["formatVersion"], 2);
             let entries = catalog["entries"]
                 .as_array()
                 .expect("catalog should contain entries");

@@ -12,6 +12,8 @@ const ids = [
   "90000000-0000-4000-8000-000000000002",
   "90000000-0000-4000-8000-000000000003",
   "90000000-0000-4000-8000-000000000004",
+  "90000000-0000-4000-8000-000000000005",
+  "90000000-0000-4000-8000-000000000006",
 ];
 
 describe("gesture template adoption", () => {
@@ -110,6 +112,49 @@ describe("gesture template adoption", () => {
       order: 8,
     });
     expect(plan.document.apps[1]?.intents[0]?.id).toBe(ids[1]);
+  });
+
+  it("adopts global gestures and multiple app targets in one plan", () => {
+    const document = ConfigDocument.parse({});
+    const template = GestureTemplatePackage.parse({
+      formatVersion: 2,
+      slug: "multi-target",
+      version: "1.0.0",
+      author: "GodGesture",
+      targets: [
+        {
+          scope: "global",
+          intents: [templateIntent("Global", ["up"])],
+        },
+        {
+          scope: "app",
+          name: "First Browser",
+          windows: { exeName: "first-browser.exe" },
+          intents: [templateIntent("First", ["left"])],
+        },
+        {
+          scope: "app",
+          name: "Second Browser",
+          windows: { exeName: "second-browser.exe" },
+          intents: [templateIntent("Second", ["right"])],
+        },
+      ],
+    });
+
+    const plan = planGestureTemplateAdoption(
+      document,
+      template,
+      options("keepExisting"),
+    );
+
+    expect(plan.stats).toEqual({ added: 3, replaced: 0, skipped: 0 });
+    expect(plan.targetAppIds).toEqual([ids[1], ids[3]]);
+    expect(plan.targetAppId).toBe(ids[1]);
+    expect(plan.document.global.intents[0]?.name).toBe("Global");
+    expect(plan.document.apps.map((app) => app.name)).toEqual([
+      "First Browser",
+      "Second Browser",
+    ]);
   });
 
   it("reuses a uniquely matching App and fills a missing platform binding", () => {
@@ -304,11 +349,11 @@ function existingIntent(name: string, strokes: string[], order: number) {
 
 function globalPackage(intents: ReturnType<typeof templateIntent>[]) {
   return GestureTemplatePackage.parse({
-    formatVersion: 1,
+    formatVersion: 2,
     slug: "global-navigation",
     version: "1.0.0",
     author: "GodGesture",
-    target: { scope: "global", intents },
+    targets: [{ scope: "global", intents }],
   });
 }
 
@@ -319,17 +364,17 @@ function appPackage(
   aumid?: string,
 ) {
   return GestureTemplatePackage.parse({
-    formatVersion: 1,
+    formatVersion: 2,
     slug: "browser-navigation",
     version: "1.0.0",
     author: "GodGesture",
-    target: {
+    targets: [{
       scope: "app",
       name,
       windows: { exeName, ...(aumid ? { aumid } : {}) },
       mac: { bundleId },
       intents: [templateIntent("Back", ["left"])],
-    },
+    }],
   });
 }
 

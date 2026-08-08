@@ -4,7 +4,13 @@ import {
   type OnlinePluginCatalog,
   type OnlinePluginCatalogEntry,
 } from "@godgesture/shared";
-import { BackendError, useBackend, type TemplateResourceKind } from "../api/backend";
+import {
+  BackendError,
+  useBackend,
+  type CatalogCacheKind,
+  type TemplateResourceKind,
+} from "../api/backend";
+import { onlinePluginCatalogFixture } from "./fixtures";
 
 export const DEFAULT_ONLINE_PLUGIN_CATALOG_URL =
   "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Plugins/main/catalog.min.json";
@@ -32,13 +38,27 @@ export class OnlinePluginSourceError extends Error {
 }
 
 export interface OnlinePluginSource {
-  loadCatalog(): Promise<OnlinePluginCatalog>;
+  loadCatalog(force?: boolean): Promise<OnlinePluginCatalog>;
 }
 
 export type PluginCatalogTextTransport = (
   url: string,
   resourceKind: TemplateResourceKind,
 ) => Promise<string>;
+
+export interface CatalogCache {
+  catalogCacheGet(kind: CatalogCacheKind): Promise<string | null>;
+  catalogCacheSet(kind: CatalogCacheKind, contents: string): Promise<void>;
+}
+
+const NOOP_CATALOG_CACHE: CatalogCache = {
+  async catalogCacheGet() {
+    return null;
+  },
+  async catalogCacheSet() {
+    // Direct source tests and non-desktop callers can opt out of persistence.
+  },
+};
 
 function validatedHttpsUrl(value: string): string {
   let url: URL;
@@ -104,15 +124,21 @@ export function createRemoteOnlinePluginSource(
     DEFAULT_ONLINE_PLUGIN_CATALOG_URL,
   transport: PluginCatalogTextTransport = (url, resourceKind) =>
     useBackend().downloadTemplateText(url, resourceKind),
+  cache: CatalogCache = NOOP_CATALOG_CACHE,
 ): OnlinePluginSource {
   const validatedUrl = validatedHttpsUrl(catalogUrl);
   return {
-    async loadCatalog() {
-      const text = await loadRemoteText(validatedUrl, transport);
+    async loadCatalog(force = false) {
+      const cached = await readCachedCatalog(cache);
+      if (!force && cached) return cached;
       try {
-        return parseOnlinePluginCatalog(text);
+        const text = await loadRemoteText(validatedUrl, transport);
+        const catalog = parseCatalog(text);
+        await writeCachedCatalog(cache, text);
+        return catalog;
       } catch (error) {
-        return normalizeProtocolError(error);
+        if (cached) return cached;
+        throw error;
       }
     },
   };
@@ -122,8 +148,7 @@ export function createFixtureOnlinePluginSource(): OnlinePluginSource {
   return {
     async loadCatalog() {
       try {
-        const module = await import("../../../../distribution/plugins/catalog.min.json");
-        return parseOnlinePluginCatalog(JSON.stringify(module.default ?? module));
+        return parseOnlinePluginCatalog(JSON.stringify(onlinePluginCatalogFixture));
       } catch (error) {
         if (error instanceof OnlinePluginCatalogProtocolError) {
           return normalizeProtocolError(error);
@@ -139,7 +164,39 @@ export function createFixtureOnlinePluginSource(): OnlinePluginSource {
 }
 
 export function createOnlinePluginSource(browserPreview: boolean): OnlinePluginSource {
-  return browserPreview ? createFixtureOnlinePluginSource() : createRemoteOnlinePluginSource();
+  return browserPreview
+    ? createFixtureOnlinePluginSource()
+    : createRemoteOnlinePluginSource(undefined, undefined, useBackend());
+}
+
+function parseCatalog(text: string): OnlinePluginCatalog {
+  try {
+    return parseOnlinePluginCatalog(text);
+  } catch (error) {
+    return normalizeProtocolError(error);
+  }
+}
+
+async function readCachedCatalog(
+  cache: CatalogCache,
+): Promise<OnlinePluginCatalog | null> {
+  try {
+    const text = await cache.catalogCacheGet("plugins");
+    return text ? parseCatalog(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedCatalog(
+  cache: CatalogCache,
+  text: string,
+): Promise<void> {
+  try {
+    await cache.catalogCacheSet("plugins", text);
+  } catch {
+    // A cache write must never hide a successfully downloaded catalog.
+  }
 }
 
 export function localizedPluginText(

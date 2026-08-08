@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { BackendError } from "../api/backend";
 import {
   DEFAULT_ONLINE_PLUGIN_CATALOG_URL,
   createRemoteOnlinePluginSource,
@@ -48,5 +49,30 @@ describe("online plugin source", () => {
       entries: [{ slug: "demo-plugin" }],
     });
     expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it("uses a valid cached catalog and falls back to it when refresh is offline", async () => {
+    const cache = {
+      catalogCacheGet: vi.fn(async () => catalog),
+      catalogCacheSet: vi.fn(async () => undefined),
+    };
+    const transport = vi.fn<PluginCatalogTextTransport>(async () => {
+      throw new BackendError("template_network", "offline");
+    });
+    const source = createRemoteOnlinePluginSource(
+      undefined,
+      transport,
+      cache,
+    );
+
+    await expect(source.loadCatalog()).resolves.toMatchObject({
+      entries: [{ slug: "demo-plugin" }],
+    });
+    expect(transport).not.toHaveBeenCalled();
+    await expect(source.loadCatalog(true)).resolves.toMatchObject({
+      entries: [{ slug: "demo-plugin" }],
+    });
+    expect(transport).toHaveBeenCalledOnce();
+    expect(cache.catalogCacheSet).not.toHaveBeenCalled();
   });
 });

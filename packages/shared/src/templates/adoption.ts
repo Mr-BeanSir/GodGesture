@@ -40,6 +40,7 @@ export interface TemplateAdoptionStats {
 export interface TemplateAdoptionPlan {
   document: ConfigDocumentValue;
   targetAppId: string | null;
+  targetAppIds: string[];
   createdApp: boolean;
   conflicts: TemplateGestureConflict[];
   stats: TemplateAdoptionStats;
@@ -106,7 +107,7 @@ function macBindingsMatch(
 
 function resolveTargetApp(
   document: ConfigDocumentValue,
-  target: Extract<GestureTemplatePackage["target"], { scope: "app" }>,
+  target: Extract<GestureTemplatePackage["targets"][number], { scope: "app" }>,
 ): AppEntry | null {
   const matches = new Map<string, AppEntry>();
   for (const app of document.apps) {
@@ -178,7 +179,7 @@ function allocatedIdFactory(
 
 function planIntents(
   existing: GestureIntent[],
-  incoming: GestureTemplatePackage["target"]["intents"],
+  incoming: GestureTemplatePackage["targets"][number]["intents"],
   conflictPolicy: TemplateConflictPolicy,
   nextId: () => string,
 ): {
@@ -250,69 +251,70 @@ export function planGestureTemplateAdoption(
   );
   const nextId = allocatedIdFactory(document, options.createId);
   let targetAppId: string | null = null;
+  const targetAppIds: string[] = [];
   let createdApp = false;
+  const aggregate = {
+    conflicts: [] as TemplateGestureConflict[],
+    stats: { added: 0, replaced: 0, skipped: 0 } as TemplateAdoptionStats,
+  };
 
-  if (templatePackage.target.scope === "global") {
-    const planned = planIntents(
-      document.global.intents,
-      templatePackage.target.intents,
-      options.conflictPolicy,
-      nextId,
-    );
-    document.global.intents = planned.intents;
-    return finishPlan(
-      document,
-      templatePackage,
-      targetAppId,
-      createdApp,
-      planned,
-    );
+  for (const target of templatePackage.targets) {
+    let planned: ReturnType<typeof planIntents>;
+    if (target.scope === "global") {
+      planned = planIntents(
+        document.global.intents,
+        target.intents,
+        options.conflictPolicy,
+        nextId,
+      );
+      document.global.intents = planned.intents;
+    } else {
+      let app = resolveTargetApp(document, target);
+      if (!app) {
+        createdApp = true;
+        app = {
+          id: nextId(),
+          name: target.name,
+          ...(target.windows ? { windows: target.windows } : {}),
+          ...(target.mac ? { mac: target.mac } : {}),
+          groupId: DEFAULT_APP_GROUP_ID,
+          gesturingEnabled: target.gesturingEnabled,
+          inheritGlobalGestures: target.inheritGlobalGestures,
+          intents: [],
+          order:
+            document.apps.reduce(
+              (maximum, existing) => Math.max(maximum, existing.order),
+              -1,
+            ) + 1,
+        };
+        document.apps.push(app);
+      } else {
+        if (!app.windows && target.windows) app.windows = target.windows;
+        if (!app.mac && target.mac) app.mac = target.mac;
+      }
+      targetAppId ??= app.id;
+      if (!targetAppIds.includes(app.id)) targetAppIds.push(app.id);
+      planned = planIntents(
+        app.intents,
+        target.intents,
+        options.conflictPolicy,
+        nextId,
+      );
+      app.intents = planned.intents;
+    }
+    aggregate.conflicts.push(...planned.conflicts);
+    aggregate.stats.added += planned.stats.added;
+    aggregate.stats.replaced += planned.stats.replaced;
+    aggregate.stats.skipped += planned.stats.skipped;
   }
 
-  let app = resolveTargetApp(document, templatePackage.target);
-  if (!app) {
-    createdApp = true;
-    app = {
-      id: nextId(),
-      name: templatePackage.target.name,
-      ...(templatePackage.target.windows
-        ? { windows: templatePackage.target.windows }
-        : {}),
-      ...(templatePackage.target.mac ? { mac: templatePackage.target.mac } : {}),
-      groupId: DEFAULT_APP_GROUP_ID,
-      gesturingEnabled: templatePackage.target.gesturingEnabled,
-      inheritGlobalGestures: templatePackage.target.inheritGlobalGestures,
-      intents: [],
-      order:
-        document.apps.reduce(
-          (maximum, existing) => Math.max(maximum, existing.order),
-          -1,
-        ) + 1,
-    };
-    document.apps.push(app);
-  } else {
-    if (!app.windows && templatePackage.target.windows) {
-      app.windows = templatePackage.target.windows;
-    }
-    if (!app.mac && templatePackage.target.mac) {
-      app.mac = templatePackage.target.mac;
-    }
-  }
-  targetAppId = app.id;
-
-  const planned = planIntents(
-    app.intents,
-    templatePackage.target.intents,
-    options.conflictPolicy,
-    nextId,
-  );
-  app.intents = planned.intents;
   return finishPlan(
     document,
     templatePackage,
     targetAppId,
+    targetAppIds,
     createdApp,
-    planned,
+    aggregate,
   );
 }
 
@@ -320,6 +322,7 @@ function finishPlan(
   document: ConfigDocumentValue,
   templatePackage: GestureTemplatePackage,
   targetAppId: string | null,
+  targetAppIds: string[],
   createdApp: boolean,
   planned: {
     conflicts: TemplateGestureConflict[];
@@ -343,6 +346,7 @@ function finishPlan(
   return {
     document: parsed.data,
     targetAppId,
+    targetAppIds,
     createdApp,
     conflicts: planned.conflicts,
     stats: planned.stats,

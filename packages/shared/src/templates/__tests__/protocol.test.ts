@@ -12,11 +12,11 @@ import {
 
 const packageValue = () =>
   GestureTemplatePackage.parse({
-    formatVersion: 1,
+    formatVersion: 2,
     slug: "browser-navigation",
     version: "1.2.0",
     author: "GodGesture",
-    target: {
+    targets: [{
       scope: "app",
       name: "Browser",
       windows: { exeName: "browser.exe" },
@@ -32,7 +32,7 @@ const packageValue = () =>
           command: { type: "hotKey", modifiers: ["alt"], keys: ["left"] },
         },
       ],
-    },
+    }],
   });
 
 const entryValue = () => ({
@@ -42,12 +42,12 @@ const entryValue = () => ({
   summary: { "zh-CN": "浏览器前进后退", en: "Browser history navigation" },
   author: "GodGesture",
   tags: ["browser", "navigation"],
-  target: {
+  targets: [{
     scope: "app" as const,
     name: "Browser",
     windows: { exeName: "browser.exe", matchByExactPath: false },
     mac: { bundleId: "com.example.browser" },
-  },
+  }],
   risks: [],
   packageUrl:
     "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/packages/browser-navigation.json",
@@ -57,7 +57,7 @@ describe("gesture template protocol", () => {
   it("parses and cross-checks a valid catalog and package", () => {
     const catalog = parseGestureTemplateCatalog(
       JSON.stringify({
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: "2026-07-28T12:00:00Z",
         entries: [entryValue()],
       }),
@@ -72,6 +72,103 @@ describe("gesture template protocol", () => {
     ).toEqual(templatePackage);
   });
 
+  it("normalizes legacy single-target payloads at the download boundary", () => {
+    const { targets: catalogTargets, ...legacyEntry } = entryValue();
+    const legacyCatalog = parseGestureTemplateCatalog(
+      JSON.stringify({
+        formatVersion: 1,
+        generatedAt: "2026-07-28T12:00:00Z",
+        entries: [{ ...legacyEntry, target: catalogTargets[0] }],
+      }),
+    );
+    expect(legacyCatalog.formatVersion).toBe(2);
+    expect(legacyCatalog.entries[0]?.targets).toEqual([catalogTargets[0]]);
+
+    const { targets: packageTargets, ...legacyPackage } = packageValue();
+    const normalizedPackage = parseGestureTemplatePackage(
+      JSON.stringify({
+        ...legacyPackage,
+        formatVersion: 1,
+        target: packageTargets[0],
+      }),
+    );
+    expect(normalizedPackage.formatVersion).toBe(2);
+    expect(normalizedPackage.targets).toEqual([packageTargets[0]]);
+  });
+
+  it("fills legacy release metadata and removes obsolete modifier execution flags", () => {
+    const normalizedPackage = parseGestureTemplatePackage(
+      JSON.stringify({
+        formatVersion: 1,
+        slug: "global-window-basics",
+        version: "1.0.0",
+        target: {
+          scope: "global",
+          intents: [{
+            name: "Maximize window",
+            gesture: {
+              trigger: "right",
+              strokes: ["up"],
+              modifier: "none",
+            },
+            command: {
+              type: "windowControl",
+              operation: "maximizeRestore",
+            },
+            executeOnModifier: false,
+          }],
+        },
+      }),
+      {
+        author: "GodGesture",
+        title: { "zh-CN": "全局窗口基础手势", en: "Global window basics" },
+        summary: { "zh-CN": "窗口基础操作", en: "Basic window controls" },
+        tags: ["window", "global"],
+      },
+    );
+
+    expect(normalizedPackage).toMatchObject({
+      formatVersion: 2,
+      author: "GodGesture",
+      title: { "zh-CN": "全局窗口基础手势" },
+      summary: { en: "Basic window controls" },
+      tags: ["window", "global"],
+      targets: [{ scope: "global" }],
+    });
+    expect(normalizedPackage.targets[0]?.intents[0]).not.toHaveProperty(
+      "executeOnModifier",
+    );
+  });
+
+  it("accepts a package containing global and multiple app targets", () => {
+    const value = packageValue();
+    const sampleIntent = value.targets[0]!.intents[0]!;
+    const multiTarget = parseGestureTemplatePackage(
+      JSON.stringify({
+        ...value,
+        targets: [
+          {
+            scope: "global",
+            intents: [{ ...sampleIntent, name: "Global back" }],
+          },
+          ...value.targets,
+          {
+            scope: "app",
+            name: "Second Browser",
+            windows: { exeName: "second-browser.exe" },
+            intents: [{ ...sampleIntent, name: "Second browser back" }],
+          },
+        ],
+      }),
+    );
+    expect(multiTarget.targets).toHaveLength(3);
+    expect(multiTarget.targets.map((target) => target.scope)).toEqual([
+      "global",
+      "app",
+      "app",
+    ]);
+  });
+
   it("rejects malformed, oversized, non-HTTPS, and unknown data", () => {
     expectProtocolCode(() => parseGestureTemplateCatalog("{"), "invalid_json");
     expectProtocolCode(
@@ -83,14 +180,14 @@ describe("gesture template protocol", () => {
     );
     expect(() =>
       GestureTemplateCatalog.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: "2026-07-28T12:00:00Z",
         entries: [{ ...entryValue(), packageUrl: "http://example.com/a.json" }],
       }),
     ).toThrow();
     expect(() =>
       GestureTemplateCatalog.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: "2026-07-28T12:00:00Z",
         entries: [{ ...entryValue(), unexpected: true }],
       }),
@@ -106,7 +203,7 @@ describe("gesture template protocol", () => {
   it("requires unique catalog identities and package gestures", () => {
     expect(() =>
       GestureTemplateCatalog.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: "2026-07-28T12:00:00Z",
         entries: [entryValue(), entryValue()],
       }),
@@ -115,17 +212,17 @@ describe("gesture template protocol", () => {
     expect(() =>
       GestureTemplatePackage.parse({
         ...value,
-        target: {
-          ...value.target,
-          intents: [value.target.intents[0], value.target.intents[0]],
-        },
+        targets: [{
+          ...value.targets[0],
+          intents: [value.targets[0]!.intents[0], value.targets[0]!.intents[0]],
+        }],
       }),
     ).toThrow();
   });
 
   it("uses the recorded input order for gesture identity", () => {
     const value = packageValue();
-    const first = value.target.intents[0]!;
+    const first = value.targets[0]!.intents[0]!;
     const second = {
       ...first,
       name: "Forward after middle button",
@@ -140,7 +237,7 @@ describe("gesture template protocol", () => {
     };
     expect(() => GestureTemplatePackage.parse({
       ...value,
-      target: { ...value.target, intents: [first, second] },
+      targets: [{ ...value.targets[0], intents: [first, second] }],
     })).not.toThrow();
 
     const reverse = {
@@ -156,7 +253,7 @@ describe("gesture template protocol", () => {
     };
     expect(() => GestureTemplatePackage.parse({
       ...value,
-      target: { ...value.target, intents: [second, reverse] },
+      targets: [{ ...value.targets[0], intents: [second, reverse] }],
     })).not.toThrow();
 
     const repeated = {
@@ -166,13 +263,13 @@ describe("gesture template protocol", () => {
     };
     expect(() => GestureTemplatePackage.parse({
       ...value,
-      target: { ...value.target, intents: [first, repeated] },
+      targets: [{ ...value.targets[0], intents: [first, repeated] }],
     })).not.toThrow();
   });
 
   it("derives executable command risks and rejects catalog drift", () => {
     const templatePackage = GestureTemplatePackage.parse({
-      formatVersion: 1,
+      formatVersion: 2,
       slug: "risky-tools",
       version: "1.0.0",
       author: "GodGesture",
@@ -184,7 +281,7 @@ describe("gesture template protocol", () => {
           subdirectory: "gesture-demo",
         },
       ],
-      target: {
+      targets: [{
         scope: "global",
         intents: [
           intent("Node plugin", { type: "nodePlugin", pluginId: "00000000-0000-4000-8000-000000000001" }),
@@ -193,7 +290,7 @@ describe("gesture template protocol", () => {
           intent("File", { type: "openFile", path: "tool.exe" }),
           intent("URL", { type: "gotoUrl", url: "https://example.com" }),
         ],
-      },
+      }],
     });
     expect(gestureTemplatePackageRisks(templatePackage)).toEqual([
       "script",
@@ -203,14 +300,14 @@ describe("gesture template protocol", () => {
     ]);
 
     const entry = GestureTemplateCatalog.parse({
-      formatVersion: 1,
+      formatVersion: 2,
       generatedAt: "2026-07-28T12:00:00Z",
       entries: [
         {
           ...entryValue(),
           slug: "risky-tools",
           version: "1.0.0",
-          target: { scope: "global" },
+          targets: [{ scope: "global" }],
           risks: [],
         },
       ],
@@ -234,7 +331,7 @@ describe("gesture template protocol", () => {
     expectProtocolCode(
       () =>
         verifyGestureTemplatePackage(
-          { ...entryValue(), target: { scope: "global" } },
+          { ...entryValue(), targets: [{ scope: "global" }] },
           templatePackage,
         ),
       "target_mismatch",
@@ -244,11 +341,11 @@ describe("gesture template protocol", () => {
   it("requires template plugin sources and Node plugin commands to map to each other", () => {
     expect(() =>
       GestureTemplatePackage.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         slug: "plugin-command",
         version: "1.0.0",
         author: "GodGesture",
-        target: {
+        targets: [{
           scope: "global",
           intents: [
             intent("Node plugin", {
@@ -256,13 +353,13 @@ describe("gesture template protocol", () => {
               pluginId: "00000000-0000-4000-8000-000000000001",
             }),
           ],
-        },
+        }],
       }),
     ).toThrow();
 
     expect(() =>
       GestureTemplatePackage.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         slug: "plugin-command",
         version: "1.0.0",
         author: "GodGesture",
@@ -274,7 +371,7 @@ describe("gesture template protocol", () => {
             subdirectory: "plugin",
           },
         ],
-        target: {
+        targets: [{
           scope: "global",
           intents: [
             intent("Node plugin", {
@@ -282,13 +379,13 @@ describe("gesture template protocol", () => {
               pluginId: "00000000-0000-4000-8000-000000000001",
             }),
           ],
-        },
+        }],
       }),
     ).not.toThrow();
 
     expect(() =>
       GestureTemplatePackage.parse({
-        formatVersion: 1,
+        formatVersion: 2,
         slug: "plugin-command",
         version: "1.0.0",
         author: "GodGesture",
@@ -306,7 +403,7 @@ describe("gesture template protocol", () => {
             subdirectory: "plugin",
           },
         ],
-        target: {
+        targets: [{
           scope: "global",
           intents: [
             intent("Node plugin", {
@@ -314,7 +411,7 @@ describe("gesture template protocol", () => {
               pluginId: "00000000-0000-4000-8000-000000000001",
             }),
           ],
-        },
+        }],
       }),
     ).toThrow();
   });

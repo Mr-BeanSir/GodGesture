@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-07。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-08。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 `docs/ROADMAP.md` 只记录 stable `v0.1.0` 的历史里程碑。本文不记录逐日开发流水，历史过程以 Git
 提交和保留的 ADR/QA 证据为准。
@@ -41,6 +41,7 @@
 - 边角非空序列不会因光标移动自动武装；首个匹配按钮/滚轮在边缘带或近角区域准入。精确角点保留给空序列立即动作；匹配完成后等待主释放键，后续按钮抬起只吞掉。
 - 轨迹与命令名称由 Windows/macOS 原生覆盖层绘制，不能迁移到 WebView；边角和普通手势复用既有覆盖层消息协议。
 - Windows 使用低级鼠标/键盘钩子与 Raw Input 兜底，macOS 使用 CGEventTap；平台差异留在输入来源、合成、屏幕查询和窗口层。
+- Desktop 手势页支持导出 Gesture Template v2 多目标 JSON；可填写统一的标题和摘要，按全局或应用目标多选手势，并在分组中展开、收起和搜索。桌面端导出使用原生保存面板选择路径，浏览器预览回退到下载。模板详情弹窗沿用手势页的应用左栏、手势表格和选中手势预览区，表格显示类型、名称、新版 SVG 助记符、命令类型及与本地配置的冲突状态。
 
 ### 配置、同步与命令
 
@@ -54,9 +55,15 @@
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
 - 插件示例与公开模板分别由 `distribution/plugins` 和 `distribution/templates` Git submodule 管理；插件仓库的
   项目统一位于 `plugins/<slug>/`，根目录只保留目录、文档、Workflow 和复用脚本。两者都从对应仓库
-  `main/catalog.min.json` 读取，模板包和插件 manifest 均要求 `author`。两个
+  `main/catalog.min.json` 读取；Tauri Desktop 启动时强制刷新两个目录，校验通过后写入
+  `app_config_dir/catalogs` 的独立缓存文件，网络不可用时回退到上一份有效缓存，模板页和插件
+  在线目录弹窗都提供手动强制刷新。浏览器预览使用 Desktop 源码内 fixture，不读取 distribution。
+  模板包和插件 manifest 均要求 `author`。两个
   仓库的 PR Workflow 校验 JSON、协议和目录内容；合并后自动生成格式化 `catalog.json` 与压缩版
-  `catalog.min.json`，Desktop 的模板/插件目录不再依赖公开 Releases 资产。
+  `catalog.min.json`，Desktop 的模板/插件目录不再依赖公开 Releases 资产；模板详情对旧官方
+  `gesture-templates/releases/latest/download/*.json` 地址保留一次性迁移回退，并用 catalog 条目的
+  元数据归一化旧 v1 包；早期官方 Releases 目录地址也只保留一次性迁移回退，官方 raw 请求失败时
+  可尝试 jsDelivr 镜像，正式发布仍只接受新仓库的 `packages/` 包地址。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
@@ -77,7 +84,7 @@
 
 ## 已有验证基线
 
-以下为 2026-08-07 工作区的最新验证结果；在线插件目录、模板插件源、npm/pnpm 锁文件和安装事务恢复
+以下保留 2026-08-07 工作区的完整验证基线；在线插件目录、模板插件源、npm/pnpm 锁文件和安装事务恢复
 均已纳入本轮检查。真实 macOS 设备验收仍按上方 M4 清单保持 pending，不能由 Windows 或自动化结果替代：
 
 - `pnpm test`：Shared `86/86`、SDK `1/1`、Desktop `140/140`、Server `97/97`；Web Console 当前无测试，脚本正常退出。
@@ -87,6 +94,17 @@
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`：`251 passed, 3 ignored`；忽略项为性能、Task Scheduler 和实时 GitHub smoke，未将其计入自动化通过数。
 - `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- -D warnings`、`cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`、`git diff --check`：通过。
 - Vite 构建仅保留既有 VueUse 注释、较大 chunk 和 Tauri identifier 建议警告；未出现新的编译错误。
+- 2026-08-08 定向验证：Desktop `vue-tsc --noEmit`、模板/插件 source 与模板 store 测试 `23/23`、Rust
+  `cargo check`、`cargo fmt -- --check` 和 `git diff --check` 通过；本轮按维护者要求未运行全量测试。
+- 2026-08-08 知识收尾定向验证：Desktop 模板/插件 source 测试 `18/18`、Shared 模板协议测试 `11/11`、
+  Desktop `vue-tsc --noEmit` 和 `git diff --check` 通过；未运行全量测试。
+
+## 当前工作区备注
+
+- `distribution/plugins` 子模块工作树干净，目录校验通过。
+- `distribution/templates` 子模块存在未提交改动：目录仍引用已删除的
+  `packages/global-window-basics.json` 与 `packages/browser-window-basics.json`，同时有未跟踪的
+  `packages/windows-basics.json`；因此当前子模块目录校验失败。该现场属于维护者未集成改动，待确认前不恢复、删除或提交。
 
 ## 文档路由
 

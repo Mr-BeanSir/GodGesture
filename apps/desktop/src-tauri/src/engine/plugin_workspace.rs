@@ -20,6 +20,62 @@ const IGNORED_DIRECTORIES: &[&str] = &["node_modules", ".git", ".godgesture", "t
 const IGNORED_PROJECT_DIRECTORIES: &[&str] =
     &[".operations", "windows-x64", "macos-x64", "macos-arm64"];
 
+// The first-run example belongs to the Desktop experience. Keep it
+// embedded here so the native build does not depend on the public distribution
+// submodule being checked out.
+const DEMO_PACKAGE_JSON: &str = r###"{
+  "name": "gesture-demo",
+  "version": "0.1.0",
+  "author": "GodGesture",
+  "private": true,
+  "description": "GodGesture Node.js 插件生命周期示例",
+  "type": "module",
+  "exports": "./index.mjs",
+  "godgesture": {
+    "id": "30000000-0000-4000-8000-000000000001",
+    "apiVersion": 1,
+    "entry": "index.mjs",
+    "catalog": {
+      "title": { "zh-CN": "生命周期示例插件", "en": "Lifecycle demo plugin" },
+      "summary": { "zh-CN": "演示 GodGesture Node.js 插件的完整生命周期。", "en": "Demonstrates the complete GodGesture Node.js plugin lifecycle." }
+    },
+    "lifecycles": ["onInit", "onExecute", "onGestureRecognized", "onModifierTriggered", "onEnd"]
+  },
+  "devDependencies": { "@godgesture/sdk": "0.1.0" }
+}"###;
+
+const DEMO_INDEX_MJS: &str = r###"import { defineHandler } from "@godgesture/sdk";
+
+export const onInit = defineHandler(async (context) => {
+  await context.status.report("gesture-demo 已加载");
+});
+
+export const onExecute = defineHandler(async (context) => {
+  const trigger = context.triggerButton ?? "无";
+  await context.status.report(
+    `执行完成：触发键=${trigger}，终点=(${context.endpoint.x}, ${context.endpoint.y})`,
+  );
+});
+
+export const onGestureRecognized = defineHandler(async (context) => {
+  await context.status.report(`手势已识别：${context.phase}`);
+});
+
+export const onModifierTriggered = defineHandler(async (context) => {
+  await context.status.report(`修饰符已触发：${context.modifier}`);
+});
+
+export const onEnd = defineHandler(async (context) => {
+  await context.status.report(`手势已结束：${context.phase}`);
+});
+"###;
+
+const DEMO_README: &str = r###"# gesture-demo
+
+这是 GodGesture Node.js 插件的最小生命周期示例，展示 `onInit`、`onExecute`、
+`onGestureRecognized`、`onModifierTriggered` 和 `onEnd` 五个现役生命周期。
+"###;
+
 /// The online installer keeps a small, durable intent record in each operation
 /// directory.  The journal is intentionally separate from the transient
 /// checkout/cache directories used by `node_packages`.
@@ -509,21 +565,12 @@ fn seed_demo_if_empty(root: &Path) -> Result<(), String> {
     }
     let demo = root.join("gesture-demo");
     fs::create_dir_all(&demo).map_err(|error| format!("create gesture demo directory: {error}"))?;
-    fs::write(
-        demo.join("package.json"),
-        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/package.json"),
-    )
-    .map_err(|error| format!("write gesture demo package.json: {error}"))?;
-    fs::write(
-        demo.join("index.mjs"),
-        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/index.mjs"),
-    )
-    .map_err(|error| format!("write gesture demo entry: {error}"))?;
-    fs::write(
-        demo.join("README.md"),
-        include_str!("../../../../../distribution/plugins/plugins/gesture-demo/README.md"),
-    )
-    .map_err(|error| format!("write gesture demo README: {error}"))
+    fs::write(demo.join("package.json"), DEMO_PACKAGE_JSON)
+        .map_err(|error| format!("write gesture demo package.json: {error}"))?;
+    fs::write(demo.join("index.mjs"), DEMO_INDEX_MJS)
+        .map_err(|error| format!("write gesture demo entry: {error}"))?;
+    fs::write(demo.join("README.md"), DEMO_README)
+        .map_err(|error| format!("write gesture demo README: {error}"))
 }
 
 #[derive(Deserialize)]

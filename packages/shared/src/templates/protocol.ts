@@ -10,12 +10,13 @@ import {
 import { MAX_URL_LENGTH } from "../config/limits.js";
 import { OnlinePluginSource, type OnlinePluginSource as OnlinePluginSourceValue } from "../plugins/online.js";
 
-export const GESTURE_TEMPLATE_FORMAT_VERSION = 1;
+export const GESTURE_TEMPLATE_FORMAT_VERSION = 2;
 export const MAX_GESTURE_TEMPLATE_CATALOG_BYTES = 512 * 1024;
 export const MAX_GESTURE_TEMPLATE_PACKAGE_BYTES = 256 * 1024;
 export const MAX_GESTURE_TEMPLATE_CATALOG_ENTRIES = 256;
 export const MAX_GESTURE_TEMPLATE_TAGS = 8;
 export const MAX_GESTURE_TEMPLATE_PLUGINS = 32;
+export const MAX_GESTURE_TEMPLATE_TARGETS = 128;
 
 const slug = z
   .string()
@@ -145,7 +146,10 @@ export const GestureTemplateCatalogEntry = z
           values.length,
         { message: "Template tags must be unique" },
       ),
-    target: GestureTemplateTargetSummary,
+    targets: z
+      .array(GestureTemplateTargetSummary)
+      .min(1)
+      .max(MAX_GESTURE_TEMPLATE_TARGETS),
     risks: z
       .array(GestureTemplateRisk)
       .max(GestureTemplateRisk.options.length)
@@ -237,7 +241,10 @@ export const GestureTemplatePackage = z
       )
       .optional(),
     plugins: z.array(OnlinePluginSource).max(MAX_GESTURE_TEMPLATE_PLUGINS).default([]),
-    target: GestureTemplateTarget,
+    targets: z
+      .array(GestureTemplateTarget)
+      .min(1)
+      .max(MAX_GESTURE_TEMPLATE_TARGETS),
   })
   .strict()
   .superRefine((templatePackage, ctx) => {
@@ -253,15 +260,27 @@ export const GestureTemplatePackage = z
       sources.set(source.pluginId, source);
     }
     const referencedPluginIds = new Set<string>();
-    for (const [index, intent] of templatePackage.target.intents.entries()) {
-      if (intent.command.type !== "nodePlugin") continue;
-      referencedPluginIds.add(intent.command.pluginId);
-      if (!sources.has(intent.command.pluginId)) {
+    const targetIdentities = new Set<string>();
+    for (const [targetIndex, target] of templatePackage.targets.entries()) {
+      const identity = JSON.stringify(targetSummary(target));
+      if (targetIdentities.has(identity)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["target", "intents", index, "command", "pluginId"],
-          message: "Template nodePlugin commands must declare a matching plugin source",
+          path: ["targets", targetIndex],
+          message: "Template targets must be unique",
         });
+      }
+      targetIdentities.add(identity);
+      for (const [intentIndex, intent] of target.intents.entries()) {
+        if (intent.command.type !== "nodePlugin") continue;
+        referencedPluginIds.add(intent.command.pluginId);
+        if (!sources.has(intent.command.pluginId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targets", targetIndex, "intents", intentIndex, "command", "pluginId"],
+            message: "Template nodePlugin commands must declare a matching plugin source",
+          });
+        }
       }
     }
     for (const [index, source] of templatePackage.plugins.entries()) {
@@ -275,6 +294,15 @@ export const GestureTemplatePackage = z
     }
   });
 export type GestureTemplatePackage = z.infer<typeof GestureTemplatePackage>;
+
+/**
+ * Metadata copied from a validated catalog entry when reading a legacy v1
+ * package. Older release assets did not embed these fields themselves.
+ */
+export type GestureTemplateLegacyPackageMetadata = Pick<
+  GestureTemplateCatalogEntry,
+  "author" | "title" | "summary" | "tags"
+>;
 
 export type GestureTemplateProtocolErrorCode =
   | "catalog_too_large"
@@ -325,6 +353,67 @@ function parseJsonText(
   return value;
 }
 
+function objectValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeLegacyCatalog(value: unknown): unknown {
+  if (!objectValue(value) || value.formatVersion !== 1 || !Array.isArray(value.entries)) {
+    return value;
+  }
+  return {
+    ...value,
+    formatVersion: GESTURE_TEMPLATE_FORMAT_VERSION,
+    entries: value.entries.map((entry) => {
+      if (!objectValue(entry) || !("target" in entry) || "targets" in entry) return entry;
+      const { target, ...rest } = entry;
+      return { ...rest, targets: [target] };
+    }),
+  };
+}
+
+function normalizeLegacyPackage(
+  value: unknown,
+  metadata?: GestureTemplateLegacyPackageMetadata,
+): unknown {
+  if (!objectValue(value) || value.formatVersion !== 1 || !("target" in value) || "targets" in value) {
+    return value;
+  }
+  const { target, ...rest } = value;
+  const targets = [target].map((legacyTarget) => {
+    if (!objectValue(legacyTarget) || !Array.isArray(legacyTarget.intents)) {
+      return legacyTarget;
+    }
+    return {
+      ...legacyTarget,
+      intents: legacyTarget.intents.map((legacyIntent) => {
+        if (!objectValue(legacyIntent) || !("executeOnModifier" in legacyIntent)) {
+          return legacyIntent;
+        }
+        const { executeOnModifier: _executeOnModifier, ...intent } = legacyIntent;
+        return intent;
+      }),
+    };
+  });
+  return {
+    ...rest,
+    formatVersion: GESTURE_TEMPLATE_FORMAT_VERSION,
+    ...(rest.author === undefined && metadata?.author !== undefined
+      ? { author: metadata.author }
+      : {}),
+    ...(rest.title === undefined && metadata?.title !== undefined
+      ? { title: metadata.title }
+      : {}),
+    ...(rest.summary === undefined && metadata?.summary !== undefined
+      ? { summary: metadata.summary }
+      : {}),
+    ...(rest.tags === undefined && metadata?.tags !== undefined
+      ? { tags: metadata.tags }
+      : {}),
+    targets,
+  };
+}
+
 export function parseGestureTemplateCatalog(
   text: string,
 ): GestureTemplateCatalog {
@@ -333,7 +422,7 @@ export function parseGestureTemplateCatalog(
     MAX_GESTURE_TEMPLATE_CATALOG_BYTES,
     "catalog_too_large",
   );
-  const result = GestureTemplateCatalog.safeParse(value);
+  const result = GestureTemplateCatalog.safeParse(normalizeLegacyCatalog(value));
   if (!result.success) {
     throw new GestureTemplateProtocolError(
       "invalid_catalog",
@@ -346,13 +435,16 @@ export function parseGestureTemplateCatalog(
 
 export function parseGestureTemplatePackage(
   text: string,
+  legacyMetadata?: GestureTemplateLegacyPackageMetadata,
 ): GestureTemplatePackage {
   const value = parseJsonText(
     text,
     MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
     "package_too_large",
   );
-  const result = GestureTemplatePackage.safeParse(value);
+  const result = GestureTemplatePackage.safeParse(
+    normalizeLegacyPackage(value, legacyMetadata),
+  );
   if (!result.success) {
     throw new GestureTemplateProtocolError(
       "invalid_package",
@@ -384,15 +476,17 @@ export function gestureTemplatePackageRisks(
   templatePackage: GestureTemplatePackage,
 ): GestureTemplateRisk[] {
   const risks = new Set<GestureTemplateRisk>();
-  for (const intent of templatePackage.target.intents) {
-    for (const risk of commandTemplateRisks(intent.command)) risks.add(risk);
+  for (const target of templatePackage.targets) {
+    for (const intent of target.intents) {
+      for (const risk of commandTemplateRisks(intent.command)) risks.add(risk);
+    }
   }
   return GestureTemplateRisk.options.filter((risk) => risks.has(risk));
 }
 
-function targetSummary(templatePackage: GestureTemplatePackage) {
-  if (templatePackage.target.scope === "global") return { scope: "global" };
-  const { name, windows, mac } = templatePackage.target;
+function targetSummary(target: GestureTemplateTarget): GestureTemplateTargetSummary {
+  if (target.scope === "global") return { scope: "global" };
+  const { name, windows, mac } = target;
   return {
     scope: "app",
     name,
@@ -430,7 +524,10 @@ export function verifyGestureTemplatePackage(
     );
   }
 
-  if (JSON.stringify(entry.target) !== JSON.stringify(targetSummary(templatePackage))) {
+  if (
+    JSON.stringify(entry.targets) !==
+    JSON.stringify(templatePackage.targets.map((target) => targetSummary(target)))
+  ) {
     throw new GestureTemplateProtocolError(
       "target_mismatch",
       "Template package target does not match its catalog entry",

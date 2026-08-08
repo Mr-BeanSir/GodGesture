@@ -18,7 +18,10 @@
  * - pick_window(): {exeName, exePath, appName, aumid, bundleId} | null
  * - resolve_app_file(path): {exeName, exePath, appName, aumid, bundleId}
  * - app_icon(request): string | null             // base64 png
+ * - gesture_template_save(fileName, contents, title): string | null
  * - download_template_text(url, resourceKind): string
+ * - catalog_cache_get(kind): string | null
+ * - catalog_cache_set(kind, contents): void
  *
  * 浏览器(无 Tauri)环境自动降级为内存 mock(见 ./mock.ts),整套 UI 可独立自测。
  */
@@ -62,6 +65,7 @@ export interface AppFileDropEvent {
 }
 
 export type TemplateResourceKind = "catalog" | "package" | "pluginCatalog";
+export type CatalogCacheKind = "templates" | "plugins";
 
 export interface AppIconRequest {
   windowsExeName?: string;
@@ -229,10 +233,20 @@ export interface Backend {
   ): Promise<() => void>;
   /** base64 png,失败返回 null */
   appIcon(request: AppIconRequest): Promise<string | null>;
+  /** 打开系统保存面板并写出一个手势模板;取消时返回 null。 */
+  gestureTemplateSave(
+    fileName: string,
+    contents: string,
+    title: string,
+  ): Promise<string | null>;
   downloadTemplateText(
     url: string,
     resourceKind: TemplateResourceKind,
   ): Promise<string>;
+  /** Read a previously validated online catalog from the native AppData cache. */
+  catalogCacheGet(kind: CatalogCacheKind): Promise<string | null>;
+  /** Replace an online catalog cache entry in the native AppData directory. */
+  catalogCacheSet(kind: CatalogCacheKind, contents: string): Promise<void>;
 
   accountCredentialGet(apiOrigin: string): Promise<string | null>;
   accountCredentialSet(apiOrigin: string, refreshToken: string): Promise<void>;
@@ -469,6 +483,18 @@ function createTauriBackend(): Backend {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<string | null>("app_icon", { request });
     },
+    async gestureTemplateSave(fileName, contents, title) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<string | null>("gesture_template_save", {
+          fileName,
+          contents,
+          title,
+        });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
     async downloadTemplateText(url, resourceKind) {
       const { invoke } = await import("@tauri-apps/api/core");
       try {
@@ -476,6 +502,22 @@ function createTauriBackend(): Backend {
           url,
           resourceKind,
         });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async catalogCacheGet(kind) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        return await invoke<string | null>("catalog_cache_get", { kind });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async catalogCacheSet(kind, contents) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      try {
+        await invoke("catalog_cache_set", { kind, contents });
       } catch (error) {
         throw normalizeBackendError(error);
       }

@@ -175,6 +175,7 @@ export function createMockBackend(): Backend {
   let pendingUpdate: UpdateMetadata | null = null;
   let logLevel: LogLevel = "off";
   let logEntries: LogEntry[] = [];
+  const catalogCache = new Map<string, string>();
   const pluginSnapshot: PluginWorkspaceSnapshot = {
     root: "C:\\Users\\demo\\AppData\\Roaming\\GodGesture\\plugins",
     plugins: [
@@ -452,8 +453,17 @@ export function createMockBackend(): Backend {
     async appIcon() {
       return null;
     },
+    async gestureTemplateSave() {
+      return null;
+    },
     async downloadTemplateText() {
       throw new Error("Template downloads are unavailable in browser preview");
+    },
+    async catalogCacheGet(kind) {
+      return catalogCache.get(kind) ?? null;
+    },
+    async catalogCacheSet(kind, contents) {
+      catalogCache.set(kind, contents);
     },
     async accountCredentialGet() {
       return refreshToken;

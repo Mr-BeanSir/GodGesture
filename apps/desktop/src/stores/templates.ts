@@ -71,6 +71,7 @@ export const useTemplatesStore = defineStore("templates", () => {
 
   const packageCache = new Map<string, GestureTemplatePackage>();
   let catalogRequest: Promise<void> | null = null;
+  let catalogRequestForced = false;
   let detailGeneration = 0;
   let expectedDocument: ConfigDocument | null = null;
 
@@ -78,7 +79,10 @@ export const useTemplatesStore = defineStore("templates", () => {
   const filteredEntries = computed(() => {
     const needle = query.value.trim().toLocaleLowerCase();
     return entries.value.filter((entry) => {
-      if (scopeFilter.value !== "all" && entry.target.scope !== scopeFilter.value) {
+      if (
+        scopeFilter.value !== "all" &&
+        !entry.targets.some((target) => target.scope === scopeFilter.value)
+      ) {
         return false;
       }
       const elevated = entry.risks.length > 0;
@@ -97,13 +101,18 @@ export const useTemplatesStore = defineStore("templates", () => {
   });
 
   async function loadCatalog(force = false) {
-    if (catalogRequest && !force) return catalogRequest;
+    if (catalogRequest) {
+      const pending = catalogRequest;
+      if (!force || catalogRequestForced) return pending;
+      await pending;
+      return loadCatalog(true);
+    }
     if (catalog.value && !force) return;
     const request = (async () => {
       loadingCatalog.value = true;
       catalogError.value = null;
       try {
-        catalog.value = await source.loadCatalog();
+        catalog.value = await source.loadCatalog(force);
       } catch (error) {
         catalogError.value = errorCode(error, "template_catalog_failed");
       } finally {
@@ -111,11 +120,15 @@ export const useTemplatesStore = defineStore("templates", () => {
       }
     })();
     catalogRequest = request;
-    try {
-      await request;
-    } finally {
-      if (catalogRequest === request) catalogRequest = null;
-    }
+    catalogRequestForced = force;
+    const clearRequest = () => {
+      if (catalogRequest === request) {
+        catalogRequest = null;
+        catalogRequestForced = false;
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
   }
 
   function buildPlan() {

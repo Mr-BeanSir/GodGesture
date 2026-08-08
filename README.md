@@ -58,7 +58,7 @@ pnpm dev:desktop
 同时启动 NestJS 后端和 Web Console:
 
 ```powershell
-npm run dev:server
+pnpm dev:server
 ```
 
 该命令会自动寻找可用的后端和前端端口,等待后端 `/api/v1/health` 就绪后再启动

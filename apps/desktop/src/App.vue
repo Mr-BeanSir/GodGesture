@@ -26,6 +26,7 @@ import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
 import { useUpdateStore } from "./stores/update";
 import { usePluginsStore } from "./stores/plugins";
+import { useTemplatesStore } from "./stores/templates";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
 import { listenForSingleInstance } from "./single-instance";
 import {
@@ -52,6 +53,7 @@ const store = useConfigStore();
 const account = useAccountStore();
 const updates = useUpdateStore();
 const plugins = usePluginsStore();
+const templates = useTemplatesStore();
 
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
@@ -170,6 +172,12 @@ onMounted(() => {
         ElMessage.info(t("app.alreadyRunning"));
       });
     }
+    // Refresh both public catalogs in the background; each source falls back
+    // to its last valid AppData snapshot when GitHub is unavailable.
+    void Promise.allSettled([
+      templates.loadCatalog(true),
+      plugins.loadOnlineCatalog(true),
+    ]);
     await store.load();
     if (!store.backend.isTauri && typeof window !== "undefined") {
       const previewParams = new URLSearchParams(window.location.search);

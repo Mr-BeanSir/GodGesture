@@ -10,6 +10,7 @@ import {
   CircleCheckFilled,
   CircleCloseFilled,
   Delete,
+  Download,
   Edit,
   MoreFilled,
   Plus,
@@ -49,6 +50,7 @@ import AppIcon from "../components/AppIcon.vue";
 import AddActionDialog from "../components/AddActionDialog.vue";
 import BoundaryIntentEditor from "../components/BoundaryIntentEditor.vue";
 import BoundaryMnemonic from "../components/BoundaryMnemonic.vue";
+import GestureExportDialog from "../components/GestureExportDialog.vue";
 
 const GLOBAL = "__global__";
 
@@ -64,6 +66,7 @@ const reRecordId = ref<string | null>(null);
 const appDialogVisible = ref(false);
 const editingApp = ref<AppEntry | null>(null);
 const addActionVisible = ref(false);
+const exportVisible = ref(false);
 const editingBoundaryId = ref<string | null>(null);
 const collapsedGroups = ref<Record<string, boolean>>({});
 
@@ -598,7 +601,14 @@ onMounted(() => selectApp(GLOBAL));
     <!-- 应用列表 -->
     <aside class="gestures__apps">
       <div class="gestures__apps-head">
-        <span>{{ t("gestures.appListTitle") }}</span>
+        <el-button
+          link
+          class="gestures__export-trigger"
+          :icon="Download"
+          @click="exportVisible = true"
+        >
+          {{ t("gestures.export") }}
+        </el-button>
         <span class="gestures__apps-head-actions">
           <el-button link size="small" :icon="Plus" @click="addGroup">{{ t("gestures.addGroup") }}</el-button>
           <el-button size="small" :icon="Plus" @click="openAddApp">{{ t("gestures.addApp") }}</el-button>
@@ -847,6 +857,7 @@ onMounted(() => selectApp(GLOBAL));
       @confirm-boundary="onBoundaryConfirm"
     />
     <AppDialog v-model="appDialogVisible" :app="editingApp" @save="onAppSave" />
+    <GestureExportDialog v-model="exportVisible" :config="doc" />
   </div>
 </template>
 
@@ -885,6 +896,12 @@ onMounted(() => selectApp(GLOBAL));
   align-items: center;
   gap: 2px;
 }
+.gestures__export-trigger {
+  min-width: 0;
+  padding: 4px 2px;
+  color: var(--el-text-color-secondary);
+}
+.gestures__export-trigger:hover { color: var(--el-color-primary); }
 .gestures__app-list {
   list-style: none;
   margin: 0;
