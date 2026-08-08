@@ -1,5 +1,11 @@
 # GodGesture 当前项目状态
 
+## 官方模板审核界面（2026-08-09）
+
+Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
+Web Console 提供审核队列、不可变版本详情、包元数据、历史、举报和审核动作；界面文案
+使用现有 zh-CN/en locale。
+
 最后核对：2026-08-09。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 `docs/ROADMAP.md` 只记录 stable `v0.1.0` 的历史里程碑。本文不记录逐日开发流水，历史过程以 Git

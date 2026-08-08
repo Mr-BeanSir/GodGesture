@@ -10,11 +10,11 @@
 
 ## Execution Status (2026-08-09)
 
-Tasks 0-7 and 10 are implemented and verified. Task 11 seed handling, API artifact
+Tasks 0-10 are implemented and verified. Task 11 seed handling, API artifact
 regeneration, documentation reconciliation, and targeted/full verification are also
-complete. Tasks 8 and 9 remain at the UI design gate: the required brainstorming
-visual-companion approval has not been explicitly granted, so no new submission-review
-or moderation-detail layout has been implemented.
+complete. The approved UI design is implemented: Desktop has a bilingual pre-submission
+review, and Web Console exposes immutable moderation details with history, reports,
+risks, targets, and approve/reject/suspend/restore actions.
 
 ---
 
