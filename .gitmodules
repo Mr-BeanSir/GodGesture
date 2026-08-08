@@ -4,3 +4,9 @@
 [submodule "distribution/templates"]
 	path = distribution/templates
 	url = https://github.com/Mr-BeanSir/GodGesture-Templates.git
+[submodule "apps/server"]
+	path = apps/server
+	url = https://github.com/Mr-BeanSir/GodGesture-Server.git
+[submodule "apps/web-console"]
+	path = apps/web-console
+	url = https://github.com/Mr-BeanSir/GodGesture-Web-Console.git

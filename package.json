@@ -25,6 +25,7 @@
     "validate:plugins": "node scripts/validate-plugin-demo.mjs && node distribution/plugins/scripts/validate-content.mjs",
     "validate:plugin-demo": "node scripts/validate-plugin-demo.mjs",
     "validate:release": "node --test scripts/__tests__/desktop-release.test.mjs && node scripts/validate-desktop-release.mjs",
+    "test:repository-layout": "node --test scripts/__tests__/repository-layout.test.mjs",
     "generate:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:document && node scripts/generate-api.mjs && pnpm --filter @godgesture/shared build",
     "check:api": "pnpm --filter @godgesture/shared build && pnpm --filter @godgesture/server openapi:check && node scripts/generate-api.mjs --check",
     "typecheck": "pnpm -r --parallel typecheck",

@@ -41,7 +41,7 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 - 原生轨迹与命令提示覆盖层；
 - Node.js 插件脚本、npm 依赖与外部 IDE 开发工具链；Node.js 是唯一脚本运行时；
 - 可选账户、整库同步、设备管理与配置快照；
-- 独立 [手势模板仓库](https://github.com/Mr-BeanSir/GodGesture-Templates)；
+- 官方公共目录将由 Server 管理；当前迁移期仍兼容 [手势模板仓库](https://github.com/Mr-BeanSir/GodGesture-Templates)；
 - 独立 [在线插件目录](https://github.com/Mr-BeanSir/GodGesture-Plugins)；
 - Windows x64 与 macOS universal 原生更新。
 
@@ -53,6 +53,14 @@ GodGesture 是独立演进的 Windows 与 macOS 全局鼠标手势工具。它�
 pnpm install --frozen-lockfile
 pnpm build:shared
 pnpm dev:desktop
+```
+
+本仓库含有私有 Server 与 Web Console 子模块。首次克隆须使用具读取权限的凭据递归
+检出；已有检出可初始化子模块：
+
+```powershell
+git clone --recurse-submodules <superproject-url>
+git submodule update --init --recursive
 ```
 
 同时启动 NestJS 后端和 Web Console:
@@ -72,8 +80,8 @@ Desktop 开发首选 `127.0.0.1:14200`，HMR 首选 `14201`；端口被占用时
 
 ```text
 apps/desktop                  Tauri 2 + Rust + Vue 3 桌面端
-apps/server                   NestJS + Prisma + PostgreSQL 同步后端
-apps/web-console              只读 Web 控制台
+apps/server                   私有 NestJS + Prisma + PostgreSQL 子模块
+apps/web-console              私有只读 Web 控制台子模块
 packages/shared               配置、认证、同步与模板共享协议
 packages/sdk                  @godgesture/sdk 可公开发布的插件开发包
 distribution/plugins             插件示例 submodule

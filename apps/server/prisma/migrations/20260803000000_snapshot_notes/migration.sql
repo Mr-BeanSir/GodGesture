@@ -1,2 +1,0 @@
-ALTER TABLE "ConfigSnapshot"
-ADD COLUMN "note" TEXT NOT NULL DEFAULT '';

@@ -14,9 +14,9 @@
 | M2 Windows 命令与设置 | 已完成 | 任务切换等 Windows 专属能力显式标注，脚本能力归 Node 插件运行时 |
 | M3 脚本引擎 | 已完成 | ADR-0012 的常驻 Node.js supervisor/Worker 是唯一生产脚本链 |
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、全局输入、覆盖层、多屏、AX、Keychain、插件和安装升级需真实 Mac 证据 |
-| M5 后端与账户 | 已完成 | OAuth/SMTP 凭证由部署环境提供；Server 只存用户数据 |
+| M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；Server 只存用户数据 |
 | M6 云同步 | 已完成 | 整库 v8 文档、乐观并发、后写胜出、快照和离线优先 |
-| M7 Web Console 与分发 | 已完成 | 只读控制台、模板与在线插件 GitHub 目录、Updater 和 OpenAPI 已接入 |
+| M7 Web Console 与分发 | 已完成 | 私有 Web Console 子模块；模板迁移至官方服务尚未实现，Updater 和 OpenAPI 已接入 |
 | M8 打磨与发布 | stable 基线已完成 | 当前工作区含 stable 之后的本地改动，未因此宣称已有新发布物 |
 
 ## 部件地图
@@ -26,8 +26,8 @@
 | Desktop Rust | Tauri 生命周期、跨平台手势引擎、原生输入/命令/覆盖层、本地配置 | `apps/desktop/src-tauri/src/lib.rs`、`engine/`、`platform/` |
 | Desktop Vue | 设置工作台、账户、模板、插件、同步和本地日志界面；浏览器运行时使用 mock | `apps/desktop/src/App.vue`、`src/views/`、`src/stores/` |
 | Shared | v8 配置、认证、同步/快照分页、模板、在线插件目录、DSL 与 OpenAPI 生成客户端 | `packages/shared/src/` |
-| Server | NestJS REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
-| Web Console | 只读配置、设备、快照、安全和管理员区域 | `apps/web-console/src/` |
+| Server | 私有子模块：NestJS REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
+| Web Console | 私有子模块：只读配置、设备、快照、安全和管理员区域 | `apps/web-console/src/` |
 | SDK / demo | `@godgesture/sdk` 开发类型与 `distribution/plugins/plugins/gesture-demo` 五生命周期示例 | `packages/sdk/`、`distribution/plugins/` |
 | 发布与部署 | GitHub Actions、Windows NSIS、macOS universal ad-hoc DMG、1Panel Compose | `.github/workflows/`、`docs/*_RELEASE.md`、`apps/server/README-DEPLOY.md` |
 
@@ -70,7 +70,7 @@
 
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
-- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新、模板和在线插件目录通过 GitHub 分发，Server 不代理公开内容。
+- Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和在线插件目录通过 GitHub 分发。公共模板目录迁移至 Server 的实现尚未开始，迁移完成前 Server 不代理公开模板内容。
 
 ## 已知边界
 
@@ -102,6 +102,7 @@
 ## 当前工作区备注
 
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
+- `apps/server` 与 `apps/web-console` 是私有 Git 子模块；开发、CI 与 1Panel 检出都必须运行 `git submodule update --init --recursive` 并具备两个私有仓库的只读权限。它们仍依赖根工作区的 `@godgesture/shared`，协议/OpenAPI/Docker 构建不独立化；理由见 ADR-0015。
 - `distribution/templates` 子模块存在未提交改动：目录仍引用已删除的
   `packages/global-window-basics.json` 与 `packages/browser-window-basics.json`，同时有未跟踪的
   `packages/windows-basics.json`；因此当前子模块目录校验失败。该现场属于维护者未集成改动，待确认前不恢复、删除或提交。
