@@ -122,6 +122,20 @@ export const GestureTemplateCatalog = z.object({
 });
 export type GestureTemplateCatalog = Omit<z.infer<typeof GestureTemplateCatalog>, "entries"> & { entries: GestureTemplateCatalogEntry[] };
 
+export const PublicTemplateCatalogPage = z.object({
+  entries: z.array(GestureTemplateCatalogEntry),
+  nextCursor: z.string().uuid().nullable(),
+}).strict();
+export type PublicTemplateCatalogPage = z.infer<typeof PublicTemplateCatalogPage>;
+export const PublicTemplatePackageDownload = z.object({
+  url: z.string().url(), packageHash: z.string().regex(/^[0-9a-f]{64}$/), sizeBytes: z.number().int().nonnegative(),
+}).strict();
+export type PublicTemplatePackageDownload = z.infer<typeof PublicTemplatePackageDownload>;
+export const PublicTemplateSubmissionResponse = z.object({
+  id: z.string().uuid(), versionNumber: z.number().int().positive(), status: z.enum(["pending_review", "published", "rejected", "withdrawn", "suspended"]),
+}).strict();
+export type PublicTemplateSubmissionResponse = z.infer<typeof PublicTemplateSubmissionResponse>;
+
 const globalPackageTarget = z.object({
   scope: z.literal("global"),
   intents: z.array(GestureTemplateIntent).min(1).max(256),

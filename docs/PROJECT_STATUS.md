@@ -14,9 +14,9 @@
 | M2 Windows 命令与设置 | 已完成 | 任务切换等 Windows 专属能力显式标注，脚本能力归 Node 插件运行时 |
 | M3 脚本引擎 | 已完成 | ADR-0012 的常驻 Node.js supervisor/Worker 是唯一生产脚本链 |
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、全局输入、覆盖层、多屏、AX、Keychain、插件和安装升级需真实 Mac 证据 |
-| M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；公共模板服务扩展尚未实现 |
+| M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；公共模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8 文档、乐观并发、后写胜出、快照和离线优先 |
-| M7 Web Console 与分发 | 进行中 | 私有 Web Console 子模块已接入；官方公共模板服务的 ADR 已采纳，运行时迁移、审核与 RustFS 部署尚未实现 |
+| M7 Web Console 与分发 | 已完成 | 私有 Web Console 子模块已接入；官方公共模板运行时、审核、举报、配额管理与 RustFS 部署配置已实现 |
 | M8 打磨与发布 | stable 基线已完成 | 当前工作区含 stable 之后的本地改动，未因此宣称已有新发布物 |
 
 ## 部件地图
@@ -97,7 +97,7 @@
 
 ## 当前工作区备注
 
-- 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供举报处理入口。Server 与 Web Console 继续作为私有子模块维护。
+- 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供审核备注、举报处理说明和用户配额覆盖入口。Server 与 Web Console 继续作为私有子模块维护。
 
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
 - `apps/server` 与 `apps/web-console` 是私有 Git 子模块；开发、CI 与 1Panel 检出都必须运行 `git submodule update --init --recursive` 并具备两个私有仓库的只读权限。它们仍依赖根工作区的 `@godgesture/shared`，协议/OpenAPI/Docker 构建不独立化；理由见 ADR-0015。

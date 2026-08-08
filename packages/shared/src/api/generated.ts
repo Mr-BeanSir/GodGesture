@@ -455,6 +455,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPublicTemplates"];
+        put?: never;
+        post: operations["submitPublicTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublicTemplate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/templates/{id}/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublicTemplatePackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/templates/{id}/versions/{versionNumber}/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublicTemplateVersionPackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync/config": {
         parameters: {
             query?: never;
@@ -2116,6 +2180,56 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        PublicTemplateCatalogPage: {
+            entries: {
+                author: string;
+                downloadCount: number;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                publishedAt: string;
+                risks: ("script" | "commandLine" | "fileOrProgram" | "externalUrl")[];
+                summary: string;
+                tags: string[];
+                targets: ({
+                    /** @enum {string} */
+                    scope: "global";
+                } | {
+                    mac?: {
+                        bundleId: string;
+                    };
+                    name: string;
+                    /** @enum {string} */
+                    scope: "app";
+                    windows?: {
+                        aumid?: string;
+                        exactPath?: string;
+                        exeName: string;
+                        /** @default false */
+                        matchByExactPath: boolean;
+                    };
+                })[];
+                title: string;
+                /** Format: date-time */
+                updatedAt: string;
+                versionNumber: number;
+            }[];
+            /** Format: uuid */
+            nextCursor: string | null;
+        };
+        PublicTemplatePackageDownload: {
+            packageHash: string;
+            sizeBytes: number;
+            /** Format: uri */
+            url: string;
+        };
+        PublicTemplateSubmissionResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+            versionNumber: number;
+        };
         PullConfigResponse: {
             document: components["schemas"]["ConfigDocument"] & unknown;
             /** Format: date-time */
@@ -2180,11 +2294,13 @@ export interface components {
         };
         TemplateModerationReportListResponse: {
             reports: {
+                author: string;
                 /** Format: date-time */
                 createdAt: string;
                 /** Format: uuid */
                 id: string;
                 reason: string;
+                reporter: string;
                 resolution: string | null;
                 /** Format: date-time */
                 resolvedAt: string | null;
@@ -2192,9 +2308,9 @@ export interface components {
                 status: "open" | "resolved" | "dismissed";
                 /** Format: uuid */
                 templateId: string;
-                /** Format: uuid */
-                templateVersionId: string;
                 title: string;
+                /** Format: uuid */
+                versionId: string;
             }[];
         };
         TemplatePolicyResponse: {
@@ -2231,10 +2347,10 @@ export interface components {
             userId: string;
         };
         TemplateUserPolicyUpdateRequest: {
-            dailySubmissionLimit?: number;
-            maxPackageBytes?: number;
-            pendingVersionLimit?: number;
-            publishedTemplateLimit?: number;
+            dailySubmissionLimit?: number | null;
+            maxPackageBytes?: number | null;
+            pendingVersionLimit?: number | null;
+            publishedTemplateLimit?: number | null;
         };
         TokenPairResponse: {
             accessToken: string;
@@ -3784,6 +3900,222 @@ export interface operations {
                         /** @enum {string} */
                         status: "ok";
                     };
+                };
+            };
+        };
+    };
+    listPublicTemplates: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                platform?: "windows" | "macos";
+                q?: string;
+                risk?: "script" | "commandLine" | "fileOrProgram" | "externalUrl";
+                sort?: "newest" | "downloads" | "trending";
+                tag?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of public templates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTemplateCatalogPage"];
+                };
+            };
+            /** @description The catalog page has not changed. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    submitPublicTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    package?: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The submitted template. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTemplateSubmissionResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    getPublicTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A public template. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description The template has not changed. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicTemplatePackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A signed package URL. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTemplatePackageDownload"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicTemplateVersionPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                versionNumber: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A signed package URL. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTemplatePackageDownload"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
