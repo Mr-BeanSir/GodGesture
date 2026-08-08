@@ -9,6 +9,7 @@ import {
   type GestureTemplatePackage,
   type TemplateAdoptionPlan,
   type TemplateConflictPolicy,
+  officialOnlinePluginSource,
 } from "@godgesture/shared";
 import { newId } from "../utils/id";
 import {
@@ -17,6 +18,7 @@ import {
   type GestureTemplateSource,
 } from "../templates/source";
 import { useConfigStore } from "./config";
+import { usePluginsStore } from "./plugins";
 
 export type TemplateScopeFilter = "all" | "global" | "app";
 export type TemplateRiskFilter = "all" | "low" | "elevated";
@@ -48,6 +50,7 @@ function errorCode(error: unknown, fallback: string) {
 
 export const useTemplatesStore = defineStore("templates", () => {
   const config = useConfigStore();
+  const plugins = usePluginsStore();
   const source: GestureTemplateSource = createGestureTemplateSource(
     !config.backend.isTauri,
   );
@@ -145,7 +148,14 @@ export const useTemplatesStore = defineStore("templates", () => {
       adoptionPlan.value = planGestureTemplateAdoption(
         expectedDocument,
         selectedPackage.value,
-        { conflictPolicy: conflictPolicy.value, createId: newId },
+        {
+          conflictPolicy: conflictPolicy.value,
+          createId: newId,
+          resolvePluginSource: (pluginId) => {
+            const entry = plugins.onlineEntries.find((candidate) => candidate.pluginId === pluginId && !candidate.disabled);
+            return entry ? officialOnlinePluginSource(entry) : null;
+          },
+        },
       );
     } catch (error) {
       adoptionError.value = errorCode(error, "template_plan_failed");
