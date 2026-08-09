@@ -70,8 +70,8 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
   Desktop 始终从固定官方 Server origin 分页读取并通过短期签名 URL 下载包，官方端点登录后可投稿。
   匿名用户可浏览和采纳，网络失败时只使用上一份有效分页缓存；自定义端点不提供目录或投稿。
   公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
-  聚合和短期去重，不保留用户/设备下载历史。`distribution/templates` 仅保留历史迁移/验证现场，
-  不参与 Desktop 运行时。浏览器预览继续使用源码 fixture。
+  聚合和短期去重，不保留用户/设备下载历史。旧 `distribution/templates` submodule 已从主仓库移除；
+  Desktop 不再保留 GitHub 模板运行时或本地 seed 依赖。浏览器预览继续使用源码 fixture。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
@@ -115,9 +115,8 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
 - `apps/server` 与 `apps/web-console` 是私有 Git 子模块；开发、CI 与 1Panel 检出都必须运行 `git submodule update --init --recursive` 并具备两个私有仓库的只读权限。它们仍依赖根工作区的 `@godgesture/shared`，协议/OpenAPI/Docker 构建不独立化；理由见 ADR-0015。
-- `distribution/templates` 子模块存在未提交改动：目录仍引用已删除的
-  `packages/global-window-basics.json` 与 `packages/browser-window-basics.json`，同时有未跟踪的
-  `packages/windows-basics.json`；因此当前子模块目录校验失败。该现场属于维护者未集成改动，待确认前不恢复、删除或提交。
+- 旧 `distribution/templates` submodule 已按维护者确认从主仓库移除；历史 GitHub 仓库不再参与
+  Desktop 运行时、发布校验或主仓库递归检出。
 
 ## 文档路由
 

@@ -134,8 +134,6 @@ const productionFiles = [
   "apps/desktop/src/templates/source.ts",
   "apps/desktop/src/views/AboutView.vue",
   "apps/desktop/src/views/TemplatesView.vue",
-  "distribution/templates/README.md",
-  "distribution/templates/catalog.min.json",
 ];
 const productionSources = await Promise.all(
   productionFiles.map((path) => readFile(resolve(root, path), "utf8")),
@@ -153,15 +151,6 @@ const tauriConfig = JSON.parse(
 assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
   `https://github.com/${PRODUCTION_REPOSITORY}/releases/latest/download/latest.json`,
 ]);
-const templateCatalog = JSON.parse(
-  await readFile(resolve(root, "distribution/templates/catalog.json"), "utf8"),
-);
-for (const entry of templateCatalog.entries) {
-  assert.match(
-    entry.packageUrl,
-    /^https:\/\/raw\.githubusercontent\.com\/Mr-BeanSir\/GodGesture-Templates\/main\/packages\//,
-  );
-}
 console.log(
   `Validated signed desktop release workflow for GodGesture ${version} (${Object.values(names).join(", ")})`,
 );

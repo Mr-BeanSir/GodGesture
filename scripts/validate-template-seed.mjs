@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,6 +12,13 @@ const root = resolve(
   "../distribution/templates",
 );
 const packagesDirectory = join(root, "packages");
+try {
+  await access(root);
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
+  console.log("No legacy GitHub template seed is present; Server is the only template catalog source.");
+  process.exit(0);
+}
 const catalogText = await readFile(join(root, "catalog.json"), "utf8");
 const minCatalogText = await readFile(join(root, "catalog.min.json"), "utf8");
 let catalog;

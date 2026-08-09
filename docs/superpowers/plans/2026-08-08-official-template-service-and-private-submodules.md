@@ -15,6 +15,8 @@ regeneration, documentation reconciliation, and targeted/full verification are a
 complete. The approved UI design is implemented: Desktop has a bilingual pre-submission
 review, and Web Console exposes immutable moderation details with history, reports,
 risks, targets, and approve/reject/suspend/restore actions.
+After completion, the maintainer explicitly approved removing the retired
+`distribution/templates` submodule; release validation no longer depends on that seed.
 
 ---
 

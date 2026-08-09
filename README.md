@@ -85,7 +85,6 @@ apps/web-console              私有只读 Web 控制台子模块
 packages/shared               配置、认证、同步与模板共享协议
 packages/sdk                  @godgesture/sdk 可公开发布的插件开发包
 distribution/plugins             插件示例 submodule
-distribution/templates         手势模板 submodule
 docs/adr                      架构决策记录
 ```
 
