@@ -551,6 +551,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/templates/submission-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublicTemplateSubmissionPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync/config": {
         parameters: {
             query?: never;
@@ -2254,6 +2270,19 @@ export interface components {
             sizeBytes: number;
             /** Format: uri */
             url: string;
+        };
+        PublicTemplateSubmissionPolicy: {
+            limits: {
+                dailySubmissionLimit: number;
+                maxPackageBytes: number;
+                pendingVersionLimit: number;
+                publishedTemplateLimit: number;
+            };
+            usage: {
+                pendingVersions: number;
+                publishedTemplates: number;
+                submissionsToday: number;
+            };
         };
         PublicTemplateSubmissionResponse: {
             /** Format: uuid */
@@ -4270,6 +4299,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicTemplateSubmissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current account submission usage and limits. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTemplateSubmissionPolicy"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
                 };
             };
         };

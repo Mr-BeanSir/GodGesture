@@ -55,6 +55,7 @@ const reviewVisible = ref(false);
 const pendingPackage = ref<unknown>(null);
 const pendingReview = ref<{ title: string; summary: string; author: string } | null>(null);
 const pendingRisks = ref<string[]>([]);
+const pendingQuota = ref<{ usage: { submissionsToday: number; pendingVersions: number; publishedTemplates: number }; limits: { dailySubmissionLimit: number; pendingVersionLimit: number; publishedTemplateLimit: number; maxPackageBytes: number } } | null>(null);
 
 const sortedGroups = computed(() =>
   [...props.config.groups].sort((left, right) => left.order - right.order),
@@ -223,6 +224,7 @@ function reset() {
   pendingPackage.value = null;
   pendingReview.value = null;
   pendingRisks.value = [];
+  pendingQuota.value = null;
 }
 
 watch(
@@ -316,6 +318,7 @@ async function exportSelected(submitPublic = false) {
       pendingPackage.value = packageValue;
       pendingReview.value = { title: details.title, summary: details.summary, author: details.author ?? "-" };
       pendingRisks.value = gestureTemplatePackageRisks(packageValue);
+      pendingQuota.value = await account.publicTemplateSubmissionPolicy();
       reviewVisible.value = true;
       return;
     } else if (backend.isTauri) {
@@ -535,6 +538,8 @@ async function confirmPublicSubmission() {
     :gestures="selectedGestureCount"
     :risks="pendingRisks"
     :plugins="selectedPluginIds"
+    :usage="pendingQuota?.usage ?? { submissionsToday: 0, pendingVersions: 0, publishedTemplates: 0 }"
+    :limits="pendingQuota?.limits ?? { dailySubmissionLimit: 0, pendingVersionLimit: 0, publishedTemplateLimit: 0, maxPackageBytes: 0 }"
     @confirm="confirmPublicSubmission"
   />
 </template>

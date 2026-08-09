@@ -524,21 +524,29 @@ fn parse_callback_target(
         ));
     }
     match (code, pending_oauth, error) {
-        (Some(code), None, None) if !code.is_empty() && code.len() <= 512 => Ok(OAuthLoopbackResult {
-            code: Some(code),
-            pending_oauth: None,
-            error: None,
-        }),
-        (None, Some(pending_oauth), None) if !pending_oauth.is_empty() && pending_oauth.len() <= 128 => Ok(OAuthLoopbackResult {
-            code: None,
-            pending_oauth: Some(pending_oauth),
-            error: None,
-        }),
-        (None, None, Some(error)) if !error.is_empty() && error.len() <= 128 => Ok(OAuthLoopbackResult {
-            code: None,
-            pending_oauth: None,
-            error: Some(error),
-        }),
+        (Some(code), None, None) if !code.is_empty() && code.len() <= 512 => {
+            Ok(OAuthLoopbackResult {
+                code: Some(code),
+                pending_oauth: None,
+                error: None,
+            })
+        }
+        (None, Some(pending_oauth), None)
+            if !pending_oauth.is_empty() && pending_oauth.len() <= 128 =>
+        {
+            Ok(OAuthLoopbackResult {
+                code: None,
+                pending_oauth: Some(pending_oauth),
+                error: None,
+            })
+        }
+        (None, None, Some(error)) if !error.is_empty() && error.len() <= 128 => {
+            Ok(OAuthLoopbackResult {
+                code: None,
+                pending_oauth: None,
+                error: Some(error),
+            })
+        }
         _ => Err(NativeAccountError::new(
             "invalid_oauth_callback",
             "OAuth callback must contain exactly one code, pending_oauth, or error",

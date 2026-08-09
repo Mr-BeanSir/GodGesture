@@ -135,6 +135,11 @@ export const PublicTemplateSubmissionResponse = z.object({
   id: z.string().uuid(), versionNumber: z.number().int().positive(), status: z.enum(["pending_review", "published", "rejected", "withdrawn", "suspended"]),
 }).strict();
 export type PublicTemplateSubmissionResponse = z.infer<typeof PublicTemplateSubmissionResponse>;
+export const PublicTemplateSubmissionPolicy = z.object({
+  usage: z.object({ submissionsToday: z.number().int().nonnegative(), pendingVersions: z.number().int().nonnegative(), publishedTemplates: z.number().int().nonnegative() }).strict(),
+  limits: z.object({ dailySubmissionLimit: z.number().int().nonnegative(), pendingVersionLimit: z.number().int().nonnegative(), publishedTemplateLimit: z.number().int().nonnegative(), maxPackageBytes: z.number().int().nonnegative() }).strict(),
+}).strict();
+export type PublicTemplateSubmissionPolicy = z.infer<typeof PublicTemplateSubmissionPolicy>;
 
 const globalPackageTarget = z.object({
   scope: z.literal("global"),

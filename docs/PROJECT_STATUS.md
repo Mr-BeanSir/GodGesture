@@ -13,6 +13,9 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 ## 当前结论
 
+本轮官方模板服务计划 Tasks 0-11 均已实现；Desktop 投稿复核和 Web Console 审核详情均有
+独立测试与生产构建验证。真实 macOS 设备验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。
+
 | 领域 | 状态 | 边界 |
 | --- | --- | --- |
 | M0 仓库奠基 | 已完成 | 独立项目从 stable `v0.1.0` 起演进，不以 WGestures 行为作为产品基准 |
@@ -88,6 +91,8 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 - 当前 Windows 开发实例仍可能锁定默认 `target/debug/godgesture.exe`；需要做 Tauri 构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀现有实例。
 
 ## 已有验证基线
+
+- 2026-08-09 官方模板服务最终验证：`pnpm test`（Shared 84、SDK 1、Desktop 136、Server 128、Web Console 5）、`pnpm typecheck`、`pnpm check:api`、模板/插件/发布校验、Desktop/Web Console 生产构建、Rust 251 passed/3 ignored、Clippy `-D warnings`、rustfmt 和 `git diff --check` 全部通过。
 
 以下保留 2026-08-07 工作区的完整验证基线；在线插件目录、模板插件源、npm/pnpm 锁文件和安装事务恢复
 均已纳入本轮检查。真实 macOS 设备验收仍按上方 M4 清单保持 pending，不能由 Windows 或自动化结果替代：

@@ -54,7 +54,7 @@ The superproject tracks only gitlinks at `apps/server` and `apps/web-console`. B
 - Modify: `.github/workflows/*.yml`, root `README.md`, `apps/server/README-DEPLOY.md`
 - Create: `scripts/__tests__/repository-layout.test.mjs`
 
-- [ ] **Step 1: Reconfirm the protected worktree.**
+- [x] **Step 1: Reconfirm the protected worktree.**
 
 Run:
 
@@ -66,7 +66,7 @@ git -C distribution/templates status --porcelain=v1
 
 Expected: preserve all existing Desktop/Shared/template edits and the known dirty `distribution/templates` submodule. Do not reset, clean, restore, or stage them.
 
-- [ ] **Step 2: Write the failing repository-layout test.**
+- [x] **Step 2: Write the failing repository-layout test.**
 
 Create assertions that `.gitmodules` contains both paths, both paths are gitlinks, and a recursive checkout produces `package.json` in each path:
 
@@ -79,7 +79,7 @@ assert.equal(fs.existsSync("apps/web-console/package.json"), true);
 
 Run `node --test scripts/__tests__/repository-layout.test.mjs`. Expected: FAIL before the split.
 
-- [ ] **Step 3: Filter histories in temporary clones.**
+- [x] **Step 3: Filter histories in temporary clones.**
 
 ```powershell
 $splitRoot = Join-Path $env:TEMP "godgesture-private-split"
@@ -92,7 +92,7 @@ git -C "$splitRoot\web-console" filter-repo --path apps/web-console --path-renam
 
 Verify each filtered repository contains only its application history and root package files.
 
-- [ ] **Step 4: Add scoped repository rules and push private histories.**
+- [x] **Step 4: Add scoped repository rules and push private histories.**
 
 Each private `AGENTS.md` must say it is embedded in GodGesture, protocol changes coordinate with the superproject, credentials stay in environment examples, commits are English, and no push occurs unless explicitly requested.
 
@@ -103,7 +103,7 @@ gh repo create Mr-BeanSir/GodGesture-Web-Console --private --source "$splitRoot\
 
 Expected: both private repositories have a `main` branch before removing tracked directories.
 
-- [ ] **Step 5: Replace tracked directories with submodules.**
+- [x] **Step 5: Replace tracked directories with submodules.**
 
 ```powershell
 git rm -r apps/server apps/web-console
@@ -114,7 +114,7 @@ git submodule update --init --recursive
 
 Update CI checkout to `submodules: recursive` with a secret token/deploy key that can read both private repositories. Update clone/deploy docs with `git clone --recurse-submodules` and `git submodule update --init --recursive`.
 
-- [ ] **Step 6: Verify and commit the split only.**
+- [x] **Step 6: Verify and commit the split only.**
 
 Run the repository-layout test, `pnpm --filter @godgesture/server typecheck`, and `pnpm --filter @godgesture/web-console typecheck`.
 
@@ -135,19 +135,19 @@ git commit -m "chore: split server and web console into private submodules"
 - Modify: `apps/server/README-DEPLOY.md`, `apps/server/docker-compose.prod.yml`, `apps/server/Dockerfile`
 - Test: `scripts/__tests__/repository-layout.test.mjs` and existing release/deploy contract tests
 
-- [ ] **Step 1: Write ADR-0014 before implementation.**
+- [x] **Step 1: Write ADR-0014 before implementation.**
 
 State that Server now owns public user-generated templates, moderation, quotas, versions, and anonymous aggregate metrics; RustFS owns immutable package objects; the official endpoint is anonymously readable; GitHub Templates is no longer a Desktop runtime source. Supersede ADR-0008 only for template distribution while retaining GitHub updater and official-plugin distribution decisions.
 
-- [ ] **Step 2: Update terms and status.**
+- [x] **Step 2: Update terms and status.**
 
 Add “官方公共模板目录”, “模板投稿”, “模板审核”, “模板版本”, “模板撤回”, “模板下架”, and “模板下载次数”. Remove runtime claims about GitHub template catalogs and localized template metadata. Preserve macOS pending language.
 
-- [ ] **Step 3: Document private-submodule operations.**
+- [x] **Step 3: Document private-submodule operations.**
 
 Document recursive checkout for local development, GitHub Actions credentials, and 1Panel deployment. The Server Docker build context remains the superproject root because it builds Shared and Server together.
 
-- [ ] **Step 4: Verify a clean recursive clone.**
+- [x] **Step 4: Verify a clean recursive clone.**
 
 Run from a temporary clone:
 
@@ -171,7 +171,7 @@ pnpm --filter @godgesture/web-console typecheck
 - Modify tests under `packages/shared/src/templates/__tests__/` and `packages/shared/src/plugins/__tests__/`
 - Modify Desktop fixtures under `apps/desktop/src/templates/fixtures.ts` and `apps/desktop/src/plugins/fixtures.ts`
 
-- [ ] **Step 1: Write failing protocol tests.**
+- [x] **Step 1: Write failing protocol tests.**
 
 Test string `title`/`summary`, rejection of localized objects, UUID public identity, absence of template `slug`, duplicate title allowance, 120/512 limits, NFC normalization, rejection of NUL/C0/C1/bidi controls, duplicate tags/gestures, and package size.
 
@@ -191,19 +191,19 @@ expect(() => GestureTemplatePackage.parse({
 })).toThrow();
 ```
 
-- [ ] **Step 2: Implement plain-text validators.**
+- [x] **Step 2: Implement plain-text validators.**
 
 Trim, normalize NFC, enforce Unicode-character limits, reject control/bidi characters, but allow quotes, angle brackets, ampersands, and SQL words. SQL injection remains prevented by Prisma/parameter binding; XSS remains prevented by text rendering and no `v-html`.
 
-- [ ] **Step 3: Replace static catalog types.**
+- [x] **Step 3: Replace static catalog types.**
 
 Public summaries carry `id`, `versionNumber`, `title`, `summary`, live `author`, tags, target summaries, risks, counts, and timestamps. Packages no longer carry slug/package URL/arbitrary repository/ref. Keep local-export `author` only for standalone JSON; Server ignores/removes it for published RustFS content.
 
-- [ ] **Step 4: Simplify plugin requirements.**
+- [x] **Step 4: Simplify plugin requirements.**
 
 Template commands/config keep only `pluginId`. Resolve `pluginId -> subdirectory` from the official plugin catalog. Reject absent/disabled IDs before installation or configuration writes.
 
-- [ ] **Step 5: Verify Shared.**
+- [x] **Step 5: Verify Shared.**
 
 ```powershell
 pnpm --filter @godgesture/shared test
@@ -227,19 +227,19 @@ feat: redefine public template and plugin protocols
 - Create: `apps/server/src/templates/templates.types.ts`
 - Create tests: `apps/server/src/templates/templates.service.spec.ts` and `template-policy.service.spec.ts`
 
-- [ ] **Step 1: Write failing lifecycle and relation tests.**
+- [x] **Step 1: Write failing lifecycle and relation tests.**
 
 Cover UUID creation, non-unique titles, immutable published versions, author ownership, `onDelete: Restrict`, withdrawal, suspension, review transitions, global/per-user quotas, and daily aggregate uniqueness.
 
-- [ ] **Step 2: Add schema models.**
+- [x] **Step 2: Add schema models.**
 
 Add `Template`, `TemplateVersion`, `TemplateReview`, `TemplateReport`, `TemplateDailyMetric`, `TemplateDownloadDedup`, `TemplatePolicy`, and `TemplateUserPolicyOverride`. Use enums for `pending_review`, `published`, `rejected`, `withdrawn`, and `suspended`. Store version title/summary as `VarChar(120/512)`, object key/hash/size, version number, risks, timestamps, and author relation. Never store author snapshots.
 
-- [ ] **Step 3: Add indexes.**
+- [x] **Step 3: Add indexes.**
 
 Index published status + publish date, download count, trending inputs, author, review status, tag/search support, and unique `templateId/versionNumber`. Enforce one daily aggregate row per template/version/date.
 
-- [ ] **Step 4: Apply and verify migration.**
+- [x] **Step 4: Apply and verify migration.**
 
 ```powershell
 pnpm --filter @godgesture/server exec prisma generate
@@ -264,7 +264,7 @@ feat: add public template persistence models
 - Modify: `apps/server/README-DEPLOY.md`
 - Create: `scripts/__tests__/deployment-contract.test.mjs` in the superproject
 
-- [ ] **Step 1: Write failing object-key and failure-transaction tests.**
+- [x] **Step 1: Write failing object-key and failure-transaction tests.**
 
 Assert only server UUIDs/hashes form keys:
 
@@ -274,7 +274,7 @@ templates/{templateId}/versions/{versionId}/{sha256}.json
 
 Test that title/summary/client filename never enter object keys, failed uploads create no DB version, failed DB writes leave cleanup work, and hashes are verified.
 
-- [ ] **Step 2: Configure RustFS.**
+- [x] **Step 2: Configure RustFS.**
 
 Add:
 
@@ -289,19 +289,19 @@ RUSTFS_PUBLIC_DOWNLOAD_TTL_SEC=300
 
 Add RustFS as an internal compose service with a named volume and healthcheck. Do not expose its port publicly.
 
-- [ ] **Step 3: Implement immutable normalized writes.**
+- [x] **Step 3: Implement immutable normalized writes.**
 
 Server validates and canonicalizes JSON, computes SHA-256, writes the generated key, verifies metadata, then commits the DB row. Published objects are never overwritten.
 
-- [ ] **Step 4: Implement five-minute presigned package reads.**
+- [x] **Step 4: Implement five-minute presigned package reads.**
 
 Only published/currently downloadable versions receive URLs. Suspended/withdrawn templates receive no new URL. Return expected size and SHA-256 with the URL.
 
-- [ ] **Step 5: Document coordinated PostgreSQL/RustFS backups.**
+- [x] **Step 5: Document coordinated PostgreSQL/RustFS backups.**
 
 Require same-window backups, checksum inventory, disposable restore rehearsal, and orphan cleanup. State that restoring DB without matching objects is incomplete.
 
-- [ ] **Step 6: Verify compose and commit.**
+- [x] **Step 6: Verify compose and commit.**
 
 ```powershell
 docker compose -f apps/server/docker-compose.prod.yml config
@@ -327,11 +327,11 @@ feat: store immutable template packages in RustFS
 - Modify: `apps/server/src/app.module.ts`
 - Modify: `apps/server/src/openapi/document.ts` and generated OpenAPI artifacts
 
-- [ ] **Step 1: Write failing endpoint tests.**
+- [x] **Step 1: Write failing endpoint tests.**
 
 Cover anonymous list/detail/package, cursor pagination max 50, search/tag/platform/risk filters, sort whitelist, ETag, official-only writes, disabled users, ownership, review status, withdrawals, reports, and admin transitions.
 
-- [ ] **Step 2: Implement anonymous reads.**
+- [x] **Step 2: Implement anonymous reads.**
 
 Add:
 
@@ -343,23 +343,23 @@ GET /api/v1/public/templates/:templateId/versions/:versionNumber/package
 
 Join live User data and return `displayName.trim() || email`. Never expose a `publicAuthorName` field or author leaderboard.
 
-- [ ] **Step 3: Implement official-only submissions.**
+- [x] **Step 3: Implement official-only submissions.**
 
 Add create-template and create-version endpoints. Verify official session, verified email, enabled account, ownership, daily/pending/published limits, body size, strict Shared schema, server-recomputed risks, and official plugin-catalog IDs. Server generates IDs/version numbers and ignores client author.
 
-- [ ] **Step 4: Implement moderation.**
+- [x] **Step 4: Implement moderation.**
 
 Admins approve, reject with reason, suspend, restore, and resolve reports. Every action writes `AdminAuditLog`. Admins cannot alter title/summary/package; corrections require author versions.
 
-- [ ] **Step 5: Implement withdrawal.**
+- [x] **Step 5: Implement withdrawal.**
 
 Author withdrawal hides search/detail adoption and stops new signed URLs but retains immutable versions, reviews, counts, and audit evidence.
 
-- [ ] **Step 6: Implement anonymous download metrics.**
+- [x] **Step 6: Implement anonymous download metrics.**
 
 Count at most once per template version/day/rotating-HMAC visitor key. Keep dedup rows 48 hours, retain only daily aggregates long term, and provide `newest`, `downloads`, and seven-day-weighted `trending` sorts. Do not retain user/device histories.
 
-- [ ] **Step 7: Verify and commit.**
+- [x] **Step 7: Verify and commit.**
 
 ```powershell
 pnpm --filter @godgesture/server test
@@ -385,23 +385,23 @@ feat: add moderated public template API
 - Modify Desktop `stores/account.ts`, account view/API/locales
 - Modify Web Console auth/security API/views/locales
 
-- [ ] **Step 1: Write failing auth tests.**
+- [x] **Step 1: Write failing auth tests.**
 
 Test provider without email, pending OAuth binding expiry, mandatory GodGesture email code, linking to an existing verified email, disabled-user rejection, required email fields, and displayName validation.
 
-- [ ] **Step 2: Make email invariants non-null.**
+- [x] **Step 2: Make email invariants non-null.**
 
 Migrate `User.email` and `emailVerifiedAt` to required. No User is created until verification succeeds. Do not create account-deletion routes.
 
-- [ ] **Step 3: Implement OAuth binding.**
+- [x] **Step 3: Implement OAuth binding.**
 
 OAuth callback creates an expiring pending identity. User supplies email and code. On success, link to an existing enabled User with that email or create a new User; reject disabled users and duplicate provider identities.
 
-- [ ] **Step 4: Implement `GET/PATCH /api/v1/account/profile`.**
+- [x] **Step 4: Implement `GET/PATCH /api/v1/account/profile`.**
 
 Allow empty displayName; otherwise trim/NFC-normalize, max 32, reject controls/bidi. Public template reads use the live relation; account APIs may return private email.
 
-- [ ] **Step 5: Update Desktop/Web flows and verify.**
+- [x] **Step 5: Update Desktop/Web flows and verify.**
 
 Add bilingual email-binding/profile screens and `canSubmitPublicTemplate = official && signedIn`. Run auth, Shared API, Desktop store, and Web Console typechecks, then `pnpm check:api`.
 
@@ -424,23 +424,23 @@ feat: add editable account display names
 - Modify bilingual locales
 - Remove runtime GitHub Templates URL/release/jsDelivr migration paths
 
-- [ ] **Step 1: Write failing client/store tests.**
+- [x] **Step 1: Write failing client/store tests.**
 
 Cover fixed official origin, anonymous cursor pages, sorts/filters, ETag/cache fallback, UUID/version detail/package, checksum validation, withdrawn/suspended errors, and custom endpoint isolation.
 
-- [ ] **Step 2: Implement API/cache source.**
+- [x] **Step 2: Implement API/cache source.**
 
 Use a fixed official catalog origin separate from account `apiOrigin`. Cache versioned pages/details/packages in the existing Tauri catalog cache area. Network failure uses the last valid cache; malformed responses never overwrite it.
 
-- [ ] **Step 3: Implement adoption.**
+- [x] **Step 3: Implement adoption.**
 
 Verify size/hash/schema, resolve `pluginId` through the official plugin catalog, require plugin confirmation, atomically install plugins, then apply config. Keep missing-plugin references if local execution is unavailable.
 
-- [ ] **Step 4: Remove GitHub runtime paths.**
+- [x] **Step 4: Remove GitHub runtime paths.**
 
 Delete catalog/package URL validation and legacy release/raw/jsDelivr fallback code for templates. Browser mode continues deterministic source fixtures.
 
-- [ ] **Step 5: Verify.**
+- [x] **Step 5: Verify.**
 
 ```powershell
 pnpm --filter @godgesture/desktop test -- src/templates src/stores/templates
@@ -464,27 +464,27 @@ feat: consume the official public template service
 - Create: `apps/desktop/src/components/TemplateSubmissionReview.vue`
 - Modify Desktop stores/API/locales
 
-- [ ] **Step 1: Invoke design skills before page decisions.**
+- [x] **Step 1: Invoke design skills before page decisions.**
 
 Run `superpowers:brainstorming`, `frontend-design`, and `design-guide`. Produce a compact GodGesture-specific palette/type/layout/signature plan and ASCII wireframe; critique generic choices before coding. Adapt `design-guide` density/status/focus/composition principles to Vue + Element Plus—do not introduce its React/Tailwind stack. Use `web-design-guidelines` too if available.
 
-- [ ] **Step 2: Write failing export/submission tests.**
+- [x] **Step 2: Write failing export/submission tests.**
 
 Assert no slug/author inputs, title/summary single strings, unsigned export author `"-"`, official signed-in export author `displayName || email`, local export remains available, public button gating, and server-side author authority.
 
-- [ ] **Step 3: Implement the export form.**
+- [x] **Step 3: Implement the export form.**
 
 Remove slug, version, and editable author controls. Keep title, summary, tags, target selection, search, grouping, risk preview, and local JSON export. Generate a neutral UUID filename or timestamped filename without title-derived paths.
 
-- [ ] **Step 4: Implement submission review.**
+- [x] **Step 4: Implement submission review.**
 
 Show computed risks, selected targets, required official plugins, moderation notice, current quota usage, and “提交到公共目录”. Submission returns `pending_review` and ID. Custom endpoint or signed-out states do not render the action.
 
-- [ ] **Step 5: Render user content safely.**
+- [x] **Step 5: Render user content safely.**
 
 Use Vue interpolation only; never `v-html`. Keep title single-line, summary plain text, localized validation/errors, visible focus, keyboard navigation, reduced motion, and light/dark verification.
 
-- [ ] **Step 6: Verify Desktop.**
+- [x] **Step 6: Verify Desktop.**
 
 ```powershell
 pnpm --filter @godgesture/desktop test -- src/utils/gesture-export.test.ts src/stores
@@ -509,19 +509,19 @@ feat: submit exported gestures for public review
 - Modify router/layout/locales
 - Add API/component tests
 
-- [ ] **Step 1: Invoke the required design skills.**
+- [x] **Step 1: Invoke the required design skills.**
 
 Use `superpowers:brainstorming`, `frontend-design`, and `design-guide` before editing Vue. Define the page’s single job as inspecting an immutable version and choosing a status. Use a dense queue, clear status badges, structured command/risk/plugin sections, keyboard focus, and exact empty/error actions. Do not add content editors.
 
-- [ ] **Step 2: Write failing admin tests.**
+- [x] **Step 2: Write failing admin tests.**
 
 Test pagination, non-admin denial, required reasons, approve/reject/suspend/restore, report resolution, immutable content, global policy updates, per-user overrides, hard maxima, and audit records.
 
-- [ ] **Step 3: Implement generated-client APIs and views.**
+- [x] **Step 3: Implement generated-client APIs and views.**
 
 Show string title/summary, live author, target/gesture diff, complete cmd/PowerShell/file/URL details, official plugin subdirectory, risks, hash/size, history, and action reasons. Add global default and per-user quota controls.
 
-- [ ] **Step 4: Verify.**
+- [x] **Step 4: Verify.**
 
 ```powershell
 pnpm --filter @godgesture/web-console typecheck
@@ -545,19 +545,19 @@ feat: moderate public templates and quotas
 - Modify Rust plugin download/workspace tests
 - Modify `distribution/plugins` validation/catalog content
 
-- [ ] **Step 1: Write failing fixed-source tests.**
+- [x] **Step 1: Write failing fixed-source tests.**
 
 Assert only official repo `main` + catalog `subdirectory` resolves; arbitrary repo/ref/path input is rejected; disabled plugin IDs block new installs; existing local plugins are not deleted.
 
-- [ ] **Step 2: Resolve by plugin ID.**
+- [x] **Step 2: Resolve by plugin ID.**
 
 Templates and config store only `pluginId`. Source resolution comes from the official catalog. Installation downloads latest `main` content, validates `package.json.godgesture.id`, runs constrained production-only install, and atomically activates.
 
-- [ ] **Step 3: Add warning and kill switch.**
+- [x] **Step 3: Add warning and kill switch.**
 
 Show localized text that current official repository contents are installed. Admin-disabled entries stop future installs, while existing local projects remain untouched.
 
-- [ ] **Step 4: Verify.**
+- [x] **Step 4: Verify.**
 
 ```powershell
 pnpm validate:plugins
@@ -576,15 +576,15 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib plugin
 - Modify: Desktop/Server/Web README and QA checklists
 - Modify `distribution/templates` only after separate maintainer confirmation
 
-- [ ] **Step 1: Preserve GitHub Templates only as optional seed/import content.**
+- [x] **Step 1: Preserve GitHub Templates only as optional seed/import content.**
 
 If retained, add an explicit Server import command that validates seed JSON and creates approved Server records. Desktop must never read the GitHub template catalog at runtime. Do not alter the currently dirty `distribution/templates` submodule without confirming its separate changes.
 
-- [ ] **Step 2: Regenerate API artifacts across repositories.**
+- [x] **Step 2: Regenerate API artifacts across repositories.**
 
 Update Server OpenAPI, regenerate `packages/shared/src/api/generated.ts`, update Desktop/Web consumers, and pin Server/Web submodule commits in the superproject so one superproject commit identifies a compatible cross-repo set.
 
-- [ ] **Step 3: Run targeted verification.**
+- [x] **Step 3: Run targeted verification.**
 
 ```powershell
 pnpm --filter @godgesture/shared test
@@ -601,11 +601,11 @@ cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
 git diff --check
 ```
 
-- [ ] **Step 4: Close documentation.**
+- [x] **Step 4: Close documentation.**
 
 Record official catalog status, anonymous/offline behavior, private-submodule checkout, RustFS backup evidence, OAuth email binding, live author names, download metrics, latest-main plugin trust, and remaining real-Mac/live-service verification in `docs/PROJECT_STATUS.md`.
 
-- [ ] **Step 5: Commit by domain with explicit paths.**
+- [x] **Step 5: Commit by domain with explicit paths.**
 
 Use English commits such as:
 

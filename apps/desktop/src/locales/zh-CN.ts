@@ -217,7 +217,7 @@ export default {
       pluginSourceMissing: "所选手势引用了尚未声明在线来源的 Node.js 插件: {ids}。请先移除这些手势或补充插件来源。",
       export: "导出 JSON",
         submitPublic: "提交到公共目录",
-        reviewTitle: "提交前复核", confirmSubmit: "确认投稿", moderationNotice: "提交后将进入人工审核,内容不可编辑。", submitted: "模板 {id} 已提交,等待审核。", reviewAuthor: "作者", reviewTargets: "目标 / 手势", reviewRisks: "风险", reviewPlugins: "所需插件", reviewNotice: "标题: {title}\n作者: {author}\n目标: {targets}\n手势: {gestures}\n插件: {plugins}",
+        reviewTitle: "提交前复核", confirmSubmit: "确认投稿", moderationNotice: "提交后将进入人工审核,内容不可编辑。", submitted: "模板 {id} 已提交,等待审核。", reviewAuthor: "作者", reviewTargets: "目标 / 手势", reviewRisks: "风险", reviewPlugins: "所需插件", reviewQuota: "投稿配额", reviewQuotaDaily: "今日投稿", reviewQuotaPending: "待审核版本", reviewNotice: "标题: {title}\n作者: {author}\n目标: {targets}\n手势: {gestures}\n插件: {plugins}",
       saveTitle: "保存手势模板",
       success: "已将 {targets} 个目标、{gestures} 个手势导出为一个 JSON 文件",
       failed: "导出手势模板失败",

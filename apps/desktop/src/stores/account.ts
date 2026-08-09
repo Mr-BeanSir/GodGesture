@@ -4,6 +4,7 @@ import {
   ConfigDocument,
   DEFAULT_SNAPSHOT_PAGE_SIZE,
   PublicTemplateSubmissionResponse,
+  PublicTemplateSubmissionPolicy,
   type MeResponse,
   type OAuthProvider,
   type SnapshotMeta,
@@ -401,6 +402,17 @@ export const useAccountStore = defineStore("account", () => {
     return parsed.data;
   }
 
+  async function publicTemplateSubmissionPolicy(): Promise<PublicTemplateSubmissionPolicy> {
+    if (endpointMode.value !== "official" || phase.value !== "signedIn" || !user.value?.emailVerified) throw new CloudError(403, "official_endpoint_login_required");
+    const cloud = ensureCloud();
+    const response = await cloud.session.authenticatedFetch(`${cloud.session.apiBase}/public/templates/submission-policy`, { headers: { Accept: "application/json" } });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw normalizeCloudError(body);
+    const parsed = PublicTemplateSubmissionPolicy.safeParse(body);
+    if (!parsed.success) throw new CloudError(response.status, "invalid_server_response");
+    return parsed.data;
+  }
+
   async function updateDisplayName(displayName: string): Promise<void> {
     if (phase.value !== "signedIn" || !user.value) throw new CloudError(401, "session_expired");
     const cloud = ensureCloud();
@@ -489,6 +501,7 @@ export const useAccountStore = defineStore("account", () => {
     loadSnapshots,
     restoreSnapshot,
     submitPublicTemplate,
+    publicTemplateSubmissionPolicy,
     updateDisplayName,
     logout,
     discardStoredSession,
