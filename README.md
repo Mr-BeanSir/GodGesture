@@ -55,8 +55,8 @@ pnpm build:shared
 pnpm dev:desktop
 ```
 
-本仓库含有私有 Server 与 Web Console 子模块。首次克隆须使用具读取权限的凭据递归
-检出；已有检出可初始化子模块：
+本仓库含有私有 Server 子模块；Web Console 是其中的 `apps/server/web-console/` Vue/Vite
+源码，而不是独立子模块。首次克隆须使用具读取权限的凭据递归检出；已有检出可初始化子模块：
 
 ```powershell
 git clone --recurse-submodules <superproject-url>
@@ -66,11 +66,15 @@ git submodule update --init --recursive
 同时启动 NestJS 后端和 Web Console:
 
 ```powershell
+# 首次启动前，确保 apps/server/.env 已设置本地 JWT_SECRET，且 Docker 已运行
+docker compose -f apps/server/docker-compose.dev.yml up -d
 pnpm dev:server
 ```
 
-该命令会自动寻找可用的后端和前端端口,等待后端 `/api/v1/health` 就绪后再启动
-Vite,并在终端打印实际访问地址。Windows 若禁止默认端口,无需手动修改配置。
+该命令会生成当前 Prisma Client、应用已提交的本地数据库迁移，再自动寻找可用的后端和前端端口；
+它等待后端 `/api/v1/health` 就绪后再启动 Vite，并在终端打印实际访问地址。Windows 若禁止默认端口,
+无需手动修改配置。完整的本地后端配置、停止容器和定向验证命令见
+[Server 开发说明](apps/server/README.md)。
 
 Desktop 开发首选 `127.0.0.1:14200`，HMR 首选 `14201`；端口被占用时启动器会
 自动选择下一组连续端口。更多入口和验证命令见 [Desktop 开发说明](apps/desktop/README.md) 与
@@ -80,8 +84,7 @@ Desktop 开发首选 `127.0.0.1:14200`，HMR 首选 `14201`；端口被占用时
 
 ```text
 apps/desktop                  Tauri 2 + Rust + Vue 3 桌面端
-apps/server                   私有 NestJS + Prisma + PostgreSQL 子模块
-apps/web-console              私有只读 Web 控制台子模块
+apps/server                   私有 NestJS + Prisma + PostgreSQL 子模块，内置 Vue/Vite Web Console
 packages/shared               配置、认证、同步与模板共享协议
 packages/sdk                  @godgesture/sdk 可公开发布的插件开发包
 distribution/plugins             插件示例 submodule

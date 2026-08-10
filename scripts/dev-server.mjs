@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SERVER_URL = (port) => `http://127.0.0.1:${port}`;
+const DEFAULT_BACKEND_HEALTH_TIMEOUT_MS = 60_000;
 
 function command() {
   return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -36,7 +37,32 @@ function start(args, env) {
   });
 }
 
-async function waitForHealth(url, child, timeoutMs = 30_000) {
+function runPnpm(args, env = {}) {
+  return new Promise((resolve, reject) => {
+    const child = start(args, env);
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0 && !signal) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Command failed: ${args.join(" ")}${signal ? ` (${signal})` : ` (code ${code ?? 1})`}`,
+        ),
+      );
+    });
+  });
+}
+
+async function prepareServer() {
+  console.log("[GodGesture] Generating Prisma Client...");
+  await runPnpm(["--filter", "@godgesture/server", "prisma:generate"]);
+  console.log("[GodGesture] Applying pending database migrations...");
+  await runPnpm(["--filter", "@godgesture/server", "prisma:deploy"]);
+}
+
+async function waitForHealth(url, child, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
@@ -65,6 +91,7 @@ function stop(child) {
 }
 
 export async function runDevServer() {
+  await prepareServer();
   const backendPort = await findPort(3000, 3099, "backend");
   const frontendPort = await findPort(5180, 5279, "Web Console");
   const backendUrl = SERVER_URL(backendPort);
@@ -83,10 +110,14 @@ export async function runDevServer() {
   process.once("SIGTERM", cleanup);
 
   try {
-    await waitForHealth(backendUrl, backend);
+    await waitForHealth(
+      backendUrl,
+      backend,
+      DEFAULT_BACKEND_HEALTH_TIMEOUT_MS,
+    );
     console.log(`[GodGesture] Web Console: http://127.0.0.1:${frontendPort}`);
     frontend = start(
-      ["--filter", "@godgesture/web-console", "dev"],
+      ["--filter", "@godgesture/server", "web:dev"],
       {
         GODGESTURE_SERVER_PORT: String(backendPort),
         GODGESTURE_WEB_PORT: String(frontendPort),

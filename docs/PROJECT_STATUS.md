@@ -6,7 +6,7 @@ Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和
 Web Console 提供审核队列、不可变版本详情、包元数据、历史、举报和审核动作；界面文案
 使用现有 zh-CN/en locale。
 
-最后核对：2026-08-09。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-10。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 `docs/ROADMAP.md` 只记录 stable `v0.1.0` 的历史里程碑。本文不记录逐日开发流水，历史过程以 Git
 提交和保留的 ADR/QA 证据为准。
@@ -25,7 +25,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、全局输入、覆盖层、多屏、AX、Keychain、插件和安装升级需真实 Mac 证据 |
 | M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；公共模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8 文档、乐观并发、后写胜出、快照和离线优先 |
-| M7 Web Console 与分发 | 已完成 | 私有 Web Console 子模块已接入；官方公共模板运行时、审核、举报、配额管理与 RustFS 部署配置已实现 |
+| M7 Web Console 与分发 | 已完成 | Server-owned Vue/Vite Console 已接入；官方公共模板运行时、审核、举报、配额管理与 RustFS 部署配置已实现 |
 | M8 打磨与发布 | stable 基线已完成 | 当前工作区含 stable 之后的本地改动，未因此宣称已有新发布物 |
 
 ## 部件地图
@@ -36,7 +36,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 | Desktop Vue | 设置工作台、账户、模板、插件、同步和本地日志界面；浏览器运行时使用 mock | `apps/desktop/src/App.vue`、`src/views/`、`src/stores/` |
 | Shared | v8 配置、认证、同步/快照分页、模板、在线插件目录、DSL 与 OpenAPI 生成客户端 | `packages/shared/src/` |
 | Server | 私有子模块：NestJS REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
-| Web Console | 私有子模块：只读配置、设备、快照、安全和管理员区域 | `apps/web-console/src/` |
+| Web Console | Server-owned Vue/Vite SPA：只读配置、设备、快照、安全和管理员区域 | `apps/server/web-console/src/` |
 | SDK / demo | `@godgesture/sdk` 开发类型与 `distribution/plugins/plugins/gesture-demo` 五生命周期示例 | `packages/sdk/`、`distribution/plugins/` |
 | 发布与部署 | GitHub Actions、Windows NSIS、macOS universal ad-hoc DMG、1Panel Compose | `.github/workflows/`、`docs/*_RELEASE.md`、`apps/server/README-DEPLOY.md` |
 
@@ -62,6 +62,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 - Desktop 自动同步使用 30 秒尾随防抖、启动/定时拉取和手动立即同步；refresh token 只进 Windows Credential Manager/macOS Keychain，不进 WebView。
 - Server API 前缀为 `/api/v1`。快照列表使用 `page/pageSize` 服务端分页，默认 10、单次最多 50，列表不读取正文；恢复使用版本 CAS。
 - OAuth 已绑定身份继续使用一次性授权码 + PKCE 登录；首次出现的第三方身份不会依据提供方邮箱自动创建或关联账户，必须先通过 GodGesture 邮箱验证码完成绑定。Desktop 与 Web Console 均支持该 pending OAuth 流程。
+- Web Console 在已保存会话因瞬时网络、限流或无效响应而恢复失败时保留本地凭证，并在登录页提供原受保护路由的重试入口；只有服务端明确判定会话失效时才清理凭证。
 - Web Console 首屏读取分组/应用索引，选中应用后按需读取手势；全局应用置顶，分组和应用按同步顺序展示。
 - `distribution/plugins` 仍是官方插件仓库 submodule，项目统一位于 `plugins/<subdirectory>/`；Desktop
   固定从 `Mr-BeanSir/GodGesture-Plugins` 的 `main/catalog.min.json` 读取插件目录并在校验后缓存。
@@ -76,6 +77,8 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 ### 本地日志与发布
 
+- `pnpm dev:server` 会先生成 Prisma Client 并幂等应用已提交迁移，再等待后端健康检查后启动 Web Console；本地 PostgreSQL 与 RustFS 仍由 `apps/server/docker-compose.dev.yml` 提供。
+
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
 - Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和官方在线插件目录通过 GitHub 分发。公共模板目录使用 Server 的 PostgreSQL + RustFS：RustFS 仅在内部 Docker 网络运行，包对象不可变，公开下载使用五分钟签名 URL；数据库与对象存储必须同窗口备份和恢复演练。匿名用户可读取官方目录，投稿仅限已验证邮箱的官方端点登录用户；自定义端点不提供公共目录或投稿。
@@ -87,10 +90,13 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 - 真实 Mac：TCC 授权/拒绝、全局输入吞噬、点击透传、X1/X2、Retina 多屏、Spaces/全屏覆盖层、AX 命令、Bundle ID/图标、Keychain、插件热更新/依赖恢复和已安装升级。逐项记录在 [`docs/qa/M4_MACOS_SMOKE.md`](qa/M4_MACOS_SMOKE.md)。
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理仍未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 的真实客户端凭证、SMTP 和生产 Prisma 迁移需部署环境验证；本地契约测试不等于 live OAuth/SMTP 通过。
+- 本地 Docker 构建已验证 Server 与 Console 静态资源进入同一 Linux 镜像；这不替代真实 1Panel 部署、生产数据库迁移、live OAuth/SMTP 或生产 RustFS 验收。
 - 本地日志真实目录权限、轮转、重启恢复、Node 崩溃回退和跨平台文件行为仍需平台观察；自动化日志测试只证明代码契约。
 - 当前 Windows 开发实例仍可能锁定默认 `target/debug/godgesture.exe`；需要做 Tauri 构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀现有实例。
 
 ## 已有验证基线
+
+- 2026-08-10 Server-owned Web Console 验证：`pnpm --filter @godgesture/server typecheck`、`test`（Jest 19 passed / 1 skipped，166 passed / 13 skipped；Console Vitest 18 files / 122 tests）、`build`、`test:e2e`（1 suite / 4 tests）、`pnpm check:api`、`pnpm test:repository-layout`、开发启动脚本测试和标准 Docker build 均通过；共享助记符 SVG 已进入生产构建。真实 macOS、live OAuth/SMTP 和 1Panel 仍 pending。
 
 - 2026-08-09 官方模板服务最终验证：`pnpm test`（Shared 84、SDK 1、Desktop 136、Server 128、Web Console 5）、`pnpm typecheck`、`pnpm check:api`、模板/插件/发布校验、Desktop/Web Console 生产构建、Rust 251 passed/3 ignored、Clippy `-D warnings`、rustfmt 和 `git diff --check` 全部通过。
 
@@ -111,10 +117,11 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 ## 当前工作区备注
 
-- 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供审核备注、举报处理说明和用户配额覆盖入口。Server 与 Web Console 继续作为私有子模块维护。
+- 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供审核备注、举报处理说明和用户配额覆盖入口。Web Console 源码、构建脚本与生产静态产物由私有 Server 子模块统一维护。
+- Web Console 已使用 Tailwind v4、项目内 Vue 原语与 Lucide 替代 Element Plus；全局设计真源为 `design-system/godgesture-web-console/MASTER.md`，模板审核例外记录在其 `pages/template-moderation.md`。新增或重大调整路由必须先读取持久化设计系统并执行对应 `ui-ux-pro-max` Vue/UX 查询。
 
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
-- `apps/server` 与 `apps/web-console` 是私有 Git 子模块；开发、CI 与 1Panel 检出都必须运行 `git submodule update --init --recursive` 并具备两个私有仓库的只读权限。它们仍依赖根工作区的 `@godgesture/shared`，协议/OpenAPI/Docker 构建不独立化；理由见 ADR-0015。
+- `apps/server` 是私有 Git 子模块；开发、CI 与 1Panel 检出必须运行 `git submodule update --init --recursive` 并具备该私有仓库的只读权限。Web Console 位于 `apps/server/web-console/`，仍通过根工作区依赖 `@godgesture/shared`；协议、OpenAPI 与 Docker 构建边界不独立化，理由见 ADR-0015、ADR-0016。
 - 旧 `distribution/templates` submodule 已按维护者确认从主仓库移除；历史 GitHub 仓库不再参与
   Desktop 运行时、发布校验或主仓库递归检出。
 
