@@ -29,7 +29,7 @@ introduce raw per-screen colors.
 | Surface | `#ffffff` | `#111c2e` |
 | Surface muted | `#f1f5f9` | `#172338` |
 | Text | `#0f172a` | `#f8fafc` |
-| Text muted | `#607087` | `#94a3b8` |
+| Text muted | `#607087` | `#a8b7ca` |
 | Border | `#dbe3ee` | `#314158` |
 | Primary | `#0369a1` | `#38bdf8` |
 | On primary | `#ffffff` | `#082f49` |

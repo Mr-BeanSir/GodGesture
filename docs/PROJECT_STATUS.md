@@ -96,6 +96,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 ## 已有验证基线
 
+- 2026-08-11 Server-owned Web Console 收尾验证：`pnpm --filter @godgesture/server test` 通过 Server Jest `18 suites / 129 tests` 与 Console Vitest `19 files / 141 tests`，`typecheck`、统一生产 `build`、E2E `1 suite / 4 tests`、仓库布局 `6/6`、开发启动脚本 `1/1`、Server 范围的无 Element Plus 扫描及两个 `pnpm why` 查询均通过。生产 Docker 镜像重新构建后，临时容器的 `/api/v1/health`、`/`、`/devices` 为 `200`，未知 API 与 docs 路径均保持 JSON `404`，容器已清理；合成 API 的浏览器验收覆盖浅色/深色 `375/768/1023/1024/1440px`，断点导航、表格、焦点迁移和页面级横向溢出均符合设计系统。`pnpm check:api` 在 Windows checkout 仅因已检出 `openapi.json` 为 CRLF 而生成文件为 LF 未通过；归一化行尾后内容逐字一致，未发现 OpenAPI 语义漂移。真实 macOS、live OAuth/SMTP、1Panel 与生产部署仍 pending。
 - 2026-08-10 Server-owned Web Console 验证：`pnpm --filter @godgesture/server typecheck`、`test`（Jest 19 passed / 1 skipped，166 passed / 13 skipped；Console Vitest 18 files / 122 tests）、`build`、`test:e2e`（1 suite / 4 tests）、`pnpm check:api`、`pnpm test:repository-layout`、开发启动脚本测试和标准 Docker build 均通过；共享助记符 SVG 已进入生产构建。真实 macOS、live OAuth/SMTP 和 1Panel 仍 pending。
 
 - 2026-08-09 官方模板服务最终验证：`pnpm test`（Shared 84、SDK 1、Desktop 136、Server 128、Web Console 5）、`pnpm typecheck`、`pnpm check:api`、模板/插件/发布校验、Desktop/Web Console 生产构建、Rust 251 passed/3 ignored、Clippy `-D warnings`、rustfmt 和 `git diff --check` 全部通过。
