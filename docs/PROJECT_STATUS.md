@@ -1,14 +1,15 @@
 # GodGesture 当前项目状态
 
-## 官方模板与 Web Console（2026-08-11）
+## 官方模板与 Web Console（2026-08-12）
 
 Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
 Web Console 提供审核队列、不可变版本详情、包元数据、历史、举报和审核动作；Desktop
 继续使用 zh-CN/en locale，Web Console 则固定使用 zh-CN，保留 vue-i18n 文案 key 层但只
 注册中文 locale，移除浏览器语言检测、locale 持久化和顶部语言选择器。左侧导航分为用户
-功能与管理员功能，管理员区仅对管理员显示。
+功能与管理员功能，管理员区仅对管理员显示。配置查看中的应用分组使用树形连接线呈现
+应用层级，中间项和末项分别保持连续分支与收口分支。
 
-最后核对：2026-08-11。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-12。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 与 [`docs/history/`](history/)。
@@ -98,6 +99,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 
 ## 已有验证基线
 
+- 2026-08-12 Web Console 配置应用树验证：`pnpm --filter @godgesture/server web:test` 通过 `19 files / 145 tests`，`pnpm --filter @godgesture/server web:typecheck` 与 `pnpm --filter @godgesture/server web:build` 均通过；Chrome 登录态下 `http://127.0.0.1:5180/config` 实测三项应用形成两个连续分支和一个末端收口分支，浅色/深色主题边框 token 均生效，`1480px` 桌面、`375px` 竖屏和 `812px` 横屏均无横向溢出。
 - 2026-08-11 Server-owned Web Console 收尾验证：`pnpm --filter @godgesture/server test` 通过 Server Jest `18 suites / 129 tests` 与 Console Vitest `19 files / 141 tests`，`typecheck`、统一生产 `build`、E2E `1 suite / 4 tests`、仓库布局 `6/6`、开发启动脚本 `1/1`、Server 范围的无 Element Plus 扫描及两个 `pnpm why` 查询均通过。生产 Docker 镜像重新构建后，临时容器的 `/api/v1/health`、`/`、`/devices` 为 `200`，未知 API 与 docs 路径均保持 JSON `404`，容器已清理；合成 API 的浏览器验收覆盖浅色/深色 `375/768/1023/1024/1440px`，断点导航、表格、焦点迁移和页面级横向溢出均符合设计系统。`pnpm check:api` 在 Windows checkout 仅因已检出 `openapi.json` 为 CRLF 而生成文件为 LF 未通过；归一化行尾后内容逐字一致，未发现 OpenAPI 语义漂移。真实 macOS、live OAuth/SMTP、1Panel 与生产部署仍 pending。
 - 2026-08-11 Web Console 中文与导航分区验证：`pnpm --filter @godgesture/server web:test` 通过 `19 files / 144 tests`，`pnpm --filter @godgesture/server web:typecheck` 与 `pnpm --filter @godgesture/server web:build` 均通过；固定 zh-CN、顶部语言选择器移除、管理员/用户导航分区、非管理员隐藏及移动端焦点行为均有 focused/回归测试覆盖。
 - 2026-08-11 模板策略安全补丁验证：Server Jest `20 suites / 171 passed / 13 skipped`，空 HMAC 回退、生产 HMAC/JWT 分离和集成数据库 guard 均通过；`pnpm test:template-integration` 仅接受数据库名以 `_test` 结尾的 `TEST_DATABASE_URL`，先执行全部迁移再运行父状态并发套件 `13/13`，缺少 URL 会立即失败。临时数据库已清理；开发库迁移状态已核对，未执行集成测试的清空步骤。
