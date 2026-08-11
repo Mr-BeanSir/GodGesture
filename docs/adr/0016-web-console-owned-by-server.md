@@ -21,8 +21,8 @@ Web Console 与 NestJS Server 始终以同一 REST/OpenAPI 协议、同一部署
 - 根仓库移除 `apps/web-console` gitlink 与 `.gitmodules` 条目；其历史保留在原私有
   仓库，不再是运行时、CI 或部署检出的必需子模块。
 - `apps/server/web-console/` 是由 Server 包拥有的 Vue 3 + Vite SPA。它仍以
-  `workspace:*` 消费根工作区的 `@godgesture/shared`，并保留 zh-CN/en 的 vue-i18n
-  文案约束。
+  `workspace:*` 消费根工作区的 `@godgesture/shared`。Web Console 固定使用 `zh-CN`，
+  但继续保留 vue-i18n 文案 key 层，避免组件直接硬编码文案并为未来扩展保留边界。
 - 它仍是单独编译的前端；NestJS 继续拥有 REST、认证、授权、Prisma、RustFS 和 OpenAPI，
   不把 Vue 源码合入 Nest 模块。
 - 开发环境由 Vite 提供 SPA 并代理 `/api`；生产环境仅由 Nest 托管构建后的 SPA，且
@@ -35,6 +35,13 @@ Web Console 与 NestJS Server 始终以同一 REST/OpenAPI 协议、同一部署
   仍可通过 REST API 使用同一 Server，不依赖该静态页面。
 - 此迁移不改变 API 前缀、认证令牌存储、账户/设备/快照/模板审核权限或 OpenAPI 合同。
   API 协议变更仍须协调 Shared、Desktop 与所有消费者并运行 `pnpm check:api`。
+
+## 2026-08-11 语言策略修订
+
+维护者确认 Web Console 暂不需要多语言兼容，因此本修订取代本 ADR 早期关于 Console
+同时保留 `zh-CN/en` locale 的约束。Console 仅注册并加载 `zh-CN`，删除英文 locale、
+浏览器语言检测、locale 持久化和顶部语言选择器；Desktop 继续保留 `zh-CN/en`。上述调整
+不改变 Server-owned 边界、API 合同或鉴权权限模型。
 
 ## 后果
 
