@@ -1,20 +1,20 @@
 # GodGesture 当前项目状态
 
-## 官方模板审核界面（2026-08-09）
+## 官方模板与 Web Console（2026-08-11）
 
 Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
 Web Console 提供审核队列、不可变版本详情、包元数据、历史、举报和审核动作；界面文案
 使用现有 zh-CN/en locale。
 
-最后核对：2026-08-10。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-11。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
-`docs/ROADMAP.md` 只记录 stable `v0.1.0` 的历史里程碑。本文不记录逐日开发流水，历史过程以 Git
-提交和保留的 ADR/QA 证据为准。
+本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
+与 [`docs/history/`](history/)。
 
 ## 当前结论
 
-本轮官方模板服务计划 Tasks 0-11 均已实现；Desktop 投稿复核和 Web Console 审核详情均有
-独立测试与生产构建验证。真实 macOS 设备验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。
+官方模板服务、Desktop 投稿复核和 Web Console 审核详情均已实现，并有独立测试与生产构建验证。
+真实 macOS 设备验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。
 
 | 领域 | 状态 | 边界 |
 | --- | --- | --- |
@@ -73,13 +73,13 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
   公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
   聚合和短期去重，不保留用户/设备下载历史。旧 `distribution/templates` submodule 已从主仓库移除；
   Desktop 不再保留 GitHub 模板运行时或本地 seed 依赖。浏览器预览继续使用源码 fixture。
+- 全局 `TemplatePolicy` 是数据库级单例：迁移确定性保留历史重复记录中最新的一条，并以 `singleton=true` 的唯一键与 CHECK 约束拒绝任何第二条或 `false` 记录；Server 所有策略读取和更新均按该唯一键定位。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
 ### 本地日志与发布
 
-- `pnpm dev:server` 会先生成 Prisma Client 并幂等应用已提交迁移，再等待后端健康检查后启动 Web Console；本地 PostgreSQL 与 RustFS 仍由 `apps/server/docker-compose.dev.yml` 提供。
-
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
+- `pnpm dev:server` 会先生成 Prisma Client 并幂等应用已提交迁移，再等待后端健康检查后启动 Web Console；本地 PostgreSQL 与 RustFS 仍由 `apps/server/docker-compose.dev.yml` 提供。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
 - Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和官方在线插件目录通过 GitHub 分发。公共模板目录使用 Server 的 PostgreSQL + RustFS：RustFS 仅在内部 Docker 网络运行，包对象不可变，公开下载使用五分钟签名 URL；数据库与对象存储必须同窗口备份和恢复演练。匿名用户可读取官方目录，投稿仅限已验证邮箱的官方端点登录用户；自定义端点不提供公共目录或投稿。
 
@@ -90,37 +90,23 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 - 真实 Mac：TCC 授权/拒绝、全局输入吞噬、点击透传、X1/X2、Retina 多屏、Spaces/全屏覆盖层、AX 命令、Bundle ID/图标、Keychain、插件热更新/依赖恢复和已安装升级。逐项记录在 [`docs/qa/M4_MACOS_SMOKE.md`](qa/M4_MACOS_SMOKE.md)。
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理仍未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 的真实客户端凭证、SMTP 和生产 Prisma 迁移需部署环境验证；本地契约测试不等于 live OAuth/SMTP 通过。
-- 本地 Docker 构建已验证 Server 与 Console 静态资源进入同一 Linux 镜像；这不替代真实 1Panel 部署、生产数据库迁移、live OAuth/SMTP 或生产 RustFS 验收。
+- 2026-08-10 本地 Docker 构建已成功生成包含 Server 与 Console 静态资源的 Linux 镜像；这不替代真实 1Panel 部署、生产数据库迁移、live OAuth/SMTP 或生产 RustFS 验收。
 - 本地日志真实目录权限、轮转、重启恢复、Node 崩溃回退和跨平台文件行为仍需平台观察；自动化日志测试只证明代码契约。
 - 当前 Windows 开发实例仍可能锁定默认 `target/debug/godgesture.exe`；需要做 Tauri 构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀现有实例。
 
 ## 已有验证基线
 
-- 2026-08-11 模板策略安全补丁验证：Server Jest `20 suites / 171 passed / 13 skipped`，空 HMAC 回退、生产 HMAC/JWT 分离和集成数据库 guard 均通过；`pnpm test:template-integration` 仅接受数据库名以 `_test` 结尾的 `TEST_DATABASE_URL`，先执行全部迁移再运行父状态并发套件 `13/13`，缺少 URL 会立即失败。临时数据库已清理；开发库迁移状态已核对，未执行集成测试的清空步骤。
 - 2026-08-11 Server-owned Web Console 收尾验证：`pnpm --filter @godgesture/server test` 通过 Server Jest `18 suites / 129 tests` 与 Console Vitest `19 files / 141 tests`，`typecheck`、统一生产 `build`、E2E `1 suite / 4 tests`、仓库布局 `6/6`、开发启动脚本 `1/1`、Server 范围的无 Element Plus 扫描及两个 `pnpm why` 查询均通过。生产 Docker 镜像重新构建后，临时容器的 `/api/v1/health`、`/`、`/devices` 为 `200`，未知 API 与 docs 路径均保持 JSON `404`，容器已清理；合成 API 的浏览器验收覆盖浅色/深色 `375/768/1023/1024/1440px`，断点导航、表格、焦点迁移和页面级横向溢出均符合设计系统。`pnpm check:api` 在 Windows checkout 仅因已检出 `openapi.json` 为 CRLF 而生成文件为 LF 未通过；归一化行尾后内容逐字一致，未发现 OpenAPI 语义漂移。真实 macOS、live OAuth/SMTP、1Panel 与生产部署仍 pending。
-- 2026-08-10 Server-owned Web Console 验证：`pnpm --filter @godgesture/server typecheck`、`test`（Jest 19 passed / 1 skipped，166 passed / 13 skipped；Console Vitest 18 files / 122 tests）、`build`、`test:e2e`（1 suite / 4 tests）、`pnpm check:api`、`pnpm test:repository-layout`、开发启动脚本测试和标准 Docker build 均通过；共享助记符 SVG 已进入生产构建。真实 macOS、live OAuth/SMTP 和 1Panel 仍 pending。
+- 2026-08-11 模板策略安全补丁验证：Server Jest `20 suites / 171 passed / 13 skipped`，空 HMAC 回退、生产 HMAC/JWT 分离和集成数据库 guard 均通过；`pnpm test:template-integration` 仅接受数据库名以 `_test` 结尾的 `TEST_DATABASE_URL`，先执行全部迁移再运行父状态并发套件 `13/13`，缺少 URL 会立即失败。临时数据库已清理；开发库迁移状态已核对，未执行集成测试的清空步骤。
 
-- 2026-08-09 官方模板服务最终验证：`pnpm test`（Shared 84、SDK 1、Desktop 136、Server 128、Web Console 5）、`pnpm typecheck`、`pnpm check:api`、模板/插件/发布校验、Desktop/Web Console 生产构建、Rust 251 passed/3 ignored、Clippy `-D warnings`、rustfmt 和 `git diff --check` 全部通过。
-
-以下保留 2026-08-07 工作区的完整验证基线；在线插件目录、模板插件源、npm/pnpm 锁文件和安装事务恢复
-均已纳入本轮检查。真实 macOS 设备验收仍按上方 M4 清单保持 pending，不能由 Windows 或自动化结果替代：
-
-- `pnpm test`：Shared `86/86`、SDK `1/1`、Desktop `140/140`、Server `97/97`；Web Console 当前无测试，脚本正常退出。
-- `pnpm typecheck`：Shared、SDK、Desktop、Server、Web Console 全部通过；`pnpm --filter @godgesture/desktop build` 的 `vue-tsc` 与 Vite 生产构建通过。
-- `pnpm check:api`：OpenAPI 生成检查与 `packages/shared` 产物一致。
-- `pnpm validate:templates` 严格校验新格式 seed；当前维护者保留的旧 GitHub seed 会明确报告为待 Server 导入，不参与 Desktop 运行时。`pnpm validate:plugins`、`pnpm validate:plugin-demo`、`pnpm validate:release` 分别验证插件目录、5 个插件生命周期和发布合同；插件子模块的 `scripts/validate-content.mjs` 同时校验 `catalog.json` 与 `catalog.min.json`。
-- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`：`251 passed, 3 ignored`；忽略项为性能、Task Scheduler 和实时 GitHub smoke，未将其计入自动化通过数。
-- `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- -D warnings`、`cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`、`git diff --check`：通过。
-- Vite 构建仅保留既有 VueUse 注释、较大 chunk 和 Tauri identifier 建议警告；未出现新的编译错误。
-- 2026-08-08 定向验证：Desktop `vue-tsc --noEmit`、模板/插件 source 与模板 store 测试 `23/23`、Rust
-  `cargo check`、`cargo fmt -- --check` 和 `git diff --check` 通过；本轮按维护者要求未运行全量测试。
-- 2026-08-08 知识收尾定向验证：Desktop 模板/插件 source 测试 `18/18`、Shared 模板协议测试 `11/11`、
-  Desktop `vue-tsc --noEmit` 和 `git diff --check` 通过；未运行全量测试。
+更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
+及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
 
 ## 当前工作区备注
 
 - 官方公共模板服务已接入 PostgreSQL + RustFS 的 UUID 版本对象、分页目录、七日趋势排序、平台筛选、审核举报处理和全局/用户级可调配额；管理员控制台提供审核备注、举报处理说明和用户配额覆盖入口。Web Console 源码、构建脚本与生产静态产物由私有 Server 子模块统一维护。
 - Web Console 已使用 Tailwind v4、项目内 Vue 原语与 Lucide 替代 Element Plus；全局设计真源为 `design-system/godgesture-web-console/MASTER.md`，模板审核例外记录在其 `pages/template-moderation.md`。新增或重大调整路由必须先读取持久化设计系统并执行对应 `ui-ux-pro-max` Vue/UX 查询。
+- 模板审核转换在交互式事务内以版本 ID 与来源状态执行条件更新；失去竞争时返回既有 `invalid_template_moderation_action_state`，且不会再写模板状态、审核记录或管理员审计。管理员、模板审核/举报、设备、快照、安全和会话退出确认均把进行中状态传给共享对话框，忙碌时不能经 Escape、遮罩或图标关闭绕过确认。
 
 - `distribution/plugins` 子模块工作树干净，目录校验通过。
 - `apps/server` 是私有 Git 子模块；开发、CI 与 1Panel 检出必须运行 `git submodule update --init --recursive` 并具备该私有仓库的只读权限。Web Console 位于 `apps/server/web-console/`，仍通过根工作区依赖 `@godgesture/shared`；协议、OpenAPI 与 Docker 构建边界不独立化，理由见 ADR-0015、ADR-0016。
@@ -133,6 +119,7 @@ Web Console 提供审核队列、不可变版本详情、包元数据、历史�
 - 架构决策只通过 [`docs/adr/README.md`](adr/README.md) 按领域选择；当前输入/覆盖层/Node 重点看 ADR-0013、ADR-0006、ADR-0012。
 - 用户操作看 [`docs/USER_GUIDE.md`](USER_GUIDE.md)；插件看 [`docs/SCRIPTING.md`](SCRIPTING.md)；按键/文字 DSL 看 [`docs/SEND_TEXT_DSL.md`](SEND_TEXT_DSL.md)。
 - 发布看 [`docs/DESKTOP_RELEASE.md`](DESKTOP_RELEASE.md)、[`docs/MACOS_RELEASE.md`](MACOS_RELEASE.md) 和 [`apps/server/README-DEPLOY.md`](../apps/server/README-DEPLOY.md)；物理平台验收看 `docs/qa/`。
+- 历史里程碑和逐轮验证按需看 [`docs/CHANGELOG.md`](CHANGELOG.md)；stable `v0.1.0` 的完整发布验收证据看 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。普通开发任务不要默认读取历史资料。
 
 ## 接手要求
 

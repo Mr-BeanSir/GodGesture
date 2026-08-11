@@ -11,7 +11,8 @@ WGestures 配置导入是用户迁移能力,不代表 WGestures 仍是产品基�
 2. 运行 `git status --porcelain=v1` 和 `git log --oneline -12`,保护用户已有改动。
 3. 通过 `docs/adr/README.md` 只选择与当前任务相关的 ADR,不要默认通读全部历史
    决策。按受影响领域再读取对应 README、发布指南或 QA 清单。
-4. `docs/ROADMAP.md` 仅记录 `v0.1.0` 的历史里程碑,不定义后续版本需求。
+4. `docs/CHANGELOG.md` 和 `docs/history/` 仅保存历史/发布审计资料。普通开发任务不要默认读取,
+   只有追溯历史或执行发布审计时按需读取。
 
 ## 不得静默改变的边界
 
