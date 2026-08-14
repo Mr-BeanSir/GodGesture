@@ -2597,6 +2597,54 @@ export interface components {
             ok: true;
         };
         TemplateModerationDetailResponse: {
+            author: string;
+            downloadCount: number;
+            history: {
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                publishedAt: string | null;
+                /** @enum {string} */
+                status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+                /** Format: date-time */
+                submittedAt: string;
+                title: string;
+                versionNumber: number;
+            }[];
+            packageHash: string;
+            /** Format: uri */
+            packageUrl: string | null;
+            /** Format: date-time */
+            publishedAt: string | null;
+            reports: {
+                /** Format: date-time */
+                createdAt: string;
+                reason: string;
+                reporter: string;
+                resolution: string | null;
+                /** Format: date-time */
+                resolvedAt: string | null;
+                /** @enum {string} */
+                status: "open" | "resolved" | "dismissed";
+            }[];
+            /** Format: date-time */
+            reviewedAt: string | null;
+            reviews: {
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                decision: "approved" | "rejected";
+                reason: string;
+                reviewer: string;
+            }[];
+            risks: ("script" | "commandLine" | "fileOrProgram" | "externalUrl")[];
+            sizeBytes: number;
+            /** @enum {string} */
+            status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+            /** Format: date-time */
+            submittedAt: string;
+            summary: string;
+            tags: string[];
             targetDetails: ({
                 intents: {
                     command: {
@@ -2813,6 +2861,30 @@ export interface components {
                     matchByExactPath: boolean;
                 };
             })[];
+            targetSummaries: ({
+                /** @enum {string} */
+                scope: "global";
+            } | {
+                mac?: {
+                    bundleId: string;
+                };
+                name: string;
+                /** @enum {string} */
+                scope: "app";
+                windows?: {
+                    aumid?: string;
+                    exactPath?: string;
+                    exeName: string;
+                    /** @default false */
+                    matchByExactPath: boolean;
+                };
+            })[];
+            /** Format: uuid */
+            templateId: string;
+            title: string;
+            /** Format: uuid */
+            versionId: string;
+            versionNumber: number;
         };
         TemplateModerationListQuery: {
             /** Format: uuid */
