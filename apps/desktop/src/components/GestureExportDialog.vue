@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, type Directive } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronDown, ChevronRight, Download, Search } from "lucide-vue-next";
+import { ChevronDown, ChevronRight, Download, Search, Upload } from "lucide-vue-next";
 import { AppAlert, AppBadge, AppButton, AppDialog, pushToast } from "@godgesture/ui";
-import { gestureTemplatePackageRisks, type AppEntry, type AppGroup, type ConfigDocument } from "@godgesture/shared";
+import {
+  gestureTemplatePackageRisks,
+  type AppEntry,
+  type AppGroup,
+  type ConfigDocument,
+  type OwnedTemplate,
+  type OwnedTemplateVersion,
+} from "@godgesture/shared";
 import {
   buildGestureTemplatePackage,
   intentsForGestureExportTarget,
@@ -52,8 +59,19 @@ const expandedGroups = ref<Record<string, boolean>>({});
 const validationError = ref<string | null>(null);
 const exporting = ref(false);
 const reviewVisible = ref(false);
+const currentStep = ref<1 | 2>(1);
+const deliveryMode = ref<"json" | "server">("json");
+const serverSubmissionMode = ref<"new" | "update">("new");
+const ownedTemplates = ref<OwnedTemplate[]>([]);
+const ownedTemplatesLoading = ref(false);
+const ownedTemplatesLoaded = ref(false);
+const ownedTemplatesError = ref<string | null>(null);
+const selectedOwnedTemplateId = ref("");
 const pendingPackage = ref<unknown>(null);
 const pendingReview = ref<{ title: string; summary: string; author: string } | null>(null);
+const pendingSubmissionMode = ref<"new" | "update">("new");
+const pendingTargetTemplateId = ref<string | null>(null);
+const pendingTargetVersion = ref<OwnedTemplateVersion | null>(null);
 const pendingRisks = ref<string[]>([]);
 const pendingQuota = ref<{ usage: { submissionsToday: number; pendingVersions: number; publishedTemplates: number }; limits: { dailySubmissionLimit: number; pendingVersionLimit: number; publishedTemplateLimit: number; maxPackageBytes: number } } | null>(null);
 
@@ -200,7 +218,24 @@ const selectedPluginIds = computed(() => [
 const canExport = computed(() =>
   !exporting.value && selectedTargets.value.length > 0 && selectedPluginIds.value.length === 0,
 );
-const canSubmitPublic = computed(() => canSubmitPublicTemplate({ endpointMode: account.endpointMode, phase: account.phase, emailVerified: Boolean(account.user?.emailVerified) }));
+const canSubmitPublic = computed(() =>
+  canSubmitPublicTemplate({
+    endpointMode: account.endpointMode,
+    phase: account.phase,
+    emailVerified: Boolean(account.user?.emailVerified),
+  }),
+);
+const selectedOwnedTemplate = computed(() =>
+  ownedTemplates.value.find((template) => template.id === selectedOwnedTemplateId.value) ?? null,
+);
+const selectedOwnedTemplateVersion = computed(() =>
+  selectedOwnedTemplate.value?.versions[0] ?? null,
+);
+const canSubmitCurrentServerMode = computed(() => {
+  if (deliveryMode.value !== "server") return true;
+  if (serverSubmissionMode.value === "new") return true;
+  return selectedOwnedTemplateVersion.value != null;
+});
 
 const vIndeterminate: Directive<HTMLInputElement, boolean> = {
   mounted(element, binding) {
@@ -231,6 +266,67 @@ function groupSelectionState(group: AppGroup): "checked" | "mixed" | "unchecked"
   return "unchecked";
 }
 
+function latestTemplateVersion(template: OwnedTemplate): OwnedTemplateVersion {
+  return template.versions[0]!;
+}
+
+function canUpdateOwnedTemplate(template: OwnedTemplate): boolean {
+  return template.status !== "pending_review" && template.status !== "suspended";
+}
+
+function ownedTemplateLabel(template: OwnedTemplate): string {
+  const version = latestTemplateVersion(template);
+  return `${version.title} · v${version.versionNumber} · ${t(`gestures.exportDialog.templateStatus.${template.status}`)}`;
+}
+
+function setDelivery(mode: "json" | "server") {
+  deliveryMode.value = mode;
+  validationError.value = null;
+  if (mode !== "server") {
+    serverSubmissionMode.value = "new";
+    selectedOwnedTemplateId.value = "";
+  }
+}
+
+async function loadOwnedTemplates(force = false) {
+  if (deliveryMode.value !== "server" || !canSubmitPublic.value) return;
+  if (ownedTemplatesLoading.value || (ownedTemplatesLoaded.value && !force)) return;
+
+  ownedTemplatesLoading.value = true;
+  ownedTemplatesError.value = null;
+  try {
+    const response = await account.ownedPublicTemplates();
+    ownedTemplates.value = response.templates;
+    ownedTemplatesLoaded.value = true;
+    if (
+      selectedOwnedTemplate.value
+      && !canUpdateOwnedTemplate(selectedOwnedTemplate.value)
+    ) {
+      selectedOwnedTemplateId.value = "";
+    }
+  } catch {
+    ownedTemplates.value = [];
+    ownedTemplatesError.value = t("gestures.exportDialog.ownedTemplatesFailed");
+  } finally {
+    ownedTemplatesLoading.value = false;
+  }
+}
+
+async function goToStepTwo() {
+  if (exporting.value || currentStep.value === 2) return;
+  validationError.value = null;
+  currentStep.value = 2;
+  if (deliveryMode.value === "server") {
+    await loadOwnedTemplates();
+  }
+}
+
+function goBackToDelivery() {
+  if (exporting.value) return;
+  validationError.value = null;
+  currentStep.value = 1;
+}
+
 function requestClose() {
   if (!exporting.value) visible.value = false;
 }
@@ -245,9 +341,21 @@ function reset() {
     sortedGroups.value.map((group) => [group.id, false]),
   );
   validationError.value = null;
+  exporting.value = false;
   reviewVisible.value = false;
+  currentStep.value = 1;
+  deliveryMode.value = "json";
+  serverSubmissionMode.value = "new";
+  ownedTemplates.value = [];
+  ownedTemplatesLoading.value = false;
+  ownedTemplatesLoaded.value = false;
+  ownedTemplatesError.value = null;
+  selectedOwnedTemplateId.value = "";
   pendingPackage.value = null;
   pendingReview.value = null;
+  pendingSubmissionMode.value = "new";
+  pendingTargetTemplateId.value = null;
+  pendingTargetVersion.value = null;
   pendingRisks.value = [];
   pendingQuota.value = null;
 }
@@ -262,7 +370,15 @@ watch(
 );
 
 watch(
-  () => [form.title, form.summary, form.tags, selectedIds.value],
+  () => [
+    form.title,
+    form.summary,
+    form.tags,
+    selectedIds.value,
+    deliveryMode.value,
+    serverSubmissionMode.value,
+    selectedOwnedTemplateId.value,
+  ],
   () => {
     validationError.value = null;
   },
@@ -327,6 +443,10 @@ async function exportSelected(submitPublic = false) {
     });
     return;
   }
+  if (submitPublic && deliveryMode.value === "server" && serverSubmissionMode.value === "update" && !selectedOwnedTemplateVersion.value) {
+    validationError.value = t("gestures.exportDialog.ownedTemplateRequired");
+    return;
+  }
 
   exporting.value = true;
   try {
@@ -338,15 +458,27 @@ async function exportSelected(submitPublic = false) {
       details,
     );
     const serialized = `${JSON.stringify(packageValue, null, 2)}\n`;
-    if (submitPublic) {
+    if (submitPublic && deliveryMode.value === "server") {
       if (!canSubmitPublic.value) return;
       pendingPackage.value = packageValue;
-      pendingReview.value = { title: details.title, summary: details.summary, author: details.author ?? "-" };
+      pendingReview.value = {
+        title: details.title,
+        summary: details.summary,
+        author: details.author ?? "-",
+      };
+      pendingSubmissionMode.value = serverSubmissionMode.value;
+      pendingTargetTemplateId.value = serverSubmissionMode.value === "update"
+        ? selectedOwnedTemplate.value?.id ?? null
+        : null;
+      pendingTargetVersion.value = serverSubmissionMode.value === "update"
+        ? selectedOwnedTemplateVersion.value
+        : null;
       pendingRisks.value = gestureTemplatePackageRisks(packageValue);
       pendingQuota.value = await account.publicTemplateSubmissionPolicy();
       reviewVisible.value = true;
       return;
-    } else if (backend.isTauri) {
+    }
+    if (backend.isTauri) {
       const savedPath = await backend.gestureTemplateSave(
         gestureTemplateExportFileName(),
         serialized,
@@ -356,10 +488,13 @@ async function exportSelected(submitPublic = false) {
     } else {
       downloadJson(gestureTemplateExportFileName(), packageValue);
     }
-    pushToast({ kind: "success", message: t("gestures.exportDialog.success", {
-      targets: selectedTargets.value.length,
-      gestures: selectedGestureCount.value,
-    }) });
+    pushToast({
+      kind: "success",
+      message: t("gestures.exportDialog.success", {
+        targets: selectedTargets.value.length,
+        gestures: selectedGestureCount.value,
+      }),
+    });
     visible.value = false;
   } catch {
     validationError.value = t("gestures.exportDialog.failed");
@@ -370,15 +505,23 @@ async function exportSelected(submitPublic = false) {
 
 async function confirmPublicSubmission() {
   if (!pendingPackage.value) return;
+  if (pendingSubmissionMode.value === "update" && !pendingTargetTemplateId.value) {
+    validationError.value = t("gestures.exportDialog.ownedTemplateRequired");
+    return;
+  }
   exporting.value = true;
   try {
-    const result = await account.submitPublicTemplate(pendingPackage.value);
+    const result = pendingSubmissionMode.value === "update"
+      ? await account.submitPublicTemplateVersion(pendingTargetTemplateId.value!, pendingPackage.value)
+      : await account.submitPublicTemplate(pendingPackage.value);
     pushToast({ kind: "success", message: t("gestures.exportDialog.submitted", { id: result.id }) });
     reviewVisible.value = false;
     visible.value = false;
+  } catch {
+    validationError.value = t("gestures.exportDialog.failed");
+  } finally {
+    exporting.value = false;
   }
-  catch { validationError.value = t("gestures.exportDialog.failed"); }
-  finally { exporting.value = false; }
 }
 </script>
 
@@ -392,184 +535,323 @@ async function confirmPublicSubmission() {
     @close="requestClose"
   >
     <div class="gesture-export">
-      <p class="gg-hint gesture-export__intro">{{ t("gestures.exportDialog.description") }}</p>
-
-      <section class="gesture-export__section">
-        <form class="gesture-export__form" @submit.prevent="exportSelected()">
-          <div class="gesture-export__form-grid">
-            <div class="gesture-export__form-column">
-              <div class="gesture-export__field">
-                <label for="gesture-export-title">{{ t("gestures.exportDialog.templateTitle") }}</label>
-                <input id="gesture-export-title" v-model="form.title" class="gg-input" type="text" maxlength="120" />
-                <span class="gesture-export__field-count" aria-live="polite">{{ form.title.length }} / 120</span>
-              </div>
-              <div class="gesture-export__field">
-                <label for="gesture-export-tags">{{ t("gestures.exportDialog.tags") }}</label>
-                <input
-                  id="gesture-export-tags"
-                  v-model="form.tags"
-                  class="gg-input"
-                  type="text"
-                  :placeholder="t('gestures.exportDialog.tagsPlaceholder')"
-                />
-              </div>
-            </div>
-            <div class="gesture-export__field gesture-export__summary-field">
-              <label for="gesture-export-summary">{{ t("gestures.exportDialog.templateSummary") }}</label>
-              <textarea
-                id="gesture-export-summary"
-                v-model="form.summary"
-                class="gg-textarea"
-                rows="4"
-                maxlength="512"
-              />
-              <span class="gesture-export__field-count" aria-live="polite">{{ form.summary.length }} / 512</span>
-            </div>
-          </div>
-        </form>
-      </section>
-
-      <section class="gesture-export__section gesture-export__targets">
-        <div class="gesture-export__section-head">
+      <template v-if="currentStep === 1">
+        <section class="gesture-export__delivery">
           <div>
-            <h3>{{ t("gestures.exportDialog.targetsTitle") }}</h3>
-            <p class="gg-hint">{{ t("gestures.exportDialog.targetsHint") }}</p>
+            <h3>{{ t("gestures.exportDialog.deliveryTitle") }}</h3>
+            <p class="gg-hint gesture-export__intro">{{ t("gestures.exportDialog.deliveryHint") }}</p>
           </div>
-          <AppBadge class="gesture-export__selection-count" variant="neutral">
-            {{ t("gestures.exportDialog.selectedCount", { count: selectedTargets.length, gestures: selectedGestureCount }) }}
-          </AppBadge>
-        </div>
-
-        <div class="gesture-export__target-toolbar">
-          <div class="gesture-export__search">
-            <Search aria-hidden="true" />
-            <input
-              id="gesture-export-search"
-              v-model="query"
-              class="gg-input"
-              type="search"
-              :aria-label="t('gestures.exportDialog.searchPlaceholder')"
-              :placeholder="t('gestures.exportDialog.searchPlaceholder')"
-            />
-          </div>
-          <div class="gesture-export__target-actions">
-            <AppButton variant="quiet" size="sm" @click="selectAll">{{ t("gestures.exportDialog.selectAll") }}</AppButton>
-            <AppButton variant="quiet" size="sm" @click="clearSelection">{{ t("gestures.exportDialog.clearSelection") }}</AppButton>
-            <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(true)">
-              {{ t("gestures.exportDialog.expandAll") }}
-            </AppButton>
-            <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(false)">
-              {{ t("gestures.exportDialog.collapseAll") }}
-            </AppButton>
-          </div>
-        </div>
-
-        <div class="gesture-export__target-list">
-          <label v-if="globalVisible" class="gesture-export__target-row">
-            <input
-              id="gesture-export-target-global"
-              class="gg-checkbox"
-              type="checkbox"
-              :checked="isSelected('__global__')"
-              :disabled="!targetCanExport(globalTarget())"
-              @change="selectionChanged('__global__', $event)"
-            />
-            <span class="gesture-export__target-name">{{ t("gestures.globalApp") }}</span>
-            <span class="gesture-export__target-count">
-              {{ targetIntents(globalTarget()).length }}
-            </span>
-          </label>
-          <div v-if="!globalVisible && filteredGroups.length === 0" class="gesture-export__empty">
-            {{ t("gestures.exportDialog.noResults") }}
-          </div>
-
-          <div v-for="item in filteredGroups" :key="item.group.id" class="gesture-export__group">
-            <div class="gesture-export__group-head">
-              <button
-                type="button"
-                class="gesture-export__group-toggle"
-                :aria-expanded="isGroupExpanded(item.group.id)"
-              @click="toggleGroupExpanded(item.group.id)"
+          <div class="gesture-export__delivery-grid">
+            <button
+              id="gesture-export-delivery-json"
+              type="button"
+              class="gesture-export__delivery-card"
+              :class="{ 'is-selected': deliveryMode === 'json' }"
+              :aria-pressed="deliveryMode === 'json'"
+              @click="setDelivery('json')"
             >
-                <ChevronDown v-if="isGroupExpanded(item.group.id)" aria-hidden="true" />
-                <ChevronRight v-else aria-hidden="true" />
-                <span>{{ item.group.name }}</span>
-                <span class="gesture-export__group-count">{{ item.apps.length }}</span>
-              </button>
-              <label class="gesture-export__group-select">
-                <input
-                  v-indeterminate="groupSelectionState(item.group) === 'mixed'"
-                  class="gg-checkbox"
-                  type="checkbox"
-                  :checked="groupSelectionState(item.group) === 'checked'"
-                  :disabled="selectableIdsForGroup(item.group).length === 0"
-                  @change="toggleGroup(item.group)"
-                />
-                {{ t("gestures.exportDialog.selectGroup") }}
-              </label>
-            </div>
-            <div v-if="isGroupExpanded(item.group.id)" class="gesture-export__group-apps">
-              <label
-                v-for="app in item.apps"
-                :key="app.id"
-                class="gesture-export__target-row gesture-export__target-row--app"
-              :class="{ 'is-disabled': !targetCanExport(targetForApp(app)) }"
+              <Download aria-hidden="true" />
+              <div class="gesture-export__delivery-copy">
+                <span class="gesture-export__delivery-title">{{ t("gestures.exportDialog.deliveryJsonTitle") }}</span>
+                <span class="gg-hint">{{ t("gestures.exportDialog.deliveryJsonDescription") }}</span>
+              </div>
+            </button>
+            <button
+              v-if="canSubmitPublic"
+              id="gesture-export-delivery-server"
+              type="button"
+              class="gesture-export__delivery-card"
+              :class="{ 'is-selected': deliveryMode === 'server' }"
+              :aria-pressed="deliveryMode === 'server'"
+              @click="setDelivery('server')"
             >
-                <input
-                  class="gg-checkbox"
-                  type="checkbox"
-                  :checked="isSelected(app.id)"
-                  :disabled="!targetCanExport(targetForApp(app))"
-                  @change="selectionChanged(app.id, $event)"
-                />
-                <span class="gesture-export__target-name">{{ app.name }}</span>
-                <span class="gesture-export__target-binding">
-                  {{ app.windows?.exeName || app.mac?.bundleId || t("gestures.exportDialog.noBinding") }}
-                </span>
-                <span class="gesture-export__target-count">{{ app.intents.length }}</span>
-              </label>
+              <Upload aria-hidden="true" />
+              <div class="gesture-export__delivery-copy">
+                <span class="gesture-export__delivery-title">{{ t("gestures.exportDialog.deliveryServerTitle") }}</span>
+                <span class="gg-hint">{{ t("gestures.exportDialog.deliveryServerDescription") }}</span>
+              </div>
+            </button>
+          </div>
+        </section>
+      </template>
+
+      <template v-else>
+        <p class="gg-hint gesture-export__intro">{{ t("gestures.exportDialog.description") }}</p>
+
+        <section
+          v-if="deliveryMode === 'server'"
+          class="gesture-export__section"
+        >
+          <div class="gesture-export__section-head">
+            <div>
+              <h3>{{ t("gestures.exportDialog.submissionModeTitle") }}</h3>
+              <p class="gg-hint">{{ t("gestures.exportDialog.submissionModeHint") }}</p>
             </div>
           </div>
-          <div v-if="globalVisible && filteredGroups.length === 0" class="gesture-export__empty">
-            {{ t("gestures.exportDialog.noApps") }}
-          </div>
-        </div>
-      </section>
 
-      <AppAlert
-        v-if="selectedPluginIds.length"
-        class="gesture-export__alert"
-        variant="warning"
-        :title="t('gestures.exportDialog.pluginSourceMissing', { ids: selectedPluginIds.join(', ') })"
-      />
-      <AppAlert
-        v-if="validationError"
-        class="gesture-export__alert"
-        variant="error"
-        :title="validationError"
-      />
+          <div class="gesture-export__server-mode">
+            <label class="gesture-export__radio-card" :class="{ 'is-selected': serverSubmissionMode === 'new' }">
+              <input
+                id="gesture-export-submission-new"
+                v-model="serverSubmissionMode"
+                class="gg-radio"
+                type="radio"
+                name="gesture-export-submission-mode"
+                value="new"
+              />
+              <span>
+                <strong>{{ t("gestures.exportDialog.submissionModeNew") }}</strong>
+                <small>{{ t("gestures.exportDialog.submissionModeNewHint") }}</small>
+              </span>
+            </label>
+            <label class="gesture-export__radio-card" :class="{ 'is-selected': serverSubmissionMode === 'update' }">
+              <input
+                id="gesture-export-submission-update"
+                v-model="serverSubmissionMode"
+                class="gg-radio"
+                type="radio"
+                name="gesture-export-submission-mode"
+                value="update"
+              />
+              <span>
+                <strong>{{ t("gestures.exportDialog.submissionModeUpdate") }}</strong>
+                <small>{{ t("gestures.exportDialog.submissionModeUpdateHint") }}</small>
+              </span>
+            </label>
+          </div>
+
+          <div v-if="serverSubmissionMode === 'update'" class="gesture-export__field gesture-export__server-field">
+            <label for="gesture-export-owned-template">{{ t("gestures.exportDialog.ownedTemplateLabel") }}</label>
+            <p v-if="ownedTemplatesLoading" class="gg-hint">{{ t("gestures.exportDialog.ownedTemplatesLoading") }}</p>
+            <template v-else>
+              <select
+                id="gesture-export-owned-template"
+                v-model="selectedOwnedTemplateId"
+                class="gg-input"
+              >
+                <option value="">{{ t("gestures.exportDialog.ownedTemplatePlaceholder") }}</option>
+                <option
+                  v-for="template in ownedTemplates"
+                  :key="template.id"
+                  :value="template.id"
+                  :disabled="!canUpdateOwnedTemplate(template)"
+                >
+                  {{ ownedTemplateLabel(template) }}
+                </option>
+              </select>
+              <p v-if="selectedOwnedTemplateVersion" class="gg-hint">
+                {{
+                  t("gestures.exportDialog.ownedTemplateCurrentVersion", {
+                    title: selectedOwnedTemplateVersion.title,
+                    version: selectedOwnedTemplateVersion.versionNumber,
+                  })
+                }}
+              </p>
+              <p v-else-if="!ownedTemplates.length" class="gg-hint">
+                {{ t("gestures.exportDialog.ownedTemplatesEmpty") }}
+              </p>
+            </template>
+            <AppAlert
+              v-if="ownedTemplatesError"
+              class="gesture-export__alert"
+              variant="error"
+              :title="ownedTemplatesError"
+            >
+              <template #actions>
+                <AppButton size="sm" variant="secondary" :disabled="ownedTemplatesLoading" @click="loadOwnedTemplates(true)">
+                  {{ t("common.retry") }}
+                </AppButton>
+              </template>
+            </AppAlert>
+          </div>
+        </section>
+
+        <section class="gesture-export__section">
+          <form class="gesture-export__form" @submit.prevent="exportSelected(deliveryMode === 'server')">
+            <div class="gesture-export__form-grid">
+              <div class="gesture-export__form-column">
+                <div class="gesture-export__field">
+                  <label for="gesture-export-title">{{ t("gestures.exportDialog.templateTitle") }}</label>
+                  <input id="gesture-export-title" v-model="form.title" class="gg-input" type="text" maxlength="120" />
+                  <span class="gesture-export__field-count" aria-live="polite">{{ form.title.length }} / 120</span>
+                </div>
+                <div class="gesture-export__field">
+                  <label for="gesture-export-tags">{{ t("gestures.exportDialog.tags") }}</label>
+                  <input
+                    id="gesture-export-tags"
+                    v-model="form.tags"
+                    class="gg-input"
+                    type="text"
+                    :placeholder="t('gestures.exportDialog.tagsPlaceholder')"
+                  />
+                </div>
+              </div>
+              <div class="gesture-export__field gesture-export__summary-field">
+                <label for="gesture-export-summary">{{ t("gestures.exportDialog.templateSummary") }}</label>
+                <textarea
+                  id="gesture-export-summary"
+                  v-model="form.summary"
+                  class="gg-textarea"
+                  rows="4"
+                  maxlength="512"
+                />
+                <span class="gesture-export__field-count" aria-live="polite">{{ form.summary.length }} / 512</span>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="gesture-export__section gesture-export__targets">
+          <div class="gesture-export__section-head">
+            <div>
+              <h3>{{ t("gestures.exportDialog.targetsTitle") }}</h3>
+              <p class="gg-hint">{{ t("gestures.exportDialog.targetsHint") }}</p>
+            </div>
+            <AppBadge class="gesture-export__selection-count" variant="neutral">
+              {{ t("gestures.exportDialog.selectedCount", { count: selectedTargets.length, gestures: selectedGestureCount }) }}
+            </AppBadge>
+          </div>
+
+          <div class="gesture-export__target-toolbar">
+            <div class="gesture-export__search">
+              <Search aria-hidden="true" />
+              <input
+                id="gesture-export-search"
+                v-model="query"
+                class="gg-input"
+                type="search"
+                :aria-label="t('gestures.exportDialog.searchPlaceholder')"
+                :placeholder="t('gestures.exportDialog.searchPlaceholder')"
+              />
+            </div>
+            <div class="gesture-export__target-actions">
+              <AppButton variant="quiet" size="sm" @click="selectAll">{{ t("gestures.exportDialog.selectAll") }}</AppButton>
+              <AppButton variant="quiet" size="sm" @click="clearSelection">{{ t("gestures.exportDialog.clearSelection") }}</AppButton>
+              <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(true)">
+                {{ t("gestures.exportDialog.expandAll") }}
+              </AppButton>
+              <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(false)">
+                {{ t("gestures.exportDialog.collapseAll") }}
+              </AppButton>
+            </div>
+          </div>
+
+          <div class="gesture-export__target-list">
+            <label v-if="globalVisible" class="gesture-export__target-row">
+              <input
+                id="gesture-export-target-global"
+                class="gg-checkbox"
+                type="checkbox"
+                :checked="isSelected('__global__')"
+                :disabled="!targetCanExport(globalTarget())"
+                @change="selectionChanged('__global__', $event)"
+              />
+              <span class="gesture-export__target-name">{{ t("gestures.globalApp") }}</span>
+              <span class="gesture-export__target-count">
+                {{ targetIntents(globalTarget()).length }}
+              </span>
+            </label>
+            <div v-if="!globalVisible && filteredGroups.length === 0" class="gesture-export__empty">
+              {{ t("gestures.exportDialog.noResults") }}
+            </div>
+
+            <div v-for="item in filteredGroups" :key="item.group.id" class="gesture-export__group">
+              <div class="gesture-export__group-head">
+                <button
+                  type="button"
+                  class="gesture-export__group-toggle"
+                  :aria-expanded="isGroupExpanded(item.group.id)"
+                  @click="toggleGroupExpanded(item.group.id)"
+                >
+                  <ChevronDown v-if="isGroupExpanded(item.group.id)" aria-hidden="true" />
+                  <ChevronRight v-else aria-hidden="true" />
+                  <span>{{ item.group.name }}</span>
+                  <span class="gesture-export__group-count">{{ item.apps.length }}</span>
+                </button>
+                <label class="gesture-export__group-select">
+                  <input
+                    v-indeterminate="groupSelectionState(item.group) === 'mixed'"
+                    class="gg-checkbox"
+                    type="checkbox"
+                    :checked="groupSelectionState(item.group) === 'checked'"
+                    :disabled="selectableIdsForGroup(item.group).length === 0"
+                    @change="toggleGroup(item.group)"
+                  />
+                  {{ t("gestures.exportDialog.selectGroup") }}
+                </label>
+              </div>
+              <div v-if="isGroupExpanded(item.group.id)" class="gesture-export__group-apps">
+                <label
+                  v-for="app in item.apps"
+                  :key="app.id"
+                  class="gesture-export__target-row gesture-export__target-row--app"
+                  :class="{ 'is-disabled': !targetCanExport(targetForApp(app)) }"
+                >
+                  <input
+                    class="gg-checkbox"
+                    type="checkbox"
+                    :checked="isSelected(app.id)"
+                    :disabled="!targetCanExport(targetForApp(app))"
+                    @change="selectionChanged(app.id, $event)"
+                  />
+                  <span class="gesture-export__target-name">{{ app.name }}</span>
+                  <span class="gesture-export__target-binding">
+                    {{ app.windows?.exeName || app.mac?.bundleId || t("gestures.exportDialog.noBinding") }}
+                  </span>
+                  <span class="gesture-export__target-count">{{ app.intents.length }}</span>
+                </label>
+              </div>
+            </div>
+            <div v-if="globalVisible && filteredGroups.length === 0" class="gesture-export__empty">
+              {{ t("gestures.exportDialog.noApps") }}
+            </div>
+          </div>
+        </section>
+
+        <AppAlert
+          v-if="selectedPluginIds.length"
+          class="gesture-export__alert"
+          variant="warning"
+          :title="t('gestures.exportDialog.pluginSourceMissing', { ids: selectedPluginIds.join(', ') })"
+        />
+        <AppAlert
+          v-if="validationError"
+          class="gesture-export__alert"
+          variant="error"
+          :title="validationError"
+        />
+      </template>
     </div>
 
     <template #footer>
-      <AppButton :disabled="exporting" @click="requestClose">{{ t("common.cancel") }}</AppButton>
-      <AppButton
-        v-if="canSubmitPublic"
-        variant="secondary"
-        :loading="exporting"
-        :disabled="!canExport"
-        @click="exportSelected(true)"
-      >
-        {{ t("gestures.exportDialog.submitPublic") }}
-      </AppButton>
-      <AppButton
-        variant="primary"
-        :loading="exporting"
-        :disabled="!canExport"
-        @click="exportSelected()"
-      >
-        <Download aria-hidden="true" />
-        {{ t("gestures.exportDialog.export") }}
-      </AppButton>
+      <template v-if="currentStep === 1">
+        <AppButton :disabled="exporting" @click="requestClose">{{ t("common.cancel") }}</AppButton>
+        <AppButton variant="primary" :disabled="exporting" @click="goToStepTwo">
+          {{ t("common.next") }}
+        </AppButton>
+      </template>
+      <template v-else>
+        <AppButton :disabled="exporting" @click="goBackToDelivery">{{ t("common.back") }}</AppButton>
+        <AppButton
+          v-if="deliveryMode === 'server'"
+          variant="secondary"
+          :loading="exporting"
+          :disabled="!canExport || !canSubmitCurrentServerMode"
+          @click="exportSelected(true)"
+        >
+          {{ t("gestures.exportDialog.submitPublic") }}
+        </AppButton>
+        <AppButton
+          v-else
+          variant="primary"
+          :loading="exporting"
+          :disabled="!canExport"
+          @click="exportSelected()"
+        >
+          <Download aria-hidden="true" />
+          {{ t("gestures.exportDialog.export") }}
+        </AppButton>
+      </template>
     </template>
   </AppDialog>
   <TemplateSubmissionReview
@@ -580,6 +862,8 @@ async function confirmPublicSubmission() {
     :author="pendingReview.author"
     :targets="selectedTargets.length"
     :gestures="selectedGestureCount"
+    :submission-mode="pendingSubmissionMode"
+    :target-version="pendingTargetVersion"
     :risks="pendingRisks"
     :plugins="selectedPluginIds"
     :usage="pendingQuota?.usage ?? { submissionsToday: 0, pendingVersions: 0, publishedTemplates: 0 }"
@@ -592,6 +876,58 @@ async function confirmPublicSubmission() {
 <style scoped>
 .gesture-export { min-width: 0; }
 .gesture-export__intro { margin: 0 0 12px; }
+.gesture-export__delivery {
+  display: grid;
+  gap: 12px;
+}
+.gesture-export__delivery h3 {
+  margin: 0;
+  color: var(--gg-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+.gesture-export__delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.gesture-export__delivery-card,
+.gesture-export__radio-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  background: var(--gg-surface);
+  color: var(--gg-text);
+  text-align: left;
+}
+.gesture-export__delivery-card {
+  cursor: pointer;
+}
+.gesture-export__delivery-card svg {
+  width: 18px;
+  height: 18px;
+  color: var(--gg-primary);
+}
+.gesture-export__delivery-card.is-selected,
+.gesture-export__radio-card.is-selected {
+  border-color: color-mix(in srgb, var(--gg-primary) 70%, var(--gg-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gg-primary) 40%, transparent);
+}
+.gesture-export__delivery-copy,
+.gesture-export__radio-card span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.gesture-export__delivery-title {
+  font-size: 13px;
+  font-weight: 600;
+}
 .gesture-export__section {
   border-top: 1px solid var(--gg-border);
   padding-top: 12px;
@@ -611,6 +947,27 @@ async function confirmPublicSubmission() {
   line-height: 20px;
 }
 .gesture-export__section-head p { margin: 3px 0 0; }
+.gesture-export__server-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.gesture-export__radio-card input {
+  margin-top: 2px;
+}
+.gesture-export__radio-card strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.gesture-export__radio-card small {
+  color: var(--gg-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.gesture-export__server-field {
+  margin-top: 10px;
+}
 .gesture-export__form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

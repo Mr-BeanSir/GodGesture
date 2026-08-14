@@ -18,10 +18,10 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 ## 当前结论
 
 官方模板服务、Desktop 投稿复核、共享 UI 迁移和 Web Console 审核详情均已实现；管理员系统配置、账户
-搜索/编辑和模板审核标签页已接入当前工作区。管理员控制台本轮五项界面与设备登录问题已完成代码和定向
-验证。`/admin/system` 现在使用共享、可访问且不持久化展开状态的折叠 panel：模板策略默认展开，RustFS
-默认收起且凭证状态徽章持续可见；折叠不会清空未保存字段。真实 Windows/macOS 原生窗口与输入验收、live
-OAuth/SMTP 和生产部署仍按下方边界保持 pending。
+搜索/编辑、模板审核标签页和作者模板管理页已接入当前工作区。管理员控制台本轮五项界面与设备登录问题已
+完成代码和定向验证。`/admin/system` 现在使用共享、可访问且不持久化展开状态的折叠 panel：模板策略默认
+展开，RustFS 默认收起且凭证状态徽章持续可见；折叠不会清空未保存字段。真实 Windows/macOS 原生窗口与
+输入验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。
 
 | 领域 | 状态 | 边界 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ OAuth/SMTP 和生产部署仍按下方边界保持 pending。
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、全局输入、覆盖层、多屏、AX、Keychain、插件和安装升级需真实 Mac 证据 |
 | M5 后端与账户 | 已完成 | 私有 Server 子模块；OAuth/SMTP 凭证由部署环境提供；公共模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8 文档、乐观并发、后写胜出、快照和离线优先 |
-| M7 Web Console 与分发 | 已完成 | Server-owned Vue/Vite Console 已接入；官方公共模板运行时、审核、举报、配额管理、系统配置、账户编辑与 RustFS 动态配置已实现 |
+| M7 Web Console 与分发 | 已完成 | Server-owned Vue/Vite Console 已接入；官方公共模板运行时、审核、举报、配额管理、系统配置、账户编辑、作者模板管理与 RustFS 动态配置已实现 |
 | M8 打磨与发布 | stable 基线已完成 | 当前工作区含 stable 之后的本地改动，未因此宣称已有新发布物 |
 
 ## 部件地图
@@ -44,7 +44,7 @@ OAuth/SMTP 和生产部署仍按下方边界保持 pending。
 | Shared | v8 配置、认证、同步/快照分页、模板、在线插件目录、DSL 与 OpenAPI 生成客户端 | `packages/shared/src/` |
 | Shared UI | 无业务 Vue 原语、`--gg-*` token、Dialog/确认/Toast 与基础状态组件 | `packages/ui/src/` |
 | Server | 私有子模块：NestJS REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
-| Web Console | Server-owned Vue/Vite SPA：只读配置、设备、快照、安全和管理员区域；以薄适配层消费共享 UI | `apps/server/web-console/src/` |
+| Web Console | Server-owned Vue/Vite SPA：只读配置、设备、快照、安全、作者模板和管理员区域；以薄适配层消费共享 UI | `apps/server/web-console/src/` |
 | SDK / demo | `@godgesture/sdk` 开发类型与 `distribution/plugins/plugins/gesture-demo` 五生命周期示例 | `packages/sdk/`、`distribution/plugins/` |
 | 发布与部署 | GitHub Actions、Windows NSIS、macOS universal ad-hoc DMG、1Panel Compose | `.github/workflows/`、`docs/*_RELEASE.md`、`apps/server/README-DEPLOY.md` |
 
@@ -90,6 +90,12 @@ OAuth/SMTP 和生产部署仍按下方边界保持 pending。
   公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
   聚合和短期去重，不保留用户/设备下载历史。旧 `distribution/templates` submodule 已从主仓库移除；
   Desktop 不再保留 GitHub 模板运行时或本地 seed 依赖。浏览器预览继续使用源码 fixture。
+- 官方模板作者生命周期已接入：Server 以不可变版本处理同一模板族的重新投稿，被驳回或已撤回模板可创建
+  新版本；只有包含已发布版本的模板族可以撤回，撤回后从公共目录消失但仍可重新投稿。作者只能删除不含
+  `published`、`pending_review` 或 `suspended` 版本的模板族；每个模板族保留最新 50 个版本，并在删除旧
+  版本时清理关联审核、举报、下载去重、指标和 RustFS 对象。Web Console 的 `/templates` 提供“我提交的
+  模板”、版本时间线、撤回/删除确认和错误重试；Desktop 投稿向导先选择“提交到服务器”或“导出 JSON”，
+  再选择新模板或已有模板版本。
 - 全局 `TemplatePolicy` 是数据库级单例：迁移确定性保留历史重复记录中最新的一条，并以 `singleton=true` 的唯一键与 CHECK 约束拒绝任何第二条或 `false` 记录；Server 所有策略读取和更新均按该唯一键定位。
 - Desktop 与 Web Console 共用 [`packages/shared/src/assets/mnemonic.svg`](../packages/shared/src/assets/mnemonic.svg)，shared 不依赖 Vue。
 
@@ -124,6 +130,7 @@ OAuth/SMTP 和生产部署仍按下方边界保持 pending。
 - 2026-08-11 模板策略安全补丁验证：Server Jest `20 suites / 171 passed / 13 skipped`，空 HMAC 回退、生产 HMAC/JWT 分离和集成数据库 guard 均通过；`pnpm test:template-integration` 仅接受数据库名以 `_test` 结尾的 `TEST_DATABASE_URL`，先执行全部迁移再运行父状态并发套件 `13/13`，缺少 URL 会立即失败。临时数据库已清理；开发库迁移状态已核对，未执行集成测试的清空步骤。
 - 2026-08-14 管理员控制台五项问题与设备登录去重定向验证：Server 认证 Jest `3 suites / 31 tests`、Web Console `24 files / 165 tests`、Shared 认证/API `2 files / 27 tests`、共享 UI `2 files / 6 tests`、Desktop 账户/云 API `2 files / 16 tests`、Rust 设备标识 `2 tests`均通过；Server 与 Web Console typecheck、UI typecheck、Web Console 生产构建、`pnpm generate:api` 和 `pnpm check:api`均通过。Web Console 正确使用共享 Toast 的右上角适配，Tabs header 隐藏纵向滚动条，用户角色/会话操作位于编辑页，系统配置固定在管理员导航底部，浏览器与 Desktop 登录请求携带稳定安装标识。未运行仓库全量测试；Desktop 全量 typecheck 仍受本工作树既有 `GesturesView` 的 3 个 TypeScript 错误阻断；真实 RustFS、OAuth/SMTP、Windows/macOS 原生能力、1Panel 部署和浏览器手动测试仍 pending，需维护者从 `/admin`、`/admin/system`、`/admin/users/:id/edit`、`/admin/templates`、`/devices` 开始验收。
 - 2026-08-14 系统配置折叠 panel 验证：`pnpm --filter @godgesture/ui test` 通过 `7 files / 16 tests`，`pnpm --filter @godgesture/server web:test` 通过 `24 files / 166 tests`；共享 UI 与 Web Console typecheck、Web Console 生产 `web:build` 均通过。登录态浏览器在桌面和 `375x812` 下验证模板策略默认展开、RustFS 默认收起、凭证徽章始终可见、键盘可展开、折叠后字段值保留且页面无横向溢出；未运行仓库全量测试，既有 Desktop `GesturesView` 的 3 个 typecheck 错误保持不变。
+- 2026-08-14 官方模板作者生命周期与 Desktop 投稿向导定向验证：Shared 模板协议 `8/8`、Server 作者生命周期/OpenAPI `3 suites / 66 tests`、Desktop 投稿向导与账户 API `3 files / 22 tests`、Web Console 作者页面/API/导航 `4 files / 26 tests` 均通过，OpenAPI check 与 Web Console typecheck 通过。当前实现覆盖驳回后新版本、已发布模板撤回、可删除模板族、最新 50 版本保留、Web `/templates` 作者管理和 Desktop 两步投稿；真实 RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
 
 更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。

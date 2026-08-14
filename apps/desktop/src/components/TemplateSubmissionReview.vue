@@ -14,8 +14,19 @@ const props = withDefaults(defineProps<{
   plugins: string[];
   usage: { submissionsToday: number; pendingVersions: number; publishedTemplates: number };
   limits: { dailySubmissionLimit: number; pendingVersionLimit: number; publishedTemplateLimit: number; maxPackageBytes: number };
+  submissionMode?: "new" | "update";
+  targetVersion?: {
+    parentId: string;
+    versionNumber: number;
+    title: string;
+    status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+  } | null;
   busy?: boolean;
-}>(), { busy: false });
+}>(), {
+  submissionMode: "new",
+  targetVersion: null,
+  busy: false,
+});
 
 const emit = defineEmits<{
   (event: "update:modelValue", value: boolean): void;
@@ -29,10 +40,17 @@ const visible = computed({
 });
 
 const details = computed(() => [
+  { label: t("gestures.exportDialog.reviewSubmissionMode"), value: t(`gestures.exportDialog.reviewSubmissionMode${props.submissionMode === "update" ? "Update" : "New"}`) },
   { label: t("gestures.exportDialog.templateTitle"), value: props.title },
   { label: t("gestures.exportDialog.templateSummary"), value: props.summary },
   { label: t("gestures.exportDialog.reviewAuthor"), value: props.author },
   { label: t("gestures.exportDialog.reviewTargets"), value: `${props.targets} / ${props.gestures}` },
+  ...(props.submissionMode === "update" && props.targetVersion
+    ? [
+        { label: t("gestures.exportDialog.reviewTargetTemplate"), value: props.targetVersion.title },
+        { label: t("gestures.exportDialog.reviewTargetVersion"), value: `v${props.targetVersion.versionNumber} · ${t(`gestures.exportDialog.status.${props.targetVersion.status}`)}` },
+      ]
+    : []),
 ]);
 </script>
 

@@ -131,8 +131,10 @@ export const PublicTemplatePackageDownload = z.object({
   url: z.string().url(), packageHash: z.string().regex(/^[0-9a-f]{64}$/), sizeBytes: z.number().int().nonnegative(),
 }).strict();
 export type PublicTemplatePackageDownload = z.infer<typeof PublicTemplatePackageDownload>;
+export const PublicTemplateStatus = z.enum(["pending_review", "published", "rejected", "withdrawn", "suspended"]);
+export type PublicTemplateStatus = z.infer<typeof PublicTemplateStatus>;
 export const PublicTemplateSubmissionResponse = z.object({
-  id: z.string().uuid(), versionNumber: z.number().int().positive(), status: z.enum(["pending_review", "published", "rejected", "withdrawn", "suspended"]),
+  id: z.string().uuid(), versionNumber: z.number().int().positive(), status: PublicTemplateStatus,
 }).strict();
 export type PublicTemplateSubmissionResponse = z.infer<typeof PublicTemplateSubmissionResponse>;
 export const PublicTemplateSubmissionPolicy = z.object({
@@ -140,6 +142,29 @@ export const PublicTemplateSubmissionPolicy = z.object({
   limits: z.object({ dailySubmissionLimit: z.number().int().nonnegative(), pendingVersionLimit: z.number().int().nonnegative(), publishedTemplateLimit: z.number().int().nonnegative(), maxPackageBytes: z.number().int().nonnegative() }).strict(),
 }).strict();
 export type PublicTemplateSubmissionPolicy = z.infer<typeof PublicTemplateSubmissionPolicy>;
+
+export const OwnedTemplateVersion = z.object({
+  id: z.string().uuid(),
+  versionNumber: z.number().int().positive(),
+  title: templateTitle,
+  summary: templateSummary,
+  status: PublicTemplateStatus,
+  submittedAt: z.string().datetime({ offset: true }),
+  publishedAt: z.string().datetime({ offset: true }).nullable(),
+}).strict();
+export type OwnedTemplateVersion = z.infer<typeof OwnedTemplateVersion>;
+
+export const OwnedTemplate = z.object({
+  id: z.string().uuid(),
+  status: PublicTemplateStatus,
+  versions: z.array(OwnedTemplateVersion).min(1).max(50),
+}).strict();
+export type OwnedTemplate = z.infer<typeof OwnedTemplate>;
+
+export const OwnedTemplateListResponse = z.object({
+  templates: z.array(OwnedTemplate),
+}).strict();
+export type OwnedTemplateListResponse = z.infer<typeof OwnedTemplateListResponse>;
 
 const globalPackageTarget = z.object({
   scope: z.literal("global"),

@@ -17,8 +17,10 @@ const account = {
     email?: string | null;
     emailVerified?: boolean;
   } | null,
+  ownedPublicTemplates: vi.fn(),
   publicTemplateSubmissionPolicy: vi.fn(),
   submitPublicTemplate: vi.fn(),
+  submitPublicTemplateVersion: vi.fn(),
 };
 
 vi.mock("../../api/backend", () => ({ useBackend: () => backend }));
@@ -104,6 +106,56 @@ const submissionPolicy = {
   limits: { dailySubmissionLimit: 5, pendingVersionLimit: 6, publishedTemplateLimit: 7, maxPackageBytes: 1024 },
 };
 
+const ownedTemplates = {
+  templates: [
+    {
+      id: "50000000-0000-4000-8000-000000000010",
+      status: "published",
+      versions: [
+        {
+          id: "51000000-0000-4000-8000-000000000010",
+          versionNumber: 3,
+          title: "Window controls",
+          summary: "Published template for window controls.",
+          status: "published",
+          submittedAt: "2026-08-10T08:00:00Z",
+          publishedAt: "2026-08-11T08:00:00Z",
+        },
+      ],
+    },
+    {
+      id: "50000000-0000-4000-8000-000000000011",
+      status: "pending_review",
+      versions: [
+        {
+          id: "51000000-0000-4000-8000-000000000011",
+          versionNumber: 1,
+          title: "Pending review template",
+          summary: "Still waiting for review.",
+          status: "pending_review",
+          submittedAt: "2026-08-12T08:00:00Z",
+          publishedAt: null,
+        },
+      ],
+    },
+    {
+      id: "50000000-0000-4000-8000-000000000012",
+      status: "rejected",
+      versions: [
+        {
+          id: "51000000-0000-4000-8000-000000000012",
+          versionNumber: 2,
+          title: "Rejected template",
+          summary: "Rejected template for retry.",
+          status: "rejected",
+          submittedAt: "2026-08-12T09:00:00Z",
+          publishedAt: null,
+        },
+      ],
+    },
+  ],
+};
+
 function mountDialog(dialogConfig = config) {
   setLocale("en");
   i18n.global.mergeLocaleMessage("en", { common: { none: "None" } });
@@ -140,6 +192,14 @@ function exportButton() {
     .find((button) => button.textContent?.trim() === "Export JSON");
 }
 
+function nextButton() {
+  return dialogButton(document, "Next");
+}
+
+function backButton() {
+  return dialogButton(document, "Back");
+}
+
 function submitButton() {
   return [...document.body.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.trim() === "Submit to public directory");
@@ -165,10 +225,16 @@ function configureEligibleAccount() {
     email: "author@example.test",
     emailVerified: true,
   };
+  account.ownedPublicTemplates.mockResolvedValue(ownedTemplates);
   account.publicTemplateSubmissionPolicy.mockResolvedValue(submissionPolicy);
   account.submitPublicTemplate.mockResolvedValue({
     id: "50000000-0000-4000-8000-000000000001",
     versionNumber: 1,
+    status: "pending_review",
+  });
+  account.submitPublicTemplateVersion.mockResolvedValue({
+    id: "50000000-0000-4000-8000-000000000010",
+    versionNumber: 4,
     status: "pending_review",
   });
 }
@@ -211,8 +277,10 @@ beforeEach(() => {
   account.endpointMode = "custom";
   account.phase = "signedOut";
   account.user = null;
+  account.ownedPublicTemplates.mockReset();
   account.publicTemplateSubmissionPolicy.mockReset();
   account.submitPublicTemplate.mockReset();
+  account.submitPublicTemplateVersion.mockReset();
 });
 
 afterEach(() => {
@@ -222,6 +290,8 @@ afterEach(() => {
 describe("GestureExportDialog", () => {
   it("exports the selected global target through the native metadata form", async () => {
     const wrapper = mountDialog();
+    await flushPromises();
+    nextButton()?.click();
     await flushPromises();
 
     await completeExportForm();
@@ -244,6 +314,8 @@ describe("GestureExportDialog", () => {
     backend.gestureTemplateSave.mockReturnValue(new Promise((resolve) => { finishSave = resolve; }));
     const wrapper = mountDialog();
     await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
     await completeExportForm();
 
     exportButton()?.click();
@@ -264,6 +336,8 @@ describe("GestureExportDialog", () => {
 
   it("keeps saving blocked for missing metadata and more than eight tags", async () => {
     mountDialog();
+    await flushPromises();
+    nextButton()?.click();
     await flushPromises();
     document.body.querySelector<HTMLInputElement>("#gesture-export-target-global")?.click();
     await nextTick();
@@ -292,6 +366,8 @@ describe("GestureExportDialog", () => {
 
   it("filters groups, exposes disclosure state, and maintains group indeterminate selection", async () => {
     mountDialog(groupedConfig);
+    await flushPromises();
+    nextButton()?.click();
     await flushPromises();
 
     const browsers = group("Browsers");
@@ -332,6 +408,8 @@ describe("GestureExportDialog", () => {
   it("shows the missing online plugin source warning and disables export", async () => {
     mountDialog(pluginConfig);
     await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
     await completeExportForm();
 
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(PLUGIN_ID);
@@ -346,6 +424,8 @@ describe("GestureExportDialog", () => {
     const browser = browserDownloadHarness();
     try {
       const wrapper = mountDialog();
+      await flushPromises();
+      nextButton()?.click();
       await flushPromises();
       await completeExportForm();
 
@@ -367,6 +447,10 @@ describe("GestureExportDialog", () => {
     configureEligibleAccount();
     mountDialog();
     await flushPromises();
+    document.body.querySelector<HTMLButtonElement>("#gesture-export-delivery-server")?.click();
+    await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
     await completeExportForm();
 
     submitButton()?.click();
@@ -387,6 +471,10 @@ describe("GestureExportDialog", () => {
     configureEligibleAccount();
     const wrapper = mountDialog();
     await flushPromises();
+    document.body.querySelector<HTMLButtonElement>("#gesture-export-delivery-server")?.click();
+    await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
     await completeExportForm();
 
     submitButton()?.click();
@@ -406,5 +494,104 @@ describe("GestureExportDialog", () => {
       targets: [{ scope: "global" }],
     });
     expect(wrapper.emitted("update:modelValue")).toContainEqual([false]);
+  });
+
+  it("renders delivery cards first and only loads owned templates after choosing the server path", async () => {
+    configureEligibleAccount();
+    mountDialog();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("Choose delivery");
+    expect(document.body.textContent).toContain("Submit to server");
+    expect(document.body.textContent).toContain("Export JSON");
+    expect(account.ownedPublicTemplates).not.toHaveBeenCalled();
+
+    document.body.querySelector<HTMLButtonElement>("#gesture-export-delivery-server")?.click();
+    await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
+
+    expect(account.ownedPublicTemplates).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain("Create a new template");
+    expect(document.body.textContent).toContain("Update existing template");
+    document.body.querySelector<HTMLInputElement>("#gesture-export-submission-update")?.click();
+    await flushPromises();
+    const pendingChoice = document.body.querySelector<HTMLOptionElement>(
+      'option[value="50000000-0000-4000-8000-000000000011"]',
+    );
+    expect(pendingChoice?.disabled).toBe(true);
+  });
+
+  it("submits a reviewed new version for the selected owned template", async () => {
+    configureEligibleAccount();
+    const wrapper = mountDialog();
+    await flushPromises();
+
+    document.body.querySelector<HTMLButtonElement>("#gesture-export-delivery-server")?.click();
+    await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
+
+    document.body.querySelector<HTMLInputElement>("#gesture-export-submission-update")?.click();
+    await flushPromises();
+    const templateSelect = document.body.querySelector<HTMLSelectElement>("#gesture-export-owned-template");
+    expect(templateSelect).not.toBeNull();
+    templateSelect!.value = "50000000-0000-4000-8000-000000000010";
+    templateSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
+
+    await completeExportForm();
+
+    submitButton()?.click();
+    await flushPromises();
+
+    const review = document.body.querySelector<HTMLElement>(".review-dialog");
+    expect(review?.textContent).toContain("Update existing template");
+    expect(review?.textContent).toContain("Window controls");
+    expect(review?.textContent).toContain("v3");
+
+    dialogButton(review!, "Submit for review")?.click();
+    await flushPromises();
+
+    expect(account.submitPublicTemplate).not.toHaveBeenCalled();
+    expect(account.submitPublicTemplateVersion).toHaveBeenCalledWith(
+      "50000000-0000-4000-8000-000000000010",
+      expect.objectContaining({ title: "Window controls" }),
+    );
+    expect(wrapper.emitted("update:modelValue")).toContainEqual([false]);
+  });
+
+  it("keeps the reviewed update target when the underlying selection changes", async () => {
+    configureEligibleAccount();
+    mountDialog();
+    await flushPromises();
+
+    document.body.querySelector<HTMLButtonElement>("#gesture-export-delivery-server")?.click();
+    await flushPromises();
+    nextButton()?.click();
+    await flushPromises();
+    document.body.querySelector<HTMLInputElement>("#gesture-export-submission-update")?.click();
+    await flushPromises();
+    const templateSelect = document.body.querySelector<HTMLSelectElement>("#gesture-export-owned-template");
+    expect(templateSelect).not.toBeNull();
+    templateSelect!.value = "50000000-0000-4000-8000-000000000010";
+    templateSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
+    await completeExportForm();
+
+    submitButton()?.click();
+    await flushPromises();
+    templateSelect!.value = "50000000-0000-4000-8000-000000000012";
+    templateSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
+
+    const review = document.body.querySelector<HTMLElement>(".review-dialog");
+    dialogButton(review!, "Submit for review")?.click();
+    await flushPromises();
+
+    expect(account.submitPublicTemplateVersion).toHaveBeenCalledWith(
+      "50000000-0000-4000-8000-000000000010",
+      expect.objectContaining({ title: "Window controls" }),
+    );
   });
 });

@@ -5,6 +5,7 @@ import {
   gestureTemplatePackagePlatforms,
   gestureTemplateTargetSummaries,
   MAX_GESTURE_TEMPLATE_PACKAGE_BYTES,
+  OwnedTemplateListResponse,
   parseGestureTemplatePackage,
 } from "../../index.js";
 
@@ -129,5 +130,51 @@ describe("gesture template protocol", () => {
       plugins: [{ pluginId: "20000000-0000-4000-8000-000000000001", repositoryUrl: "https://example.com" }],
     })).toThrow();
     expect(() => parseGestureTemplatePackage(" ".repeat(MAX_GESTURE_TEMPLATE_PACKAGE_BYTES + 1))).toThrow();
+  });
+
+  it("parses an owned template family with immutable version summaries", () => {
+    const response = OwnedTemplateListResponse.parse({
+      templates: [{
+        id: "10000000-0000-4000-8000-000000000001",
+        status: "rejected",
+        versions: [{
+          id: "20000000-0000-4000-8000-000000000001",
+          versionNumber: 2,
+          title: "Window controls",
+          summary: "Safe controls.",
+          status: "rejected",
+          submittedAt: "2026-08-14T08:00:00.000Z",
+          publishedAt: null,
+        }],
+      }],
+    });
+
+    expect(response.templates[0]?.versions[0]?.versionNumber).toBe(2);
+  });
+
+  it("rejects invalid owned template status and version metadata", () => {
+    const version = {
+      id: "20000000-0000-4000-8000-000000000001",
+      versionNumber: 1,
+      title: "Window controls",
+      summary: "Safe controls.",
+      status: "withdrawn",
+      submittedAt: "2026-08-14T08:00:00.000Z",
+      publishedAt: null,
+    };
+    expect(() => OwnedTemplateListResponse.parse({
+      templates: [{
+        id: "10000000-0000-4000-8000-000000000001",
+        status: "unknown",
+        versions: [version],
+      }],
+    })).toThrow();
+    expect(() => OwnedTemplateListResponse.parse({
+      templates: [{
+        id: "10000000-0000-4000-8000-000000000001",
+        status: "withdrawn",
+        versions: [{ ...version, versionNumber: 0 }],
+      }],
+    })).toThrow();
   });
 });

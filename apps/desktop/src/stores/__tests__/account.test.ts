@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { ConfigDocument, type OAuthProvider } from "@godgesture/shared";
+import {
+  ConfigDocument,
+  type OAuthProvider,
+  type OwnedTemplateListResponse,
+} from "@godgesture/shared";
 import { CloudError } from "../../cloud/errors";
 
 const slots = vi.hoisted(() => ({
@@ -36,6 +40,8 @@ vi.mock("../config", () => ({
 vi.mock("../../cloud/session", () => ({
   resolveApiOrigin: () => "https://cloud.example.test",
   CloudSession: class {
+    apiBase = (slots.session as ReturnType<typeof makeSession>).apiBase;
+
     setExpiredHandler(handler: () => void) {
       return (
         slots.session as ReturnType<typeof makeSession>
@@ -48,6 +54,10 @@ vi.mock("../../cloud/session", () => ({
 
     clearLocal() {
       return (slots.session as ReturnType<typeof makeSession>).clearLocal();
+    }
+
+    authenticatedFetch(input: unknown, init?: unknown) {
+      return (slots.session as ReturnType<typeof makeSession>).authenticatedFetch(input, init);
     }
   },
 }));
@@ -127,10 +137,21 @@ import { useAccountStore } from "../account";
 const USER = {
   id: "10000000-0000-4000-8000-000000000001",
   email: "user@example.com",
+  emailVerified: true,
   createdAt: "2026-07-28T12:00:00.000Z",
   linkedProviders: [] as const,
 };
 const DEVICE_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OWNED_TEMPLATE_ID = "50000000-0000-4000-8000-000000000010";
+const OWNED_TEMPLATE_VERSION_ID = "50000000-0000-4000-8000-000000000011";
+
+function jsonResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn(async () => body),
+  };
+}
 
 function makeBackend() {
   return {
@@ -154,9 +175,11 @@ function makeBackend() {
 
 function makeSession() {
   return {
+    apiBase: "https://cloud.example.test/api/v1",
     setExpiredHandler: vi.fn(),
     restore: vi.fn(async () => false),
     clearLocal: vi.fn(async () => undefined),
+    authenticatedFetch: vi.fn(async () => jsonResponse(null, 404)),
   };
 }
 
@@ -328,5 +351,67 @@ describe("account store authentication", () => {
       device: { name: "Test PC", platform: "windows", deviceKey: DEVICE_KEY },
     });
     expect(store.phase).toBe("signedIn");
+  });
+});
+
+describe("account store public template submissions", () => {
+  it("loads the signed-in user's owned template families", async () => {
+    const session = slots.session as ReturnType<typeof makeSession>;
+    const ownedTemplates: OwnedTemplateListResponse = {
+      templates: [{
+        id: OWNED_TEMPLATE_ID,
+        status: "published",
+        versions: [{
+          id: OWNED_TEMPLATE_VERSION_ID,
+          versionNumber: 2,
+          title: "Window controls",
+          summary: "Close and manage windows with one gesture set.",
+          status: "published",
+          submittedAt: "2026-08-10T08:00:00.000Z",
+          publishedAt: "2026-08-11T08:00:00.000Z",
+        }],
+      }],
+    };
+    session.restore.mockResolvedValueOnce(true);
+    session.authenticatedFetch.mockResolvedValueOnce(jsonResponse(ownedTemplates));
+    const store = useAccountStore();
+
+    await store.initialize();
+    const response = await store.ownedPublicTemplates();
+
+    expect(session.authenticatedFetch).toHaveBeenCalledWith(
+      "https://cloud.example.test/api/v1/public/templates/mine",
+      { headers: { Accept: "application/json" } },
+    );
+    expect(response.templates[0]?.versions[0]?.versionNumber).toBe(2);
+  });
+
+  it("submits a new immutable version to an owned template family", async () => {
+    const session = slots.session as ReturnType<typeof makeSession>;
+    session.restore.mockResolvedValueOnce(true);
+    session.authenticatedFetch.mockResolvedValueOnce(jsonResponse({
+      id: OWNED_TEMPLATE_ID,
+      versionNumber: 3,
+      status: "pending_review",
+    }, 201));
+    const store = useAccountStore();
+
+    await store.initialize();
+    const templatePackage = { title: "Window controls", summary: "Close the current window." };
+    const result = await store.submitPublicTemplateVersion(OWNED_TEMPLATE_ID, templatePackage);
+
+    expect(session.authenticatedFetch).toHaveBeenCalledWith(
+      `https://cloud.example.test/api/v1/public/templates/${OWNED_TEMPLATE_ID}/versions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ package: templatePackage }),
+      },
+    );
+    expect(result).toMatchObject({
+      id: OWNED_TEMPLATE_ID,
+      versionNumber: 3,
+      status: "pending_review",
+    });
   });
 });

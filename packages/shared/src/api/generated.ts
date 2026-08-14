@@ -604,6 +604,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/templates/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listOwnedTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/templates/submission-policy": {
         parameters: {
             query?: never;
@@ -701,6 +717,22 @@ export interface paths {
         /** Restore a snapshot as a new configuration version */
         post: operations["restoreSnapshot"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteOwnedTemplate"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2374,6 +2406,27 @@ export interface components {
         };
         OAuthProvidersResponse: {
             providers: ("github" | "google" | "wechat" | "qq")[];
+        };
+        OwnedTemplateListResponse: {
+            templates: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+                versions: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: date-time */
+                    publishedAt: string | null;
+                    /** @enum {string} */
+                    status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+                    /** Format: date-time */
+                    submittedAt: string;
+                    summary: string;
+                    title: string;
+                    versionNumber: number;
+                }[];
+            }[];
         };
         PasswordResetConfirmRequest: {
             /** Format: email */
@@ -4873,6 +4926,44 @@ export interface operations {
             };
         };
     };
+    listOwnedTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The authenticated user template families and their retained versions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnedTemplateListResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getPublicTemplateSubmissionPolicy: {
         parameters: {
             query?: never;
@@ -5226,6 +5317,62 @@ export interface operations {
             };
         };
     };
+    deleteOwnedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The owned template was deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     reportTemplate: {
         parameters: {
             query?: never;
@@ -5298,7 +5445,25 @@ export interface operations {
                 content?: never;
             };
             /** @description Request failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
