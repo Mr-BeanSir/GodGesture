@@ -2596,6 +2596,224 @@ export interface components {
             /** @enum {boolean} */
             ok: true;
         };
+        TemplateModerationDetailResponse: {
+            targetDetails: ({
+                intents: {
+                    command: {
+                        /** @enum {string} */
+                        type: "doNothing";
+                    } | {
+                        keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                        modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                        /** @enum {string} */
+                        type: "hotKey";
+                    } | {
+                        /** @default null */
+                        browser: string | null;
+                        engineName: string;
+                        engineUrl: string;
+                        /** @enum {string} */
+                        type: "webSearch";
+                    } | {
+                        /** @enum {string} */
+                        operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                        /** @enum {string} */
+                        type: "windowControl";
+                    } | {
+                        /** @enum {string} */
+                        type: "taskSwitcher";
+                    } | {
+                        path: string;
+                        /** @enum {string} */
+                        type: "openFile";
+                    } | {
+                        text: string;
+                        /** @enum {string} */
+                        type: "sendText";
+                    } | {
+                        /** @enum {string} */
+                        type: "gotoUrl";
+                        url: string;
+                    } | {
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "cmd";
+                    } | {
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
+                        /** @default 1 */
+                        delta: number;
+                        /** @enum {string} */
+                        type: "audioVolume";
+                    };
+                    /** @default true */
+                    enabled: boolean;
+                    gesture: {
+                        inputs?: ({
+                            /** @enum {string} */
+                            direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                            /** @enum {string} */
+                            type: "stroke";
+                        } | {
+                            /** @enum {string} */
+                            button: "left" | "middle" | "right" | "x1" | "x2";
+                            /** @enum {string} */
+                            type: "button";
+                        } | {
+                            /** @enum {string} */
+                            direction: "forward" | "backward";
+                            /** @enum {string} */
+                            type: "wheel";
+                        } | {
+                            key: string;
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        /**
+                         * @default none
+                         * @enum {string}
+                         */
+                        modifier: "none" | "wheelForward" | "wheelBackward" | "leftButtonDown" | "middleButtonDown" | "rightButtonDown" | "x1Down" | "x2Down";
+                        strokes: ("up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp")[];
+                        /** @enum {string} */
+                        trigger: "right" | "middle" | "x1" | "x2";
+                    };
+                    name: string;
+                }[];
+                /** @enum {string} */
+                scope: "global";
+            } | {
+                /** @default true */
+                gesturingEnabled: boolean;
+                /** @default true */
+                inheritGlobalGestures: boolean;
+                intents: {
+                    command: {
+                        /** @enum {string} */
+                        type: "doNothing";
+                    } | {
+                        keys: ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" | "f13" | "f14" | "f15" | "f16" | "f17" | "f18" | "f19" | "f20" | "f21" | "f22" | "f23" | "f24" | "backspace" | "tab" | "clear" | "enter" | "pauseBreak" | "capsLock" | "esc" | "space" | "pageUp" | "pageDown" | "end" | "home" | "left" | "up" | "right" | "down" | "printScreen" | "insert" | "delete" | "contextMenu" | "sleep" | "numpad0" | "numpad1" | "numpad2" | "numpad3" | "numpad4" | "numpad5" | "numpad6" | "numpad7" | "numpad8" | "numpad9" | "numpadMultiply" | "numpadAdd" | "numpadSeparator" | "numpadSubtract" | "numpadDecimal" | "numpadDivide" | "numpadEnter" | "numpadEqual" | "numLock" | "scrollLock" | "browserBack" | "browserForward" | "browserRefresh" | "browserStop" | "browserSearch" | "browserFavorites" | "browserHome" | "volumeMute" | "volumeDown" | "volumeUp" | "mediaNextTrack" | "mediaPrevTrack" | "mediaStop" | "mediaPlayPause" | "launchMail" | "launchMediaSelect" | "launchApp1" | "launchApp2" | "semicolon" | "equals" | "comma" | "minus" | "period" | "slash" | "backquote" | "bracketLeft" | "backslash" | "bracketRight" | "quote" | "intlBackslash")[];
+                        modifiers: ("ctrl" | "shift" | "alt" | "meta")[];
+                        /** @enum {string} */
+                        type: "hotKey";
+                    } | {
+                        /** @default null */
+                        browser: string | null;
+                        engineName: string;
+                        engineUrl: string;
+                        /** @enum {string} */
+                        type: "webSearch";
+                    } | {
+                        /** @enum {string} */
+                        operation: "maximizeRestore" | "minimize" | "close" | "toggleTopmost" | "dockLeft" | "dockRight";
+                        /** @enum {string} */
+                        type: "windowControl";
+                    } | {
+                        /** @enum {string} */
+                        type: "taskSwitcher";
+                    } | {
+                        path: string;
+                        /** @enum {string} */
+                        type: "openFile";
+                    } | {
+                        text: string;
+                        /** @enum {string} */
+                        type: "sendText";
+                    } | {
+                        /** @enum {string} */
+                        type: "gotoUrl";
+                        url: string;
+                    } | {
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "cmd";
+                    } | {
+                        /** @default true */
+                        autoSetWorkingDir: boolean;
+                        code: string;
+                        /** @default true */
+                        showWindow: boolean;
+                        /** @enum {string} */
+                        type: "powershell";
+                    } | {
+                        /** Format: uuid */
+                        pluginId: string;
+                        /** @enum {string} */
+                        type: "nodePlugin";
+                    } | {
+                        /** @default 1 */
+                        delta: number;
+                        /** @enum {string} */
+                        type: "audioVolume";
+                    };
+                    /** @default true */
+                    enabled: boolean;
+                    gesture: {
+                        inputs?: ({
+                            /** @enum {string} */
+                            direction: "up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp";
+                            /** @enum {string} */
+                            type: "stroke";
+                        } | {
+                            /** @enum {string} */
+                            button: "left" | "middle" | "right" | "x1" | "x2";
+                            /** @enum {string} */
+                            type: "button";
+                        } | {
+                            /** @enum {string} */
+                            direction: "forward" | "backward";
+                            /** @enum {string} */
+                            type: "wheel";
+                        } | {
+                            key: string;
+                            /** @enum {string} */
+                            type: "key";
+                        })[];
+                        /**
+                         * @default none
+                         * @enum {string}
+                         */
+                        modifier: "none" | "wheelForward" | "wheelBackward" | "leftButtonDown" | "middleButtonDown" | "rightButtonDown" | "x1Down" | "x2Down";
+                        strokes: ("up" | "rightUp" | "right" | "rightDown" | "down" | "leftDown" | "left" | "leftUp")[];
+                        /** @enum {string} */
+                        trigger: "right" | "middle" | "x1" | "x2";
+                    };
+                    name: string;
+                }[];
+                mac?: {
+                    bundleId: string;
+                };
+                name: string;
+                /** @enum {string} */
+                scope: "app";
+                windows?: {
+                    aumid?: string;
+                    exactPath?: string;
+                    exeName: string;
+                    /** @default false */
+                    matchByExactPath: boolean;
+                };
+            })[];
+        };
         TemplateModerationListQuery: {
             /** Format: uuid */
             cursor?: string;
@@ -3192,7 +3410,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["TemplateModerationDetailResponse"];
                 };
             };
             /** @description Request failed. */
