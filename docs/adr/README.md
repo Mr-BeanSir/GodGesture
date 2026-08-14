@@ -16,13 +16,13 @@ ADR 记录仍然有效、且不能仅从代码推断的架构决策。进入具�
 | 手势输入、边角序列或修饰符重构 | [0013](0013-unified-gesture-capture-session.md) | 普通手势与边角序列共用统一捕获会话;区域准入和候选配置保持适配器边界 |
 | 手势轨迹或命令提示 | [0006](0006-native-overlay-rendering.md) | 原生自绘覆盖层,不用 WebView |
 | Windows 提权、启动或签名 | [0007](0007-admin-run-option-no-uiaccess.md), [0011](0011-free-adhoc-macos-distribution.md) | 不使用 uiAccess;macOS 发布结论以 `0011` 为准 |
-| 后端职责、更新、模板或插件分发 | [0008](0008-backend-owns-only-user-data.md), [0014](0014-server-managed-public-template-catalog.md) | Server 管理官方公共模板；更新和官方插件目录仍通过 GitHub 分发 |
+| 后端职责、更新、模板或插件分发 | [0008](0008-backend-owns-only-user-data.md), [0014](0014-server-managed-public-template-catalog.md), [0018](0018-owned-template-lifecycle-retention.md) | Server 管理官方公共模板；作者模板生命周期与版本保留按 0018；更新和官方插件目录仍通过 GitHub 分发 |
 | 配置同步、冲突或快照 | [0009](0009-whole-doc-versioning-lww-snapshots.md), [0010](0010-local-first-optional-account.md) | 整库版本 + LWW + 快照,本地优先且账户可选 |
 | macOS 安装包或发布 | [0011](0011-free-adhoc-macos-distribution.md) | 免费 ad-hoc DMG,不使用 Developer ID 或公证 |
 
 ## 状态
 
-- `0001`~`0004`、`0006`、`0008`~`0012`、`0014`、`0015`、`0016`:有效；`0014` 取代 `0008` 中 GitHub 运行时分发公共模板的部分；`0015` 保留 Server 私有子模块结论；`0016` 取代 `0015` 中 Web Console 独立子模块结论，并于 2026-08-11 修订 Console 固定使用 `zh-CN`、保留 vue-i18n key 层的语言策略。
+- `0001`~`0004`、`0006`、`0008`~`0012`、`0014`、`0015`、`0016`、`0018`:有效；`0014` 取代 `0008` 中 GitHub 运行时分发公共模板的部分，`0018` 取代 `0014` 中作者撤回不删除历史版本或对象的长期保留部分；`0015` 保留 Server 私有子模块结论；`0016` 取代 `0015` 中 Web Console 独立子模块结论，并于 2026-08-11 修订 Console 固定使用 `zh-CN`、保留 vue-i18n key 层的语言策略。
 - `0013`:已采纳,共享捕获基础设施和阶段 1-5 已实现;Windows/macOS 真实设备验收仍 pending。
 - `0017`:已采纳；根 `@godgesture/ui` 已作为 Desktop 与 Server-owned Web Console 的无业务 Vue 原语边界，具体验证责任按该 ADR 执行。
 - `0005`:已由 `0012` 完全取代,仅保留为历史决策记录。
