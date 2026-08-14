@@ -38,7 +38,7 @@ export function createFixtureGestureTemplateSource(): GestureTemplateSource {
 
 /** The official service is deliberately independent from any sync endpoint. */
 export function createOfficialApiGestureTemplateSource(
-  apiOrigin = import.meta.env.GODGESTURE_API ?? import.meta.env.VITE_API_BASE_URL ?? DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN,
+  apiOrigin = DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
 ): GestureTemplateSource {
   const base = `${apiOrigin.replace(/\/$/, "")}/api/v1/public/templates`;

@@ -16,14 +16,12 @@ export const PathTrackerPreferences = z.object({
     .array(TriggerButton)
     .max(4)
     .default(["right", "middle", "x1", "x2"]),
-  /** 允许斜线(8 向)手势 */
-  enable8Directions: z.boolean().default(true),
   /** Windows 键触发(等价于右键;Windows 平台专有能力,mac 端忽略) */
   enableWindowsKeyGesturing: z.boolean().default(false),
   /** 总是作用于指针下方的窗口(而非前台窗口) */
   preferCursorWindow: z.boolean().default(true),
   /** 全屏时自动禁用手势 */
-  disableInFullscreen: z.boolean().default(false),
+  disableInFullscreen: z.boolean().default(true),
   /** 起始移动距离(像素) */
   initialValidMovePx: z.number().int().min(1).max(50).default(4),
   /** 起始超时(按住不动则放行为普通拖拽) */

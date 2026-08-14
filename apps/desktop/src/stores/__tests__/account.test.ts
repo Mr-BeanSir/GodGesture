@@ -130,12 +130,14 @@ const USER = {
   createdAt: "2026-07-28T12:00:00.000Z",
   linkedProviders: [] as const,
 };
+const DEVICE_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 function makeBackend() {
   return {
     accountDeviceInfo: vi.fn(async () => ({
       name: "Test PC",
       platform: "windows" as const,
+      deviceKey: DEVICE_KEY,
     })),
     oauthLoopbackStart: vi.fn(async () => ({
       attemptId: "attempt-1",
@@ -285,7 +287,7 @@ describe("account store authentication", () => {
     expect(api.login).toHaveBeenCalledWith({
       email: "user@example.com",
       password: "password-1",
-      device: { name: "Test PC", platform: "windows" },
+      device: { name: "Test PC", platform: "windows", deviceKey: DEVICE_KEY },
     });
     expect(store.phase).toBe("signedIn");
     expect(slots.engines).toHaveLength(1);
@@ -323,7 +325,7 @@ describe("account store authentication", () => {
     expect(api.exchangeOAuth).toHaveBeenCalledWith({
       code: "oauth-code",
       codeVerifier: "verifier",
-      device: { name: "Test PC", platform: "windows" },
+      device: { name: "Test PC", platform: "windows", deviceKey: DEVICE_KEY },
     });
     expect(store.phase).toBe("signedIn");
   });

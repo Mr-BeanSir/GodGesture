@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ConfigDocument, CONFIG_FORMAT_VERSION, DEFAULT_APP_GROUP_ID } from "../document.js";
+import { PathTrackerPreferences } from "../preferences.js";
 
 describe("configuration document v8", () => {
   it("initializes the complete current document shape", () => {
@@ -37,5 +38,15 @@ describe("configuration document v8", () => {
         }],
       },
     })).toThrow();
+  });
+
+  it("normalizes the legacy diagonal gesture preference away", () => {
+    const preferences = PathTrackerPreferences.parse({
+      enable8Directions: false,
+      triggerButtons: ["right"],
+    });
+
+    expect("enable8Directions" in preferences).toBe(false);
+    expect(preferences.triggerButtons).toEqual(["right"]);
   });
 });

@@ -52,6 +52,7 @@ pub struct OAuthLoopbackResult {
 pub struct DesktopDeviceInfo {
     pub name: String,
     pub platform: &'static str,
+    pub device_key: String,
 }
 
 struct OAuthAttempt {
@@ -234,7 +235,11 @@ pub async fn sync_metadata_set(
 }
 
 #[tauri::command]
-pub fn account_device_info() -> DesktopDeviceInfo {
+pub fn account_device_info(store: tauri::State<'_, Arc<ConfigStore>>) -> DesktopDeviceInfo {
+    build_device_info(store.load_or_create_device_key())
+}
+
+fn build_device_info(device_key: String) -> DesktopDeviceInfo {
     let fallback = format!("GodGesture on {}", current_platform_label());
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
@@ -248,6 +253,7 @@ pub fn account_device_info() -> DesktopDeviceInfo {
     DesktopDeviceInfo {
         name: source.chars().take(64).collect(),
         platform: current_platform(),
+        device_key,
     }
 }
 
@@ -663,9 +669,10 @@ mod tests {
 
     #[test]
     fn device_identity_is_non_empty_and_bounded() {
-        let info = account_device_info();
+        let info = build_device_info("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into());
         assert!(!info.name.is_empty());
         assert!(info.name.chars().count() <= 64);
         assert!(matches!(info.platform, "windows" | "macos" | "unsupported"));
+        assert_eq!(info.device_key, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     }
 }

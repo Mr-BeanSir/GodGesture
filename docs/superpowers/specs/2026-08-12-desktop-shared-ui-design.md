@@ -27,8 +27,11 @@ Element UI，并允许将组件统一封装到 shared 以避免两端重复实�
   alert、dialog、spinner、empty state、toast 和焦点行为维护两份。
 - 保留现有业务行为、API、同步数据结构、原生窗口能力、Tauri 生命周期、
   `zh-CN/en` Desktop 文案和 Web Console 固定 `zh-CN` 的语言策略。
-- 在 980x700 默认窗口和 800x560 最小窗口下保持可用；窄视口不产生页面级横向
-  溢出，表格或日志等宽内容只在其工作面内滚动。
+- Desktop 是固定尺寸的原生设置窗口，在 980x700 默认窗口和 800x560 最小窗口下
+  保持可用；不为 Desktop 增加 viewport 断点、导航抽屉或多尺寸导航重排。表格、日志
+  和编辑器等宽内容只在其工作面内滚动，不产生页面级横向溢出。
+- Server-owned Web Console 继续按自己的页面设计做多尺寸响应式适配；本条不改变
+  Web Console 的断点、触控命中区或窄视口布局。
 - 对弹窗、确认操作、Toast、加载、错误恢复和键盘焦点提供与 Web Console 相同的
   可访问行为。
 
@@ -51,8 +54,9 @@ Element UI，并允许将组件统一封装到 shared 以避免两端重复实�
   变量；浅色与深色主题必须完整定义。
 - 字体使用 `Aptos`, `Segoe UI Variable`, `PingFang SC`, `Microsoft YaHei`,
   sans-serif；数据、版本和日志等单色信息使用系统等宽字体。
-- 基础空间单位为 4px；桌面控件默认 40px，高密度表格行 40px，窄屏交互控件至少
-  44px；图标按钮也保留完整命中区域。
+- 基础空间单位为 4px；共享 UI 在 Web Console 中沿用桌面 40px、窄屏交互控件至少
+  44px 的规则，图标按钮保留完整命中区域。Desktop 固定设置窗口由自己的密度层将
+  常规按钮和表单控件固定为 32px，同时保留页面既有的 36px/40px 工作面特例。
 - 默认使用不超过 8px 的圆角、细边框、轻阴影和 150-200ms 的状态过渡；不使用渐变、
   装饰性光晕、营销式 hero、嵌套卡片或持续动画。
 - 所有交互元素必须有可见键盘焦点；图标按钮必须有 `aria-label` 和 `title`；错误
@@ -119,8 +123,8 @@ workspace UI 包的依赖，并提交对应子模块 gitlink。
 ### 表格与列表
 
 使用语义 HTML table 或可访问的 list，表头、行高、hover、focus 和边框遵循 Console
-规则。桌面宽度使用工作面内水平滚动；窄屏将详情表转换为字段列表或堆叠行，不能让
-整个窗口产生横向滚动。
+规则。Desktop 固定窗口在工作面内水平滚动；Web Console 窄屏可按页面设计将详情表
+转换为字段列表或堆叠行，但不能让整个窗口产生横向滚动。
 
 ### 弹窗与确认
 
@@ -143,10 +147,13 @@ workspace UI 包的依赖，并提交对应子模块 gitlink。
 
 ## Desktop 外壳设计
 
-- 顶栏高度 56px，包含品牌、暂停/运行状态、主题切换、语言选择和 Windows 自定义
-  窗口控制；窗口拖拽区域和最小化/关闭 Tauri 命令保持现有行为。
-- 侧栏在宽度大于等于 1024px 时为 248px，采用 Console 的 surface/border/active
-  状态；小于 1024px 时使用可访问的导航按钮和抽屉，保持七个 section 都可达。
+- Desktop 是固定尺寸的原生设置窗口：沿用 48px 顶栏、168px 常驻左侧栏和 30px
+  底栏，包含品牌、暂停/运行状态、主题切换、语言选择和 Windows 自定义窗口控制；
+  窗口拖拽区域和最小化/关闭 Tauri 命令保持现有行为。
+- Desktop 不使用 viewport 断点、导航切换按钮、抽屉或多尺寸导航重排；七个 section
+  始终通过常驻左侧栏可达。工作区在固定窗口内自行滚动，页面级横向溢出保持为零。
+- Web Console 的多尺寸响应式导航和窄视口布局由 Server-owned Console 自己负责，
+  不回写 Desktop 外壳。
 - 主工作区使用 Console 的 canvas、页面标题、副标题和单一工作面层级；底部保存
   状态保留，但改用共享文本和 badge 样式。
 - 深浅主题只保存本机偏好，不进入同步载荷；Desktop 的 `preferences.locale` 继续
@@ -160,8 +167,9 @@ workspace UI 包的依赖，并提交对应子模块 gitlink。
    让共享组件独立通过单元测试。
 2. 将 Web Console `src/ui` 原语切换到共享包，确保现有 Console 测试和视觉基线不
    回归；这一步验证包边界可以被私有 Server 子模块消费。
-3. 重写 Desktop `main.ts` 与 `App.vue` 外壳，接入共享样式、Lucide、响应式导航、
-   主题和 Toast/确认宿主，删除 Element 全局注入。
+3. 重写 Desktop `main.ts` 与 `App.vue` 外壳，接入共享样式、Lucide、固定常驻导航、
+   主题和 Toast/确认宿主，删除 Element 全局注入；Desktop 的固定密度覆盖留在
+   `apps/desktop/src/desktop.css`，不修改共享 Web Console 样式。
 4. 按风险从基础页面到复杂页面迁移：Options、Logs、About、Account、Plugins、
    Templates，最后迁移 Gestures 及其 Intent/Command/Boundary/Export 等编辑器和
    多步弹窗。每一步保留原有 store 绑定和 i18n key。
@@ -186,7 +194,9 @@ workspace UI 包的依赖，并提交对应子模块 gitlink。
 ### 视觉与交互
 
 - Desktop 浏览器预览和 Tauri 窗口验证浅色/深色主题、980x700 默认尺寸、800x560 最小
-  尺寸、1024px 断点以及窄屏抽屉；页面级无横向溢出。
+  尺寸、常驻 168px 左栏、48px 顶栏、30px 底栏、固定 32px 常规控件密度以及页面级
+  无横向溢出；不把浏览器预览写成 Windows/macOS 原生平台验收。
+- Web Console 单独验证自己的多尺寸响应式断点、触控命中区和页面级溢出行为。
 - 每个 section 至少验证加载、空、成功、错误、禁用和保存中状态；复杂编辑器验证
   添加/编辑/删除、取消、确认、Escape 和焦点恢复。
 - Windows 与 macOS 只验收 UI 层在相同 Vue 构建下的行为；原生窗口按钮、拖拽区域、
@@ -201,8 +211,9 @@ workspace UI 包的依赖，并提交对应子模块 gitlink。
   以全局 CSS 兼容层假装已经移除 Element。
 - **弹窗/焦点回归**：把 `AppDialog` 与确认服务作为独立组件测试，并在 Desktop
   页面测试中覆盖 Escape、取消和 busy 分支。
-- **小窗口信息密度**：使用 44px 最小触控命中区和工作面内滚动；对复杂表格在窄屏
-  显示堆叠字段，而不是缩小到不可读。
+- **Desktop 固定窗口信息密度**：Desktop 使用固定 32px 常规控件和工作面内滚动，
+  不通过 viewport 重排导航；共享 UI 的 44px 窄屏触控规则只由 Web Console 使用，
+  不向 Desktop 反向扩大控件。
 - **共享包版本漂移**：两端都使用同一 workspace 版本，UI 组件只接受稳定 props/slot
   contract；协议包 `packages/shared` 与 UI 包保持独立发布边界。
 

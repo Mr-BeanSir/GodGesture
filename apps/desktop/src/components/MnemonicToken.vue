@@ -70,7 +70,7 @@ const strokeSymbols: Record<Extract<Token, { type: "stroke" }>['direction'], str
   height: 1.35em;
   min-width: 0;
   flex: 0 0 auto;
-  color: var(--el-color-primary);
+  color: var(--gg-primary);
   line-height: 1;
   vertical-align: middle;
 }
@@ -90,10 +90,10 @@ const strokeSymbols: Record<Extract<Token, { type: "stroke" }>['direction'], str
   height: 100%;
   min-width: 1.2em;
   padding: 0 0.28em;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--gg-border);
   border-radius: 3px;
-  background: var(--el-fill-color-blank);
-  color: var(--el-text-color-primary);
+  background: var(--gg-surface);
+  color: var(--gg-text);
   font: inherit;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.72em;

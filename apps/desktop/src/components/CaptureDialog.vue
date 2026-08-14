@@ -6,7 +6,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
+import { AppAlert, AppButton, AppDialog, AppSpinner, pushToast } from "@godgesture/ui";
 import type {
   GestureInput,
   GestureIntent,
@@ -159,7 +159,7 @@ async function cancelRecording(): Promise<boolean> {
     const wasPending = cancelError.value !== null;
     cancelError.value = errorMessage(error);
     appLog.error("capture", `取消手势录制失败: ${errorMessage(error)}`);
-    if (!wasPending) ElMessage.error(t("capture.cancelError"));
+    if (!wasPending) pushToast({ kind: "error", message: t("capture.cancelError") });
     return false;
   }
 }
@@ -281,12 +281,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
+  <AppDialog
+    :open="visible"
     :title="t('capture.title')"
-    width="440px"
-    align-center
-    append-to-body
+    :close-label="t('common.cancel')"
+    :busy="lifecycleBusy"
+    class="capture-dialog"
+    @close="visible = false"
   >
     <div class="capture">
       <p class="capture__hint">
@@ -298,48 +299,60 @@ onBeforeUnmount(() => {
         <span v-else class="capture__waiting">{{ t("capture.waiting") }}</span>
       </div>
 
-      <el-alert
+      <AppAlert
         v-if="conflict"
-        type="warning"
-        :closable="false"
-        show-icon
+        variant="warning"
         :title="t('capture.conflictTitle')"
       >
         {{ t("capture.conflictMessage", { mnemonic: liveMnemonic, name: conflict.name }) }}
-      </el-alert>
+      </AppAlert>
 
-      <el-alert
+      <AppAlert
         v-if="cancelError"
-        type="error"
-        :closable="false"
-        show-icon
+        variant="error"
         :title="t('capture.cancelError')"
       >
         <div class="capture__error-detail">{{ cancelError }}</div>
-        <el-button link type="danger" :loading="lifecycleBusy" @click="retryCleanup">
+        <AppButton
+          variant="quiet"
+          size="sm"
+          :loading="lifecycleBusy"
+          :loading-label="t('capture.retryCleanup')"
+          :aria-label="t('capture.retryCleanup')"
+          @click="retryCleanup"
+        >
           {{ t("capture.retryCleanup") }}
-        </el-button>
-      </el-alert>
+        </AppButton>
+      </AppAlert>
 
-      <el-alert
+      <AppAlert
         v-else-if="startError"
-        type="error"
-        :closable="false"
-        show-icon
+        variant="error"
         :title="t('capture.startError')"
       >
         {{ startError }}
-      </el-alert>
+      </AppAlert>
     </div>
 
     <template #footer>
-      <el-button @click="restart">{{ t("capture.restart") }}</el-button>
-      <el-button @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button type="primary" :disabled="!capturedSpec" @click="onConfirm">
+      <AppSpinner v-if="lifecycleBusy" size="sm" :label="t('capture.waiting')" />
+      <AppButton :disabled="lifecycleBusy" :aria-label="t('capture.restart')" @click="restart">
+        {{ t("capture.restart") }}
+      </AppButton>
+      <AppButton :disabled="lifecycleBusy" :aria-label="t('common.cancel')" @click="visible = false">
+        {{ t("common.cancel") }}
+      </AppButton>
+      <AppButton
+        type="submit"
+        variant="primary"
+        :disabled="lifecycleBusy || !capturedSpec"
+        :aria-label="conflict ? t('capture.overwrite') : t('common.ok')"
+        @click="onConfirm"
+      >
         {{ conflict ? t("capture.overwrite") : t("common.ok") }}
-      </el-button>
+      </AppButton>
     </template>
-  </el-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>
@@ -350,7 +363,7 @@ onBeforeUnmount(() => {
 }
 .capture__hint {
   margin: 0;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
   font-size: 13px;
 }
 .capture__stage {
@@ -358,20 +371,22 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   min-height: 96px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--el-border-radius-base);
-  background: var(--el-fill-color-light);
+  border: 1px dashed var(--gg-border-strong);
+  border-radius: 6px;
+  background: var(--gg-surface-muted);
 }
 .capture__stage.is-conflict {
-  border-color: var(--el-color-warning);
+  border-color: var(--gg-warning);
+  background: var(--gg-warning-soft);
 }
 .capture__mnemonic {
   font-size: 32px;
 }
 .capture__waiting {
-  color: var(--el-text-color-placeholder);
+  color: var(--gg-text-muted);
 }
 .capture__error-detail {
   overflow-wrap: anywhere;
 }
+:deep(.gg-dialog.capture-dialog) { width: min(440px, calc(100vw - 32px)); }
 </style>

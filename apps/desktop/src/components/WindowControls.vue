@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloseBold, Minus } from "@element-plus/icons-vue";
+import { Minus, X } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import { closeSettingsWindow, minimizeSettingsWindow } from "../window-controls";
 import { appLog } from "../logging";
@@ -25,26 +25,24 @@ async function closeWindow() {
 
 <template>
   <div class="window-controls" role="group" :aria-label="t('header.windowControls')">
-    <el-tooltip :content="t('header.minimize')" placement="bottom" :show-after="450">
-      <button
-        type="button"
-        class="window-controls__button"
-        :aria-label="t('header.minimize')"
-        @click="minimizeWindow"
-      >
-        <el-icon><Minus /></el-icon>
-      </button>
-    </el-tooltip>
-    <el-tooltip :content="t('header.close')" placement="bottom" :show-after="450">
-      <button
-        type="button"
-        class="window-controls__button window-controls__button--close"
-        :aria-label="t('header.close')"
-        @click="closeWindow"
-      >
-        <el-icon><CloseBold /></el-icon>
-      </button>
-    </el-tooltip>
+    <button
+      type="button"
+      class="window-controls__button"
+      :aria-label="t('header.minimize')"
+      :title="t('header.minimize')"
+      @click="minimizeWindow"
+    >
+      <Minus :size="16" aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      class="window-controls__button window-controls__button--close"
+      :aria-label="t('header.close')"
+      :title="t('header.close')"
+      @click="closeWindow"
+    >
+      <X :size="16" aria-hidden="true" />
+    </button>
   </div>
 </template>
 
@@ -67,7 +65,7 @@ async function closeWindow() {
   padding: 0;
   border: 0;
   border-radius: 0;
-  color: var(--el-text-color-primary);
+  color: var(--gg-text);
   background: transparent;
   cursor: default;
 }
@@ -84,7 +82,7 @@ async function closeWindow() {
   position: relative;
   z-index: 1;
   outline: 0;
-  box-shadow: inset 0 0 0 2px var(--el-color-primary);
+  box-shadow: inset 0 0 0 2px var(--gg-ring);
 }
 
 .window-controls__button--close:hover {
@@ -101,7 +99,4 @@ async function closeWindow() {
   box-shadow: inset 0 0 0 2px currentColor;
 }
 
-.window-controls__button .el-icon {
-  font-size: 15px;
-}
 </style>

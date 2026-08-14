@@ -7,7 +7,7 @@
  */
 import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
+import { AppButton, pushToast } from "@godgesture/ui";
 import {
   HOTKEY_MODIFIERS,
 } from "@godgesture/shared";
@@ -71,7 +71,7 @@ function onKeydown(e: KeyboardEvent) {
     return;
   }
   if (recordHotkeyKeydown(recordingState, e) === "unsupported") {
-    ElMessage.warning(t("hotkey.unsupportedKey"));
+    pushToast({ kind: "warning", message: t("hotkey.unsupportedKey") });
     return;
   }
   draft.value = hotkeyRecordingDraft(recordingState);
@@ -104,7 +104,7 @@ function onNativeCaptureEvent(event: HotkeyCaptureEvent) {
         repeat: event.repeat,
       }) === "unsupported"
     ) {
-      ElMessage.warning(t("hotkey.unsupportedKey"));
+      pushToast({ kind: "warning", message: t("hotkey.unsupportedKey") });
       return;
     }
     draft.value = hotkeyRecordingDraft(recordingState);
@@ -220,7 +220,9 @@ const display = computed(() => {
       <span v-else-if="recording" class="hotkey-input__hint">{{ t("hotkey.recording") }}</span>
       <span v-else class="hotkey-input__hint">{{ t("hotkey.placeholder") }}</span>
     </div>
-    <el-button link size="small" @click="clearAll">{{ t("hotkey.clear") }}</el-button>
+    <AppButton class="hotkey-input__clear" size="sm" variant="secondary" @click="clearAll">
+      {{ t("hotkey.clear") }}
+    </AppButton>
   </div>
 </template>
 
@@ -233,26 +235,30 @@ const display = computed(() => {
 .hotkey-input__box {
   min-width: 200px;
   padding: 5px 12px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--el-border-radius-base);
-  background: var(--el-fill-color-blank);
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+  background: var(--gg-surface);
+  color: var(--gg-text);
   cursor: pointer;
   font-size: 13px;
   line-height: 20px;
   user-select: none;
-  transition: border-color 0.2s;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 .hotkey-input__box:hover {
-  border-color: var(--el-border-color-hover);
+  border-color: var(--gg-border-strong);
 }
 .hotkey-input__box.is-recording {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  border-color: var(--gg-primary);
+  box-shadow: 0 0 0 1px var(--gg-primary) inset;
 }
 .hotkey-input__hint {
-  color: var(--el-text-color-placeholder);
+  color: var(--gg-text-subtle);
 }
 .hotkey-input__value {
   font-weight: 600;
+}
+.hotkey-input__clear {
+  flex: 0 0 auto;
 }
 </style>

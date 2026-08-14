@@ -354,9 +354,6 @@ fn safe_url(url: &Url) -> String {
 mod tests {
     use super::*;
 
-    const PRODUCTION_CATALOG_URL: &str =
-        "https://raw.githubusercontent.com/Mr-BeanSir/GodGesture-Templates/main/catalog.min.json";
-
     #[test]
     fn resource_kinds_have_fixed_protocol_limits() {
         assert_eq!(TemplateResourceKind::Catalog.maximum_bytes(), 512 * 1024);
@@ -411,39 +408,5 @@ mod tests {
     fn safe_url_does_not_include_query_values() {
         let url = Url::parse("https://example.com/catalog.json?token=secret").unwrap();
         assert_eq!(safe_url(&url), "https://example.com/catalog.json");
-    }
-
-    #[test]
-    #[ignore = "requires live GitHub raw-file access"]
-    fn production_catalog_and_packages_follow_validated_redirects() {
-        tauri::async_runtime::block_on(async {
-            let catalog_text = download_template_text(
-                PRODUCTION_CATALOG_URL.to_string(),
-                TemplateResourceKind::Catalog,
-            )
-            .await
-            .expect("production catalog should download");
-            let catalog: serde_json::Value =
-                serde_json::from_str(&catalog_text).expect("catalog should be JSON");
-            assert_eq!(catalog["formatVersion"], 2);
-            let entries = catalog["entries"]
-                .as_array()
-                .expect("catalog should contain entries");
-            assert!(!entries.is_empty());
-
-            for entry in entries {
-                let package_url = entry["packageUrl"]
-                    .as_str()
-                    .expect("catalog entry should include packageUrl");
-                let package_text =
-                    download_template_text(package_url.to_string(), TemplateResourceKind::Package)
-                        .await
-                        .expect("production package should download");
-                let package: serde_json::Value =
-                    serde_json::from_str(&package_text).expect("package should be JSON");
-                assert_eq!(package["slug"], entry["slug"]);
-                assert_eq!(package["version"], entry["version"]);
-            }
-        });
     }
 }

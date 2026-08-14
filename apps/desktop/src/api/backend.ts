@@ -98,6 +98,7 @@ export interface SyncMetadata {
 export interface DesktopDeviceInfo {
   name: string;
   platform: DevicePlatform | "unsupported";
+  deviceKey: string;
 }
 
 export interface OAuthLoopbackStart {

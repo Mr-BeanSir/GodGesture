@@ -638,14 +638,8 @@ impl EngineShared {
     }
 
     fn start_boundary_path(&self, pos: Point) {
-        let (effective, enable_8) = {
-            let finder = self.finder.lock();
-            (
-                *self.effective_move_px.lock(),
-                finder.config().preferences.path_tracker.enable_8_directions,
-            )
-        };
-        *self.boundary_parser.lock() = Some(StrokeParser::new(pos, effective, enable_8));
+        let effective = *self.effective_move_px.lock();
+        *self.boundary_parser.lock() = Some(StrokeParser::new(pos, effective));
         let _ = self.tx.send(EngineMsg::BoundaryPathStarted { origin: pos });
     }
 
@@ -730,16 +724,9 @@ impl EngineShared {
                         .path_tracker
                         .prefer_cursor_window;
                     let fg = self.platform.resolve_foreground_app(origin, prefer_cursor);
-                    let enable8 = self
-                        .finder
-                        .lock()
-                        .config()
-                        .preferences
-                        .path_tracker
-                        .enable_8_directions;
                     let eff = *self.effective_move_px.lock();
                     *self.session.lock() = Some(Session {
-                        parser: StrokeParser::new(origin, eff, enable8),
+                        parser: StrokeParser::new(origin, eff),
                         fg,
                         trigger,
                         origin,

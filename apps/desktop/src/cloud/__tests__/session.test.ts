@@ -5,6 +5,7 @@ import { CloudError } from "../errors";
 import { CloudSession, resolveApiOrigin } from "../session";
 
 const ORIGIN = "https://api.example.test";
+const DEVICE_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PAIR_A: TokenPairResponse = {
   accessToken: "access-a",
   refreshToken: "refresh-a",
@@ -98,7 +99,7 @@ describe("cloud session lifecycle", () => {
     await api.login({
       email: "user@example.test",
       password: "correct horse battery staple",
-      device: { name: "Workstation", platform: "windows" },
+      device: { name: "Workstation", platform: "windows", deviceKey: DEVICE_KEY },
     });
     await expect(api.me()).resolves.toEqual(USER);
 
@@ -216,7 +217,7 @@ describe("cloud session lifecycle", () => {
       api.login({
         email: "user@example.test",
         password: "correct horse battery staple",
-        device: { name: "Workstation", platform: "windows" },
+        device: { name: "Workstation", platform: "windows", deviceKey: DEVICE_KEY },
       }),
     ).rejects.toMatchObject({ code: "credential_write_failed" });
 
@@ -240,7 +241,7 @@ describe("cloud session lifecycle", () => {
       .login({
         email: "user@example.test",
         password: "password",
-        device: { name: "Workstation", platform: "windows" },
+        device: { name: "Workstation", platform: "windows", deviceKey: DEVICE_KEY },
       })
       .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(CloudError);

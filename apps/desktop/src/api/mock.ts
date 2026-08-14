@@ -478,6 +478,7 @@ export function createMockBackend(): Backend {
       return {
         name: "GodGesture Browser Preview",
         platform: "windows" as const,
+        deviceKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       };
     },
     async syncMetadataGet() {

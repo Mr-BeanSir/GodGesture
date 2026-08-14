@@ -3,10 +3,11 @@
  * 「设置」区:通用(本机专属 + 更新)/ 参数(路径追踪)/ 显示(轨迹与提示)。
  * 本机专属设置写 machine(不同步);其余写 preferences(同步)。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, useId } from "vue";
 import { useI18n } from "vue-i18n";
-import { InfoFilled, Loading } from "@element-plus/icons-vue";
+import { CircleHelp } from "lucide-vue-next";
 import type { HotkeyKeyName, MachineLocalSettings } from "@godgesture/shared";
+import { AppAlert, AppButton, AppSpinner } from "@godgesture/ui";
 import { useConfigStore } from "../stores/config";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
 import HotkeyInput from "../components/HotkeyInput.vue";
@@ -25,6 +26,7 @@ const machine = computed(() => store.machine!);
 const version = ref("");
 const platformStatus = ref<PlatformRuntimeStatus | null>(null);
 const permissionPending = ref(false);
+const permissionSettingsPending = ref(false);
 const isMacOS = computed(() => platformStatus.value?.platform === "macos");
 const permissionsGranted = computed(() =>
   Boolean(
@@ -51,7 +53,12 @@ async function requestPermissions() {
 }
 
 async function openPermissionSettings() {
-  await backend.platformOpenPermissionSettings();
+  permissionSettingsPending.value = true;
+  try {
+    await backend.platformOpenPermissionSettings();
+  } finally {
+    permissionSettingsPending.value = false;
+  }
 }
 
 const MACHINE_ERROR_KEYS: Record<string, string> = {
@@ -82,6 +89,12 @@ function updateMachine<K extends keyof MachineLocalSettings>(key: K, value: Mach
   void store.updateMachineSetting(key, value).catch(() => undefined);
 }
 
+function updateMachineToggle<K extends keyof MachineLocalSettings>(key: K, event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  updateMachine(key, target.checked as MachineLocalSettings[K]);
+}
+
 const pauseKeys = computed<HotkeyKeyName[]>(() =>
   prefs.value.pauseHotkey.key ? [prefs.value.pauseHotkey.key] : [],
 );
@@ -95,6 +108,37 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
   if (typeof value !== "number" || !Number.isFinite(value)) return;
   tracker.value[key] = Math.min(max, Math.max(min, Math.round(value)));
 }
+
+function updateTrackerNumberFromInput(
+  key: TrackerNumberKey,
+  min: number,
+  max: number,
+  event: Event,
+) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  updateTrackerNumber(key, target.valueAsNumber, min, max);
+}
+
+const autoStartId = useId();
+const runAsAdminId = useId();
+const trayIconVisibleId = useId();
+const autoCheckForUpdateId = useId();
+const triggerRightId = useId();
+const triggerMiddleId = useId();
+const triggerX1Id = useId();
+const triggerX2Id = useId();
+const enableWindowsKeyGesturingId = useId();
+const preferCursorWindowId = useId();
+const disableInFullscreenId = useId();
+const initialValidMovePxId = useId();
+const initialStayTimeoutId = useId();
+const initialStayTimeoutMsId = useId();
+const stayTimeoutId = useId();
+const stayTimeoutMsId = useId();
+const showPathId = useId();
+const showCommandNameId = useId();
+const fadeOutId = useId();
 </script>
 
 <template>
@@ -107,11 +151,9 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
     <!-- 通用 -->
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.general.title") }}</h3>
-      <el-alert
+      <AppAlert
         v-if="isMacOS"
-        :type="permissionsGranted ? 'success' : 'warning'"
-        :closable="false"
-        show-icon
+        :variant="permissionsGranted ? 'success' : 'warning'"
         :title="
           permissionsGranted
             ? t('options.general.permissions.ready')
@@ -125,62 +167,98 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
             <span>{{ t("options.general.permissions.eventPosting") }}: {{ platformStatus?.eventPosting ? t("options.general.permissions.granted") : t("options.general.permissions.missing") }}</span>
           </div>
           <div v-if="!permissionsGranted" class="options__permission-actions">
-            <el-button type="primary" size="small" :loading="permissionPending" @click="requestPermissions">
+            <AppButton
+              variant="primary"
+              size="sm"
+              :loading="permissionPending"
+              :loading-label="t('options.general.permissions.request')"
+              @click="requestPermissions"
+            >
               {{ t("options.general.permissions.request") }}
-            </el-button>
-            <el-button size="small" @click="openPermissionSettings">
+            </AppButton>
+            <AppButton
+              size="sm"
+              :loading="permissionSettingsPending"
+              :loading-label="t('options.general.permissions.openSettings')"
+              @click="openPermissionSettings"
+            >
               {{ t("options.general.permissions.openSettings") }}
-            </el-button>
+            </AppButton>
           </div>
         </div>
-      </el-alert>
-      <el-alert
+      </AppAlert>
+      <AppAlert
         v-if="store.machineError || !store.machineStatus.healthy"
-        type="error"
-        :closable="false"
-        show-icon
+        variant="error"
         :title="machineErrorMessage"
       />
       <div class="gg-switch-row">
-        <el-switch
-          :model-value="machine.autoStart"
+        <input
+          :id="autoStartId"
+          class="gg-switch"
+          type="checkbox"
+          :checked="machine.autoStart"
           :disabled="store.machineRecovering"
-          @update:model-value="updateMachine('autoStart', $event)"
+          @change="updateMachineToggle('autoStart', $event)"
         />
-        <span>{{ t("options.general.autoStart") }}</span>
-        <el-icon v-if="store.machinePending.autoStart" class="options__pending"><Loading /></el-icon>
+        <label :for="autoStartId" class="options__switch-label">{{ t("options.general.autoStart") }}</label>
+        <AppSpinner
+          v-if="store.machinePending.autoStart"
+          class="options__pending"
+          size="sm"
+          :aria-label="t('footer.saving')"
+        />
       </div>
       <div class="gg-switch-row">
-        <el-switch
-          :model-value="machine.runAsAdmin"
+        <input
+          :id="runAsAdminId"
+          class="gg-switch"
+          type="checkbox"
+          :checked="machine.runAsAdmin"
           :disabled="store.machineRecovering || isMacOS"
-          @update:model-value="updateMachine('runAsAdmin', $event)"
+          @change="updateMachineToggle('runAsAdmin', $event)"
         />
-        <span>{{ t("options.general.runAsAdmin") }}</span>
-        <el-tooltip :content="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')" placement="top">
-          <el-icon class="gg-info"><InfoFilled /></el-icon>
-        </el-tooltip>
-        <el-icon v-if="store.machinePending.runAsAdmin" class="options__pending"><Loading /></el-icon>
+        <label :for="runAsAdminId" class="options__switch-label">{{ t("options.general.runAsAdmin") }}</label>
+        <button
+          type="button"
+          class="gg-icon-button options__info"
+          :aria-label="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')"
+          :title="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')"
+        >
+          <CircleHelp aria-hidden="true" />
+        </button>
+        <AppSpinner
+          v-if="store.machinePending.runAsAdmin"
+          class="options__pending"
+          size="sm"
+          :aria-label="t('footer.saving')"
+        />
       </div>
-      <el-alert
+      <AppAlert
         v-if="machine.runAsAdmin && !isMacOS"
-        type="warning"
-        :closable="false"
-        show-icon
+        variant="warning"
         :title="t('options.general.runAsAdminLocationWarning')"
       />
       <div class="gg-switch-row">
-        <el-switch
-          :model-value="machine.trayIconVisible"
+        <input
+          :id="trayIconVisibleId"
+          class="gg-switch"
+          type="checkbox"
+          :checked="machine.trayIconVisible"
           :disabled="store.machineRecovering"
-          @update:model-value="updateMachine('trayIconVisible', $event)"
+          @change="updateMachineToggle('trayIconVisible', $event)"
         />
-        <span>{{ t("options.general.trayIconVisible") }}</span>
-        <el-icon v-if="store.machinePending.trayIconVisible" class="options__pending"><Loading /></el-icon>
+        <label :for="trayIconVisibleId" class="options__switch-label">{{ t("options.general.trayIconVisible") }}</label>
+        <AppSpinner
+          v-if="store.machinePending.trayIconVisible"
+          class="options__pending"
+          size="sm"
+          :aria-label="t('footer.saving')"
+        />
       </div>
       <div class="gg-switch-row">
-        <el-switch v-model="prefs.autoCheckForUpdate" />
-        <span>{{ t("options.general.autoCheckUpdate") }}</span>
+        <input :id="autoCheckForUpdateId" v-model="prefs.autoCheckForUpdate" class="gg-switch" type="checkbox" />
+        <label :for="autoCheckForUpdateId" class="options__switch-label">{{ t("options.general.autoCheckUpdate") }}</label>
       </div>
       <div class="gg-field">
         <label class="gg-field-label">{{ t("options.general.pauseHotkey") }}</label>
@@ -196,75 +274,97 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
     <!-- 参数 -->
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.tracker.title") }}</h3>
+      <fieldset class="gg-field options__trigger-buttons">
+        <legend class="gg-field-label">{{ t("options.tracker.triggerButtons") }}</legend>
+        <div class="options__checkboxes">
+          <label :for="triggerRightId" class="options__checkbox-label">
+            <input :id="triggerRightId" v-model="tracker.triggerButtons" class="gg-checkbox" type="checkbox" value="right" />
+            <span>{{ t("options.tracker.triggerRight") }}</span>
+          </label>
+          <label :for="triggerMiddleId" class="options__checkbox-label">
+            <input :id="triggerMiddleId" v-model="tracker.triggerButtons" class="gg-checkbox" type="checkbox" value="middle" />
+            <span>{{ t("options.tracker.triggerMiddle") }}</span>
+          </label>
+          <label :for="triggerX1Id" class="options__checkbox-label">
+            <input :id="triggerX1Id" v-model="tracker.triggerButtons" class="gg-checkbox" type="checkbox" value="x1" />
+            <span>{{ t("options.tracker.triggerX1") }}</span>
+          </label>
+          <label :for="triggerX2Id" class="options__checkbox-label">
+            <input :id="triggerX2Id" v-model="tracker.triggerButtons" class="gg-checkbox" type="checkbox" value="x2" />
+            <span>{{ t("options.tracker.triggerX2") }}</span>
+          </label>
+        </div>
+      </fieldset>
+      <div class="gg-switch-row">
+        <input :id="enableWindowsKeyGesturingId" v-model="tracker.enableWindowsKeyGesturing" class="gg-switch" type="checkbox" />
+        <label :for="enableWindowsKeyGesturingId" class="options__switch-label">{{ t("options.tracker.enableWindowsKey") }}</label>
+      </div>
+      <div class="gg-switch-row">
+        <input :id="preferCursorWindowId" v-model="tracker.preferCursorWindow" class="gg-switch" type="checkbox" />
+        <label :for="preferCursorWindowId" class="options__switch-label">{{ t("options.tracker.preferCursorWindow") }}</label>
+      </div>
+      <div class="gg-switch-row">
+        <input :id="disableInFullscreenId" v-model="tracker.disableInFullscreen" class="gg-switch" type="checkbox" />
+        <label :for="disableInFullscreenId" class="options__switch-label">{{ t("options.tracker.disableInFullscreen") }}</label>
+      </div>
       <div class="gg-field">
-        <label class="gg-field-label">{{ t("options.tracker.triggerButtons") }}</label>
-        <el-checkbox-group v-model="tracker.triggerButtons">
-          <el-checkbox value="right">{{ t("options.tracker.triggerRight") }}</el-checkbox>
-          <el-checkbox value="middle">{{ t("options.tracker.triggerMiddle") }}</el-checkbox>
-          <el-checkbox value="x1">{{ t("options.tracker.triggerX1") }}</el-checkbox>
-          <el-checkbox value="x2">{{ t("options.tracker.triggerX2") }}</el-checkbox>
-        </el-checkbox-group>
-      </div>
-      <div class="gg-switch-row">
-        <el-switch v-model="tracker.enable8Directions" />
-        <span>{{ t("options.tracker.enable8Directions") }}</span>
-      </div>
-      <div class="gg-switch-row">
-        <el-switch v-model="tracker.enableWindowsKeyGesturing" />
-        <span>{{ t("options.tracker.enableWindowsKey") }}</span>
-      </div>
-      <div class="gg-switch-row">
-        <el-switch v-model="tracker.preferCursorWindow" />
-        <span>{{ t("options.tracker.preferCursorWindow") }}</span>
-      </div>
-      <div class="gg-switch-row">
-        <el-switch v-model="tracker.disableInFullscreen" />
-        <span>{{ t("options.tracker.disableInFullscreen") }}</span>
-      </div>
-      <div class="gg-field">
-        <label class="gg-field-label">{{ t("options.tracker.initialValidMovePx") }}</label>
+        <label :for="initialValidMovePxId" class="gg-field-label">{{ t("options.tracker.initialValidMovePx") }}</label>
         <div class="options__inline">
-          <el-input-number
-            :model-value="tracker.initialValidMovePx"
+          <input
+            :id="initialValidMovePxId"
+            class="gg-number"
+            type="number"
             :min="1"
             :max="50"
-            @update:model-value="updateTrackerNumber('initialValidMovePx', $event, 1, 50)"
+            :value="tracker.initialValidMovePx"
+            step="1"
+            @input="updateTrackerNumberFromInput('initialValidMovePx', 1, 50, $event)"
           />
           <span class="gg-unit">{{ t("options.tracker.initialValidMovePxUnit") }}</span>
         </div>
       </div>
-      <div class="gg-field">
-        <div class="gg-switch-row">
-          <el-switch v-model="tracker.initialStayTimeout" />
-          <span>{{ t("options.tracker.initialStayTimeout") }}</span>
+      <div class="options__timeout-group">
+        <div class="gg-field options__timeout-field">
+          <div class="gg-switch-row options__timeout-toggle">
+            <input :id="initialStayTimeoutId" v-model="tracker.initialStayTimeout" class="gg-switch" type="checkbox" />
+            <label :for="initialStayTimeoutId" class="options__switch-label">{{ t("options.tracker.initialStayTimeout") }}</label>
+          </div>
+          <div class="options__inline options__timeout-value">
+            <label :for="initialStayTimeoutMsId" class="gg-sr-only">{{ t("options.tracker.initialStayTimeout") }}</label>
+            <input
+              :id="initialStayTimeoutMsId"
+              class="gg-number"
+              type="number"
+              :min="20"
+              :max="2000"
+              :step="20"
+              :disabled="!tracker.initialStayTimeout"
+              :value="tracker.initialStayTimeoutMs"
+              @input="updateTrackerNumberFromInput('initialStayTimeoutMs', 20, 2000, $event)"
+            />
+            <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
+          </div>
         </div>
-        <div class="options__inline options__indent">
-          <el-input-number
-            :model-value="tracker.initialStayTimeoutMs"
-            :min="20"
-            :max="2000"
-            :step="20"
-            :disabled="!tracker.initialStayTimeout"
-            @update:model-value="updateTrackerNumber('initialStayTimeoutMs', $event, 20, 2000)"
-          />
-          <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
-        </div>
-      </div>
-      <div class="gg-field">
-        <div class="gg-switch-row">
-          <el-switch v-model="tracker.stayTimeout" />
-          <span>{{ t("options.tracker.stayTimeout") }}</span>
-        </div>
-        <div class="options__inline options__indent">
-          <el-input-number
-            :model-value="tracker.stayTimeoutMs"
-            :min="50"
-            :max="10000"
-            :step="50"
-            :disabled="!tracker.stayTimeout"
-            @update:model-value="updateTrackerNumber('stayTimeoutMs', $event, 50, 10000)"
-          />
-          <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
+        <div class="gg-field options__timeout-field">
+          <div class="gg-switch-row options__timeout-toggle">
+            <input :id="stayTimeoutId" v-model="tracker.stayTimeout" class="gg-switch" type="checkbox" />
+            <label :for="stayTimeoutId" class="options__switch-label">{{ t("options.tracker.stayTimeout") }}</label>
+          </div>
+          <div class="options__inline options__timeout-value">
+            <label :for="stayTimeoutMsId" class="gg-sr-only">{{ t("options.tracker.stayTimeout") }}</label>
+            <input
+              :id="stayTimeoutMsId"
+              class="gg-number"
+              type="number"
+              :min="50"
+              :max="10000"
+              :step="50"
+              :disabled="!tracker.stayTimeout"
+              :value="tracker.stayTimeoutMs"
+              @input="updateTrackerNumberFromInput('stayTimeoutMs', 50, 10000, $event)"
+            />
+            <span class="gg-unit">{{ t("options.tracker.msUnit") }}</span>
+          </div>
         </div>
       </div>
     </section>
@@ -273,16 +373,16 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
     <section class="gg-section">
       <h3 class="gg-section-title">{{ t("options.view.title") }}</h3>
       <div class="gg-switch-row">
-        <el-switch v-model="view.showPath" />
-        <span>{{ t("options.view.showPath") }}</span>
+        <input :id="showPathId" v-model="view.showPath" class="gg-switch" type="checkbox" />
+        <label :for="showPathId" class="options__switch-label">{{ t("options.view.showPath") }}</label>
       </div>
       <div class="gg-switch-row">
-        <el-switch v-model="view.showCommandName" />
-        <span>{{ t("options.view.showCommandName") }}</span>
+        <input :id="showCommandNameId" v-model="view.showCommandName" class="gg-switch" type="checkbox" />
+        <label :for="showCommandNameId" class="options__switch-label">{{ t("options.view.showCommandName") }}</label>
       </div>
       <div class="gg-switch-row">
-        <el-switch v-model="view.fadeOut" />
-        <span>{{ t("options.view.fadeOut") }}</span>
+        <input :id="fadeOutId" v-model="view.fadeOut" class="gg-switch" type="checkbox" />
+        <label :for="fadeOutId" class="options__switch-label">{{ t("options.view.fadeOut") }}</label>
       </div>
       <div class="options__color-row">
         <span>{{ t("options.view.rightColor") }}</span>
@@ -316,9 +416,43 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
   align-items: center;
   gap: 8px;
 }
-.options__indent {
-  margin-top: 8px;
-  padding-left: 42px;
+.options__inline .gg-number {
+  max-width: 160px;
+}
+.options__timeout-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.options__timeout-field {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 142px;
+  column-gap: 10px;
+  row-gap: 0;
+  min-height: 32px;
+  align-items: center;
+}
+.options__timeout-toggle {
+  display: grid;
+  grid-column: 1 / 3;
+  grid-template-columns: 38px minmax(0, 1fr);
+  column-gap: 10px;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+}
+.options__timeout-toggle .options__switch-label {
+  min-width: 0;
+  min-height: 32px;
+}
+.options__timeout-value {
+  grid-column: 3;
+  justify-content: flex-end;
+}
+.options__timeout-value .gg-number {
+  width: 102px;
+  max-width: 102px;
+  flex: 0 0 102px;
 }
 .options__color-row {
   display: flex;
@@ -327,10 +461,7 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
   max-width: 360px;
 }
 .options__pending {
-  width: 16px;
-  height: 16px;
-  color: var(--el-color-primary);
-  animation: options-spin 1s linear infinite;
+  color: var(--gg-primary);
 }
 .options__permission-body {
   display: flex;
@@ -341,16 +472,41 @@ function updateTrackerNumber(key: TrackerNumberKey, value: unknown, min: number,
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
   font-size: 12px;
 }
 .options__permission-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
-@keyframes options-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.options__switch-label,
+.options__checkbox-label {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gg-text);
+}
+.options__info {
+  display: inline-flex;
+  color: var(--gg-text-muted);
+}
+.options__info svg {
+  width: 18px;
+  height: 18px;
+}
+.options__trigger-buttons {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.options__checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+.options__checkbox-label {
+  gap: 8px;
 }
 </style>

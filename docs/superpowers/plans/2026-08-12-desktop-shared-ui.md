@@ -16,7 +16,7 @@
 - Existing Desktop stores, API clients, Tauri commands, window controls, native overlays, and business behavior remain unchanged.
 - Use `uv run python` for every Python script invoked during implementation or verification.
 - Preserve unrelated worktree changes; stage only files belonging to the current task with explicit paths.
-- UI must match `design-system/godgesture-web-console/MASTER.md`: semantic `--gg-*` tokens, 40px desktop controls, 44px narrow-window hit targets, visible focus, reduced motion, and no decorative gradients.
+- Web Console UI must match `design-system/godgesture-web-console/MASTER.md`: semantic `--gg-*` tokens, 40px desktop controls, 44px narrow-window hit targets, visible focus, reduced motion, and no decorative gradients. Desktop is a fixed native settings window with a local 32px compact density layer; Desktop does not inherit Web Console viewport navigation breakpoints or drawers.
 
 ---
 
@@ -178,7 +178,7 @@ Run: `pnpm --filter @godgesture/server web:typecheck` and `pnpm --filter @godges
 
 - [ ] **Step 1: Write failing shell tests**
 
-Add tests that mount `App.vue` in browser mock mode and assert no `el-*` elements, a 56px header, the semantic navigation buttons, theme control accessible name, pause control state, footer save status, and config error retry are rendered.
+Add tests that mount `App.vue` in browser mock mode and assert no `el-*` elements, a fixed 48px header, persistent 168px navigation, the semantic navigation buttons, theme control accessible name, pause control state, footer save status, and config error retry are rendered.
 
 - [ ] **Step 2: Run shell tests to verify they fail**
 
@@ -188,7 +188,7 @@ Expected: FAIL because the current shell is Element-based and uses the old token
 
 - [ ] **Step 3: Remove Element global injection and rewrite the shell template**
 
-Import `@godgesture/ui/styles.css`, replace `el-container`, `el-header`, `el-aside`, `el-main`, `el-footer`, `el-menu`, `el-button`, `el-select`, `el-result`, `el-skeleton`, and `el-tag` with semantic HTML/shared primitives. Keep the Windows drag region and custom controls. Implement the Console 248px sidebar at `min-width: 1024px` and a labelled drawer below it.
+Import `@godgesture/ui/styles.css`, replace `el-container`, `el-header`, `el-aside`, `el-main`, `el-footer`, `el-menu`, `el-button`, `el-select`, `el-result`, `el-skeleton`, and `el-tag` with semantic HTML/shared primitives. Keep the Windows drag region and custom controls. Implement the fixed 48px header, 168px persistent sidebar, 30px footer, and Desktop-only compact density layer. Do not add a viewport breakpoint or navigation drawer; Web Console owns its own responsive navigation.
 
 - [ ] **Step 4: Replace shell icon/message imports**
 
@@ -273,7 +273,7 @@ Expected: FAIL because the current catalog/detail views render Element controls.
 
 - [ ] **Step 3: Convert list/detail layouts to Console-style working surfaces**
 
-Use a bordered surface with a header, toolbar, table/list, detail inspector, status badges, and one primary action per surface. Keep table overflow inside the list surface and convert detail data to stacked fields below the Desktop narrow breakpoint.
+Use a bordered surface with a header, toolbar, table/list, detail inspector, status badges, and one primary action per surface. Keep table overflow inside the list surface and keep Desktop workbench rails at their original fixed widths; do not add a Desktop narrow breakpoint. Web Console may retain its own responsive detail behavior.
 
 - [ ] **Step 4: Convert multi-step and review dialogs**
 
@@ -386,7 +386,7 @@ Run: `pnpm --filter @godgesture/desktop dev -- --host 127.0.0.1` on an unused po
 
 - [ ] **Step 2: Capture required viewports and themes**
 
-Check 980x700, 800x560, 1024px, and a narrow viewport in light and dark themes. Verify shell, each section, dialogs, Toast, loading/error/empty states, focus rings, and no page-level horizontal overflow.
+Check Desktop at 980x700 and 800x560 in light and dark themes. Verify the fixed shell, persistent navigation, compact controls including Teleport dialogs, each section, Toast, loading/error/empty states, focus rings, and no page-level horizontal overflow. Verify Web Console responsive viewports in its own Server-owned workflow.
 
 - [ ] **Step 3: Correct only evidence-backed visual regressions**
 

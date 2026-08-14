@@ -13,7 +13,11 @@ import {
   RateLimitedResponse,
   RefreshRotationRaceResponse,
   RenameDeviceRequest,
+  TemplateModerationReportListQuery,
+  TemplateModerationReportListResponse,
 } from "../protocol.js";
+
+const DEVICE_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const deviceNameSchemas = [
   {
@@ -22,7 +26,7 @@ const deviceNameSchemas = [
       LoginRequest.parse({
         email: "user@example.com",
         password: "password",
-        device: { name, platform: "windows" },
+        device: { name, platform: "windows", deviceKey: DEVICE_KEY },
       }).device.name,
   },
   {
@@ -31,7 +35,7 @@ const deviceNameSchemas = [
       OAuthExchangeRequest.parse({
         code: "one-time-code",
         codeVerifier: "v".repeat(43),
-        device: { name, platform: "macos" },
+        device: { name, platform: "macos", deviceKey: DEVICE_KEY },
       }).device.name,
   },
   {
@@ -86,7 +90,7 @@ describe("OAuth PKCE contract", () => {
     expect(() =>
       OAuthExchangeRequest.parse({
         code: "one-time-code",
-        device: { name: "Browser", platform: "web" },
+        device: { name: "Browser", platform: "web", deviceKey: DEVICE_KEY },
       }),
     ).toThrow();
   });
@@ -95,12 +99,25 @@ describe("OAuth PKCE contract", () => {
     expect(OAuthPendingBindingEmailCodeRequest.parse({ email: " USER@example.com " })).toEqual({ email: "user@example.com" });
     expect(OAuthPendingBindingCompleteRequest.parse({
       email: "USER@example.com", verificationCode: "123456", codeVerifier: "v".repeat(43),
-      device: { name: "Desktop", platform: "windows" },
+      device: { name: "Desktop", platform: "windows", deviceKey: DEVICE_KEY },
     }).email).toBe("user@example.com");
     expect(() => OAuthPendingBindingCompleteRequest.parse({
       email: "user@example.com", verificationCode: "invalid", codeVerifier: "v".repeat(43),
-      device: { name: "Desktop", platform: "windows" },
+      device: { name: "Desktop", platform: "windows", deviceKey: DEVICE_KEY },
     })).toThrow();
+  });
+
+  it("requires a stable UUID device key for every login flow", () => {
+    expect(() => LoginRequest.parse({
+      email: "user@example.com",
+      password: "password",
+      device: { name: "Browser", platform: "web" },
+    })).toThrow();
+    expect(LoginRequest.parse({
+      email: "user@example.com",
+      password: "password",
+      device: { name: "Browser", platform: "web", deviceKey: DEVICE_KEY },
+    }).device.deviceKey).toBe(DEVICE_KEY);
   });
 });
 
@@ -150,5 +167,34 @@ describe("RateLimitedResponse", () => {
       error: "rate_limited",
     });
     expect(() => RateLimitedResponse.parse({ error: "network" })).toThrow();
+  });
+});
+
+describe("Template moderation report pagination contract", () => {
+  it("coerces cursor-page queries and preserves the response next cursor", () => {
+    const cursor = "10000000-0000-4000-8000-000000000001";
+    expect(TemplateModerationReportListQuery.parse({
+      status: "open",
+      cursor,
+      limit: "25",
+    })).toEqual({ status: "open", cursor, limit: 25 });
+
+    expect(TemplateModerationReportListResponse.parse({
+      reports: [{
+        id: "10000000-0000-4000-8000-000000000002",
+        templateId: "10000000-0000-4000-8000-000000000003",
+        versionId: "10000000-0000-4000-8000-000000000004",
+        title: "Window template",
+        reason: "Needs review",
+        status: "open",
+        resolution: null,
+        createdAt: "2026-08-14T00:00:00.000Z",
+        resolvedAt: null,
+        author: "owner@example.com",
+        reporter: "reporter@example.com",
+      }],
+      nextCursor: cursor,
+      count: 2,
+    }).nextCursor).toBe(cursor);
   });
 });

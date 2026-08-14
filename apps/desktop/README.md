@@ -30,8 +30,8 @@ pnpm --filter @godgesture/desktop dev
 ## 配置
 
 复制并按需填写 `.env.example` 中的环境变量。生产账户服务必须使用部署后的
-HTTPS API 地址；Updater 和手势模板默认使用 `Mr-BeanSir` 名下的 GitHub
-仓库，只有明确迁移仓库时才覆盖这些地址。
+HTTPS API 地址；Updater 和官方在线插件目录使用 `Mr-BeanSir` 名下的 GitHub
+仓库。公共手势模板始终读取固定官方 Server origin，不随账户的自定义同步端点改变。
 
 原生 Updater endpoint 可在编译时通过 `GODGESTURE_UPDATE_ENDPOINT` 覆盖，
 但仍只接受不含凭据的 HTTPS URL。

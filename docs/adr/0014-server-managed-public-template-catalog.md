@@ -23,6 +23,12 @@ GitHub 静态目录要求投稿者熟悉仓库协作，所有模板元数据集�
 - 模板版本为不可变审核单元：作者可撤回，管理员可审核、拒绝、下架、恢复、处理举报和调整
   配额，但不能编辑已提交的内容。账户不提供注销或删除接口；禁用账户不可登录、关联 OAuth
   或投稿。
+- 同一模板允许多个版本同时发布。`TemplateVersion.status` 是公开可见性和审核生命周期的事实
+  来源；`Template.status` 只是版本集合的持久化聚合投影，优先级固定为
+  `published > pending_review > suspended > rejected > withdrawn`。版本状态变化必须在同一数据库
+  事务内锁定父模板行、条件更新版本并重算父状态，避免不同版本并发审核产生最后写入覆盖。
+  `publishedTemplateLimit` 按“至少存在一个 `published` 版本”的父模板数量统计，不直接信任父
+  状态字段。已有数据通过幂等 migration 按相同优先级回填。
 - 公共响应中的 `title`、`summary` 是已验证的单一普通字符串，不是本地化对象。UI 自身仍使用
   vue-i18n。模板命令和配置只引用 `pluginId`；安装时从固定
   `Mr-BeanSir/GodGesture-Plugins` 的 `main` 官方目录解析受启用的 `pluginId -> subdirectory`。
@@ -36,5 +42,6 @@ RustFS 服务和持久卷。模板 API、对象存储凭据、配额和审核操
 审计及最小权限边界。GitHub `GodGesture-Templates` 不再是 Desktop 的运行时目录来源；它可作为
 历史迁移素材，但不得继续定义公共模板协议或可见目录。
 
-Server/Web Console 以私有子模块嵌入主工作区，RustFS 的 Docker Compose、环境变量和部署说明
-在 Server 私有仓库中维护；其 Docker 构建上下文仍为主仓库根目录，原因见 ADR-0015。
+Server 以私有子模块嵌入主工作区，Web Console 源码由该 Server 子模块拥有；RustFS 的
+Docker Compose、环境变量和部署说明也在 Server 私有仓库中维护。Docker 构建上下文仍为
+主仓库根目录，仓库与 Console 所有权分别见 ADR-0015、ADR-0016。

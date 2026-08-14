@@ -81,22 +81,21 @@ function getIconCache() {
 </script>
 
 <template>
-  <el-tooltip :content="accessibleLabel" placement="top" :show-after="450">
-    <span
-      class="app-icon"
-      :class="{ 'is-loading': loading }"
-      :style="dimensions"
-      role="img"
-      :aria-label="accessibleLabel"
-    >
-      <img v-if="imageSource" :src="imageSource" alt="" draggable="false" />
-      <svg v-else viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <rect x="1.5" y="1.5" width="21" height="21" rx="5" />
-        <path d="M8.7 9.2a3.45 3.45 0 0 1 6.65 1.3c0 2.1-1.9 2.75-2.8 3.45-.42.33-.55.68-.55 1.3" />
-        <circle cx="12" cy="18" r="1" />
-      </svg>
-    </span>
-  </el-tooltip>
+  <span
+    class="app-icon"
+    :class="{ 'is-loading': loading }"
+    :style="dimensions"
+    role="img"
+    :aria-label="accessibleLabel"
+    :title="accessibleLabel"
+  >
+    <img v-if="imageSource" :src="imageSource" alt="" draggable="false" />
+    <svg v-else viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="1.5" y="1.5" width="21" height="21" rx="5" />
+      <path d="M8.7 9.2a3.45 3.45 0 0 1 6.65 1.3c0 2.1-1.9 2.75-2.8 3.45-.42.33-.55.68-.55 1.3" />
+      <circle cx="12" cy="18" r="1" />
+    </svg>
+  </span>
 </template>
 
 <style scoped>
@@ -106,7 +105,7 @@ function getIconCache() {
   place-items: center;
   overflow: hidden;
   border-radius: 5px;
-  background: var(--el-fill-color-light);
+  background: var(--gg-surface-muted);
 }
 .app-icon img,
 .app-icon svg {
@@ -118,18 +117,18 @@ function getIconCache() {
   object-fit: contain;
 }
 .app-icon svg rect {
-  fill: var(--el-fill-color);
-  stroke: var(--el-border-color);
+  fill: var(--gg-surface);
+  stroke: var(--gg-border);
 }
 .app-icon svg path,
 .app-icon svg circle {
   fill: none;
-  stroke: var(--el-text-color-secondary);
+  stroke: var(--gg-text-muted);
   stroke-width: 1.8;
   stroke-linecap: round;
 }
 .app-icon svg circle {
-  fill: var(--el-text-color-secondary);
+  fill: var(--gg-text-muted);
   stroke: none;
 }
 .app-icon.is-loading {

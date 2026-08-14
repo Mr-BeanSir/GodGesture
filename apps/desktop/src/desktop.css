@@ -1,0 +1,68 @@
+/* Desktop keeps the fixed settings-window density separate from Web Console touch sizing. */
+:root {
+  --gg-sidebar: var(--gg-surface-muted);
+  --gg-title-control-hover: var(--gg-surface-hover);
+  --gg-title-control-active: var(--gg-border-strong);
+  --gg-window-close-foreground: #ffffff;
+  --gg-window-close-hover: #c42b1c;
+  --gg-window-close-active: #a52318;
+}
+
+/* The desktop shell owns the only scroll containers in the fixed window. */
+html.gg-desktop,
+html.gg-desktop body,
+html.gg-desktop #app {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gg-desktop .gg-button,
+.gg-desktop .gg-button--sm,
+.gg-desktop .gg-input,
+.gg-desktop .gg-select,
+.gg-desktop .gg-number {
+  min-height: 32px;
+}
+
+.gg-desktop .gg-icon-button {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* Preserve the smaller row action hit area that was part of the old Desktop table. */
+.gg-desktop .gg-icon-button.gestures__icon-action {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.gg-desktop {
+  scrollbar-color: var(--gg-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.gg-desktop ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.gg-desktop ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gg-desktop ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--gg-border-strong);
+  background-clip: padding-box;
+}
+
+.gg-desktop ::-webkit-scrollbar-thumb:hover {
+  background: var(--gg-text-muted);
+  background-clip: padding-box;
+}
+
+.gg-desktop ::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -44,6 +44,7 @@ function makeBackend(initialEntries: LogEntry[] = []) {
       files: [],
       level: "debug" as const,
     })),
+    logsClear: vi.fn(async () => undefined),
     emit(entry: LogEntry) {
       listener?.(entry);
     },
@@ -93,5 +94,32 @@ describe("logs store ordering and follow state", () => {
 
     expect(store.live).toBe(false);
     expect(store.entries[0]?.target).toBe("manual");
+  });
+
+  it("returns a successful clear result after discarding a previous error", async () => {
+    const store = useLogsStore();
+    await store.initialize();
+    store.error = "Previous log request failed";
+    backendSlot.current!.logsClear = vi.fn(async () => undefined);
+
+    await expect(store.clear()).resolves.toBe(true);
+
+    expect(store.error).toBeNull();
+    expect(store.entries).toEqual([]);
+    expect(store.total).toBe(0);
+  });
+
+  it("keeps records and reports a failed clear result when the backend rejects", async () => {
+    const store = useLogsStore();
+    await store.initialize();
+    backendSlot.current!.logsClear = vi.fn(async () => {
+      throw new Error("Unable to clear logs");
+    });
+
+    await expect(store.clear()).resolves.toBe(false);
+
+    expect(store.error).toBe("Unable to clear logs");
+    expect(store.entries.map((entry) => entry.target)).toEqual(["new", "old"]);
+    expect(store.total).toBe(2);
   });
 });

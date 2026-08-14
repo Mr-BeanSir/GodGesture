@@ -17,7 +17,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Stroke, Transform};
 use windows::core::{w, BOOL, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
+use windows::Win32::Foundation::{
+    GetLastError, COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::BLENDFUNCTION;
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EndPaint,
@@ -27,20 +29,20 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetWindowLongW,
-    KillTimer, PostThreadMessageW, RegisterClassExW, SetTimer, SetWindowLongW, SetWindowPos,
-    TranslateMessage, UpdateLayeredWindow, UpdateLayeredWindowIndirect, GWL_STYLE, MSG,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, ULW_ALPHA,
-    UPDATELAYEREDWINDOWINFO, WINDOW_STYLE, WM_APP, WM_PAINT, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, KillTimer,
+    PostThreadMessageW, RegisterClassExW, SetTimer, SetWindowPos, ShowWindow, TranslateMessage,
+    UpdateLayeredWindow, UpdateLayeredWindowIndirect, MSG, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE,
+    SW_SHOWNOACTIVATE, ULW_ALPHA, UPDATELAYEREDWINDOWINFO, WINDOW_STYLE, WM_APP, WM_PAINT,
+    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 const WM_APP_WAKE: u32 = WM_APP + 1;
 const MAX_COMMANDS_PER_FRAME: usize = 4096;
 const MAX_TRAIL_POINTS_BASE: usize = 512;
-// Extended styles provide all required overlay behavior; the base style intentionally matches
-// the proven canvas-window shape and must not include WS_POPUP.
-const OVERLAY_WINDOW_STYLE: WINDOW_STYLE = WINDOW_STYLE(0);
+// Extended styles provide all required overlay behavior; WS_POPUP supplies the borderless
+// top-level window semantics required by UpdateLayeredWindow.
+const OVERLAY_WINDOW_STYLE: WINDOW_STYLE = WS_POPUP;
 const FADE_TIMER_ID: usize = 1;
 const FADE_STEP: u16 = 48;
 const FADE_INTERVAL_MS: u32 = 30;
@@ -383,14 +385,6 @@ fn classify_surface_change(
         rebuild,
         reposition: rebuild || current_origin != next_origin,
         dpi_changed: (current_dpi - next_dpi).abs() > f32::EPSILON,
-    }
-}
-
-fn window_style_with_visibility(style: WINDOW_STYLE, visible: bool) -> WINDOW_STYLE {
-    if visible {
-        WINDOW_STYLE(style.0 | WS_VISIBLE.0)
-    } else {
-        WINDOW_STYLE(style.0 & !WS_VISIBLE.0)
     }
 }
 
@@ -877,32 +871,14 @@ fn set_overlay_visible(state: &mut OverlayState, visible: bool) {
         return;
     }
     unsafe {
-        let mut all_match = true;
-        let mut any_visible = false;
         for tile in &state.tiles {
-            let style = WINDOW_STYLE(GetWindowLongW(tile.hwnd, GWL_STYLE) as u32);
-            let next_style = window_style_with_visibility(style, visible);
-            if next_style != style {
-                SetWindowLongW(tile.hwnd, GWL_STYLE, next_style.0 as i32);
-                let _ = SetWindowPos(
-                    tile.hwnd,
-                    None,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE,
-                );
+            if visible {
+                let _ = ShowWindow(tile.hwnd, SW_SHOWNOACTIVATE);
+            } else {
+                let _ = ShowWindow(tile.hwnd, SW_HIDE);
             }
-            let applied_style = WINDOW_STYLE(GetWindowLongW(tile.hwnd, GWL_STYLE) as u32);
-            let applied_visible = applied_style.0 & WS_VISIBLE.0 != 0;
-            any_visible |= applied_visible;
-            all_match &= applied_visible == visible;
         }
-        state.visible = any_visible;
-        if !all_match {
-            log::warn!("覆盖层可见性样式应用失败: requested={visible}");
-        }
+        state.visible = visible;
     }
 }
 
@@ -1223,6 +1199,21 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
                         prcDirty: &local_dirty,
                     };
                     if !UpdateLayeredWindowIndirect(tile.hwnd, &info).as_bool() {
+                        let error = GetLastError().0;
+                        log::warn!(
+                            "覆盖层局部提交失败: hwnd={:?} pos=({}, {}) size={}x{} src=({}, {}) dirty=({}, {}, {}, {}) error={error}",
+                            tile.hwnd,
+                            pos.x,
+                            pos.y,
+                            size.cx,
+                            size.cy,
+                            src_pos.x,
+                            src_pos.y,
+                            local_dirty.left,
+                            local_dirty.top,
+                            local_dirty.right,
+                            local_dirty.bottom,
+                        );
                         failed = true;
                         break;
                     }
@@ -1247,7 +1238,7 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
                 x: tile.source.left,
                 y: tile.source.top,
             };
-            let _ = UpdateLayeredWindow(
+            if let Err(error) = UpdateLayeredWindow(
                 tile.hwnd,
                 None,
                 Some(&pos),
@@ -1257,7 +1248,20 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
                 COLORREF(0),
                 Some(&blend),
                 ULW_ALPHA,
-            );
+            ) {
+                log::warn!(
+                    "覆盖层完整提交失败: hwnd={:?} pos=({}, {}) size={}x{} src=({}, {}) error=0x{:08X} message={}",
+                    tile.hwnd,
+                    pos.x,
+                    pos.y,
+                    size.cx,
+                    size.cy,
+                    src_pos.x,
+                    src_pos.y,
+                    error.code().0 as u32,
+                    error.message(),
+                );
+            }
         }
     }
 }
@@ -1394,9 +1398,8 @@ mod tests {
     }
 
     #[test]
-    fn overlay_base_style_does_not_add_popup_semantics() {
-        assert_eq!(OVERLAY_WINDOW_STYLE, WINDOW_STYLE(0));
-        assert_eq!(OVERLAY_WINDOW_STYLE.0 & WS_POPUP.0, 0);
+    fn overlay_uses_popup_window_semantics() {
+        assert_eq!(OVERLAY_WINDOW_STYLE, WS_POPUP);
     }
 
     fn rect_tuple(rect: PixelRect) -> (i32, i32, i32, i32) {
@@ -1500,16 +1503,6 @@ mod tests {
         assert_eq!(rect_tuple(tiles[1]), (960, 240, 1920, 1320));
         assert_eq!(rect_tuple(tiles[2]), (1920, 0, 3200, 1440));
         assert_eq!(rect_tuple(tiles[3]), (3200, 0, 4480, 1440));
-    }
-
-    #[test]
-    fn overlay_visibility_changes_only_the_visible_style_bit() {
-        let hidden = WINDOW_STYLE(0x04c0_0000);
-        let visible = window_style_with_visibility(hidden, true);
-        assert_ne!(visible.0 & WS_VISIBLE.0, 0);
-        assert_eq!(visible.0 & !WS_VISIBLE.0, hidden.0);
-        assert_eq!(window_style_with_visibility(visible, false), hidden);
-        assert_eq!(visible.0 & WS_POPUP.0, 0);
     }
 
     #[test]

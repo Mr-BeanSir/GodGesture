@@ -6,6 +6,7 @@ const TOKEN_PAIR = {
   refreshToken: "refresh-token",
   accessTokenExpiresIn: 900,
 };
+const DEVICE_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 describe("generated GodGesture API client", () => {
   it("serializes a public login request and parses its response", async () => {
@@ -21,7 +22,7 @@ describe("generated GodGesture API client", () => {
       body: {
         email: "user@example.test",
         password: "correct horse battery staple",
-        device: { name: "Workstation", platform: "windows" },
+        device: { name: "Workstation", platform: "windows", deviceKey: DEVICE_KEY },
       },
     });
 
@@ -33,7 +34,7 @@ describe("generated GodGesture API client", () => {
     await expect(request?.json()).resolves.toEqual({
       email: "user@example.test",
       password: "correct horse battery staple",
-      device: { name: "Workstation", platform: "windows" },
+      device: { name: "Workstation", platform: "windows", deviceKey: DEVICE_KEY },
     });
   });
 

@@ -164,6 +164,12 @@ _避免_: 默认手势、预设(预设指出厂内置的初始配置)
 **模板版本 (Template Version)**:
 同一模板下的不可变内容和元数据版本。任何修改都创建并审核新版本；已发布版本可撤回或下架。
 
+**模板父状态投影 (Template Parent Status Projection)**:
+同一模板全部版本状态的持久化摘要，不是公开可见性的独立事实来源。同一模板允许多个版本同时
+发布；父状态按 `published > pending_review > suspended > rejected > withdrawn` 聚合。目录、详情和
+下载继续按版本状态判断，发布配额按至少存在一个已发布版本的父模板计数。任何版本状态变化必须
+在锁定父模板行的同一事务内重算该投影。
+
 **模板撤回 (Template Withdrawal)**:
 作者使自己的已发布模板不再出现在公共目录中的操作，不删除历史版本或对象。
 
@@ -178,9 +184,25 @@ _避免_: 默认手势、预设(预设指出厂内置的初始配置)
 浏览器中登录账户后使用的管理界面:只读查看手势库与设置、管理设备、查看与回滚配置快照、账户安全操作；管理员还可审核公共模板、处理举报并调整全局或用户级配额；不提供配置编辑或账户注销。
 _避免_: 官网、管理后台
 
+**共享 UI 原语包 (Shared UI Package)**:
+根 pnpm workspace 的 `@godgesture/ui` (`packages/ui/`)，为 Desktop 与 Server-owned Web Console
+提供无业务 Vue 原语、`--gg-*` 设计 token、焦点安全的对话框、确认 Promise 和 Toast。它不读取
+router、store、API client 或 i18n；`packages/shared` 继续只保存协议和领域类型而不依赖 Vue，两个
+应用各自保留文案和应用特有布局。
+
+**Desktop 固定设置外壳 (Fixed Desktop Settings Shell)**:
+Desktop 的原生设置窗口沿用 48px 顶栏、168px 常驻左栏和 30px 底栏；不使用 viewport
+断点、导航切换按钮或抽屉。Desktop 常规按钮和表单控件固定为 32px，工作面内容在窗口
+内部滚动；多尺寸响应式导航和窄视口触控密度只属于 Server-owned Web Console。
+
 **设备 (Device)**:
 登录了同一账户的一个客户端安装实例,持有独立的可撤销登录凭证,可在 Web 控制台改名或踢下线。
 _避免_: 客户端(客户端指软件本身)
+
+**设备安装标识 (Device Installation Key)**:
+客户端为一个安装实例持久化的 UUID,仅与账户 ID 组合用于认证时复用同一设备记录。Web Console
+保存在浏览器 `localStorage` 的 `godgesture.deviceKey`, Desktop 保存在应用配置目录的
+`device-key.json`;退出登录不会清除。该标识不采集硬盘、主板或内存序列号,也不参与配置同步或设备列表展示。
 
 **配置快照 (Snapshot)**:
 服务端在每次成功推送时保留的整库配置历史版本,可查看与回滚。

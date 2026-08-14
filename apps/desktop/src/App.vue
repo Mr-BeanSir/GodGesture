@@ -1,27 +1,32 @@
 <script setup lang="ts">
 /**
- * 设置窗口外壳:顶栏(暂停开关 / 深浅主题 / 语言)、左侧导航、内容区、底部保存状态。
+ * 设置窗口外壳:顶栏(暂停开关 / 深浅主题 / 语言)、导航、内容区、底部保存状态。
  * 深浅主题为本机偏好(localStorage,不入同步载荷);语言写 preferences.locale(同步)。
  */
-import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useDark, useToggle } from "@vueuse/core";
 import {
-  Connection,
-  Document,
-  Files,
-  InfoFilled,
-  MagicStick,
+  BookOpen,
+  CirclePause,
+  CirclePlay,
+  FileText,
+  Info,
   Moon,
-  Setting,
-  Sunny,
-  User,
-  VideoPause,
-  VideoPlay,
-} from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import zhCn from "element-plus/es/locale/lang/zh-cn";
-import en from "element-plus/es/locale/lang/en";
+  Puzzle,
+  Settings,
+  Sun,
+  UserRound,
+  type LucideIcon,
+} from "lucide-vue-next";
+import {
+  AppBadge,
+  AppButton,
+  AppEmptyState,
+  AppSkeleton,
+  pushToast,
+  useConfirmDialog,
+} from "@godgesture/ui";
 import { useConfigStore } from "./stores/config";
 import { useAccountStore } from "./stores/account";
 import { useUpdateStore } from "./stores/update";
@@ -35,6 +40,9 @@ import {
   resolveQuickGuideStorage,
   shouldShowQuickGuide,
 } from "./onboarding/quick-guide";
+import { resolveInitialSection, type Section } from "./shell";
+import UiConfirmHost from "./components/UiConfirmHost.vue";
+import UiToastHost from "./components/UiToastHost.vue";
 import QuickStartDialog from "./components/QuickStartDialog.vue";
 import WindowControls from "./components/WindowControls.vue";
 import OptionsView from "./views/OptionsView.vue";
@@ -45,23 +53,24 @@ import PluginsView from "./views/PluginsView.vue";
 import LogsView from "./views/LogsView.vue";
 import AboutView from "./views/AboutView.vue";
 
-type Section = "options" | "gestures" | "templates" | "plugins" | "logs" | "account" | "about";
 type LocaleSetting = "auto" | AppLocale;
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const store = useConfigStore();
 const account = useAccountStore();
 const updates = useUpdateStore();
 const plugins = usePluginsStore();
 const templates = useTemplatesStore();
+const { confirm } = useConfirmDialog();
 
 const isDark = useDark();
 const toggleDark = useToggle(isDark);
-
 const active = ref<Section>("gestures");
 const quickStartVisible = ref(false);
+const workspaceHeading = ref<HTMLHeadingElement | null>(null);
 const quickGuideStorage = resolveQuickGuideStorage();
 let unlistenSingleInstance: (() => void) | undefined;
+
 const SECTION_VIEWS = {
   options: OptionsView,
   gestures: GesturesView,
@@ -71,33 +80,21 @@ const SECTION_VIEWS = {
   account: AccountView,
   about: AboutView,
 } as const;
-const NAV_ITEMS = [
-  { id: "gestures", icon: MagicStick },
-  { id: "templates", icon: Connection },
-  { id: "plugins", icon: Files },
-  { id: "logs", icon: Document },
-  { id: "account", icon: User },
-  { id: "options", icon: Setting },
-  { id: "about", icon: InfoFilled },
-] as const satisfies ReadonlyArray<{ id: Section; icon: typeof MagicStick }>;
+const NAV_ITEMS: ReadonlyArray<{ id: Section; icon: LucideIcon }> = [
+  { id: "gestures", icon: CirclePlay },
+  { id: "templates", icon: BookOpen },
+  { id: "plugins", icon: Puzzle },
+  { id: "logs", icon: FileText },
+  { id: "account", icon: UserRound },
+  { id: "options", icon: Settings },
+  { id: "about", icon: Info },
+];
 const currentView = computed(() => SECTION_VIEWS[active.value]);
-const currentViewBindings = computed(() => {
-  if (active.value === "about") {
-    return { onOpenQuickStart: openQuickStart };
-  }
-  return {};
-});
+const currentViewBindings = computed(() =>
+  active.value === "about" ? { onOpenQuickStart: openQuickStart } : {},
+);
 const needsConfig = computed(() => !["account", "about", "plugins", "logs"].includes(active.value));
 const quickStartIntents = computed(() => store.doc?.global.intents ?? []);
-
-const localeSetting = computed<LocaleSetting>({
-  get: () => store.doc?.preferences.locale ?? "auto",
-  set: (v) => {
-    if (store.doc) store.doc.preferences.locale = v;
-    setLocale(resolveLocale(v));
-  },
-});
-
 const isTauri = computed(() => store.backend.isTauri);
 const isWindowsDesktop = computed(
   () =>
@@ -105,31 +102,53 @@ const isWindowsDesktop = computed(
     typeof navigator !== "undefined" &&
     /Windows|Win32|Win64/i.test(`${navigator.platform} ${navigator.userAgent}`),
 );
-const elementLocale = computed(() => (locale.value === "zh-CN" ? zhCn : en));
+const saveStateKind = computed(() => {
+  if (store.saveState === "saving") return "warning";
+  if (store.saveState === "saved") return "success";
+  return "danger";
+});
+const saveStateLabel = computed(() => {
+  if (store.saveState === "saving") return t("footer.saving");
+  if (store.saveState === "saved") return t("footer.saved");
+  return t("footer.saveError");
+});
 
-function onSelectSection(index: string) {
-  active.value = index as Section;
+const localeSetting = computed<LocaleSetting>({
+  get: () => store.doc?.preferences.locale ?? "auto",
+  set: (value) => {
+    if (store.doc) store.doc.preferences.locale = value;
+    setLocale(resolveLocale(value));
+  },
+});
+
+function selectSection(section: Section): void {
+  active.value = section;
+  void focusWorkspaceHeading();
 }
 
-function setQuickStartVisible(visible: boolean) {
+function setQuickStartVisible(visible: boolean): void {
   if (!visible) completeQuickGuide(quickGuideStorage);
   quickStartVisible.value = visible;
 }
 
-function openQuickStart() {
+function openQuickStart(): void {
   quickStartVisible.value = true;
 }
 
-function openGuideDestination(destination: "gestures" | "templates") {
-  active.value = destination;
+function openGuideDestination(destination: "gestures" | "templates"): void {
+  selectSection(destination);
   setQuickStartVisible(false);
 }
 
-// 配置载入后应用已保存的语言
+async function focusWorkspaceHeading(): Promise<void> {
+  await nextTick();
+  workspaceHeading.value?.focus();
+}
+
 watch(
   () => store.doc?.preferences.locale,
-  (loc) => {
-    if (loc) setLocale(resolveLocale(loc));
+  (locale) => {
+    if (locale) setLocale(resolveLocale(locale));
   },
 );
 
@@ -142,42 +161,27 @@ watch(
   async ([pending, guideVisible]) => {
     if (!pending || guideVisible || !updates.metadata) return;
     updates.dismissAutomaticPrompt();
-    try {
-      await ElMessageBox.confirm(
-        t("about.autoPrompt.body", { version: updates.metadata.version }),
-        t("about.autoPrompt.title"),
-        {
-          confirmButtonText: t("about.autoPrompt.view"),
-          cancelButtonText: t("about.autoPrompt.later"),
-          type: "info",
-        },
-      );
-      active.value = "about";
-    } catch {
-      // The session-level prompt is intentionally non-blocking.
-    }
+    const confirmed = await confirm({
+      title: t("about.autoPrompt.title"),
+      message: t("about.autoPrompt.body", { version: updates.metadata.version }),
+      confirmLabel: t("about.autoPrompt.view"),
+      cancelLabel: t("about.autoPrompt.later"),
+    });
+    if (confirmed) selectSection("about");
   },
 );
 
 onMounted(() => {
   void (async () => {
     if (!store.backend.isTauri && typeof window !== "undefined") {
-      const requestedSection = new URLSearchParams(window.location.search).get("section");
-      if (requestedSection && requestedSection in SECTION_VIEWS) {
-        active.value = requestedSection as Section;
-      }
+      active.value = resolveInitialSection(window.location.search);
     }
     if (store.backend.isTauri) {
       unlistenSingleInstance = await listenForSingleInstance(() => {
-        ElMessage.info(t("app.alreadyRunning"));
+        pushToast({ kind: "info", message: t("app.alreadyRunning") });
       });
     }
-    // Refresh both public catalogs in the background; each source falls back
-    // to its last valid AppData snapshot when GitHub is unavailable.
-    void Promise.allSettled([
-      templates.loadCatalog(true),
-      plugins.loadOnlineCatalog(true),
-    ]);
+    void Promise.allSettled([templates.loadCatalog(true), plugins.loadOnlineCatalog(true)]);
     await store.load();
     if (!store.backend.isTauri && typeof window !== "undefined") {
       const previewParams = new URLSearchParams(window.location.search);
@@ -214,93 +218,102 @@ onUnmounted(() => unlistenSingleInstance?.());
 </script>
 
 <template>
-  <el-config-provider :locale="elementLocale">
-    <el-container class="app">
-    <el-header
-      class="app__header"
-      :class="{ 'app__header--custom': isWindowsDesktop }"
-    >
+  <div class="app">
+    <a class="app__skip-link" href="#workspace-main">{{ t("app.skipToMain") }}</a>
+    <header class="app__header" :class="{ 'app__header--custom': isWindowsDesktop }">
       <div class="app__brand">
         <img src="../src-tauri/icons/32x32.png" alt="" />
-        <span>{{ t("app.title") }}</span>
+        <span>{{ t("app.name") }}</span>
       </div>
       <div
         class="app__header-spacer"
         :data-tauri-drag-region="isWindowsDesktop ? '' : undefined"
       />
       <div class="app__actions">
-        <el-tooltip :content="t('header.pauseTooltip')" placement="bottom">
-          <el-button
-            :type="store.paused ? 'warning' : 'success'"
-            :icon="store.paused ? VideoPlay : VideoPause"
-            size="small"
-            @click="store.togglePause()"
-          >
-            {{ store.paused ? t("header.paused") : t("header.running") }}
-          </el-button>
-        </el-tooltip>
-
-        <el-tooltip :content="t('header.theme')" placement="bottom">
-          <el-button circle size="small" @click="toggleDark()">
-            <el-icon><Moon v-if="!isDark" /><Sunny v-else /></el-icon>
-          </el-button>
-        </el-tooltip>
-
-        <el-select v-model="localeSetting" size="small" class="app__lang">
-          <el-option :label="t('header.languageAuto')" value="auto" />
-          <el-option label="简体中文" value="zh-CN" />
-          <el-option label="English" value="en" />
-        </el-select>
+        <AppButton
+          class="app__pause-button"
+          :variant="store.paused ? 'secondary' : 'primary'"
+          size="sm"
+          :title="t('header.pauseTooltip')"
+          @click="store.togglePause()"
+        >
+          <CirclePlay v-if="store.paused" :size="16" aria-hidden="true" />
+          <CirclePause v-else :size="16" aria-hidden="true" />
+          <span class="app__pause-label">{{ store.paused ? t("header.paused") : t("header.running") }}</span>
+        </AppButton>
+        <button
+          type="button"
+          class="gg-icon-button app__theme-button"
+          :aria-label="t('header.theme')"
+          :title="t('header.theme')"
+          @click="toggleDark()"
+        >
+          <Moon v-if="!isDark" :size="18" aria-hidden="true" />
+          <Sun v-else :size="18" aria-hidden="true" />
+        </button>
+        <label class="app__language">
+          <span class="gg-sr-only">{{ t("header.language") }}</span>
+          <select v-model="localeSetting" class="gg-select app__language-select">
+            <option value="auto">{{ t("header.languageAuto") }}</option>
+            <option value="zh-CN">{{ t("header.languageZhCn") }}</option>
+            <option value="en">{{ t("header.languageEn") }}</option>
+          </select>
+        </label>
       </div>
       <WindowControls v-if="isWindowsDesktop" />
-    </el-header>
+    </header>
 
-    <el-container class="app__body">
-      <el-aside width="168px" class="app__aside">
-        <el-menu :default-active="active" class="app__menu" @select="onSelectSection">
-          <el-menu-item v-for="item in NAV_ITEMS" :key="item.id" :index="item.id">
-            <el-icon><component :is="item.icon" /></el-icon>
-            <el-tooltip
-              :content="t(`nav.${item.id}`)"
-              placement="right"
-              :show-after="450"
-            >
-              <span class="app__nav-label">{{ t(`nav.${item.id}`) }}</span>
-            </el-tooltip>
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
+    <div class="app__body">
+      <aside id="workspace-navigation" class="app__aside" :aria-label="t('header.navigation')">
+        <nav class="app__navigation">
+          <button
+            v-for="item in NAV_ITEMS"
+            :key="item.id"
+            type="button"
+            class="app__nav-item"
+            :class="{ 'app__nav-item--active': active === item.id }"
+            :aria-current="active === item.id ? 'page' : undefined"
+            @click="selectSection(item.id)"
+          >
+            <component :is="item.icon" :size="18" aria-hidden="true" />
+            <span>{{ t(`nav.${item.id}`) }}</span>
+          </button>
+        </nav>
+      </aside>
 
-      <el-main class="app__main">
+      <main id="workspace-main" class="app__main" tabindex="-1">
+        <h1 ref="workspaceHeading" class="gg-sr-only" tabindex="-1">{{ t(`nav.${active}`) }}</h1>
         <component
           :is="currentView"
           v-if="!needsConfig || store.ready"
           v-bind="currentViewBindings"
         />
-        <el-result
+        <AppEmptyState
           v-else-if="store.loadError"
-          icon="error"
           :title="t('load.title')"
-          :sub-title="t('load.description')"
+          :description="t('load.description')"
         >
-          <template #extra>
-            <el-button type="primary" :loading="store.loading" @click="store.load()">
-              {{ t("load.retry") }}
-            </el-button>
-          </template>
-        </el-result>
-        <el-skeleton v-else :rows="6" animated />
-      </el-main>
-    </el-container>
+          <AppButton variant="primary" :loading="store.loading" :loading-label="t('load.retry')" @click="store.load()">
+            {{ t("load.retry") }}
+          </AppButton>
+        </AppEmptyState>
+        <div v-else class="app__loading" role="status" aria-live="polite" aria-busy="true">
+          <span class="gg-sr-only">{{ t("load.loading") }}</span>
+          <AppSkeleton v-for="index in 6" :key="index" :style="{ width: `${100 - index * 6}%` }" />
+        </div>
+      </main>
+    </div>
 
-    <el-footer class="app__footer">
+    <footer class="app__footer">
       <span class="gg-hint">{{ t("footer.autoSave") }}</span>
       <span class="app__spacer" />
-      <span v-if="store.saveState === 'saving'" class="app__save app__save--busy">{{ t("footer.saving") }}</span>
-      <span v-else-if="store.saveState === 'saved'" class="app__save app__save--ok">{{ t("footer.saved") }}</span>
-      <span v-else-if="store.saveState === 'error'" class="app__save app__save--err">{{ t("footer.saveError") }}</span>
-      <el-tag v-if="!isTauri" type="info" size="small" class="app__mock">{{ t("footer.mockMode") }}</el-tag>
-    </el-footer>
+      <span v-if="store.saveState === 'saved'" class="app__footer-saved">
+        <span class="app__footer-divider" aria-hidden="true" />
+        <span class="app__footer-save-text">{{ saveStateLabel }}</span>
+      </span>
+      <AppBadge v-else-if="store.saveState !== 'idle'" :variant="saveStateKind">{{ saveStateLabel }}</AppBadge>
+      <AppBadge v-if="!isTauri" variant="neutral">{{ t("footer.mockMode") }}</AppBadge>
+    </footer>
 
     <QuickStartDialog
       :model-value="quickStartVisible"
@@ -308,263 +321,304 @@ onUnmounted(() => unlistenSingleInstance?.());
       @update:model-value="setQuickStartVisible"
       @navigate="openGuideDestination"
     />
-    </el-container>
-  </el-config-provider>
+    <UiConfirmHost />
+    <UiToastHost />
+  </div>
 </template>
 
 <style scoped>
 .app {
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) auto;
   height: 100vh;
   min-width: 0;
   min-height: 0;
-  color: var(--el-text-color-primary);
+  overflow: hidden;
+  color: var(--gg-text);
   background: var(--gg-canvas);
 }
+
+.app__skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  transform: translateY(-160%);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--gg-primary);
+  color: var(--gg-on-primary);
+  text-decoration: none;
+}
+
+.app__skip-link:focus {
+  transform: translateY(0);
+}
+
 .app__header {
   display: flex;
+  min-width: 0;
   align-items: center;
-  flex: 0 0 48px;
-  height: 48px;
   padding: 0 16px;
   border-bottom: 1px solid var(--gg-border);
   background: var(--gg-surface);
 }
+
 .app__header--custom {
   padding-right: 0;
 }
+
 .app__brand {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  color: var(--gg-text);
   font-size: 15px;
+  font-weight: 600;
 }
+
 .app__brand img {
   width: 22px;
   height: 22px;
 }
+
 .app__header-spacer {
   align-self: stretch;
-  flex: 1 1 auto;
   min-width: 12px;
+  flex: 1 1 auto;
 }
+
 .app__actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.app__lang {
+
+.app__language-select {
   width: 116px;
+  min-height: 32px;
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
+
+.app__pause-button {
+  min-height: 32px;
+  height: 32px;
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.app__theme-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
 .app__body {
+  display: grid;
   min-width: 0;
   min-height: 0;
+  grid-template-columns: 168px minmax(0, 1fr);
   overflow: hidden;
 }
+
 .app__aside {
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--gg-border);
   background: var(--gg-sidebar);
 }
-.app__menu {
-  border-right: none;
-  height: 100%;
+
+.app__navigation {
+  display: grid;
+  gap: 2px;
   padding: 8px;
-  background: transparent;
 }
-.app__menu :deep(.el-menu-item) {
+
+.app__nav-item {
+  display: flex;
+  min-height: 38px;
   height: 38px;
-  margin-bottom: 2px;
-  padding: 0 10px !important;
-  border-radius: 5px;
-  font-size: 13px;
-}
-.app__menu :deep(.el-menu-item .el-icon) {
-  width: 18px;
-  margin-right: 8px;
-}
-.app__nav-label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 10px;
+  color: var(--gg-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
+
+.app__nav-item:hover {
+  color: var(--gg-text);
+  background: var(--gg-surface-muted);
+}
+
+.app__nav-item--active {
+  border-color: var(--gg-primary-border);
+  color: var(--gg-primary);
+  background: var(--gg-primary-soft);
+  font-weight: 650;
+}
+
 .app__main {
   min-width: 0;
   min-height: 0;
-  padding: 14px 16px;
   overflow: hidden;
+  padding: 14px 16px;
   background: var(--gg-canvas);
 }
+
+.app__loading {
+  display: grid;
+  gap: 12px;
+  max-width: 860px;
+  padding: 8px 0;
+}
+
+.app__loading :deep(.gg-skeleton) {
+  height: 18px;
+}
+
 .app__footer {
   display: flex;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
   align-items: center;
   gap: 12px;
-  flex: 0 0 30px;
-  height: 30px;
-  padding: 0 16px;
   border-top: 1px solid var(--gg-border);
-  background: var(--gg-surface);
+  padding: 0 16px;
   font-size: 12px;
+  background: var(--gg-surface);
 }
+
 .app__spacer {
-  flex: 1;
+  flex: 1 1 auto;
 }
-.app__save--busy {
-  color: var(--el-color-warning);
+
+.app__footer-saved {
+  display: inline-flex;
+  height: calc(100% + 1px);
+  min-height: 0;
+  align-self: stretch;
+  margin-top: -1px;
+  align-items: center;
+  gap: 12px;
+  color: var(--gg-success);
+  white-space: nowrap;
 }
-.app__save--ok {
-  color: var(--el-color-success);
+
+.app__footer-divider {
+  display: block;
+  width: 1px;
+  min-width: 1px;
+  height: 100%;
+  background: var(--gg-border-strong);
 }
-.app__save--err {
-  color: var(--el-color-danger);
-}
-@media (max-width: 600px) {
-  .app__header {
-    padding: 0 8px;
-  }
-  .app__brand {
-    gap: 4px;
-    font-size: 12px;
-  }
-  .app__brand span {
-    max-width: 76px;
-    line-height: 1.1;
-  }
-  .app__actions {
-    gap: 4px;
-  }
-  .app__actions > .el-button:first-child {
-    width: 32px;
-    padding: 0;
-    font-size: 0;
-  }
-  .app__actions > .el-button:first-child :deep(.el-icon) {
-    margin: 0;
-    font-size: 14px;
-  }
-  .app__lang {
-    width: 84px;
-  }
-}
+
 </style>
 
 <style>
-/* 全局基础样式与跨组件工具类 */
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
-}
-#app {
-  font-family: "Segoe UI", "Microsoft YaHei", Inter, system-ui, sans-serif;
-}
-:root {
-  --gg-canvas: #f5f6f7;
-  --gg-surface: #ffffff;
-  --gg-sidebar: #fafafa;
-  --gg-border: #dfe2e6;
-  --gg-panel-muted: #f8f9fa;
-  --gg-title-control-hover: #edf0f3;
-  --gg-title-control-active: #dfe3e7;
-  --gg-window-close-foreground: #ffffff;
-  --gg-window-close-hover: #c42b1c;
-  --gg-window-close-active: #a52318;
-}
-html.dark {
-  --gg-canvas: #17191c;
-  --gg-surface: #202328;
-  --gg-sidebar: #1c1f23;
-  --gg-border: #34383f;
-  --gg-panel-muted: #25292e;
-  --gg-title-control-hover: #2c3036;
-  --gg-title-control-active: #363b42;
-}
 .gg-page {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
-  height: 100%;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
   overflow: hidden;
 }
+
 .gg-page__header {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  min-width: 0;
 }
+
 .gg-page__header h2 {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.35;
+  color: var(--gg-text);
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.25;
 }
+
 .gg-page__scroll {
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
   overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
+
 .gg-page__stack {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
   min-width: 0;
   max-width: 100%;
-  box-sizing: border-box;
+  flex-direction: column;
+  gap: 12px;
   padding-right: 4px;
 }
+
 .gg-section {
-  background: var(--gg-surface);
-  border: 1px solid var(--gg-border);
-  border-radius: 6px;
-  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+  padding: 16px;
+  background: var(--gg-surface);
 }
+
 .gg-section-title {
   margin: 0 0 2px;
-  font-size: 15px;
+  color: var(--gg-text);
+  font-size: 16px;
 }
+
 .gg-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .gg-field-label {
+  color: var(--gg-text);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--el-text-color-regular);
+  font-weight: 600;
 }
+
 .gg-hint {
   margin: 0;
-  font-size: 12px;
+  color: var(--gg-text-muted);
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--el-text-color-secondary);
 }
+
 .gg-switch-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  color: var(--gg-text);
   font-size: 14px;
 }
-.gg-unit {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
+
+.gg-unit,
 .gg-info {
-  color: var(--el-text-color-secondary);
-  cursor: help;
+  color: var(--gg-text-muted);
 }
-@media (max-width: 860px) {
-  .app__main {
-    padding: 12px;
-  }
+
+.gg-info {
+  cursor: help;
 }
 </style>

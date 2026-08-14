@@ -1,0 +1,29 @@
+{
+  "name": "@godgesture/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./test-utils": "./src/test-utils.ts"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts src",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "lucide-vue-next": "^1.0.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.11.2",
+    "lucide-vue-next": "^1.0.0",
+    "typescript": "~5.6.2",
+    "vitest": "2.1.9",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.1.10"
+  }
+}

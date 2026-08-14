@@ -112,15 +112,18 @@ export const useLogsStore = defineStore("logs", () => {
     }
   }
 
-  async function clear(): Promise<void> {
+  async function clear(): Promise<boolean> {
+    error.value = null;
     try {
       await backend.logsClear();
       entries.value = [];
       total.value = 0;
       lastExportPath.value = null;
+      return true;
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause);
       appLog.error("logs", "日志清理失败");
+      return false;
     }
   }
 

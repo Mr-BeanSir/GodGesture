@@ -30,16 +30,14 @@ pub struct StrokeParser {
     strokes: Vec<Direction>,
     last_point: Point,
     effective_move_px: f64,
-    enable_8_directions: bool,
 }
 
 impl StrokeParser {
-    pub fn new(start: Point, effective_move_px: f64, enable_8_directions: bool) -> Self {
+    pub fn new(start: Point, effective_move_px: f64) -> Self {
         Self {
             strokes: Vec::new(),
             last_point: start,
             effective_move_px: effective_move_px.max(1.0),
-            enable_8_directions,
         }
     }
 
@@ -94,7 +92,7 @@ impl StrokeParser {
     }
 
     fn classify(&self, dx: f64, dy: f64) -> Direction {
-        if self.enable_8_directions && self.strokes.is_empty() {
+        if self.strokes.is_empty() {
             classify_8dir(dx, dy)
         } else {
             classify_4dir(dx, dy)
@@ -171,14 +169,14 @@ mod tests {
 
     #[test]
     fn simple_right_then_down() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0, true);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         feed_path(&mut p, &[(20, 0), (40, 0), (40, 20), (40, 40)]);
         assert_eq!(p.strokes(), &[Direction::Right, Direction::Down]);
     }
 
     #[test]
     fn diagonal_first_stroke_kept_when_continuing() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0, true);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         // 一路右上(屏幕 y 减小)
         feed_path(&mut p, &[(20, -20), (40, -40), (60, -60)]);
         assert_eq!(p.strokes(), &[Direction::RightUp]);
@@ -186,7 +184,7 @@ mod tests {
 
     #[test]
     fn diagonal_rewritten_to_cardinal_on_turn() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0, true);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         // 先右上,再明确转右:首笔回写为 Up?否 —— 主导轴变化:
         // WGestures 语义:回写为 4 向等价(RightUp→Up),再追加新 4 向
         feed_path(&mut p, &[(20, -20), (40, -40)]);
@@ -197,7 +195,7 @@ mod tests {
 
     #[test]
     fn no_diagonals_after_first_stroke() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0, true);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         feed_path(&mut p, &[(0, 30), (0, 60)]); // Down
         assert_eq!(p.strokes(), &[Direction::Down]);
         // 之后画斜线也只识别为 4 向
@@ -206,15 +204,15 @@ mod tests {
     }
 
     #[test]
-    fn four_dir_mode_never_diagonal() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0, false);
+    fn first_stroke_is_always_allowed_to_be_diagonal() {
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         feed_path(&mut p, &[(20, -20), (40, -40)]);
-        assert!(p.strokes().iter().all(|d| !d.is_diagonal()));
+        assert_eq!(p.strokes(), &[Direction::RightUp]);
     }
 
     #[test]
     fn max_strokes_saturation() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 5.0, false);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 5.0);
         // 反复左右横跳制造大量笔画
         let mut pts = Vec::new();
         let mut x = 0;
@@ -228,7 +226,7 @@ mod tests {
 
     #[test]
     fn small_jitter_ignored() {
-        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 20.0, true);
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 20.0);
         feed_path(&mut p, &[(3, 2), (5, -3), (8, 1)]);
         assert!(p.strokes().is_empty());
     }

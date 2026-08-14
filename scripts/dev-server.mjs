@@ -1,14 +1,58 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
-import { dirname } from "node:path";
+import { dirname, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SERVER_URL = (port) => `http://127.0.0.1:${port}`;
 const DEFAULT_BACKEND_HEALTH_TIMEOUT_MS = 60_000;
 
-function command() {
-  return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+function quotePowerShellLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function powerShellPath(systemRoot = process.env.SystemRoot ?? process.env.windir) {
+  if (!systemRoot) return "powershell.exe";
+  return win32.join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
+
+export function pnpmInvocation(
+  args,
+  { platform = process.platform, systemRoot = process.env.SystemRoot ?? process.env.windir } = {},
+) {
+  if (platform !== "win32") {
+    return { command: "pnpm", args };
+  }
+
+  const script = [
+    "$LASTEXITCODE = $null;",
+    "& 'pnpm'",
+    ...args.map(quotePowerShellLiteral),
+    "; $commandSucceeded = $?;",
+    "$exitCode = $LASTEXITCODE;",
+    "if (-not $commandSucceeded -and $null -eq $exitCode) { exit 1 };",
+    "if ($null -eq $exitCode) { exit 0 };",
+    "exit $exitCode",
+  ].join(" ");
+
+  return {
+    command: powerShellPath(systemRoot),
+    args: [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+  };
 }
 
 function canListen(port) {
@@ -29,10 +73,10 @@ async function findPort(first, last, label) {
 }
 
 function start(args, env) {
-  return spawn(command(), args, {
+  const invocation = pnpmInvocation(args);
+  return spawn(invocation.command, invocation.args, {
     cwd: REPOSITORY_ROOT,
     env: { ...process.env, ...env },
-    shell: process.platform === "win32",
     stdio: "inherit",
   });
 }

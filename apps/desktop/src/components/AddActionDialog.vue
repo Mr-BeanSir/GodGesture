@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Delete, MagicStick, Position, Rank } from "@element-plus/icons-vue";
+import { AppButton, AppDialog } from "@godgesture/ui";
+import { Delete, GripVertical, MousePointer2, ScanLine } from "lucide-vue-next";
 import {
   MAX_BOUNDARY_SEQUENCE_TOKENS,
   type BoundaryIntent,
@@ -118,6 +119,14 @@ function onDragEnd() {
   dragOverIndex.value = null;
 }
 
+function onSequenceKeydown(event: KeyboardEvent, index: number) {
+  if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+  const target = event.key === "ArrowUp" ? index - 1 : index + 1;
+  if (target < 0 || target >= sequence.value.length) return;
+  event.preventDefault();
+  sequence.value = reorderBoundarySequence(sequence.value, index, target);
+}
+
 function confirm() {
   const origin: BoundaryOrigin = originKind.value === "hotCorner"
     ? { kind: "hotCorner", corner: corner.value }
@@ -133,29 +142,42 @@ function tokenLabel(token: BoundaryToken): string {
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
+  <AppDialog
+    :open="visible"
     :title="t('actions.addTitle')"
-    width="min(600px, calc(100vw - 24px))"
+    :close-label="t('common.cancel')"
     class="add-action-dialog"
-    align-center
-    append-to-body
+    @close="visible = false"
   >
     <div v-if="step === 1" class="action-choice">
-      <button type="button" class="action-choice__item" :class="{ 'is-active': choice === 'gesture' }" @click="choice = 'gesture'">
-        <el-icon><MagicStick /></el-icon>
+      <button
+        type="button"
+        class="action-choice__item"
+        :class="{ 'is-active': choice === 'gesture' }"
+        :aria-label="t('actions.gestureTitle')"
+        :aria-pressed="choice === 'gesture'"
+        @click="choice = 'gesture'"
+      >
+        <ScanLine aria-hidden="true" />
         <span><strong>{{ t("actions.gestureTitle") }}</strong><small>{{ t("actions.gestureDescription") }}</small></span>
       </button>
-      <button type="button" class="action-choice__item" :class="{ 'is-active': choice === 'boundary' }" @click="choice = 'boundary'">
-        <el-icon><Position /></el-icon>
+      <button
+        type="button"
+        class="action-choice__item"
+        :class="{ 'is-active': choice === 'boundary' }"
+        :aria-label="t('actions.boundaryTitle')"
+        :aria-pressed="choice === 'boundary'"
+        @click="choice = 'boundary'"
+      >
+        <MousePointer2 aria-hidden="true" />
         <span><strong>{{ t("actions.boundaryTitle") }}</strong><small>{{ t("actions.boundaryDescription") }}</small></span>
       </button>
     </div>
 
     <div v-else class="boundary-builder">
       <div class="boundary-builder__origin">
-        <div class="gg-field">
-          <label class="gg-field-label">{{ t("actions.originType") }}</label>
+        <fieldset class="gg-field boundary-builder__origin-field">
+          <legend class="gg-field-label">{{ t("actions.originType") }}</legend>
           <div class="boundary-builder__screen">
             <button
               v-for="item in corners"
@@ -180,7 +202,7 @@ function tokenLabel(token: BoundaryToken): string {
               {{ t(`corners.edge.${item}`) }}
             </button>
           </div>
-        </div>
+        </fieldset>
       </div>
 
       <div class="boundary-builder__sequence">
@@ -188,84 +210,97 @@ function tokenLabel(token: BoundaryToken): string {
           <div><strong>{{ t("actions.sequenceTitle") }}</strong><p class="gg-hint">{{ t("actions.sequenceHint") }}</p></div>
           <span class="gg-hint">{{ sequence.length }} / {{ MAX_BOUNDARY_SEQUENCE_TOKENS }}</span>
         </div>
-        <div v-if="sequence.length" class="boundary-builder__tokens">
-          <div
+        <ol v-if="sequence.length" class="boundary-builder__tokens">
+          <li
             v-for="(token, index) in sequence"
             :key="index"
             class="boundary-builder__token"
             :class="{ 'is-dragging': draggingIndex === index, 'is-drag-over': dragOverIndex === index && draggingIndex !== index }"
+            tabindex="0"
+            :aria-keyshortcuts="'Alt+ArrowUp Alt+ArrowDown'"
             draggable="true"
             @dragstart="onDragStart($event, index)"
             @dragover="onDragOver($event, index)"
             @drop="onDrop($event, index)"
             @dragend="onDragEnd"
+            @keydown="onSequenceKeydown($event, index)"
           >
             <span class="boundary-builder__token-main">
-              <el-icon class="boundary-builder__drag-handle" :aria-label="t('actions.dragSequence')"><Rank /></el-icon>
+              <GripVertical class="boundary-builder__drag-handle" aria-hidden="true" />
               <span>{{ index + 1 }}. {{ tokenLabel(token) }}</span>
             </span>
-            <el-button link type="danger" :icon="Delete" :aria-label="t('common.delete')" @click="sequence.splice(index, 1)" />
-          </div>
-        </div>
+            <button
+              type="button"
+              class="gg-icon-button boundary-builder__delete"
+              :aria-label="t('common.delete')"
+              :title="t('common.delete')"
+              @click="sequence.splice(index, 1)"
+            >
+              <Delete aria-hidden="true" />
+            </button>
+          </li>
+        </ol>
         <div v-else class="boundary-builder__immediate">{{ t("actions.immediateDescription") }}</div>
         <div class="boundary-builder__add">
-          <el-select v-model="tokenKind" class="boundary-builder__kind">
-            <el-option :label="t('actions.tokenKind.wheel')" value="wheel" />
-            <el-option :label="t('actions.tokenKind.button')" value="button" />
-            <el-option :label="t('actions.tokenKind.stroke')" value="stroke" />
-          </el-select>
-          <el-select v-if="tokenKind === 'wheel'" v-model="wheel">
-            <el-option :label="t('actions.token.wheel.forward')" value="forward" />
-            <el-option :label="t('actions.token.wheel.backward')" value="backward" />
-          </el-select>
-          <el-select v-else-if="tokenKind === 'button'" v-model="button">
-            <el-option v-for="item in buttons" :key="item" :label="t(`actions.token.button.${item}`)" :value="item" />
-          </el-select>
-          <el-select v-else v-model="stroke">
-            <el-option v-for="item in strokes" :key="item" :label="t(`actions.token.stroke.${item}`)" :value="item" />
-          </el-select>
-          <el-button :disabled="sequence.length >= MAX_BOUNDARY_SEQUENCE_TOKENS" @click="addToken">{{ t("actions.appendToken") }}</el-button>
+          <select v-model="tokenKind" class="gg-select boundary-builder__kind" :aria-label="t(`actions.tokenKind.${tokenKind}`)">
+            <option value="wheel">{{ t("actions.tokenKind.wheel") }}</option>
+            <option value="button">{{ t("actions.tokenKind.button") }}</option>
+            <option value="stroke">{{ t("actions.tokenKind.stroke") }}</option>
+          </select>
+          <select v-if="tokenKind === 'wheel'" v-model="wheel" class="gg-select" :aria-label="t(`actions.token.wheel.${wheel}`)">
+            <option value="forward">{{ t("actions.token.wheel.forward") }}</option>
+            <option value="backward">{{ t("actions.token.wheel.backward") }}</option>
+          </select>
+          <select v-else-if="tokenKind === 'button'" v-model="button" class="gg-select" :aria-label="t(`actions.token.button.${button}`)">
+            <option v-for="item in buttons" :key="item" :value="item">{{ t(`actions.token.button.${item}`) }}</option>
+          </select>
+          <select v-else v-model="stroke" class="gg-select" :aria-label="t(`actions.token.stroke.${stroke}`)">
+            <option v-for="item in strokes" :key="item" :value="item">{{ t(`actions.token.stroke.${item}`) }}</option>
+          </select>
+          <AppButton :disabled="sequence.length >= MAX_BOUNDARY_SEQUENCE_TOKENS" :aria-label="t('actions.appendToken')" @click="addToken">{{ t("actions.appendToken") }}</AppButton>
         </div>
       </div>
     </div>
 
     <template #footer>
-      <el-button v-if="step === 2 && !initialBoundary" @click="step = 1">{{ t("common.back") }}</el-button>
-      <el-button @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button v-if="step === 1" type="primary" @click="next">{{ t("common.next") }}</el-button>
-      <el-button v-else type="primary" @click="confirm">{{ t("common.ok") }}</el-button>
+      <AppButton v-if="step === 2 && !initialBoundary" @click="step = 1">{{ t("common.back") }}</AppButton>
+      <AppButton @click="visible = false">{{ t("common.cancel") }}</AppButton>
+      <AppButton v-if="step === 1" variant="primary" :aria-label="t('common.next')" @click="next">{{ t("common.next") }}</AppButton>
+      <AppButton v-else variant="primary" :aria-label="t('common.ok')" @click="confirm">{{ t("common.ok") }}</AppButton>
     </template>
-  </el-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>
 .action-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.action-choice__item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; min-height: 104px; padding: 16px; text-align: left; border: 1px solid var(--el-border-color); border-radius: 6px; background: var(--el-bg-color); color: var(--el-text-color-primary); cursor: pointer; }
-.action-choice__item:hover, .action-choice__item.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.action-choice__item .el-icon { margin-top: 2px; font-size: 24px; color: var(--el-color-primary); }
+.action-choice__item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; min-height: 104px; padding: 16px; text-align: left; border: 1px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface); color: var(--gg-text); cursor: pointer; }
+.action-choice__item:hover, .action-choice__item.is-active { border-color: var(--gg-primary); background: var(--gg-primary-soft); }
+.action-choice__item > svg { width: 24px; height: 24px; margin-top: 2px; color: var(--gg-primary); }
 .action-choice__item span { display: flex; flex-direction: column; gap: 7px; }
-.action-choice__item small { color: var(--el-text-color-secondary); line-height: 1.5; }
+.action-choice__item small { color: var(--gg-text-muted); line-height: 1.5; }
 .boundary-builder { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; }
 .boundary-builder__origin { min-width: 0; }
-.boundary-builder__screen { position: relative; aspect-ratio: 16 / 10; border: 2px solid var(--el-border-color); border-radius: 6px; background: var(--el-fill-color-lighter); }
-.boundary-builder__point { position: absolute; padding: 3px 6px; border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-bg-color); color: var(--el-text-color-regular); font-size: 11px; cursor: pointer; }
-.boundary-builder__point:hover, .boundary-builder__point:focus-visible { border-color: var(--el-color-primary); }
-.boundary-builder__point.is-active { border-color: var(--el-color-primary); background: var(--el-color-primary); color: var(--el-color-white); }
+.boundary-builder__origin-field { min-width: 0; margin: 0; padding: 0; border: 0; }
+.boundary-builder__screen { position: relative; aspect-ratio: 16 / 10; border: 2px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface-muted); }
+.boundary-builder__point { position: absolute; padding: 3px 6px; border: 1px solid var(--gg-border); border-radius: 4px; background: var(--gg-surface); color: var(--gg-text); font-size: 11px; cursor: pointer; }
+.boundary-builder__point:hover, .boundary-builder__point:focus-visible { border-color: var(--gg-primary); }
+.boundary-builder__point.is-active { border-color: var(--gg-primary); background: var(--gg-primary); color: var(--gg-on-primary); }
 .boundary-builder__point.is-leftTop { top: 7px; left: 7px; } .boundary-builder__point.is-rightTop { top: 7px; right: 7px; } .boundary-builder__point.is-leftBottom { bottom: 7px; left: 7px; } .boundary-builder__point.is-rightBottom { right: 7px; bottom: 7px; }
 .boundary-builder__point.is-top { top: 7px; left: 50%; transform: translateX(-50%); } .boundary-builder__point.is-right { top: 50%; right: 7px; transform: translateY(-50%); } .boundary-builder__point.is-bottom { bottom: 7px; left: 50%; transform: translateX(-50%); } .boundary-builder__point.is-left { top: 50%; left: 7px; transform: translateY(-50%); }
 .boundary-builder__sequence { min-width: 0; }
 .boundary-builder__sequence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .boundary-builder__sequence-head p { margin-top: 4px; }
-.boundary-builder__tokens { display: flex; flex-direction: column; gap: 5px; max-height: 156px; overflow-y: auto; }
-.boundary-builder__token { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 0 6px 0 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; font-size: 12px; }
+.boundary-builder__tokens { display: flex; flex-direction: column; gap: 5px; max-height: 156px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.boundary-builder__token { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 6px 0 9px; border: 1px solid var(--gg-border); border-radius: 4px; font-size: 12px; }
 .boundary-builder__token.is-dragging { opacity: .45; }
-.boundary-builder__token.is-drag-over { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.boundary-builder__token.is-drag-over { border-color: var(--gg-primary); background: var(--gg-primary-soft); }
 .boundary-builder__token-main { display: inline-flex; align-items: center; min-width: 0; gap: 7px; }
-.boundary-builder__drag-handle { color: var(--el-text-color-placeholder); cursor: grab; }
+.boundary-builder__drag-handle { width: 16px; color: var(--gg-text-subtle); cursor: grab; }
 .boundary-builder__drag-handle:active { cursor: grabbing; }
-.boundary-builder__immediate { padding: 12px; border: 1px dashed var(--el-border-color); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
+.boundary-builder__delete { width: 32px; height: 32px; }
+.boundary-builder__delete > svg { width: 16px; height: 16px; }
+.boundary-builder__immediate { padding: 12px; border: 1px dashed var(--gg-border); border-radius: 4px; color: var(--gg-text-muted); font-size: 12px; }
 .boundary-builder__add { display: grid; grid-template-columns: 94px minmax(110px, 1fr) auto; gap: 6px; margin-top: 10px; }
-@media (max-width: 680px) { .action-choice, .boundary-builder { grid-template-columns: 1fr; } .boundary-builder__screen { max-width: 260px; } }
-:global(.add-action-dialog) { display: flex; flex-direction: column; max-height: calc(100vh - 24px); }
-:global(.add-action-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; }
+:global(.add-action-dialog) { width: min(600px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+:global(.add-action-dialog .gg-dialog__body) { min-height: 0; overflow-y: auto; }
 </style>

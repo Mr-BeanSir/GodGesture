@@ -28,6 +28,15 @@ export const DevicePlatform = z.enum(["windows", "macos", "web"]);
 export type DevicePlatform = z.infer<typeof DevicePlatform>;
 
 const DeviceName = z.string().trim().min(1).max(64);
+/** 客户端安装实例生成并持久化的稳定标识,仅与 userId 组合用于设备去重。 */
+export const DeviceKey = z.string().uuid();
+export type DeviceKey = z.infer<typeof DeviceKey>;
+
+const DeviceRegistration = z.object({
+  name: DeviceName,
+  platform: DevicePlatform,
+  deviceKey: DeviceKey,
+});
 
 export const UserRole = z.enum(["user", "admin"]);
 export type UserRole = z.infer<typeof UserRole>;
@@ -72,10 +81,7 @@ export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmReq
 export const LoginRequest = z.object({
   email: EmailAddress,
   password: z.string().min(1),
-  device: z.object({
-    name: DeviceName,
-    platform: DevicePlatform,
-  }),
+  device: DeviceRegistration,
 });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 
@@ -130,10 +136,7 @@ export const OAuthExchangeRequest = z.object({
   code: z.string().min(1),
   /** 与 authorize 阶段 code_challenge 匹配的 RFC 7636 verifier。 */
   codeVerifier: OAuthCodeVerifier,
-  device: z.object({
-    name: DeviceName,
-    platform: DevicePlatform,
-  }),
+  device: DeviceRegistration,
 });
 export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequest>;
 
@@ -149,10 +152,7 @@ export const OAuthPendingBindingCompleteRequest = z.object({
   email: EmailAddress,
   verificationCode: z.string().regex(/^\d{6}$/),
   codeVerifier: OAuthCodeVerifier,
-  device: z.object({
-    name: DeviceName,
-    platform: DevicePlatform,
-  }),
+  device: DeviceRegistration,
 }).strict();
 export type OAuthPendingBindingCompleteRequest = z.infer<
   typeof OAuthPendingBindingCompleteRequest
@@ -186,19 +186,42 @@ export type MeResponse = z.infer<typeof MeResponse>;
 export const AdminUser = z.object({
   id: z.string().uuid(),
   email: z.string().email().nullable(),
+  displayName: z.string().max(64),
   role: UserRole,
   emailVerified: z.boolean(),
   disabled: z.boolean(),
   createdAt: z.string().datetime(),
+  lastLoginAt: z.string().datetime().nullable(),
+  lastUseAt: z.string().datetime().nullable(),
   deviceCount: z.number().int().nonnegative(),
 });
 export type AdminUser = z.infer<typeof AdminUser>;
 
+export const AdminUserListQuery = z.object({
+  email: z.string().trim().max(254).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+export type AdminUserListQuery = z.infer<typeof AdminUserListQuery>;
+
 export const AdminUserListResponse = z.object({
   users: z.array(AdminUser),
   total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalPages: z.number().int().positive(),
 });
 export type AdminUserListResponse = z.infer<typeof AdminUserListResponse>;
+
+export const AdminUserUpdateRequest = z.object({
+  displayName: z.string().trim().max(64).optional(),
+  password: z.string().min(8).max(128).optional(),
+  dailySubmissionLimit: z.number().int().nonnegative().nullable().optional(),
+  pendingVersionLimit: z.number().int().nonnegative().nullable().optional(),
+  publishedTemplateLimit: z.number().int().nonnegative().nullable().optional(),
+  maxPackageBytes: z.number().int().nonnegative().nullable().optional(),
+}).strict();
+export type AdminUserUpdateRequest = z.infer<typeof AdminUserUpdateRequest>;
 
 export const AdminAccountStateRequest = z.object({
   disabled: z.boolean(),
@@ -241,15 +264,121 @@ export const TemplateUserPolicyUpdateRequest = z.object({
 }).strict();
 export type TemplateUserPolicyUpdateRequest = z.infer<typeof TemplateUserPolicyUpdateRequest>;
 
+export const AdminUserDetail = AdminUser.extend({
+  passwordSet: z.boolean(),
+  linkedProviders: z.array(OAuthProvider),
+  templatePolicy: TemplateUserPolicyResponse,
+}).strict();
+export type AdminUserDetail = z.infer<typeof AdminUserDetail>;
+
+const RustFsBucket = z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/);
+export const RustFsConfigResponse = z.object({
+  endpoint: z.string().url(),
+  region: z.string().min(1),
+  bucket: RustFsBucket,
+  publicDownloadTtlSec: z.number().int().min(1).max(900),
+  accessKeyConfigured: z.boolean(),
+  secretKeyConfigured: z.boolean(),
+}).strict();
+export type RustFsConfigResponse = z.infer<typeof RustFsConfigResponse>;
+
+export const RustFsConfigUpdateRequest = z.object({
+  endpoint: z.string().url().optional(),
+  region: z.string().trim().min(1).max(64).optional(),
+  bucket: RustFsBucket.optional(),
+  publicDownloadTtlSec: z.number().int().min(1).max(900).optional(),
+  /** 空字符串表示保留当前已加密凭证。 */
+  accessKey: z.string().max(256).optional(),
+  secretKey: z.string().max(256).optional(),
+}).strict();
+export type RustFsConfigUpdateRequest = z.infer<typeof RustFsConfigUpdateRequest>;
+
+export const AdminSystemConfigResponse = z.object({
+  templatePolicy: TemplatePolicyResponse,
+  rustfs: RustFsConfigResponse,
+  updatedAt: z.string().datetime(),
+}).strict();
+export type AdminSystemConfigResponse = z.infer<typeof AdminSystemConfigResponse>;
+
+export const AdminSystemConfigUpdateRequest = z.object({
+  templatePolicy: TemplatePolicyUpdateRequest.optional(),
+  rustfs: RustFsConfigUpdateRequest.optional(),
+}).strict();
+export type AdminSystemConfigUpdateRequest = z.infer<typeof AdminSystemConfigUpdateRequest>;
+
+export const SystemConfigRustFsTestRequest = z.object({
+  rustfs: RustFsConfigUpdateRequest.optional(),
+}).strict();
+export type SystemConfigRustFsTestRequest = z.infer<typeof SystemConfigRustFsTestRequest>;
+
+export const SystemConfigRustFsTestResponse = z.object({
+  ok: z.literal(true),
+}).strict();
+export type SystemConfigRustFsTestResponse = z.infer<typeof SystemConfigRustFsTestResponse>;
+
+export const TemplateModerationStatus = z.enum([
+  "pending_review",
+  "published",
+  "rejected",
+  "withdrawn",
+  "suspended",
+]);
+export type TemplateModerationStatus = z.infer<typeof TemplateModerationStatus>;
+
+export const AdminTemplateModerationStatus = z.union([
+  z.literal("all"),
+  TemplateModerationStatus,
+]);
+export type AdminTemplateModerationStatus = z.infer<typeof AdminTemplateModerationStatus>;
+
+export const TemplateModerationListQuery = z.object({
+  status: AdminTemplateModerationStatus.default("pending_review"),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
+export type TemplateModerationListQuery = z.infer<typeof TemplateModerationListQuery>;
+
+export const TemplateModerationTemplate = z.object({
+  versionId: z.string().uuid(),
+  templateId: z.string().uuid(),
+  versionNumber: z.number().int().positive(),
+  title: z.string(),
+  summary: z.string(),
+  status: TemplateModerationStatus,
+  risks: z.array(z.string()),
+  submittedAt: z.string().datetime({ offset: true }),
+  author: z.string(),
+}).strict();
+export type TemplateModerationTemplate = z.infer<typeof TemplateModerationTemplate>;
+
+export const TemplateModerationListResponse = z.object({
+  templates: z.array(TemplateModerationTemplate),
+  nextCursor: z.string().uuid().nullable(),
+  count: z.number().int().nonnegative(),
+}).strict();
+export type TemplateModerationListResponse = z.infer<typeof TemplateModerationListResponse>;
+
 const moderationText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value), 'contains unsafe control text');
+export const TemplateModerationReportStatus = z.enum(['open', 'resolved', 'dismissed']);
+export type TemplateModerationReportStatus = z.infer<typeof TemplateModerationReportStatus>;
+export const TemplateModerationReportListQuery = z.object({
+  status: TemplateModerationReportStatus.default('open'),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+}).strict();
+export type TemplateModerationReportListQuery = z.infer<typeof TemplateModerationReportListQuery>;
 export const TemplateModerationReport = z.object({
   id: z.string().uuid(), templateId: z.string().uuid(), versionId: z.string().uuid(),
-  title: z.string(), reason: z.string(), status: z.enum(['open','resolved','dismissed']),
+  title: z.string(), reason: z.string(), status: TemplateModerationReportStatus,
   resolution: z.string().nullable(), createdAt: z.string().datetime({ offset: true }), resolvedAt: z.string().datetime({ offset: true }).nullable(),
   author: z.string(), reporter: z.string(),
 }).strict();
 export type TemplateModerationReport = z.infer<typeof TemplateModerationReport>;
-export const TemplateModerationReportListResponse = z.object({ reports: z.array(TemplateModerationReport) }).strict();
+export const TemplateModerationReportListResponse = z.object({
+  reports: z.array(TemplateModerationReport),
+  nextCursor: z.string().uuid().nullable(),
+  count: z.number().int().nonnegative(),
+}).strict();
 export type TemplateModerationReportListResponse = z.infer<typeof TemplateModerationReportListResponse>;
 export const TemplateReportResolutionRequest = z.object({ resolution: moderationText(2000) }).strict();
 export type TemplateReportResolutionRequest = z.infer<typeof TemplateReportResolutionRequest>;

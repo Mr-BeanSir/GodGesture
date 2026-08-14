@@ -5,8 +5,8 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
-import { Aim, Loading, UploadFilled } from "@element-plus/icons-vue";
+import { Crosshair, Upload } from "lucide-vue-next";
+import { AppAlert, AppButton, AppDialog as SharedAppDialog, AppSpinner, pushToast } from "@godgesture/ui";
 import { DEFAULT_APP_GROUP_ID, type AppEntry } from "@godgesture/shared";
 import {
   BackendError,
@@ -65,6 +65,7 @@ watch(
     if (open) reset();
     else dropActive.value = false;
   },
+  { immediate: true },
 );
 
 const hasNoBinding = computed(() => !exeName.value.trim() && !bundleId.value.trim());
@@ -115,7 +116,7 @@ async function resolveDroppedApp(path: string) {
   } catch (error) {
     const code = error instanceof BackendError ? error.code : "unknown";
     const key = APP_FILE_ERROR_KEYS[code] ?? "unknown";
-    ElMessage.error(t(`appDialog.fileError.${key}`));
+    pushToast({ kind: "error", message: t(`appDialog.fileError.${key}`) });
   } finally {
     resolvingDrop.value = false;
   }
@@ -153,7 +154,7 @@ onMounted(() => {
       else unlistenDrop = unlisten;
     })
     .catch(() => {
-      if (!unmounted) ElMessage.error(t("appDialog.dropUnavailable"));
+      if (!unmounted) pushToast({ kind: "error", message: t("appDialog.dropUnavailable") });
     });
 });
 
@@ -165,7 +166,7 @@ onUnmounted(() => {
 
 function onSave() {
   if (!name.value.trim()) {
-    ElMessage.warning(t("appDialog.nameRequired"));
+    pushToast({ kind: "warning", message: t("appDialog.nameRequired") });
     return;
   }
   const windows = exeName.value.trim()
@@ -195,107 +196,135 @@ function onSave() {
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
+  <SharedAppDialog
+    :open="visible"
     :title="isEdit ? t('appDialog.editTitle') : t('appDialog.addTitle')"
-    width="520px"
-    align-center
-    append-to-body
-    :close-on-press-escape="!picking"
+    :close-label="t('common.cancel')"
+    :busy="picking || resolvingDrop"
+    initial-focus="#app-name"
+    @close="visible = false"
   >
-    <div class="app-dialog">
+    <form class="app-dialog" @submit.prevent="onSave">
       <p class="gg-hint">{{ t("appDialog.bindingHint") }}</p>
 
       <div class="gg-field">
-        <label class="gg-field-label">{{ t("appDialog.name") }}</label>
-        <el-input v-model="name" :placeholder="t('appDialog.namePlaceholder')" />
+        <label class="gg-field-label" for="app-name">{{ t("appDialog.name") }}</label>
+        <input id="app-name" v-model="name" class="gg-input" :placeholder="t('appDialog.namePlaceholder')" />
       </div>
 
-      <div v-if="!isMacOS" class="app-dialog__section" :class="{ 'is-drop-active': dropActive }">
+      <section
+        v-if="!isMacOS"
+        class="app-dialog__section"
+        :class="{ 'is-drop-active': dropActive }"
+        aria-labelledby="app-windows-heading"
+      >
         <div class="app-dialog__section-heading">
-          <h4 class="app-dialog__section-title">{{ t("appDialog.windowsSection") }}</h4>
-          <el-tooltip :content="t('appDialog.dropFile')" placement="top">
-            <el-icon
-              class="app-dialog__drop-icon"
-              :class="{ 'is-active': dropActive, 'is-loading': resolvingDrop }"
-            >
-              <Loading v-if="resolvingDrop" />
-              <UploadFilled v-else />
-            </el-icon>
-          </el-tooltip>
+          <h4 id="app-windows-heading" class="app-dialog__section-title">{{ t("appDialog.windowsSection") }}</h4>
+          <AppSpinner
+            v-if="resolvingDrop"
+            class="app-dialog__drop-icon"
+            size="sm"
+            :aria-label="t('appDialog.dropFile')"
+            :title="t('appDialog.dropFile')"
+          />
+          <Upload
+            v-else
+            class="app-dialog__drop-icon"
+            :class="{ 'is-active': dropActive }"
+            :aria-label="t('appDialog.dropFile')"
+            :title="t('appDialog.dropFile')"
+          />
         </div>
         <div class="gg-field">
-          <label class="gg-field-label">{{ t("appDialog.exeName") }}</label>
+          <label class="gg-field-label" for="app-exe-name">{{ t("appDialog.exeName") }}</label>
           <div class="app-dialog__inline">
-            <el-input v-model="exeName" :placeholder="t('appDialog.exeNamePlaceholder')" />
-            <el-tooltip :content="t('appDialog.pickWindow')" placement="top">
-              <el-button
-                class="app-dialog__pick"
-                :class="{ 'is-picking': picking }"
-                :icon="picking ? Loading : Aim"
-                :disabled="resolvingDrop"
-                :aria-label="t('appDialog.pickWindow')"
-                @pointerdown.prevent="pickWindow"
-              />
-            </el-tooltip>
+            <input id="app-exe-name" v-model="exeName" class="gg-input" :placeholder="t('appDialog.exeNamePlaceholder')" />
+            <button
+              type="button"
+              class="gg-icon-button app-dialog__pick"
+              :class="{ 'is-picking': picking }"
+              :disabled="resolvingDrop"
+              :aria-busy="picking || undefined"
+              :aria-label="t('appDialog.pickWindow')"
+              :title="t('appDialog.pickWindow')"
+              @pointerdown.prevent="pickWindow"
+            >
+              <AppSpinner v-if="picking" size="sm" aria-hidden="true" />
+              <Crosshair v-else aria-hidden="true" />
+            </button>
           </div>
           <p v-if="!backend.isTauri" class="gg-hint">{{ t("appDialog.pickWindowHint") }}</p>
         </div>
-        <div class="gg-switch-row">
-          <el-switch v-model="matchByExactPath" />
+        <label class="gg-switch-row" for="app-match-exact-path">
+          <input id="app-match-exact-path" v-model="matchByExactPath" class="gg-switch" type="checkbox" />
           <span>{{ t("appDialog.matchByExactPath") }}</span>
-        </div>
+        </label>
         <div v-if="matchByExactPath" class="gg-field">
-          <label class="gg-field-label">{{ t("appDialog.exactPath") }}</label>
-          <el-input v-model="exactPath" :placeholder="t('appDialog.exactPathPlaceholder')" />
+          <label class="gg-field-label" for="app-exact-path">{{ t("appDialog.exactPath") }}</label>
+          <input id="app-exact-path" v-model="exactPath" class="gg-input" :placeholder="t('appDialog.exactPathPlaceholder')" />
         </div>
-      </div>
+      </section>
 
-      <div class="app-dialog__section" :class="{ 'is-drop-active': isMacOS && dropActive }">
+      <section
+        class="app-dialog__section"
+        :class="{ 'is-drop-active': isMacOS && dropActive }"
+        aria-labelledby="app-macos-heading"
+      >
         <div class="app-dialog__section-heading">
-          <h4 class="app-dialog__section-title">{{ t("appDialog.macSection") }}</h4>
-          <el-tooltip v-if="isMacOS" :content="t('appDialog.dropMacApp')" placement="top">
-            <el-icon
-              class="app-dialog__drop-icon"
-              :class="{ 'is-active': dropActive, 'is-loading': resolvingDrop }"
-            >
-              <Loading v-if="resolvingDrop" />
-              <UploadFilled v-else />
-            </el-icon>
-          </el-tooltip>
+          <h4 id="app-macos-heading" class="app-dialog__section-title">{{ t("appDialog.macSection") }}</h4>
+          <AppSpinner
+            v-if="isMacOS && resolvingDrop"
+            class="app-dialog__drop-icon"
+            size="sm"
+            :aria-label="t('appDialog.dropMacApp')"
+            :title="t('appDialog.dropMacApp')"
+          />
+          <Upload
+            v-else-if="isMacOS"
+            class="app-dialog__drop-icon"
+            :class="{ 'is-active': dropActive }"
+            :aria-label="t('appDialog.dropMacApp')"
+            :title="t('appDialog.dropMacApp')"
+          />
         </div>
         <div class="gg-field">
-          <label class="gg-field-label">{{ t("appDialog.bundleId") }}</label>
+          <label class="gg-field-label" for="app-bundle-id">{{ t("appDialog.bundleId") }}</label>
           <div class="app-dialog__inline">
-            <el-input v-model="bundleId" :placeholder="t('appDialog.bundleIdPlaceholder')" />
-            <el-tooltip v-if="isMacOS" :content="t('appDialog.pickWindow')" placement="top">
-              <el-button
-                class="app-dialog__pick"
-                :class="{ 'is-picking': picking }"
-                :icon="picking ? Loading : Aim"
-                :disabled="resolvingDrop"
-                :aria-label="t('appDialog.pickWindow')"
-                @pointerdown.prevent="pickWindow"
-              />
-            </el-tooltip>
+            <input id="app-bundle-id" v-model="bundleId" class="gg-input" :placeholder="t('appDialog.bundleIdPlaceholder')" />
+            <button
+              v-if="isMacOS"
+              type="button"
+              class="gg-icon-button app-dialog__pick"
+              :class="{ 'is-picking': picking }"
+              :disabled="resolvingDrop"
+              :aria-busy="picking || undefined"
+              :aria-label="t('appDialog.pickWindow')"
+              :title="t('appDialog.pickWindow')"
+              @pointerdown.prevent="pickWindow"
+            >
+              <AppSpinner v-if="picking" size="sm" aria-hidden="true" />
+              <Crosshair v-else aria-hidden="true" />
+            </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <el-alert
+      <AppAlert
         v-if="hasNoBinding"
-        type="info"
-        :closable="false"
-        show-icon
+        variant="info"
         :title="t('appDialog.noBindingWarning')"
       />
-    </div>
+    </form>
 
     <template #footer>
-      <el-button @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button type="primary" @click="onSave">{{ t("common.ok") }}</el-button>
+      <AppButton :disabled="picking || resolvingDrop" @click="visible = false">
+        {{ t("common.cancel") }}
+      </AppButton>
+      <AppButton variant="primary" :loading="picking || resolvingDrop" @click="onSave">
+        {{ t("common.ok") }}
+      </AppButton>
     </template>
-  </el-dialog>
+  </SharedAppDialog>
 </template>
 
 <style scoped>
@@ -305,8 +334,8 @@ function onSave() {
   gap: 14px;
 }
 .app-dialog__section {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--el-border-radius-base);
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -314,8 +343,8 @@ function onSave() {
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 .app-dialog__section.is-drop-active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  border-color: var(--gg-primary);
+  background: var(--gg-primary-soft);
 }
 .app-dialog__section-heading {
   display: flex;
@@ -325,37 +354,26 @@ function onSave() {
 .app-dialog__section-title {
   margin: 0;
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
 }
 .app-dialog__drop-icon {
   width: 18px;
   height: 18px;
-  color: var(--el-text-color-placeholder);
+  color: var(--gg-text-subtle);
 }
 .app-dialog__drop-icon.is-active {
-  color: var(--el-color-primary);
-}
-.app-dialog__drop-icon.is-loading {
-  animation: app-dialog-spin 1s linear infinite;
+  color: var(--gg-primary);
 }
 .app-dialog__inline {
   display: flex;
   gap: 8px;
 }
-.app-dialog__inline .el-input {
+.app-dialog__inline .gg-input {
   flex: 1;
-}
-.app-dialog__pick.is-picking :deep(.el-icon) {
-  animation: app-dialog-spin 1s linear infinite;
 }
 :global(html.gg-window-picking),
 :global(html.gg-window-picking *) {
   cursor: crosshair !important;
   user-select: none;
-}
-@keyframes app-dialog-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

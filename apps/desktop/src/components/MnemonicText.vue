@@ -57,23 +57,23 @@ const ariaLabel = computed(() =>
   max-width: 100%;
   gap: 5px;
   flex-wrap: wrap;
-  color: var(--el-text-color-primary);
+  color: var(--gg-text);
 }
 
 .mnemonic__input {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  color: var(--el-text-color-primary);
+  color: var(--gg-text);
 }
 
 .mnemonic__input--modifier {
-  --wheel-modifier-accent: var(--el-color-warning);
-  color: var(--el-color-warning);
+  --wheel-modifier-accent: var(--gg-warning);
+  color: var(--gg-warning);
 }
 
 .mnemonic__input--modifier :deep(.mnemonic-token),
 .mnemonic__input--modifier :deep(.mnemonic-icon) {
-  color: var(--el-color-warning);
+  color: var(--gg-warning);
 }
 </style>

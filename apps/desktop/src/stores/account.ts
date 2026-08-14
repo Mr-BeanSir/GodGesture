@@ -114,7 +114,11 @@ export const useAccountStore = defineStore("account", () => {
     if (!device.value || device.value.platform === "unsupported") {
       throw new CloudError(0, "unsupported_platform");
     }
-    return { name: device.value.name, platform: device.value.platform };
+    return {
+      name: device.value.name,
+      platform: device.value.platform,
+      deviceKey: device.value.deviceKey,
+    };
   }
 
   async function configureCloud(): Promise<void> {

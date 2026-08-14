@@ -1,4 +1,39 @@
 export interface paths {
+    "/admin/system-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read redacted administrator system configuration */
+        get: operations["getAdminSystemConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update administrator system configuration */
+        patch: operations["updateAdminSystemConfig"];
+        trace?: never;
+    };
+    "/admin/system-config/rustfs/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test RustFS connectivity with effective or candidate settings */
+        post: operations["testAdminRustFsConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/template-policy": {
         parameters: {
             query?: never;
@@ -112,6 +147,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read editable account metadata for administrators */
+        get: operations["getAdminUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update account profile, password, and template quota overrides */
+        patch: operations["updateAdminUser"];
         trace?: never;
     };
     "/admin/users/{id}/revoke-sessions": {
@@ -696,34 +749,136 @@ export interface components {
             /** @enum {string} */
             role: "user" | "admin";
         };
+        AdminSystemConfigResponse: {
+            rustfs: {
+                accessKeyConfigured: boolean;
+                bucket: string;
+                /** Format: uri */
+                endpoint: string;
+                publicDownloadTtlSec: number;
+                region: string;
+                secretKeyConfigured: boolean;
+            };
+            templatePolicy: {
+                dailySubmissionLimit: number;
+                hardDailySubmissionMax: number;
+                hardPackageBytesMax: number;
+                hardPendingVersionMax: number;
+                hardPublishedMax: number;
+                maxPackageBytes: number;
+                pendingVersionLimit: number;
+                publishedTemplateLimit: number;
+            };
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminSystemConfigUpdateRequest: {
+            rustfs?: {
+                accessKey?: string;
+                bucket?: string;
+                /** Format: uri */
+                endpoint?: string;
+                publicDownloadTtlSec?: number;
+                region?: string;
+                secretKey?: string;
+            };
+            templatePolicy?: {
+                dailySubmissionLimit?: number;
+                maxPackageBytes?: number;
+                pendingVersionLimit?: number;
+                publishedTemplateLimit?: number;
+            };
+        };
         AdminUser: {
             /** Format: date-time */
             createdAt: string;
             deviceCount: number;
             disabled: boolean;
+            displayName: string;
             /** Format: email */
             email: string | null;
             emailVerified: boolean;
             /** Format: uuid */
             id: string;
+            /** Format: date-time */
+            lastLoginAt: string | null;
+            /** Format: date-time */
+            lastUseAt: string | null;
             /** @enum {string} */
             role: "user" | "admin";
         };
+        AdminUserDetail: {
+            /** Format: date-time */
+            createdAt: string;
+            deviceCount: number;
+            disabled: boolean;
+            displayName: string;
+            /** Format: email */
+            email: string | null;
+            emailVerified: boolean;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            lastLoginAt: string | null;
+            /** Format: date-time */
+            lastUseAt: string | null;
+            linkedProviders: ("github" | "google" | "wechat" | "qq")[];
+            passwordSet: boolean;
+            /** @enum {string} */
+            role: "user" | "admin";
+            templatePolicy: {
+                dailySubmissionLimit: number;
+                maxPackageBytes: number;
+                overrides: {
+                    dailySubmissionLimit?: number;
+                    maxPackageBytes?: number;
+                    pendingVersionLimit?: number;
+                    publishedTemplateLimit?: number;
+                };
+                pendingVersionLimit: number;
+                publishedTemplateLimit: number;
+                /** Format: uuid */
+                userId: string;
+            };
+        };
+        AdminUserListQuery: {
+            email?: string;
+            /** @default 1 */
+            page: number;
+            /** @default 20 */
+            pageSize: number;
+        };
         AdminUserListResponse: {
+            page: number;
+            pageSize: number;
             total: number;
+            totalPages: number;
             users: {
                 /** Format: date-time */
                 createdAt: string;
                 deviceCount: number;
                 disabled: boolean;
+                displayName: string;
                 /** Format: email */
                 email: string | null;
                 emailVerified: boolean;
                 /** Format: uuid */
                 id: string;
+                /** Format: date-time */
+                lastLoginAt: string | null;
+                /** Format: date-time */
+                lastUseAt: string | null;
                 /** @enum {string} */
                 role: "user" | "admin";
             }[];
+        };
+        AdminUserUpdateRequest: {
+            dailySubmissionLimit?: number | null;
+            displayName?: string;
+            maxPackageBytes?: number | null;
+            password?: string;
+            pendingVersionLimit?: number | null;
+            publishedTemplateLimit?: number | null;
         };
         ConfigDocument: {
             /** @default [] */
@@ -1364,10 +1519,8 @@ export interface components {
                 locale: "auto" | "zh-CN" | "en";
                 /** @default {} */
                 pathTracker: {
-                    /** @default false */
-                    disableInFullscreen: boolean;
                     /** @default true */
-                    enable8Directions: boolean;
+                    disableInFullscreen: boolean;
                     /** @default false */
                     enableWindowsKeyGesturing: boolean;
                     /** @default false */
@@ -1732,10 +1885,8 @@ export interface components {
                 locale: "auto" | "zh-CN" | "en";
                 /** @default {} */
                 pathTracker: {
-                    /** @default false */
-                    disableInFullscreen: boolean;
                     /** @default true */
-                    enable8Directions: boolean;
+                    disableInFullscreen: boolean;
                     /** @default false */
                     enableWindowsKeyGesturing: boolean;
                     /** @default false */
@@ -2170,6 +2321,8 @@ export interface components {
         };
         LoginRequest: {
             device: {
+                /** Format: uuid */
+                deviceKey: string;
                 name: string;
                 /** @enum {string} */
                 platform: "windows" | "macos" | "web";
@@ -2195,6 +2348,8 @@ export interface components {
             code: string;
             codeVerifier: string;
             device: {
+                /** Format: uuid */
+                deviceKey: string;
                 name: string;
                 /** @enum {string} */
                 platform: "windows" | "macos" | "web";
@@ -2203,6 +2358,8 @@ export interface components {
         OAuthPendingBindingCompleteRequest: {
             codeVerifier: string;
             device: {
+                /** Format: uuid */
+                deviceKey: string;
                 name: string;
                 /** @enum {string} */
                 platform: "windows" | "macos" | "web";
@@ -2353,7 +2510,82 @@ export interface components {
             updatedAt: string;
             version: number;
         };
+        RustFsConfigResponse: {
+            accessKeyConfigured: boolean;
+            bucket: string;
+            /** Format: uri */
+            endpoint: string;
+            publicDownloadTtlSec: number;
+            region: string;
+            secretKeyConfigured: boolean;
+        };
+        RustFsConfigUpdateRequest: {
+            accessKey?: string;
+            bucket?: string;
+            /** Format: uri */
+            endpoint?: string;
+            publicDownloadTtlSec?: number;
+            region?: string;
+            secretKey?: string;
+        };
+        SystemConfigRustFsTestRequest: {
+            rustfs?: {
+                accessKey?: string;
+                bucket?: string;
+                /** Format: uri */
+                endpoint?: string;
+                publicDownloadTtlSec?: number;
+                region?: string;
+                secretKey?: string;
+            };
+        };
+        SystemConfigRustFsTestResponse: {
+            /** @enum {boolean} */
+            ok: true;
+        };
+        TemplateModerationListQuery: {
+            /** Format: uuid */
+            cursor?: string;
+            /** @default 20 */
+            limit: number;
+            /** @default pending_review */
+            status: "all" | ("pending_review" | "published" | "rejected" | "withdrawn" | "suspended");
+        };
+        TemplateModerationListResponse: {
+            count: number;
+            /** Format: uuid */
+            nextCursor: string | null;
+            templates: {
+                author: string;
+                risks: string[];
+                /** @enum {string} */
+                status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
+                /** Format: date-time */
+                submittedAt: string;
+                summary: string;
+                /** Format: uuid */
+                templateId: string;
+                title: string;
+                /** Format: uuid */
+                versionId: string;
+                versionNumber: number;
+            }[];
+        };
+        TemplateModerationReportListQuery: {
+            /** Format: uuid */
+            cursor?: string;
+            /** @default 50 */
+            limit: number;
+            /**
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved" | "dismissed";
+        };
         TemplateModerationReportListResponse: {
+            count: number;
+            /** Format: uuid */
+            nextCursor: string | null;
             reports: {
                 author: string;
                 /** Format: date-time */
@@ -2435,6 +2667,191 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getAdminSystemConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The administrator system configuration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSystemConfigResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    updateAdminSystemConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSystemConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated administrator system configuration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSystemConfigResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    testAdminRustFsConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemConfigRustFsTestRequest"];
+            };
+        };
+        responses: {
+            /** @description The RustFS connection test succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemConfigRustFsTestResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+            /** @description Request failed. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getTemplatePolicy: {
         parameters: {
             query?: never;
@@ -2554,7 +2971,9 @@ export interface operations {
     listModerationTemplates: {
         parameters: {
             query?: {
-                status?: string;
+                cursor?: string;
+                limit?: number;
+                status?: "all" | ("pending_review" | "published" | "rejected" | "withdrawn" | "suspended");
             };
             header?: never;
             path?: never;
@@ -2562,15 +2981,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Templates awaiting moderation. */
+            /** @description Template moderation versions. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        templates: unknown[];
-                    };
+                    "application/json": components["schemas"]["TemplateModerationListResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Request failed. */
@@ -2596,6 +3022,8 @@ export interface operations {
     listTemplateReports: {
         parameters: {
             query?: {
+                cursor?: string;
+                limit?: number;
                 status?: "open" | "resolved" | "dismissed";
             };
             header?: never;
@@ -2809,7 +3237,11 @@ export interface operations {
     };
     listAdminUsers: {
         parameters: {
-            query?: never;
+            query?: {
+                email?: string;
+                page?: number;
+                pageSize?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2836,6 +3268,144 @@ export interface operations {
             };
             /** @description Request failed. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    getAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    updateAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated account details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Request validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request failed. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -103,6 +103,56 @@ test("Server Dockerfile effective ignore excludes Console build output without r
   assert.doesNotMatch(dockerignore, /^\s*!/m);
 });
 
+test("global template policy is constrained to one database row", async () => {
+  const schema = await readFile(
+    join(repositoryRoot, "apps", "server", "prisma", "schema.prisma"),
+    "utf8",
+  );
+  const migration = await readFile(
+    join(
+      repositoryRoot,
+      "apps",
+      "server",
+      "prisma",
+      "migrations",
+      "20260809220000_seed_template_policy",
+      "migration.sql",
+    ),
+    "utf8",
+  );
+
+  assert.match(schema, /singleton\s+Boolean\s+@unique\s+@default\(true\)/);
+  assert.match(migration, /CREATE UNIQUE INDEX "TemplatePolicy_singleton_key"/);
+  assert.match(
+    migration,
+    /ADD CONSTRAINT "TemplatePolicy_singleton_check" CHECK \("singleton"\)/,
+  );
+});
+
+test("retired GitHub template seed is absent from the runtime repository", async () => {
+  const gitmodules = await readFile(join(repositoryRoot, ".gitmodules"), "utf8");
+  const packageJson = JSON.parse(
+    await readFile(join(repositoryRoot, "package.json"), "utf8"),
+  );
+  const [englishLocale, chineseLocale] = await Promise.all([
+    readFile(join(repositoryRoot, "apps", "desktop", "src", "locales", "en.ts"), "utf8"),
+    readFile(join(repositoryRoot, "apps", "desktop", "src", "locales", "zh-CN.ts"), "utf8"),
+  ]);
+
+  assert.doesNotMatch(gitmodules, /distribution\/templates/);
+  assert.equal("validate:templates" in packageJson.scripts, false);
+  await assert.rejects(
+    access(join(repositoryRoot, "distribution", "templates")),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    access(join(repositoryRoot, "scripts", "validate-template-seed.mjs")),
+    { code: "ENOENT" },
+  );
+  assert.doesNotMatch(englishLocale, /GitHub's template repository|inheriting WGestures/);
+  assert.doesNotMatch(chineseLocale, /GitHub 模板库|继承 WGestures/);
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

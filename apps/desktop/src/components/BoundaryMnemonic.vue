@@ -78,7 +78,7 @@ const ariaLabel = computed(() => {
   max-width: 100%;
   gap: 5px;
   flex-wrap: wrap;
-  color: var(--el-text-color-primary);
+  color: var(--gg-text);
 }
 
 .boundary-mnemonic__screen {
@@ -99,11 +99,11 @@ const ariaLabel = computed(() => {
 }
 
 .boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-frame) {
-  color: var(--el-border-color-darker);
+  color: var(--gg-border-strong);
 }
 
 .boundary-mnemonic__screen :deep(.boundary-mnemonic__screen-active) {
-  color: var(--el-color-primary);
+  color: var(--gg-primary);
 }
 
 .boundary-mnemonic__immediate {
@@ -111,8 +111,8 @@ const ariaLabel = computed(() => {
   width: 1.35em;
   height: 1.35em;
   flex: 0 0 auto;
-  fill: var(--el-color-warning);
-  color: var(--el-color-warning);
+  fill: var(--gg-warning);
+  color: var(--gg-warning);
   overflow: visible;
 }
 </style>

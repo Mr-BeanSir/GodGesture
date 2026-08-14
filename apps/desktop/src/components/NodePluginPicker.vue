@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import { FolderOpen, RefreshCw } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import { FolderOpened, Refresh } from "@element-plus/icons-vue";
+import { AppAlert, AppButton } from "@godgesture/ui";
 import type { NodePluginCommand } from "@godgesture/shared";
 import { usePluginsStore } from "../stores/plugins";
 
@@ -13,10 +14,11 @@ const plugins = usePluginsStore();
 const selectedPlugin = computed(() =>
   plugins.readyPlugins.find((plugin) => plugin.id === props.modelValue.pluginId) ?? null,
 );
-function selectPlugin(pluginId: string) {
+
+function selectPlugin(event: Event) {
   emit("update:modelValue", {
     type: "nodePlugin",
-    pluginId,
+    pluginId: (event.target as HTMLSelectElement).value,
   });
 }
 
@@ -28,37 +30,37 @@ onMounted(() => void plugins.initialize());
     <div class="gg-field">
       <label class="gg-field-label" for="node-plugin-project">{{ t("command.nodePlugin.plugin") }}</label>
       <div class="node-plugin-picker__row">
-        <el-select
-          :model-value="selectedPlugin?.id ?? ''"
+        <select
           id="node-plugin-project"
-          class="node-plugin-picker__select"
-          :placeholder="t('command.nodePlugin.selectPlugin')"
-          @update:model-value="selectPlugin"
+          class="gg-select node-plugin-picker__select"
+          :value="selectedPlugin?.id ?? ''"
+          @change="selectPlugin"
         >
-          <el-option
-            v-for="plugin in plugins.readyPlugins"
-            :key="plugin.id"
-            :label="plugin.name"
-            :value="plugin.id"
-          />
-        </el-select>
-        <el-tooltip :content="t('plugins.openFolder')">
-          <el-button
-            :icon="FolderOpened"
-            circle
-            :aria-label="t('plugins.openFolder')"
-            @click="plugins.openRoot()"
-          />
-        </el-tooltip>
-        <el-tooltip :content="t('plugins.rescan')">
-          <el-button
-            :icon="Refresh"
-            circle
-            :loading="plugins.loading"
-            :aria-label="t('plugins.rescan')"
-            @click="plugins.refresh()"
-          />
-        </el-tooltip>
+          <option value="" disabled>{{ t("command.nodePlugin.selectPlugin") }}</option>
+          <option v-for="plugin in plugins.readyPlugins" :key="plugin.id" :value="plugin.id">
+            {{ plugin.name }}
+          </option>
+        </select>
+        <button
+          type="button"
+          class="gg-icon-button"
+          :aria-label="t('plugins.openFolder')"
+          :title="t('plugins.openFolder')"
+          @click="plugins.openRoot()"
+        >
+          <FolderOpen aria-hidden="true" />
+        </button>
+        <AppButton
+          class="node-plugin-picker__refresh"
+          variant="quiet"
+          :loading="plugins.loading"
+          :loading-label="t('plugins.rescan')"
+          :aria-label="t('plugins.rescan')"
+          :title="t('plugins.rescan')"
+          @click="plugins.refresh()"
+        >
+          <RefreshCw aria-hidden="true" />
+        </AppButton>
       </div>
     </div>
 
@@ -66,27 +68,13 @@ onMounted(() => void plugins.initialize());
       {{ t("command.nodePlugin.lifecycleHint") }}
     </p>
 
-    <el-alert
-      v-if="plugins.error"
-      type="error"
-      show-icon
-      :closable="false"
-      :title="plugins.error.message"
-    />
-    <el-alert
-      v-else-if="props.modelValue.pluginId && !selectedPlugin"
-      type="warning"
-      show-icon
-      :closable="false"
-      :title="t('command.nodePlugin.missingPlugin', { id: props.modelValue.pluginId })"
-    />
-    <el-alert
-      v-else-if="plugins.readyPlugins.length === 0"
-      type="info"
-      show-icon
-      :closable="false"
-      :title="t('command.nodePlugin.noPlugins')"
-    />
+    <AppAlert v-if="plugins.error" variant="error">{{ plugins.error.message }}</AppAlert>
+    <AppAlert v-else-if="props.modelValue.pluginId && !selectedPlugin" variant="warning">
+      {{ t("command.nodePlugin.missingPlugin", { id: props.modelValue.pluginId }) }}
+    </AppAlert>
+    <AppAlert v-else-if="plugins.readyPlugins.length === 0" variant="info">
+      {{ t("command.nodePlugin.noPlugins") }}
+    </AppAlert>
   </div>
 </template>
 
@@ -94,4 +82,6 @@ onMounted(() => void plugins.initialize());
 .node-plugin-picker { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
 .node-plugin-picker__row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .node-plugin-picker__select { flex: 1 1 auto; min-width: 0; }
+.node-plugin-picker__refresh { min-width: 44px; padding-inline: 10px; }
+.node-plugin-picker__refresh :deep(svg) { width: 18px; height: 18px; }
 </style>

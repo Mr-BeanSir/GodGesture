@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch, type Directive } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
-import { ArrowDown, ArrowRight, Download, Search } from "@element-plus/icons-vue";
+import { ChevronDown, ChevronRight, Download, Search } from "lucide-vue-next";
+import { AppAlert, AppBadge, AppButton, AppDialog, pushToast } from "@godgesture/ui";
 import { gestureTemplatePackageRisks, type AppEntry, type AppGroup, type ConfigDocument } from "@godgesture/shared";
 import {
   buildGestureTemplatePackage,
@@ -202,12 +202,37 @@ const canExport = computed(() =>
 );
 const canSubmitPublic = computed(() => canSubmitPublicTemplate({ endpointMode: account.endpointMode, phase: account.phase, emailVerified: Boolean(account.user?.emailVerified) }));
 
+const vIndeterminate: Directive<HTMLInputElement, boolean> = {
+  mounted(element, binding) {
+    element.indeterminate = binding.value;
+  },
+  updated(element, binding) {
+    element.indeterminate = binding.value;
+  },
+};
+
 function selectAll() {
   selectedIds.value = [...allSelectableIds.value];
 }
 
 function clearSelection() {
   selectedIds.value = [];
+}
+
+function selectionChanged(id: string, event: Event) {
+  setSelected(id, (event.target as HTMLInputElement).checked);
+}
+
+function groupSelectionState(group: AppGroup): "checked" | "mixed" | "unchecked" {
+  const ids = selectableIdsForGroup(group);
+  const selected = selectedCountFor(ids);
+  if (ids.length > 0 && selected === ids.length) return "checked";
+  if (selected > 0) return "mixed";
+  return "unchecked";
+}
+
+function requestClose() {
+  if (!exporting.value) visible.value = false;
 }
 
 function reset() {
@@ -331,10 +356,10 @@ async function exportSelected(submitPublic = false) {
     } else {
       downloadJson(gestureTemplateExportFileName(), packageValue);
     }
-    ElMessage.success(t("gestures.exportDialog.success", {
+    pushToast({ kind: "success", message: t("gestures.exportDialog.success", {
       targets: selectedTargets.value.length,
       gestures: selectedGestureCount.value,
-    }));
+    }) });
     visible.value = false;
   } catch {
     validationError.value = t("gestures.exportDialog.failed");
@@ -346,50 +371,62 @@ async function exportSelected(submitPublic = false) {
 async function confirmPublicSubmission() {
   if (!pendingPackage.value) return;
   exporting.value = true;
-  try { const result = await account.submitPublicTemplate(pendingPackage.value); ElMessage.success(t("gestures.exportDialog.submitted", { id: result.id })); reviewVisible.value = false; visible.value = false; }
+  try {
+    const result = await account.submitPublicTemplate(pendingPackage.value);
+    pushToast({ kind: "success", message: t("gestures.exportDialog.submitted", { id: result.id }) });
+    reviewVisible.value = false;
+    visible.value = false;
+  }
   catch { validationError.value = t("gestures.exportDialog.failed"); }
   finally { exporting.value = false; }
 }
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
+  <AppDialog
+    :open="visible"
     class="gesture-export-dialog"
     :title="t('gestures.exportDialog.title')"
-    width="min(820px, calc(100vw - 32px))"
-    top="4vh"
-    destroy-on-close
-    :close-on-click-modal="!exporting"
-    :close-on-press-escape="!exporting"
-    :show-close="!exporting"
+    :close-label="t('common.close')"
+    :busy="exporting"
+    @close="requestClose"
   >
     <div class="gesture-export">
       <p class="gg-hint gesture-export__intro">{{ t("gestures.exportDialog.description") }}</p>
 
       <section class="gesture-export__section">
-        <div class="gesture-export__section-head">
-          <div>
-            <h3>{{ t("gestures.exportDialog.metadataTitle") }}</h3>
-            <p class="gg-hint">{{ t("gestures.exportDialog.metadataHint") }}</p>
-          </div>
-          <el-tag size="small" effect="plain">v2</el-tag>
-        </div>
-        <el-form label-position="top" class="gesture-export__form" @submit.prevent="exportSelected">
-          <div class="gesture-export__form-grid gesture-export__form-grid--identity">
-            <el-form-item :label="t('gestures.exportDialog.tags')">
-              <el-input v-model="form.tags" :placeholder="t('gestures.exportDialog.tagsPlaceholder')" />
-            </el-form-item>
-          </div>
+        <form class="gesture-export__form" @submit.prevent="exportSelected()">
           <div class="gesture-export__form-grid">
-            <el-form-item :label="t('gestures.exportDialog.templateTitle')">
-              <el-input v-model="form.title" :maxlength="120" show-word-limit />
-            </el-form-item>
-            <el-form-item :label="t('gestures.exportDialog.templateSummary')">
-              <el-input v-model="form.summary" type="textarea" :rows="2" :maxlength="512" show-word-limit />
-            </el-form-item>
+            <div class="gesture-export__form-column">
+              <div class="gesture-export__field">
+                <label for="gesture-export-title">{{ t("gestures.exportDialog.templateTitle") }}</label>
+                <input id="gesture-export-title" v-model="form.title" class="gg-input" type="text" maxlength="120" />
+                <span class="gesture-export__field-count" aria-live="polite">{{ form.title.length }} / 120</span>
+              </div>
+              <div class="gesture-export__field">
+                <label for="gesture-export-tags">{{ t("gestures.exportDialog.tags") }}</label>
+                <input
+                  id="gesture-export-tags"
+                  v-model="form.tags"
+                  class="gg-input"
+                  type="text"
+                  :placeholder="t('gestures.exportDialog.tagsPlaceholder')"
+                />
+              </div>
+            </div>
+            <div class="gesture-export__field gesture-export__summary-field">
+              <label for="gesture-export-summary">{{ t("gestures.exportDialog.templateSummary") }}</label>
+              <textarea
+                id="gesture-export-summary"
+                v-model="form.summary"
+                class="gg-textarea"
+                rows="4"
+                maxlength="512"
+              />
+              <span class="gesture-export__field-count" aria-live="polite">{{ form.summary.length }} / 512</span>
+            </div>
           </div>
-        </el-form>
+        </form>
       </section>
 
       <section class="gesture-export__section gesture-export__targets">
@@ -398,36 +435,44 @@ async function confirmPublicSubmission() {
             <h3>{{ t("gestures.exportDialog.targetsTitle") }}</h3>
             <p class="gg-hint">{{ t("gestures.exportDialog.targetsHint") }}</p>
           </div>
-          <span class="gesture-export__selection-count">
+          <AppBadge class="gesture-export__selection-count" variant="neutral">
             {{ t("gestures.exportDialog.selectedCount", { count: selectedTargets.length, gestures: selectedGestureCount }) }}
-          </span>
+          </AppBadge>
         </div>
 
         <div class="gesture-export__target-toolbar">
-          <el-input
-            v-model="query"
-            clearable
-            :prefix-icon="Search"
-            :placeholder="t('gestures.exportDialog.searchPlaceholder')"
-          />
+          <div class="gesture-export__search">
+            <Search aria-hidden="true" />
+            <input
+              id="gesture-export-search"
+              v-model="query"
+              class="gg-input"
+              type="search"
+              :aria-label="t('gestures.exportDialog.searchPlaceholder')"
+              :placeholder="t('gestures.exportDialog.searchPlaceholder')"
+            />
+          </div>
           <div class="gesture-export__target-actions">
-            <el-button link size="small" @click="selectAll">{{ t("gestures.exportDialog.selectAll") }}</el-button>
-            <el-button link size="small" @click="clearSelection">{{ t("gestures.exportDialog.clearSelection") }}</el-button>
-            <el-button link size="small" @click="setAllGroupsExpanded(true)">
+            <AppButton variant="quiet" size="sm" @click="selectAll">{{ t("gestures.exportDialog.selectAll") }}</AppButton>
+            <AppButton variant="quiet" size="sm" @click="clearSelection">{{ t("gestures.exportDialog.clearSelection") }}</AppButton>
+            <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(true)">
               {{ t("gestures.exportDialog.expandAll") }}
-            </el-button>
-            <el-button link size="small" @click="setAllGroupsExpanded(false)">
+            </AppButton>
+            <AppButton variant="quiet" size="sm" @click="setAllGroupsExpanded(false)">
               {{ t("gestures.exportDialog.collapseAll") }}
-            </el-button>
+            </AppButton>
           </div>
         </div>
 
         <div class="gesture-export__target-list">
           <label v-if="globalVisible" class="gesture-export__target-row">
-            <el-checkbox
-              :model-value="isSelected('__global__')"
+            <input
+              id="gesture-export-target-global"
+              class="gg-checkbox"
+              type="checkbox"
+              :checked="isSelected('__global__')"
               :disabled="!targetCanExport(globalTarget())"
-              @change="setSelected('__global__', Boolean($event))"
+              @change="selectionChanged('__global__', $event)"
             />
             <span class="gesture-export__target-name">{{ t("gestures.globalApp") }}</span>
             <span class="gesture-export__target-count">
@@ -444,35 +489,38 @@ async function confirmPublicSubmission() {
                 type="button"
                 class="gesture-export__group-toggle"
                 :aria-expanded="isGroupExpanded(item.group.id)"
-                @click="toggleGroupExpanded(item.group.id)"
-              >
-                <el-icon aria-hidden="true">
-                  <ArrowDown v-if="isGroupExpanded(item.group.id)" />
-                  <ArrowRight v-else />
-                </el-icon>
+              @click="toggleGroupExpanded(item.group.id)"
+            >
+                <ChevronDown v-if="isGroupExpanded(item.group.id)" aria-hidden="true" />
+                <ChevronRight v-else aria-hidden="true" />
                 <span>{{ item.group.name }}</span>
                 <span class="gesture-export__group-count">{{ item.apps.length }}</span>
               </button>
-              <el-checkbox
-                :model-value="selectedCountFor(selectableIdsForGroup(item.group)) === selectableIdsForGroup(item.group).length && selectableIdsForGroup(item.group).length > 0"
-                :indeterminate="selectedCountFor(selectableIdsForGroup(item.group)) > 0 && selectedCountFor(selectableIdsForGroup(item.group)) < selectableIdsForGroup(item.group).length"
-                :disabled="selectableIdsForGroup(item.group).length === 0"
-                @change="toggleGroup(item.group)"
-              >
+              <label class="gesture-export__group-select">
+                <input
+                  v-indeterminate="groupSelectionState(item.group) === 'mixed'"
+                  class="gg-checkbox"
+                  type="checkbox"
+                  :checked="groupSelectionState(item.group) === 'checked'"
+                  :disabled="selectableIdsForGroup(item.group).length === 0"
+                  @change="toggleGroup(item.group)"
+                />
                 {{ t("gestures.exportDialog.selectGroup") }}
-              </el-checkbox>
+              </label>
             </div>
             <div v-if="isGroupExpanded(item.group.id)" class="gesture-export__group-apps">
               <label
                 v-for="app in item.apps"
                 :key="app.id"
                 class="gesture-export__target-row gesture-export__target-row--app"
-                :class="{ 'is-disabled': !targetCanExport(targetForApp(app)) }"
-              >
-                <el-checkbox
-                  :model-value="isSelected(app.id)"
+              :class="{ 'is-disabled': !targetCanExport(targetForApp(app)) }"
+            >
+                <input
+                  class="gg-checkbox"
+                  type="checkbox"
+                  :checked="isSelected(app.id)"
                   :disabled="!targetCanExport(targetForApp(app))"
-                  @change="setSelected(app.id, Boolean($event))"
+                  @change="selectionChanged(app.id, $event)"
                 />
                 <span class="gesture-export__target-name">{{ app.name }}</span>
                 <span class="gesture-export__target-binding">
@@ -488,46 +536,42 @@ async function confirmPublicSubmission() {
         </div>
       </section>
 
-      <el-alert
+      <AppAlert
         v-if="selectedPluginIds.length"
         class="gesture-export__alert"
-        type="warning"
-        show-icon
-        :closable="false"
+        variant="warning"
         :title="t('gestures.exportDialog.pluginSourceMissing', { ids: selectedPluginIds.join(', ') })"
       />
-      <el-alert
+      <AppAlert
         v-if="validationError"
         class="gesture-export__alert"
-        type="error"
-        show-icon
-        :closable="false"
+        variant="error"
         :title="validationError"
       />
     </div>
 
     <template #footer>
-      <el-button :disabled="exporting" @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button
+      <AppButton :disabled="exporting" @click="requestClose">{{ t("common.cancel") }}</AppButton>
+      <AppButton
         v-if="canSubmitPublic"
-        type="success"
+        variant="secondary"
         :loading="exporting"
         :disabled="!canExport"
         @click="exportSelected(true)"
       >
         {{ t("gestures.exportDialog.submitPublic") }}
-      </el-button>
-      <el-button
-        type="primary"
-        :icon="Download"
+      </AppButton>
+      <AppButton
+        variant="primary"
         :loading="exporting"
         :disabled="!canExport"
-        @click="exportSelected"
+        @click="exportSelected()"
       >
+        <Download aria-hidden="true" />
         {{ t("gestures.exportDialog.export") }}
-      </el-button>
+      </AppButton>
     </template>
-  </el-dialog>
+  </AppDialog>
   <TemplateSubmissionReview
     v-if="pendingReview"
     v-model="reviewVisible"
@@ -540,6 +584,7 @@ async function confirmPublicSubmission() {
     :plugins="selectedPluginIds"
     :usage="pendingQuota?.usage ?? { submissionsToday: 0, pendingVersions: 0, publishedTemplates: 0 }"
     :limits="pendingQuota?.limits ?? { dailySubmissionLimit: 0, pendingVersionLimit: 0, publishedTemplateLimit: 0, maxPackageBytes: 0 }"
+    :busy="exporting"
     @confirm="confirmPublicSubmission"
   />
 </template>
@@ -548,7 +593,7 @@ async function confirmPublicSubmission() {
 .gesture-export { min-width: 0; }
 .gesture-export__intro { margin: 0 0 12px; }
 .gesture-export__section {
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid var(--gg-border);
   padding-top: 12px;
   margin-top: 12px;
 }
@@ -561,21 +606,50 @@ async function confirmPublicSubmission() {
 }
 .gesture-export__section-head h3 {
   margin: 0;
-  color: var(--el-text-color-primary);
+  color: var(--gg-text);
   font-size: 13px;
   line-height: 20px;
 }
 .gesture-export__section-head p { margin: 3px 0 0; }
-.gesture-export__form :deep(.el-form-item) { margin-bottom: 10px; }
 .gesture-export__form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 0 12px;
 }
-.gesture-export__form-grid--identity { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.gesture-export__form-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.gesture-export__field {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.gesture-export__field > label {
+  color: var(--gg-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.gesture-export__field-count {
+  color: var(--gg-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.gesture-export__summary-field {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  flex: 1;
+}
+.gesture-export__summary-field textarea { flex: 1; resize: vertical; }
 .gesture-export__selection-count {
   flex: 0 0 auto;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -585,7 +659,17 @@ async function confirmPublicSubmission() {
   gap: 8px;
   margin-bottom: 8px;
 }
-.gesture-export__target-toolbar > .el-input { max-width: 300px; }
+.gesture-export__search {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 300px;
+  flex: 1 1 200px;
+  gap: 8px;
+  color: var(--gg-text-muted);
+}
+.gesture-export__search svg { flex: 0 0 auto; width: 16px; height: 16px; }
+.gesture-export__search input { min-width: 0; width: 100%; }
 .gesture-export__target-actions {
   display: flex;
   flex-wrap: wrap;
@@ -594,24 +678,24 @@ async function confirmPublicSubmission() {
 }
 .gesture-export__target-list {
   max-height: 250px;
-  overflow-y: auto;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 5px;
-  background: var(--el-bg-color-page);
+  overflow: auto;
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+  background: var(--gg-surface-muted);
 }
 .gesture-export__target-row {
   display: flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 40px;
   gap: 8px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--el-border-color-extra-light);
-  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--gg-border);
+  color: var(--gg-text);
   font-size: 13px;
 }
 .gesture-export__target-row:last-child { border-bottom: 0; }
 .gesture-export__target-row--app { padding-left: 34px; }
-.gesture-export__target-row.is-disabled { color: var(--el-text-color-placeholder); }
+.gesture-export__target-row.is-disabled { color: var(--gg-text-muted); }
 .gesture-export__target-name {
   min-width: 0;
   overflow: hidden;
@@ -622,7 +706,7 @@ async function confirmPublicSubmission() {
 .gesture-export__target-binding {
   max-width: 210px;
   overflow: hidden;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -630,7 +714,7 @@ async function confirmPublicSubmission() {
 .gesture-export__target-count,
 .gesture-export__group-count {
   flex: 0 0 auto;
-  color: var(--el-text-color-placeholder);
+  color: var(--gg-text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -639,8 +723,8 @@ async function confirmPublicSubmission() {
   align-items: center;
   min-height: 36px;
   padding: 0 8px 0 10px;
-  border-bottom: 1px solid var(--el-border-color-extra-light);
-  background: var(--el-fill-color-extra-light);
+  border-bottom: 1px solid var(--gg-border);
+  background: var(--gg-surface);
 }
 .gesture-export__group-toggle {
   display: inline-flex;
@@ -651,32 +735,35 @@ async function confirmPublicSubmission() {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--el-text-color-regular);
+  color: var(--gg-text);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   text-align: left;
 }
-.gesture-export__group-toggle:hover { color: var(--el-color-primary); }
+.gesture-export__group-toggle svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.gesture-export__group-toggle:hover { color: var(--gg-primary); }
+.gesture-export__group-toggle:focus-visible { outline: 2px solid var(--gg-primary); outline-offset: 2px; }
 .gesture-export__group-toggle span:first-of-type {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.gesture-export__group-apps { background: var(--el-bg-color); }
+.gesture-export__group-select {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  gap: 6px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gesture-export__group-apps { background: var(--gg-surface); }
 .gesture-export__empty {
   padding: 18px 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--gg-text-muted);
   font-size: 12px;
   text-align: center;
 }
 .gesture-export__alert { margin-top: 10px; }
-@media (max-width: 700px) {
-  .gesture-export__form-grid--identity,
-  .gesture-export__form-grid { grid-template-columns: 1fr; }
-  .gesture-export__target-toolbar { align-items: stretch; flex-direction: column; }
-  .gesture-export__target-toolbar > .el-input { max-width: none; }
-  .gesture-export__target-actions { margin-left: 0; }
-  .gesture-export__target-binding { max-width: 120px; }
-}
 </style>

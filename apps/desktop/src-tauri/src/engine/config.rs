@@ -5,6 +5,7 @@ use super::types::{Direction, Modifier, TriggerButton};
 use serde::{de::Deserializer, Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 pub const CONFIG_FORMAT_VERSION: u32 = 8;
 pub const DEFAULT_APP_GROUP_ID: &str = "20000000-0000-4000-8000-000000000001";
@@ -331,7 +332,6 @@ impl Default for RubEdgesConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct PathTrackerPreferences {
     pub trigger_buttons: Vec<TriggerButton>,
-    pub enable_8_directions: bool,
     pub enable_windows_key_gesturing: bool,
     pub prefer_cursor_window: bool,
     pub disable_in_fullscreen: bool,
@@ -351,10 +351,9 @@ impl Default for PathTrackerPreferences {
                 TriggerButton::X1,
                 TriggerButton::X2,
             ],
-            enable_8_directions: true,
             enable_windows_key_gesturing: false,
             prefer_cursor_window: true,
-            disable_in_fullscreen: false,
+            disable_in_fullscreen: true,
             initial_valid_move_px: 4,
             initial_stay_timeout: false,
             initial_stay_timeout_ms: 200,
@@ -704,6 +703,9 @@ impl ConfigStore {
     fn sync_state_path(&self) -> PathBuf {
         self.dir.join("sync-state.json")
     }
+    pub(crate) fn device_key_path(&self) -> PathBuf {
+        self.dir.join("device-key.json")
+    }
 
     /// 加载配置;文件不存在时写入默认手势库种子
     pub fn load_config(&self) -> ConfigDocument {
@@ -756,6 +758,21 @@ impl ConfigStore {
 
     pub fn save_sync_metadata(&self, metadata: &SyncMetadata) -> std::io::Result<()> {
         self.save(&self.sync_state_path(), metadata)
+    }
+
+    /// Returns the stable identity for this application installation.
+    pub fn load_or_create_device_key(&self) -> String {
+        let path = self.device_key_path();
+        let existing = Self::load_or_default::<String>(&path);
+        if Uuid::parse_str(&existing).is_ok() {
+            return existing;
+        }
+
+        let generated = Uuid::new_v4().to_string();
+        if let Err(error) = self.save(&path, &generated) {
+            log::warn!("设备安装标识写入失败: {path:?}: {error}");
+        }
+        generated
     }
 
     pub(crate) fn snapshot_machine_settings(&self) -> io::Result<MachineSettingsSnapshot> {
@@ -921,6 +938,23 @@ mod tests {
     }
 
     #[test]
+    fn legacy_diagonal_preference_is_ignored_and_not_serialized() {
+        let document: ConfigDocument = serde_json::from_value(serde_json::json!({
+            "preferences": {
+                "pathTracker": {
+                    "enable8Directions": false
+                }
+            }
+        }))
+        .unwrap();
+
+        let serialized = serde_json::to_value(&document).unwrap();
+        assert!(serialized["preferences"]["pathTracker"]
+            .get("enable8Directions")
+            .is_none());
+    }
+
+    #[test]
     fn command_json_shape_matches_shared_schema() {
         // 与 shared zod 的 discriminatedUnion("type") 形状一致
         let cmd = Command::HotKey {
@@ -1069,5 +1103,18 @@ mod tests {
 
         assert_eq!(store.load_sync_metadata(), None);
         assert_eq!(store.load_config(), config);
+    }
+
+    #[test]
+    fn device_key_is_created_once_and_reused_from_app_config_dir() {
+        let dir = TestDir::new();
+        let store = ConfigStore::new(dir.0.clone());
+
+        let first = store.load_or_create_device_key();
+        let second = store.load_or_create_device_key();
+
+        assert_eq!(first, second);
+        assert!(uuid::Uuid::parse_str(&first).is_ok());
+        assert!(store.device_key_path().exists());
     }
 }
