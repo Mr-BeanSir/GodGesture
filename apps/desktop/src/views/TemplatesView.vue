@@ -344,13 +344,6 @@ function confirmAdoption(): void {
 
                 <section class="template-detail__editor-pane" :aria-label="t('gestures.editorTitle')">
                   <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
-                    <div class="template-detail__editor-head">
-                      <div>
-                        <span class="template-detail__section-kicker">{{ t("gestures.editorTitle") }}</span>
-                        <h4>{{ selectedTemplateIntent.name }}</h4>
-                      </div>
-                      <AppBadge variant="info">{{ t(`command.types.${selectedTemplateIntent.command.type}`) }}</AppBadge>
-                    </div>
                     <div class="template-detail__intent-summary">
                       <div class="gg-field">
                         <span class="gg-field-label">{{ t("gestures.colMnemonic") }}</span>
@@ -862,6 +855,10 @@ function confirmAdoption(): void {
 .template-detail__main > :deep(.gesture-action-table),
 .template-detail__main > .template-detail__editor-pane {
   border-radius: 0;
+}
+
+.template-detail__main > :deep(.gesture-action-table) {
+  border: 0;
 }
 
 .template-detail__main > .template-detail__editor-pane {
