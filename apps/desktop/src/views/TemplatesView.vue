@@ -628,8 +628,8 @@ function confirmAdoption(): void {
   height: 500px;
   min-height: 0;
   margin-top: 16px;
-  border: 1px solid var(--gg-border);
-  border-radius: 8px;
+  border-top: 1px solid var(--gg-border);
+  border-bottom: 1px solid var(--gg-border);
   overflow: hidden;
   background: var(--gg-surface);
 }
@@ -765,8 +765,8 @@ function confirmAdoption(): void {
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(170px, 1fr) minmax(185px, .95fr);
-  gap: 12px;
-  padding: 12px;
+  gap: 0;
+  padding: 0;
   background: var(--gg-surface);
 }
 
@@ -859,6 +859,15 @@ function confirmAdoption(): void {
   scrollbar-gutter: stable;
 }
 
+.template-detail__main > :deep(.gesture-action-table),
+.template-detail__main > .template-detail__editor-pane {
+  border-radius: 0;
+}
+
+.template-detail__main > .template-detail__editor-pane {
+  border-top: 0;
+}
+
 .template-detail__intent-editor {
   display: grid;
   min-width: 0;
@@ -947,9 +956,6 @@ function confirmAdoption(): void {
 .template-detail__review {
   display: grid;
   gap: 12px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--gg-border);
 }
 
 .template-detail__review-head,
@@ -1139,7 +1145,10 @@ function confirmAdoption(): void {
 }
 
 .template-detail__sections { min-width: 0; margin-top: 16px; }
-:deep(.template-detail__sections > .gg-tabs__panel) { min-height: 0; }
+:deep(.template-detail__sections > .gg-tabs__panel) {
+  min-height: 0;
+  padding-top: 0;
+}
 .template-detail__sections :deep(.template-detail__workspace),
 .template-detail__sections :deep(.template-detail__review) { margin-top: 0; }
 </style>
