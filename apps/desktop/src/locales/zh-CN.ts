@@ -595,7 +595,10 @@ export default {
       author: "作者",
       target: "采纳目标",
       targetNav: "模板目标",
+      sectionNav: "模板详情分区",
       tabs: {
+        detail: "详情",
+        review: "采纳检查",
         targets: "目标",
         gestures: "手势",
         preview: "预览",

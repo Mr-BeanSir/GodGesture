@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Download, RefreshCw, Search, ShieldCheck, Terminal, TriangleAlert } from "lucide-vue-next";
+import { Download, RefreshCw, Search, ShieldCheck, Target, Terminal, TriangleAlert } from "lucide-vue-next";
 import {
   AppAlert,
   AppBadge,
@@ -38,17 +38,16 @@ const detailVisible = computed({
 });
 const selectedTargetIndex = ref(0);
 const selectedIntentIndex = ref(0);
-const detailTab = ref<"targets" | "gestures" | "preview">("targets");
+const detailSectionTab = ref<"detail" | "review">("detail");
 const packageTargets = computed(() => templates.selectedPackage?.targets ?? []);
 const packageIntentCount = computed(() => packageTargets.value.reduce((count, target) => count + target.intents.length, 0));
 const selectedTarget = computed(() =>
   packageTargets.value[selectedTargetIndex.value] ?? packageTargets.value[0] ?? null,
 );
 const packageIntents = computed(() => selectedTarget.value?.intents ?? []);
-const detailTabs = computed(() => [
-  { id: "targets", label: t("templates.detail.tabs.targets"), count: packageTargets.value.length },
-  { id: "gestures", label: t("templates.detail.tabs.gestures"), count: packageIntents.value.length },
-  { id: "preview", label: t("templates.detail.tabs.preview") },
+const detailSectionTabs = computed(() => [
+  { id: "detail", label: t("templates.detail.tabs.detail") },
+  { id: "review", label: t("templates.detail.tabs.review") },
 ]);
 const templateActionRows = computed<GestureActionTableRow[]>(() =>
   packageIntents.value.map((intent, index) => ({
@@ -82,7 +81,7 @@ watch(
     riskConfirmed.value = false;
     selectedTargetIndex.value = 0;
     selectedIntentIndex.value = 0;
-    detailTab.value = "targets";
+    detailSectionTab.value = "detail";
   },
 );
 
@@ -292,16 +291,16 @@ function confirmAdoption(): void {
         </header>
 
         <AppTabs
-          v-model="detailTab"
-          class="template-detail__tabs"
-          :tabs="detailTabs"
-          :aria-label="t('templates.detail.targetNav')"
+          v-model="detailSectionTab"
+          class="template-detail__sections"
+          :tabs="detailSectionTabs"
+          :aria-label="t('templates.detail.sectionNav')"
         >
-          <template #targets>
-            <div class="template-detail__target-panel">
+          <template #detail>
+            <div class="template-detail__workspace">
               <aside class="template-detail__apps">
                 <div class="template-detail__apps-head">
-                  <span>{{ t("templates.detail.target") }}</span>
+                  <span class="template-detail__section-label"><Target :size="15" aria-hidden="true" />{{ t("templates.detail.target") }}</span>
                   <span class="template-detail__apps-count">{{ packageTargets.length }}</span>
                 </div>
                 <ul class="template-detail__app-list">
@@ -337,61 +336,58 @@ function confirmAdoption(): void {
                   </li>
                 </ul>
               </aside>
+
+              <section v-if="selectedTarget" class="template-detail__main">
+                <header class="template-detail__main-head">
+                  <div>
+                    <h3>{{ targetName(selectedTarget) }}</h3>
+                    <p class="gg-hint">{{ targetBinding(selectedTarget).join(" · ") || t("templates.detail.globalTarget") }}</p>
+                  </div>
+                  <AppBadge>{{ t("templates.detail.gestures", { count: selectedTarget.intents.length }) }}</AppBadge>
+                </header>
+
+                <GestureActionTable
+                  :rows="templateActionRows"
+                  :selected-key="templateActionRows[selectedIntentIndex]?.key ?? null"
+                  mode="readonly"
+                  @select="selectTemplateAction"
+                />
+
+                <section class="template-detail__editor-pane" :aria-label="t('gestures.editorTitle')">
+                  <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
+                    <div class="template-detail__editor-head">
+                      <div>
+                        <span class="template-detail__section-kicker">{{ t("gestures.editorTitle") }}</span>
+                        <h4>{{ selectedTemplateIntent.name }}</h4>
+                      </div>
+                      <AppBadge variant="info">{{ t(`command.types.${selectedTemplateIntent.command.type}`) }}</AppBadge>
+                    </div>
+                    <div class="template-detail__intent-summary">
+                      <div class="gg-field">
+                        <span class="gg-field-label">{{ t("gestures.colMnemonic") }}</span>
+                        <MnemonicText :gesture="selectedTemplateIntent.gesture" class="template-detail__editor-mnemonic" />
+                      </div>
+                      <div class="gg-field">
+                        <span class="gg-field-label">{{ t("gestures.modifier") }}</span>
+                        <div class="template-detail__readonly-value">{{ t(`modifier.${selectedTemplateIntent.gesture.modifier}`) }}</div>
+                      </div>
+                    </div>
+                    <div class="gg-field template-detail__command-preview">
+                      <span class="template-detail__command-label"><Terminal :size="15" aria-hidden="true" />{{ t("gestures.colCommand") }}</span>
+                      <div class="template-detail__command-value">
+                        <code v-if="commandPreview(selectedTemplateIntent)">{{ commandPreview(selectedTemplateIntent) }}</code>
+                      </div>
+                    </div>
+                  </div>
+                  <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
+                </section>
+              </section>
+              <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
             </div>
           </template>
 
-          <template #gestures>
-            <section v-if="selectedTarget" class="template-detail__gesture-panel">
-              <header class="template-detail__main-head">
-                <div>
-                  <h3>{{ targetName(selectedTarget) }}</h3>
-                  <p class="gg-hint">{{ targetBinding(selectedTarget).join(" · ") || t("templates.detail.globalTarget") }}</p>
-                </div>
-                <AppBadge>{{ t("templates.detail.gestures", { count: selectedTarget.intents.length }) }}</AppBadge>
-              </header>
-              <GestureActionTable
-                :rows="templateActionRows"
-                :selected-key="templateActionRows[selectedIntentIndex]?.key ?? null"
-                mode="readonly"
-                @select="selectTemplateAction"
-              />
-            </section>
-            <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
-          </template>
-
-          <template #preview>
-            <section class="template-detail__editor-pane">
-              <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
-                <div class="template-detail__editor-head">
-                  <div>
-                    <span class="template-detail__section-kicker">{{ t("gestures.editorTitle") }}</span>
-                    <h4>{{ selectedTemplateIntent.name }}</h4>
-                  </div>
-                  <AppBadge variant="info">{{ t(`command.types.${selectedTemplateIntent.command.type}`) }}</AppBadge>
-                </div>
-                <div class="template-detail__intent-summary">
-                  <div class="gg-field">
-                    <span class="gg-field-label">{{ t("gestures.colMnemonic") }}</span>
-                    <MnemonicText :gesture="selectedTemplateIntent.gesture" class="template-detail__editor-mnemonic" />
-                  </div>
-                  <div class="gg-field">
-                    <span class="gg-field-label">{{ t("gestures.modifier") }}</span>
-                    <div class="template-detail__readonly-value">{{ t(`modifier.${selectedTemplateIntent.gesture.modifier}`) }}</div>
-                  </div>
-                </div>
-                <div class="gg-field template-detail__command-preview">
-                  <span class="template-detail__command-label"><Terminal :size="15" aria-hidden="true" />{{ t("gestures.colCommand") }}</span>
-                  <div class="template-detail__command-value">
-                    <code v-if="commandPreview(selectedTemplateIntent)">{{ commandPreview(selectedTemplateIntent) }}</code>
-                  </div>
-                </div>
-              </div>
-              <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
-            </section>
-          </template>
-        </AppTabs>
-
-        <section class="template-detail__review" aria-labelledby="template-detail-review-title">
+          <template #review>
+            <section class="template-detail__review" aria-labelledby="template-detail-review-title">
           <header class="template-detail__review-head">
             <div class="template-detail__review-title" :class="{ 'is-elevated': hasElevatedRisk }">
               <ShieldCheck v-if="!hasElevatedRisk" :size="18" aria-hidden="true" />
@@ -484,9 +480,11 @@ function confirmAdoption(): void {
               <span>{{ t("templates.risk.confirm") }}</span>
             </label>
           </div>
-        </section>
+            </section>
 
-        <AppAlert v-if="templates.adoptionError" variant="error" :title="errorText(templates.adoptionError)" />
+            <AppAlert v-if="templates.adoptionError" variant="error" :title="errorText(templates.adoptionError)" />
+          </template>
+        </AppTabs>
       </template>
 
       <template #footer>
@@ -1150,19 +1148,8 @@ function confirmAdoption(): void {
   overflow-y: auto;
 }
 
-.template-detail__tabs { min-width: 0; margin-top: 16px; }
-:deep(.template-detail__tabs .gg-tabs__panel) { min-height: 0; }
-.template-detail__target-panel,
-.template-detail__gesture-panel,
-.template-detail__editor-pane { min-width: 0; min-height: 420px; }
-.template-detail__target-panel { border: 1px solid var(--gg-border); border-radius: 6px; overflow: hidden; }
-.template-detail__apps { height: 420px; border-right: 0; }
-.template-detail__apps-head { min-height: 40px; padding: 0 10px; font-size: 13px; }
-.template-detail__app-list { flex: 1; padding: 6px; }
-.template-detail__app-button { min-height: 40px; padding: 5px 7px; border: 0; border-radius: 5px; }
-.template-detail__app-item.is-active .template-detail__app-button { border-color: transparent; box-shadow: none; }
-.template-detail__app-identity { gap: 8px; }
-.template-detail__app-name { font-size: 13px; font-weight: 400; }
-.template-detail__gesture-panel { grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
-.template-detail__gesture-panel :deep(.gesture-action-table) { min-height: 0; height: 100%; }
+.template-detail__sections { min-width: 0; margin-top: 16px; }
+:deep(.template-detail__sections > .gg-tabs__panel) { min-height: 0; }
+.template-detail__sections :deep(.template-detail__workspace),
+.template-detail__sections :deep(.template-detail__review) { margin-top: 0; }
 </style>

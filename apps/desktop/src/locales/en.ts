@@ -595,7 +595,10 @@ export default {
       author: "Author",
       target: "Adoption target",
       targetNav: "Template targets",
+      sectionNav: "Template detail sections",
       tabs: {
+        detail: "Details",
+        review: "Adoption review",
         targets: "Targets",
         gestures: "Gestures",
         preview: "Preview",

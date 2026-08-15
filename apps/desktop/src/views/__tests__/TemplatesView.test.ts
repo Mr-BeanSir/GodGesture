@@ -173,24 +173,42 @@ describe("TemplatesView", () => {
     expect(source).not.toMatch(new RegExp(forbiddenContracts.join("|"), "i"));
   });
 
-  it("keeps the template detail dialog in three switchable tabs", async () => {
+  it("keeps the detail page as one gesture workspace beside the review tab", async () => {
     const { view, confirmHost, toasts } = await mountTemplates();
 
     try {
-      expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
-      expect(document.querySelector('[role="tab"][data-tab-id="targets"]')).not.toBeNull();
-      expect(document.querySelector('[role="tab"][data-tab-id="gestures"]')).not.toBeNull();
-      expect(document.querySelector('[role="tab"][data-tab-id="preview"]')).not.toBeNull();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Global");
-
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="gestures"]')?.click();
-      await nextTick();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Open workspace");
+      expect(document.querySelectorAll(".template-detail__sections > .gg-tabs__list > [role=\"tab\"]")).toHaveLength(2);
+      expect(document.querySelector('[role="tab"][data-tab-id="detail"]')).not.toBeNull();
+      expect(document.querySelector('[role="tab"][data-tab-id="review"]')).not.toBeNull();
+      expect(document.querySelector(".template-detail__workspace")).not.toBeNull();
+      expect(document.querySelector(".template-detail__main")).not.toBeNull();
+      expect(document.querySelector(".template-detail__tabs")).toBeNull();
       expect(document.querySelector('[data-action-key="0:0"]')).not.toBeNull();
+      expect(document.querySelector(".template-detail__editor-pane")?.textContent).toContain("Open workspace");
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+      toasts.unmount();
+    }
+  });
 
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="preview"]')?.click();
+  it("moves the adoption conflict review to the second outer tab", async () => {
+    templates.adoptionPlan.conflicts = [{
+      gesture: { trigger: "left", inputs: [], modifier: "none" },
+      templateName: "Open workspace",
+      existingNames: ["Existing gesture"],
+    }];
+    const { view, confirmHost, toasts } = await mountTemplates();
+
+    try {
+      expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain("Existing gesture");
+
+      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="review"]')?.click();
       await nextTick();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Open workspace");
+
+      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Existing gesture");
+      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Add 1");
+      expect(document.querySelector(".template-detail__tabs")).toBeNull();
     } finally {
       view.unmount();
       confirmHost.unmount();
@@ -208,25 +226,17 @@ describe("TemplatesView", () => {
       targetButtons[1]?.click();
       await nextTick();
 
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="gestures"]')?.click();
-      await nextTick();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Search tab");
+      expect(document.querySelector(".template-detail__main")?.textContent).toContain("Search tab");
       expect(document.querySelector('[data-action-key="1:0"]')).not.toBeNull();
       expect(document.querySelector('[data-action-key="1:1"]')).not.toBeNull();
 
       document.querySelector<HTMLElement>('[data-action-key="1:1"]')?.click();
       await nextTick();
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="preview"]')?.click();
-      await nextTick();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Open settings");
+      expect(document.querySelector(".template-detail__editor-pane")?.textContent).toContain("Open settings");
 
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="targets"]')?.click();
-      await nextTick();
       targetButtons[0]?.click();
       await nextTick();
-      document.querySelector<HTMLButtonElement>('[role="tab"][data-tab-id="gestures"]')?.click();
-      await nextTick();
-      expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Open workspace");
+      expect(document.querySelector(".template-detail__main")?.textContent).toContain("Open workspace");
       expect(document.querySelector('[data-action-key="0:0"]')).not.toBeNull();
       expect(document.querySelector('[data-action-key="1:1"]')).toBeNull();
     } finally {

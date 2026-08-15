@@ -247,8 +247,10 @@ describe("desktop app shell", () => {
     const templates = readFileSync(resolve(process.cwd(), "src/views/TemplatesView.vue"), "utf8");
 
     expect(gestures).toContain("grid-template-columns: 200px minmax(0, 1fr);");
-    expect(templates).toContain('class="template-detail__tabs"');
-    expect(templates).toContain(":tabs=\"detailTabs\"");
+    expect(templates).toContain('class="template-detail__workspace"');
+    expect(templates).toContain('class="template-detail__main"');
+    expect(templates).toContain(":tabs=\"detailSectionTabs\"");
+    expect(templates).not.toContain('class="template-detail__tabs"');
     expect(`${gestures}${templates}`).not.toContain("22vw");
   });
 });
