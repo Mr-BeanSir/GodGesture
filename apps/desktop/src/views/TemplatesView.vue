@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Download, RefreshCw, Search, ShieldCheck, Target, Terminal, TriangleAlert } from "lucide-vue-next";
+import { Download, RefreshCw, Search, ShieldCheck, Terminal, TriangleAlert } from "lucide-vue-next";
 import {
   AppAlert,
   AppBadge,
@@ -22,7 +22,6 @@ import {
 } from "@godgesture/shared";
 import { useTemplatesStore } from "../stores/templates";
 import AppIcon from "../components/AppIcon.vue";
-import GestureActionTable, { type GestureActionTableRow } from "../components/GestureActionTable.vue";
 import MnemonicText from "../components/MnemonicText.vue";
 
 const { t } = useI18n();
@@ -49,21 +48,8 @@ const detailSectionTabs = computed(() => [
   { id: "detail", label: t("templates.detail.tabs.detail") },
   { id: "review", label: t("templates.detail.tabs.review") },
 ]);
-const templateActionRows = computed<GestureActionTableRow[]>(() =>
-  packageIntents.value.map((intent, index) => ({
-    key: `${selectedTargetIndex.value}:${index}`,
-    kind: "gesture" as const,
-    name: intent.name,
-    gesture: intent.gesture,
-    commandType: intent.command.type,
-    conflict: hasConflict(intent),
-  })),
-);
 const selectedTemplateIntent = computed<GestureTemplateIntent | null>(
   () => packageIntents.value[selectedIntentIndex.value] ?? packageIntents.value[0] ?? null,
-);
-const conflictKeys = computed(
-  () => new Set((templates.adoptionPlan?.conflicts ?? []).map((conflict) => gestureIdentityKey(conflict.gesture))),
 );
 const riskyIntents = computed(() =>
   packageTargets.value.flatMap((target) =>
@@ -110,15 +96,6 @@ function targetBinding(target: (typeof packageTargets.value)[number]): string[] 
 function selectTarget(index: number): void {
   selectedTargetIndex.value = index;
   selectedIntentIndex.value = 0;
-}
-
-function selectTemplateAction(key: string): void {
-  const index = templateActionRows.value.findIndex((row) => row.key === key);
-  if (index >= 0) selectedIntentIndex.value = index;
-}
-
-function hasConflict(intent: GestureTemplateIntent): boolean {
-  return conflictKeys.value.has(gestureIdentityKey(intent.gesture));
 }
 
 function commandPreview(intent: GestureTemplateIntent): string {
@@ -299,10 +276,6 @@ function confirmAdoption(): void {
           <template #detail>
             <div class="template-detail__workspace">
               <aside class="template-detail__apps">
-                <div class="template-detail__apps-head">
-                  <span class="template-detail__section-label"><Target :size="15" aria-hidden="true" />{{ t("templates.detail.target") }}</span>
-                  <span class="template-detail__apps-count">{{ packageTargets.length }}</span>
-                </div>
                 <ul class="template-detail__app-list">
                   <li
                     v-for="(target, index) in packageTargets"
@@ -338,21 +311,6 @@ function confirmAdoption(): void {
               </aside>
 
               <section v-if="selectedTarget" class="template-detail__main">
-                <header class="template-detail__main-head">
-                  <div>
-                    <h3>{{ targetName(selectedTarget) }}</h3>
-                    <p class="gg-hint">{{ targetBinding(selectedTarget).join(" · ") || t("templates.detail.globalTarget") }}</p>
-                  </div>
-                  <AppBadge>{{ t("templates.detail.gestures", { count: selectedTarget.intents.length }) }}</AppBadge>
-                </header>
-
-                <GestureActionTable
-                  :rows="templateActionRows"
-                  :selected-key="templateActionRows[selectedIntentIndex]?.key ?? null"
-                  mode="readonly"
-                  @select="selectTemplateAction"
-                />
-
                 <section class="template-detail__editor-pane" :aria-label="t('gestures.editorTitle')">
                   <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
                     <div class="template-detail__editor-head">
@@ -775,7 +733,7 @@ function confirmAdoption(): void {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(170px, 1fr) minmax(185px, .95fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
   background: var(--gg-surface);
@@ -1146,6 +1104,7 @@ function confirmAdoption(): void {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  padding-top: 0;
 }
 
 .template-detail__sections { min-width: 0; margin-top: 16px; }
