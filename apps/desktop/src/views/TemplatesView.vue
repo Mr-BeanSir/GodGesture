@@ -864,10 +864,6 @@ function confirmAdoption(): void {
   border-radius: 0;
 }
 
-.template-detail__main > .template-detail__editor-pane {
-  border-top: 0;
-}
-
 .template-detail__intent-editor {
   display: grid;
   min-width: 0;

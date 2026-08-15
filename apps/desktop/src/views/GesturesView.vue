@@ -1294,6 +1294,10 @@ onBeforeUnmount(() => {
   margin-top: 10px;
   gap: 10px;
 }
+.gestures__workspace > :deep(.gesture-action-table) {
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+}
 .gestures__editor-pane {
   min-width: 0;
   min-height: 0;
