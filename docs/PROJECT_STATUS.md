@@ -10,7 +10,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 左侧导航分为用户功能与管理员功能，管理员区仅对管理员显示。配置查看中的应用分组使用树形
 连接线呈现应用层级，中间项和末项分别保持连续分支与收口分支。
 
-最后核对：2026-08-14。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-15。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 与 [`docs/history/`](history/)。
@@ -85,7 +85,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
   固定从 `Mr-BeanSir/GodGesture-Plugins` 的 `main/catalog.min.json` 读取插件目录并在校验后缓存。
   模板和配置仅保存 `pluginId`，安装时由目录解析固定仓库、`main` 和子目录。
 - 官方公共模板目录已由 Server 的 PostgreSQL 元数据、审核/配额/指标模型和 RustFS 不可变对象实现；
-  Desktop 始终从固定官方 Server origin 分页读取并通过短期签名 URL 下载包，官方端点登录后可投稿。
+  Desktop 始终从构建时配置的官方 Server origin 分页读取并通过短期签名 URL 下载包，官方端点登录后可投稿。
   匿名用户可浏览和采纳，网络失败时只使用上一份有效分页缓存；自定义端点不提供目录或投稿。
   公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
   聚合和短期去重，不保留用户/设备下载历史。旧 `distribution/templates` submodule 已从主仓库移除；
@@ -131,6 +131,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 - 2026-08-14 管理员控制台五项问题与设备登录去重定向验证：Server 认证 Jest `3 suites / 31 tests`、Web Console `24 files / 165 tests`、Shared 认证/API `2 files / 27 tests`、共享 UI `2 files / 6 tests`、Desktop 账户/云 API `2 files / 16 tests`、Rust 设备标识 `2 tests`均通过；Server 与 Web Console typecheck、UI typecheck、Web Console 生产构建、`pnpm generate:api` 和 `pnpm check:api`均通过。Web Console 正确使用共享 Toast 的右上角适配，Tabs header 隐藏纵向滚动条，用户角色/会话操作位于编辑页，系统配置固定在管理员导航底部，浏览器与 Desktop 登录请求携带稳定安装标识。未运行仓库全量测试；Desktop 全量 typecheck 仍受本工作树既有 `GesturesView` 的 3 个 TypeScript 错误阻断；真实 RustFS、OAuth/SMTP、Windows/macOS 原生能力、1Panel 部署和浏览器手动测试仍 pending，需维护者从 `/admin`、`/admin/system`、`/admin/users/:id/edit`、`/admin/templates`、`/devices` 开始验收。
 - 2026-08-14 系统配置折叠 panel 验证：`pnpm --filter @godgesture/ui test` 通过 `7 files / 16 tests`，`pnpm --filter @godgesture/server web:test` 通过 `24 files / 166 tests`；共享 UI 与 Web Console typecheck、Web Console 生产 `web:build` 均通过。登录态浏览器在桌面和 `375x812` 下验证模板策略默认展开、RustFS 默认收起、凭证徽章始终可见、键盘可展开、折叠后字段值保留且页面无横向溢出；未运行仓库全量测试，既有 Desktop `GesturesView` 的 3 个 typecheck 错误保持不变。
 - 2026-08-14 官方模板作者生命周期与 Desktop 投稿向导定向验证：Shared 模板协议 `8/8`、Server 作者生命周期/OpenAPI `3 suites / 66 tests`、Desktop 投稿向导与账户 API `3 files / 22 tests`、Web Console 作者页面/API/导航 `4 files / 26 tests` 均通过，OpenAPI check 与 Web Console typecheck 通过。当前实现覆盖驳回后新版本、已发布模板撤回、可删除模板族、最新 50 版本保留、Web `/templates` 作者管理和 Desktop 两步投稿；真实 RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
+- 2026-08-15 Desktop 官方模板端点修复定向验证：模板源不再硬编码生产域名，默认目录和包接口均读取构建环境的 `GODGESTURE_API`，并复用 Desktop 端点安全校验；模板源测试 `3/3`、云会话端点测试 `9/9`、模板 Store/View 回归测试 `5 passed / 3 skipped`通过，生产域名硬编码扫描为空。Desktop typecheck 仍被本工作树既有的 `GestureExportDialog`、`GesturesView` 和测试类型错误阻断，本次新增端点文件未产生类型报错。
 
 更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。

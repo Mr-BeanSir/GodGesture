@@ -123,9 +123,10 @@ GodGesture 在系统应用配置目录下管理的唯一插件根目录 `plugins
 
 **在线目录缓存 (Online Catalog Cache)**:
 官方公共模板目录分页结果和官方插件仓库根目录 `catalog.min.json` 的本机有效快照,分别保存到
-Tauri `app_config_dir/catalogs` 下的独立文件。模板始终从固定官方 Server origin 读取；插件从
-GitHub 读取。刷新后只有通过 shared 协议校验的结果才能原子替换缓存;网络失败时只使用上一份
-有效快照,不会用损坏内容覆盖缓存。浏览器预览使用源码 fixture,不访问或写入该缓存。
+Tauri `app_config_dir/catalogs` 下的独立文件。模板始终从构建时配置的官方 Server origin 读取；
+运行时账户页的自定义同步端点不影响模板目录；插件从 GitHub 读取。刷新后只有通过 shared
+协议校验的结果才能原子替换缓存;网络失败时只使用上一份有效快照,不会用损坏内容覆盖缓存。
+浏览器预览使用源码 fixture,不访问或写入该缓存。
 
 **Node 插件动作 (Node Plugin Action)**:
 Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供的固定生命周期导出。
@@ -150,8 +151,8 @@ Node 插件通过 `package.json` 的 `godgesture.lifecycles` 声明实际提供�
 _避免_: 默认手势、预设(预设指出厂内置的初始配置)
 
 **官方公共模板目录 (Official Public Template Catalog)**:
-固定官方 Server origin 提供的匿名可读、服务端分页的模板目录。支持搜索和按最新、下载次数、
-热度排序；自定义同步端点不提供该目录。
+由构建时配置的官方 Server origin 提供的匿名可读、服务端分页的模板目录。支持搜索和按最新、
+下载次数、热度排序；运行时自定义同步端点不提供该目录。
 
 **模板投稿 (Template Submission)**:
 仅官方端点登录用户把本地导出模板提交为待审核不可变版本的操作。它不属于配置同步，用户不手填
