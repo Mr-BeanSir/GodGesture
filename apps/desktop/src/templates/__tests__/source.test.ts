@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN, createOfficialApiGestureTemplateSource, createFixtureGestureTemplateSource, type GestureTemplateSource } from "../source";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createOfficialApiGestureTemplateSource, createFixtureGestureTemplateSource, type GestureTemplateSource } from "../source";
 
 const id = "10000000-0000-4000-8000-000000000001";
 const entry = { id, versionNumber: 1, title: "Window basics", summary: "Window commands", author: "Bean", tags: ["window"], targets: [{ scope: "global" as const }], risks: [], downloadCount: 3, publishedAt: "2026-08-08T00:00:00.000Z", updatedAt: "2026-08-08T00:00:00.000Z" };
 const pkg = { formatVersion: 2, author: "-", title: entry.title, summary: entry.summary, tags: entry.tags, plugins: [], targets: [{ scope: "global" as const, intents: [{ name: "No-op", gesture: { trigger: "right", strokes: ["up"], modifier: "none" }, command: { type: "doNothing" as const } }] }] };
 
 describe("official template source", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("loads the anonymous paginated catalog and follows the presigned package URL", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ entries: [entry], nextCursor: null }), { status: 200 }))
@@ -18,14 +22,15 @@ describe("official template source", () => {
     expect(fetch).toHaveBeenNthCalledWith(1, "https://api.example/api/v1/public/templates?limit=50&sort=newest", expect.anything());
   });
 
-  it("keeps the public catalog on the fixed official origin", async () => {
+  it("uses the env-configured official origin for default catalog requests", async () => {
+    vi.stubEnv("GODGESTURE_API", "http://127.0.0.1:3000");
     const fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ entries: [entry], nextCursor: null }), { status: 200 }),
     );
     const source = createOfficialApiGestureTemplateSource(undefined, fetch);
     await source.loadCatalog();
     expect(fetch).toHaveBeenCalledWith(
-      `${DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN}/api/v1/public/templates?limit=50&sort=newest`,
+      "http://127.0.0.1:3000/api/v1/public/templates?limit=50&sort=newest",
       expect.anything(),
     );
   });

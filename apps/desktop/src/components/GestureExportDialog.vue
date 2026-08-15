@@ -947,6 +947,7 @@ async function confirmPublicSubmission() {
   line-height: 20px;
 }
 .gesture-export__section-head p { margin: 3px 0 0; }
+.gesture-export__targets { margin-top: 8px; }
 .gesture-export__server-mode {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -978,7 +979,7 @@ async function confirmPublicSubmission() {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 .gesture-export__field {
   position: relative;
@@ -1003,7 +1004,11 @@ async function confirmPublicSubmission() {
   flex-direction: column;
   flex: 1;
 }
-.gesture-export__summary-field textarea { flex: 1; resize: vertical; }
+#gesture-export-summary {
+  flex: 0 0 109px;
+  height: 109px;
+  resize: vertical;
+}
 .gesture-export__selection-count {
   flex: 0 0 auto;
   color: var(--gg-text-muted);

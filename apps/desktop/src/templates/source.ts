@@ -7,8 +7,7 @@ import {
   type GestureTemplatePackage,
 } from "@godgesture/shared";
 import { gestureTemplateCatalogFixture, gestureTemplatePackageFixtures } from "./fixtures";
-
-export const DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN = "https://api.godgesture.com";
+import { resolveApiOrigin } from "../cloud/origin";
 
 export type TemplateSourceErrorCode = "template_network" | "template_http" | "invalid_catalog" | "invalid_package" | "template_fixture_missing";
 export class TemplateSourceError extends Error {
@@ -38,16 +37,20 @@ export function createFixtureGestureTemplateSource(): GestureTemplateSource {
 
 /** The official service is deliberately independent from any sync endpoint. */
 export function createOfficialApiGestureTemplateSource(
-  apiOrigin = DEFAULT_OFFICIAL_TEMPLATE_API_ORIGIN,
+  apiOrigin: string | null = resolveApiOrigin(),
   fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
 ): GestureTemplateSource {
-  const base = `${apiOrigin.replace(/\/$/, "")}/api/v1/public/templates`;
+  const configuredOrigin = apiOrigin;
+  const base = configuredOrigin
+    ? `${configuredOrigin.replace(/\/$/, "")}/api/v1/public/templates`
+    : null;
   const packageEndpoints = new Map<string, string>();
   const etags = new Map<string, string>();
   const cachedPages = new Map<string, { entries: unknown[]; nextCursor: string | null }>();
   const keyFor = (entry: GestureTemplateCatalogEntry) => `${entry.id}@${entry.versionNumber}`;
   return {
     async loadCatalog() {
+      if (!base) throw new TemplateSourceError("template_network", "Official template service is not configured");
       let url = `${base}?limit=50&sort=newest`;
       const entries: unknown[] = [];
       // Request enough pages for the desktop view while preserving server-side pagination.
@@ -82,6 +85,7 @@ export function createOfficialApiGestureTemplateSource(
       } catch (error) { return protocolError(error); }
     },
     async loadPackage(entry) {
+      if (!base) throw new TemplateSourceError("template_network", "Official template service is not configured");
       const endpoint = packageEndpoints.get(keyFor(entry)) ?? `${base}/${entry.id}/versions/${entry.versionNumber}/package`;
       let signed: { url?: string };
       try {
