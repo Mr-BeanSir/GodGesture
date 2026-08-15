@@ -19,7 +19,6 @@ const entry = {
   author: "Template author",
   tags: ["workspace"],
   risks: [],
-  targets: [{ scope: "global" }],
 };
 
 const templatePackage = {
@@ -40,7 +39,6 @@ const templates = reactive<any>({
   loadingCatalog: false,
   catalogError: null,
   query: "",
-  scopeFilter: "all",
   riskFilter: "all",
   selectedEntry: entry,
   selectedPackage: templatePackage,
@@ -75,7 +73,6 @@ function resetTemplates(): void {
   templates.loadingCatalog = false;
   templates.catalogError = null;
   templates.query = "";
-  templates.scopeFilter = "all";
   templates.riskFilter = "all";
   templates.selectedEntry = entry;
   templates.selectedPackage = templatePackage;

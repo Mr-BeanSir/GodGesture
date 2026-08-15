@@ -2449,24 +2449,6 @@ export interface components {
                 risks: ("script" | "commandLine" | "fileOrProgram" | "externalUrl")[];
                 summary: string;
                 tags: string[];
-                targets: ({
-                    /** @enum {string} */
-                    scope: "global";
-                } | {
-                    mac?: {
-                        bundleId: string;
-                    };
-                    name: string;
-                    /** @enum {string} */
-                    scope: "app";
-                    windows?: {
-                        aumid?: string;
-                        exactPath?: string;
-                        exeName: string;
-                        /** @default false */
-                        matchByExactPath: boolean;
-                    };
-                })[];
                 title: string;
                 /** Format: date-time */
                 updatedAt: string;
@@ -2599,6 +2581,20 @@ export interface components {
         TemplateModerationDetailResponse: {
             author: string;
             downloadCount: number;
+            governanceHistory: {
+                /** @enum {string} */
+                action: "suspend" | "restore";
+                actor: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: uuid */
+                id: string;
+                reason: string;
+                /** Format: uuid */
+                versionId: string | null;
+                versionNumber: number | null;
+            }[];
+            hasPublishedVersion: boolean;
             history: {
                 /** Format: uuid */
                 id: string;
@@ -2881,6 +2877,7 @@ export interface components {
             })[];
             /** Format: uuid */
             templateId: string;
+            templateSuspended: boolean;
             title: string;
             /** Format: uuid */
             versionId: string;
@@ -2900,6 +2897,7 @@ export interface components {
             nextCursor: string | null;
             templates: {
                 author: string;
+                hasPublishedVersion: boolean;
                 risks: string[];
                 /** @enum {string} */
                 status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";
@@ -2908,6 +2906,7 @@ export interface components {
                 summary: string;
                 /** Format: uuid */
                 templateId: string;
+                templateSuspended: boolean;
                 title: string;
                 /** Format: uuid */
                 versionId: string;
@@ -3324,7 +3323,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Template moderation versions. */
+            /** @description Template families with their newest moderation version. */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -22,18 +22,22 @@ const iconFor = computed(() => (kind: string) => {
 
 <template>
   <div :class="['gg-toast-viewport', `gg-toast-viewport--${props.placement}`]" aria-live="polite" aria-atomic="false">
-    <div v-for="toast in toasts" :key="toast.id" :class="['gg-toast', `gg-toast--${toast.kind}`]" role="status">
-      <component :is="iconFor(toast.kind)" class="gg-toast__icon" aria-hidden="true" />
-      <span>{{ toast.message }}</span>
-      <button
-        type="button"
-        class="gg-icon-button"
-        :aria-label="props.closeLabel"
-        :title="props.closeLabel"
-        @click="dismissToast(toast.id)"
-      >
-        <X class="gg-toast__close-icon" aria-hidden="true" />
-      </button>
-    </div>
+    <TransitionGroup name="gg-toast-list">
+      <div v-for="toast in toasts" :key="toast.id" :class="['gg-toast', `gg-toast--${toast.kind}`]" role="status">
+        <span class="gg-toast__icon-shell" aria-hidden="true">
+          <component :is="iconFor(toast.kind)" class="gg-toast__icon" />
+        </span>
+        <span class="gg-toast__message">{{ toast.message }}</span>
+        <button
+          type="button"
+          class="gg-icon-button gg-toast__close"
+          :aria-label="props.closeLabel"
+          :title="props.closeLabel"
+          @click="dismissToast(toast.id)"
+        >
+          <X class="gg-toast__close-icon" aria-hidden="true" />
+        </button>
+      </div>
+    </TransitionGroup>
   </div>
 </template>

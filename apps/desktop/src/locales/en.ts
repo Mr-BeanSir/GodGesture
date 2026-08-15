@@ -583,12 +583,6 @@ export default {
     emptyCatalog: "The template library is currently empty",
     emptyFiltered: "No templates match these filters",
     packageLoadFailed: "Could not load template details",
-    scope: {
-      all: "All targets",
-      global: "Global App",
-      app: "Specific App",
-      mixed: "Global and Apps",
-    },
     risk: {
       all: "All risk levels",
       low: "No elevated commands",
@@ -624,7 +618,7 @@ export default {
       success: "Gesture template adopted",
     },
     errors: {
-      template_url_invalid: "The template URL is invalid. Only HTTPS URLs without credentials are allowed.",
+      template_url_invalid: "The template URL is invalid. Only HTTPS URLs, or HTTP loopback URLs, without credentials are allowed.",
       template_network: "The official template catalog could not be reached. Local gestures remain available.",
       template_timeout: "The template request timed out. Try again later.",
       template_http: "The official template catalog returned an unsuccessful response.",

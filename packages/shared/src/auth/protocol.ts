@@ -325,6 +325,20 @@ export const TemplateModerationStatus = z.enum([
 ]);
 export type TemplateModerationStatus = z.infer<typeof TemplateModerationStatus>;
 
+export const TemplateGovernanceAction = z.enum(["suspend", "restore"]);
+export type TemplateGovernanceAction = z.infer<typeof TemplateGovernanceAction>;
+
+export const TemplateGovernanceEvent = z.object({
+  id: z.string().uuid(),
+  action: TemplateGovernanceAction,
+  actor: z.string(),
+  versionId: z.string().uuid().nullable(),
+  versionNumber: z.number().int().positive().nullable(),
+  reason: z.string(),
+  createdAt: z.string().datetime({ offset: true }),
+}).strict();
+export type TemplateGovernanceEvent = z.infer<typeof TemplateGovernanceEvent>;
+
 export const AdminTemplateModerationStatus = z.union([
   z.literal("all"),
   TemplateModerationStatus,
@@ -348,6 +362,8 @@ export const TemplateModerationTemplate = z.object({
   risks: z.array(z.string()),
   submittedAt: z.string().datetime({ offset: true }),
   author: z.string(),
+  templateSuspended: z.boolean(),
+  hasPublishedVersion: z.boolean(),
 }).strict();
 export type TemplateModerationTemplate = z.infer<typeof TemplateModerationTemplate>;
 

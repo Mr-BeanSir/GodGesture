@@ -20,7 +20,6 @@ import {
 import { useConfigStore } from "./config";
 import { usePluginsStore } from "./plugins";
 
-export type TemplateScopeFilter = "all" | "global" | "app";
 export type TemplateRiskFilter = "all" | "low" | "elevated";
 
 function adoptionErrorCode(error: unknown) {
@@ -59,7 +58,6 @@ export const useTemplatesStore = defineStore("templates", () => {
   const loadingCatalog = ref(false);
   const catalogError = ref<string | null>(null);
   const query = ref("");
-  const scopeFilter = ref<TemplateScopeFilter>("all");
   const riskFilter = ref<TemplateRiskFilter>("all");
 
   const selectedEntry = ref<GestureTemplateCatalogEntry | null>(null);
@@ -82,12 +80,6 @@ export const useTemplatesStore = defineStore("templates", () => {
   const filteredEntries = computed(() => {
     const needle = query.value.trim().toLocaleLowerCase();
     return entries.value.filter((entry) => {
-      if (
-        scopeFilter.value !== "all" &&
-        !entry.targets.some((target) => target.scope === scopeFilter.value)
-      ) {
-        return false;
-      }
       const elevated = entry.risks.length > 0;
       if (riskFilter.value === "low" && elevated) return false;
       if (riskFilter.value === "elevated" && !elevated) return false;
@@ -240,7 +232,6 @@ export const useTemplatesStore = defineStore("templates", () => {
     loadingCatalog,
     catalogError,
     query,
-    scopeFilter,
     riskFilter,
     selectedEntry,
     selectedPackage,

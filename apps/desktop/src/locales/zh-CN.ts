@@ -583,12 +583,6 @@ export default {
     emptyCatalog: "模板库当前没有内容",
     emptyFiltered: "没有符合筛选条件的模板",
     packageLoadFailed: "无法载入模板详情",
-    scope: {
-      all: "全部目标",
-      global: "全局应用",
-      app: "指定应用",
-      mixed: "全局与应用",
-    },
     risk: {
       all: "全部风险",
       low: "无高风险命令",
@@ -624,7 +618,7 @@ export default {
       success: "手势模板已采纳",
     },
     errors: {
-      template_url_invalid: "模板地址无效；仅允许不含凭据的 HTTPS 地址。",
+      template_url_invalid: "模板地址无效；仅允许不含凭据的 HTTPS 地址，或本机回环地址的 HTTP。",
       template_network: "无法连接官方模板目录。本地手势仍可正常使用。",
       template_timeout: "模板请求超时，请稍后重试。",
       template_http: "官方模板目录返回了失败状态。",

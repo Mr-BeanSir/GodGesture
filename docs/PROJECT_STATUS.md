@@ -21,7 +21,8 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 搜索/编辑、模板审核标签页和作者模板管理页已接入当前工作区。管理员控制台本轮五项界面与设备登录问题已
 完成代码和定向验证。`/admin/system` 现在使用共享、可访问且不持久化展开状态的折叠 panel：模板策略默认
 展开，RustFS 默认收起且凭证状态徽章持续可见；折叠不会清空未保存字段。真实 Windows/macOS 原生窗口与
-输入验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。
+输入验收、live OAuth/SMTP 和生产部署仍按下方边界保持 pending。模板父级暂停/恢复不会写入版本审核记录，
+而是写入 `AdminAuditLog` 并在审核详情的“发布治理记录”区展示操作人、时间、原因和操作时版本。
 
 | 领域 | 状态 | 边界 |
 | --- | --- | --- |
@@ -88,7 +89,9 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
   Desktop 始终从固定官方 Server origin 分页读取并通过短期签名 URL 下载包，官方端点登录后可投稿。
   匿名用户可浏览和采纳，网络失败时只使用上一份有效分页缓存；自定义端点不提供目录或投稿。
   公开作者读取当前 `User.displayName.trim() || User.email`，不保存作者快照；下载次数使用匿名每日
-  聚合和短期去重，不保留用户/设备下载历史。旧 `distribution/templates` submodule 已从主仓库移除；
+  聚合和短期去重，不保留用户/设备下载历史。每个模板族的公共目录只展示最高已发布版本；更新版本审核
+  期间继续展示旧版本，通过后切换到新版本的标题、标签和摘要。父模板 `publicationSuspendedAt` 暂停时
+  整个模板族从目录、详情和下载隐藏，恢复后重新展示最高已发布版本。旧 `distribution/templates` submodule 已从主仓库移除；
   Desktop 不再保留 GitHub 模板运行时或本地 seed 依赖。浏览器预览继续使用源码 fixture。
 - 官方模板作者生命周期已接入：Server 以不可变版本处理同一模板族的重新投稿，被驳回或已撤回模板可创建
   新版本；只有包含已发布版本的模板族可以撤回，撤回后从公共目录消失但仍可重新投稿。作者只能删除不含
@@ -132,6 +135,10 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 - 2026-08-14 系统配置折叠 panel 验证：`pnpm --filter @godgesture/ui test` 通过 `7 files / 16 tests`，`pnpm --filter @godgesture/server web:test` 通过 `24 files / 166 tests`；共享 UI 与 Web Console typecheck、Web Console 生产 `web:build` 均通过。登录态浏览器在桌面和 `375x812` 下验证模板策略默认展开、RustFS 默认收起、凭证徽章始终可见、键盘可展开、折叠后字段值保留且页面无横向溢出；未运行仓库全量测试，既有 Desktop `GesturesView` 的 3 个 typecheck 错误保持不变。
 - 2026-08-14 官方模板作者生命周期与 Desktop 投稿向导定向验证：Shared 模板协议 `8/8`、Server 作者生命周期/OpenAPI `3 suites / 66 tests`、Desktop 投稿向导与账户 API `3 files / 22 tests`、Web Console 作者页面/API/导航 `4 files / 26 tests` 均通过，OpenAPI check 与 Web Console typecheck 通过。当前实现覆盖驳回后新版本、已发布模板撤回、可删除模板族、最新 50 版本保留、Web `/templates` 作者管理和 Desktop 两步投稿；真实 RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
 - 2026-08-15 模板审核详情定向验证：Server RustFS/模板服务/OpenAPI `3 suites / 74 tests`、Web Console schema/审核视图 `26 files / 180 tests`、Web Console typecheck 与 `pnpm check:api` 均通过；审核详情已按模板包校验结果展示全局/App 手势明细，审核按钮位于语义 action header 并保留合法按钮层级。最大合法 `12 x 32` 字符助记符在 `375px` 下无页面级横向溢出，`1024px` 桌面表格溢出仍只由 `.gg-table-wrap` 承载。未运行仓库全量测试；真实 RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
+- 2026-08-15 模板族版本发布语义定向验证：模板服务/API `60 + 7` tests、Web Console schema/审核视图 `28 tests`、Server/Web Console typecheck、Prisma Client 生成、`pnpm generate:api` 与 `pnpm check:api` 均通过。公共目录按父 `templateId` 只选择最高已发布版本；更新版本审核期间旧版本仍可下载，通过后切换新元数据；父模板暂停不改变版本状态且暂停期间公共读取隐藏，恢复重新展示最高已发布版本。未运行仓库全量测试；真实数据库迁移、RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
+- 2026-08-15 模板发布治理记录定向验证：模板服务/OpenAPI `2 suites / 67 tests`、共享协议 `89 tests`、Web Console schema/审核视图 `29 tests`、Server/Web Console typecheck、`pnpm generate:api` 与 `pnpm check:api` 均通过。暂停/恢复从 `AdminAuditLog` 按父 `templateId` 读取，版本审核记录保持只记录通过/驳回；审核详情新增独立发布治理记录区，并对旧格式元数据安全显示未知版本。未运行仓库全量测试；真实数据库、RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
+- 2026-08-15 公共模板目录契约与本地 RustFS 下载定向验证：Rust `template_download` `4/4`、Shared 模板协议 `8/8`、Desktop 模板源/Store/View `8 passed / 3 skipped`、Server 模板服务/OpenAPI `67/67`、Web Console 审核视图 `26/26`、Shared/Server typecheck、`pnpm generate:api` 与 `pnpm check:api` 均通过。Desktop 仅允许 HTTPS 或 loopback HTTP 下载签名包；公共目录 entry 已移除 `targets`，App 目标筛选和列表 badge 随之删除，下载后的模板包详情仍展示 targets；all 审核工作区队列 header 已移除且保留可访问名称。Desktop 全量 typecheck 仍受本工作树既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断；未运行仓库全量测试，真实 RustFS、登录态手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending。
+- 2026-08-15 Desktop 官方模板端点与 RustFS 包下载回归验证：模板目录默认读取构建环境 `GODGESTURE_API`，签名 RustFS 包在 Tauri 运行时改由 `download_template_text` 原生命令读取，避免 WebView 直连 RustFS 的 CORS 拦截；Desktop 受影响套件 `21 passed / 3 skipped`，Rust 下载器 `4/4`。Desktop 全量 typecheck 仍仅受上述既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断。
 
 更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。

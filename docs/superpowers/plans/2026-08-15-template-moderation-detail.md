@@ -2,22 +2,46 @@
 
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Put admin template review actions in the requested bordered header and show complete per-target gesture details instead of raw JSON or enabled-status badges.
+**Goal:** Put admin template review actions in the requested bordered header and show complete per-target gesture details instead of raw JSON or enabled-status badges. Keep updates in one template family, expose only the latest published version per family, and model publication suspension on the parent `templateId` without changing version state.
 
-**Architecture:** Keep the public catalog targetSummaries unchanged. Add a verified server-side RustFS object read for moderation details, parse the immutable package with GestureTemplatePackage, and return its targets as targetDetails. The Web Console validates that field and renders it through a reusable target-detail component that shares the existing mnemonic components and Config i18n keys.
+**Architecture:** Keep the public catalog targetSummaries unchanged. Add a verified server-side RustFS object read for moderation details, parse the immutable package with GestureTemplatePackage, and return its targets as targetDetails. The Web Console validates that field and renders it through a reusable target-detail component that shares the existing mnemonic components and Config i18n keys. Public catalog/detail/download queries group by parent `templateId` and select the highest published version, while a nullable parent publication-suspension timestamp gates all public reads. Moderation queues group by parent template and expose a version selector for the immutable versions.
 
 **Tech Stack:** NestJS, AWS S3-compatible RustFS, Zod/OpenAPI, Vue 3 script setup, Tailwind semantic tokens, Vitest, Jest, vue-tsc, pnpm workspace.
 
 ## Global Constraints
 
 - Web Console remains a high-density operations console with the existing queue/detail/action-rail layout.
-- The public catalog continues to use targetSummaries; no template package or database schema migration is introduced.
+- The public catalog continues to use targetSummaries; the parent template receives a nullable publication-suspension timestamp and a committed Prisma migration.
+- Updating an existing template always posts a new immutable version under the existing `templateId`; `title`, `tags`, and `summary` are read from that version.
+- A pending update does not hide the previous published version. Approval replaces the catalog's selected version; suspension hides the whole parent family without mutating version statuses, and restore selects the highest published version again.
 - RustFS bytes must match the stored sizeBytes and packageHash before parsing.
 - Template data must pass the existing GestureTemplatePackage schema before reaching the Web Console.
 - Use existing GestureMnemonic, AppButton, AppBadge, gg-table, --gg-* tokens, and vue-i18n keys; add no hardcoded Chinese copy.
 - Do not render enabled, gesturingEnabled, inheritGlobalGestures, or an “已启用” status column.
 - Run only RustFS, template service/OpenAPI, Web Console schema/view tests and type checks, not the full monorepo suite.
 - Preserve unrelated root worktree changes and use explicit git add <path> commands.
+
+### Task 7: Complete Template Family Publication Semantics
+
+The original detail-only plan is extended by the currently approved product rule above. The implementation must finish the existing Server changes and tests before the generated API contract and project documentation are finalized.
+
+Files:
+- Modify: `apps/server/prisma/schema.prisma` and add one committed migration.
+- Modify: `apps/server/src/templates/templates.service.ts` and `templates.service.api.spec.ts`.
+- Modify: `apps/server/src/openapi/document.ts`, `apps/server/web-console/src/api/template-schemas.ts`, `apps/server/web-console/src/api/templates.ts`, and generated API artifacts as required.
+- Modify: `apps/server/web-console/src/views/TemplateModerationView.vue` and its focused test only if the existing version selector or family action state remains incomplete.
+- Modify: `docs/adr/0014-server-managed-public-template-catalog.md`, `docs/adr/0018-owned-template-lifecycle-retention.md`, `CONTEXT.md`, and `docs/PROJECT_STATUS.md`.
+
+Constraints:
+- Preserve all existing uncommitted work in the root and Server worktrees.
+- Do not edit Desktop files, commit, push, merge, or run full-repository tests.
+- Use the already-created red-green tests as the baseline; migrate only legacy expectations that encode the superseded version-level suspend/restore semantics.
+
+- [ ] Verify public list/detail/package/report queries select one highest published version per parent `templateId` and exclude `publicationSuspendedAt` families.
+- [ ] Verify moderation queue/detail responses are grouped by parent template and expose `templateSuspended` and `hasPublishedVersion`; the Web Console version selector defaults to the highest version.
+- [ ] Replace legacy version-level suspend/restore tests with parent-family tests proving version rows remain unchanged and restore reprojects the highest published version.
+- [ ] Verify update-version metadata (`title`, `tags`, `summary`) flows from the selected version into public catalog and moderation responses.
+- [ ] Refresh the Prisma/OpenAPI/shared generated artifacts and revise ADR-0014, ADR-0018, `CONTEXT.md`, and `docs/PROJECT_STATUS.md` for the final semantics.
 
 ## File Map
 

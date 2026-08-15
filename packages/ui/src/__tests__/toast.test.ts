@@ -21,6 +21,18 @@ describe("ToastViewport", () => {
     wrapper.unmount();
   });
 
+  it("renders compact semantic status, message, and close regions", async () => {
+    const wrapper = mount(ToastViewport, { props: { closeLabel: "Close", placement: "top-right" } });
+    pushToast({ kind: "success", message: "Review status updated" });
+    await nextTick();
+
+    const toast = wrapper.get(".gg-toast--success");
+    expect(toast.get(".gg-toast__icon-shell").attributes("aria-hidden")).toBe("true");
+    expect(toast.get(".gg-toast__message").text()).toBe("Review status updated");
+    expect(toast.get(".gg-toast__close").attributes("aria-label")).toBe("Close");
+    wrapper.unmount();
+  });
+
   it("expires a toast after its duration", async () => {
     vi.useFakeTimers();
     const wrapper = mount(ToastViewport, { props: { closeLabel: "Close" } });

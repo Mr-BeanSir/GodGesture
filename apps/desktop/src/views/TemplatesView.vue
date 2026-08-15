@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Download, RefreshCw, Search } from "lucide-vue-next";
+import { Download, ListChecks, RefreshCw, Search, ShieldCheck, Target, Terminal, TriangleAlert } from "lucide-vue-next";
 import {
   AppAlert,
   AppBadge,
@@ -37,6 +37,7 @@ const detailVisible = computed({
 const selectedTargetIndex = ref(0);
 const selectedIntentIndex = ref(0);
 const packageTargets = computed(() => templates.selectedPackage?.targets ?? []);
+const packageIntentCount = computed(() => packageTargets.value.reduce((count, target) => count + target.intents.length, 0));
 const selectedTarget = computed(() =>
   packageTargets.value[selectedTargetIndex.value] ?? packageTargets.value[0] ?? null,
 );
@@ -85,16 +86,6 @@ onMounted(() => {
 
 function localized(value: string): string {
   return value;
-}
-
-function entryScope(entry: GestureTemplateCatalogEntry): "global" | "app" | "mixed" {
-  const scopes = new Set(entry.targets.map((target) => target.scope));
-  return scopes.size > 1 ? "mixed" : [...scopes][0] ?? "app";
-}
-
-function scopeBadgeVariant(entry: GestureTemplateCatalogEntry): "info" | "warning" | "success" {
-  const scope = entryScope(entry);
-  return scope === "mixed" ? "warning" : scope === "global" ? "info" : "success";
 }
 
 function targetName(target: (typeof packageTargets.value)[number]): string {
@@ -194,13 +185,6 @@ function confirmAdoption(): void {
         <Search :size="16" aria-hidden="true" />
         <input v-model="templates.query" class="gg-input" type="search" :placeholder="t('templates.searchPlaceholder')" />
       </label>
-      <fieldset class="templates-view__scope-filter">
-        <legend class="gg-sr-only">{{ t("templates.scope.all") }}</legend>
-        <label v-for="scope in ['all', 'global', 'app']" :key="scope" class="templates-view__scope-option">
-          <input v-model="templates.scopeFilter" type="radio" name="template-scope" :value="scope" />
-          <span>{{ t(`templates.scope.${scope}`) }}</span>
-        </label>
-      </fieldset>
       <label class="gg-sr-only" for="template-risk-filter">{{ t("templates.risk.all") }}</label>
       <select id="template-risk-filter" v-model="templates.riskFilter" class="gg-select templates-view__risk-filter">
         <option value="all">{{ t("templates.risk.all") }}</option>
@@ -242,7 +226,6 @@ function confirmAdoption(): void {
           </span>
         </span>
         <span class="templates-view__row-meta">
-          <AppBadge :variant="scopeBadgeVariant(entry)">{{ t(`templates.scope.${entryScope(entry)}`) }}</AppBadge>
           <AppBadge :variant="entry.risks.length ? 'warning' : 'info'">
             {{ t(entry.risks.length ? "templates.risk.elevated" : "templates.risk.low") }}
           </AppBadge>
@@ -279,19 +262,27 @@ function confirmAdoption(): void {
               <AppBadge>v{{ templates.selectedEntry.versionNumber }}</AppBadge>
               <AppBadge variant="info">{{ templates.selectedEntry.author }}</AppBadge>
             </div>
-            <h3>{{ localized(templates.selectedEntry.title) }}</h3>
-            <p>{{ localized(templates.selectedEntry.summary) }}</p>
+            <p class="template-detail__hero-summary">{{ localized(templates.selectedEntry.summary) }}</p>
+            <div v-if="templates.selectedEntry.tags.length" class="template-detail__hero-tags">
+              <AppBadge v-for="tag in templates.selectedEntry.tags" :key="tag" variant="info">{{ tag }}</AppBadge>
+            </div>
           </div>
-          <div class="template-detail__hero-targets">
-            <strong>{{ templates.selectedPackage.targets.length }}</strong>
-            <span>{{ t("templates.detail.targets") }}</span>
+          <div class="template-detail__hero-metrics">
+            <div class="template-detail__metric">
+              <strong>{{ templates.selectedPackage.targets.length }}</strong>
+              <span>{{ t("templates.detail.targets") }}</span>
+            </div>
+            <div class="template-detail__metric">
+              <strong>{{ packageIntentCount }}</strong>
+              <span>{{ t("gestures.intentListTitle") }}</span>
+            </div>
           </div>
         </header>
 
         <div class="template-detail__workspace">
           <aside class="template-detail__apps">
             <div class="template-detail__apps-head">
-              <span>{{ t("templates.detail.target") }}</span>
+              <span class="template-detail__section-label"><Target :size="15" aria-hidden="true" />{{ t("templates.detail.target") }}</span>
               <span class="template-detail__apps-count">{{ packageTargets.length }}</span>
             </div>
             <ul class="template-detail__app-list">
@@ -338,7 +329,10 @@ function confirmAdoption(): void {
             </header>
 
             <section class="template-detail__table-pane">
-              <div class="template-detail__toolbar"><span class="template-detail__count">{{ templateIntentRows.length }}</span></div>
+              <div class="template-detail__toolbar">
+                <span class="template-detail__section-label"><ListChecks :size="15" aria-hidden="true" />{{ t("gestures.intentListTitle") }}</span>
+                <span class="template-detail__count">{{ templateIntentRows.length }}</span>
+              </div>
               <div v-if="templateIntentRows.length" class="template-detail__table-scroll">
                 <table class="template-detail__table">
                   <thead>
@@ -377,13 +371,16 @@ function confirmAdoption(): void {
               <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
             </section>
 
-            <section class="template-detail__editor-pane">
+            <section class="template-detail__editor-pane" :aria-label="t('gestures.editorTitle')">
               <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
-                <div class="template-detail__intent-summary">
-                  <div class="gg-field">
-                    <span class="gg-field-label">{{ t("gestures.intentName") }}</span>
-                    <div class="template-detail__readonly-value">{{ selectedTemplateIntent.name }}</div>
+                <div class="template-detail__editor-head">
+                  <div>
+                    <span class="template-detail__section-kicker">{{ t("gestures.editorTitle") }}</span>
+                    <h4>{{ selectedTemplateIntent.name }}</h4>
                   </div>
+                  <AppBadge variant="info">{{ t(`command.types.${selectedTemplateIntent.command.type}`) }}</AppBadge>
+                </div>
+                <div class="template-detail__intent-summary">
                   <div class="gg-field">
                     <span class="gg-field-label">{{ t("gestures.colMnemonic") }}</span>
                     <MnemonicText :gesture="selectedTemplateIntent.gesture" class="template-detail__editor-mnemonic" />
@@ -394,9 +391,8 @@ function confirmAdoption(): void {
                   </div>
                 </div>
                 <div class="gg-field template-detail__command-preview">
-                  <span class="gg-field-label">{{ t("gestures.editorTitle") }}</span>
+                  <span class="template-detail__command-label"><Terminal :size="15" aria-hidden="true" />{{ t("gestures.colCommand") }}</span>
                   <div class="template-detail__command-value">
-                    <AppBadge variant="info">{{ t(`command.types.${selectedTemplateIntent.command.type}`) }}</AppBadge>
                     <code v-if="commandPreview(selectedTemplateIntent)">{{ commandPreview(selectedTemplateIntent) }}</code>
                   </div>
                 </div>
@@ -406,75 +402,100 @@ function confirmAdoption(): void {
           </section>
         </div>
 
-        <AppAlert
-          v-if="hasElevatedRisk"
-          variant="warning"
-          :title="t('templates.risk.warningTitle', { count: riskyIntents.length })"
-        >
-          <ul class="template-detail__risk-list">
-            <li v-for="(risk, index) in riskyIntents" :key="`${risk.target.scope}-${index}-${risk.intent.name}`">
-              {{ targetName(risk.target) }} · {{ risk.intent.name }} - {{ t(`command.types.${risk.intent.command.type}`) }}
-            </li>
-          </ul>
-        </AppAlert>
-        <AppAlert v-else variant="success" :title="t('templates.risk.lowDescription')" />
+        <section class="template-detail__review" aria-labelledby="template-detail-review-title">
+          <header class="template-detail__review-head">
+            <div class="template-detail__review-title" :class="{ 'is-elevated': hasElevatedRisk }">
+              <ShieldCheck v-if="!hasElevatedRisk" :size="18" aria-hidden="true" />
+              <TriangleAlert v-else :size="18" aria-hidden="true" />
+              <div>
+                <span class="template-detail__section-kicker">{{ t("templates.risk.all") }}</span>
+                <h3 id="template-detail-review-title">{{ t(hasElevatedRisk ? "templates.risk.elevated" : "templates.risk.low") }}</h3>
+              </div>
+            </div>
+            <AppBadge :variant="hasElevatedRisk ? 'warning' : 'success'">
+              {{ t(hasElevatedRisk ? "templates.risk.elevated" : "templates.risk.low") }}
+            </AppBadge>
+          </header>
 
-        <AppAlert
-          v-if="templates.adoptionPlan?.pluginSources.length"
-          class="template-detail__plugin-warning"
-          variant="warning"
-          :title="t('templates.adoption.plugins', { count: templates.adoptionPlan.pluginSources.length })"
-        >
-          <ul class="template-detail__risk-list">
-            <li v-for="source in templates.adoptionPlan.pluginSources" :key="source.pluginId">
-              <code>{{ source.pluginId }}<template v-if="source.subdirectory"> / {{ source.subdirectory }}</template></code>
-            </li>
-          </ul>
-        </AppAlert>
+          <div class="template-detail__review-notices">
+            <AppAlert
+              v-if="riskyIntents.length"
+              variant="warning"
+              :title="t('templates.risk.warningTitle', { count: riskyIntents.length })"
+            >
+              <ul class="template-detail__risk-list">
+                <li v-for="(risk, index) in riskyIntents" :key="`${risk.target.scope}-${index}-${risk.intent.name}`">
+                  {{ targetName(risk.target) }} · {{ risk.intent.name }} - {{ t(`command.types.${risk.intent.command.type}`) }}
+                </li>
+              </ul>
+            </AppAlert>
+            <AppAlert v-else-if="!hasPluginInstall" variant="success" :title="t('templates.risk.lowDescription')" />
 
-        <div v-if="templates.adoptionPlan" class="template-detail__adoption">
-          <section v-if="templates.adoptionPlan.conflicts.length" class="template-detail__conflicts">
-            <h3>{{ t("templates.adoption.conflicts", { count: templates.adoptionPlan.conflicts.length }) }}</h3>
-            <ul>
-              <li v-for="(conflict, index) in templates.adoptionPlan.conflicts" :key="`${gestureIdentityKey(conflict.gesture)}-${index}`">
-                <MnemonicText :gesture="conflict.gesture" /> {{ conflict.templateName }} / {{ conflict.existingNames.join(", ") }}
-              </li>
-            </ul>
-            <fieldset class="template-detail__conflict-policy">
-              <legend class="gg-sr-only">{{ t("templates.adoption.conflicts", { count: templates.adoptionPlan.conflicts.length }) }}</legend>
-              <label>
-                <input
-                  :checked="templates.conflictPolicy === 'keepExisting'"
-                  type="radio"
-                  name="template-conflict-policy"
-                  value="keepExisting"
-                  @change="templates.setConflictPolicy('keepExisting')"
-                />
-                <span>{{ t("templates.adoption.keepExisting") }}</span>
-              </label>
-              <label>
-                <input
-                  :checked="templates.conflictPolicy === 'replaceExisting'"
-                  type="radio"
-                  name="template-conflict-policy"
-                  value="replaceExisting"
-                  @change="templates.setConflictPolicy('replaceExisting')"
-                />
-                <span>{{ t("templates.adoption.replaceExisting") }}</span>
-              </label>
-            </fieldset>
-          </section>
-
-          <div class="template-detail__stats">
-            <span>{{ t("templates.adoption.added", { count: templates.adoptionPlan.stats.added }) }}</span>
-            <span>{{ t("templates.adoption.replaced", { count: templates.adoptionPlan.stats.replaced }) }}</span>
-            <span>{{ t("templates.adoption.skipped", { count: templates.adoptionPlan.stats.skipped }) }}</span>
+            <AppAlert
+              v-if="templates.adoptionPlan?.pluginSources.length"
+              class="template-detail__plugin-warning"
+              variant="warning"
+              :title="t('templates.adoption.plugins', { count: templates.adoptionPlan.pluginSources.length })"
+            >
+              <ul class="template-detail__risk-list">
+                <li v-for="source in templates.adoptionPlan.pluginSources" :key="source.pluginId">
+                  <code>{{ source.pluginId }}<template v-if="source.subdirectory"> / {{ source.subdirectory }}</template></code>
+                </li>
+              </ul>
+            </AppAlert>
           </div>
-          <label v-if="hasElevatedRisk" class="template-detail__risk-confirm">
-            <input v-model="riskConfirmed" type="checkbox" />
-            <span>{{ t("templates.risk.confirm") }}</span>
-          </label>
-        </div>
+
+          <div v-if="templates.adoptionPlan" class="template-detail__adoption">
+            <div class="template-detail__stats">
+              <span>{{ t("templates.adoption.added", { count: templates.adoptionPlan.stats.added }) }}</span>
+              <span>{{ t("templates.adoption.replaced", { count: templates.adoptionPlan.stats.replaced }) }}</span>
+              <span>{{ t("templates.adoption.skipped", { count: templates.adoptionPlan.stats.skipped }) }}</span>
+            </div>
+
+            <section v-if="templates.adoptionPlan.conflicts.length" class="template-detail__conflicts">
+              <div class="template-detail__conflict-heading">
+                <div>
+                  <h3>{{ t("templates.adoption.conflicts", { count: templates.adoptionPlan.conflicts.length }) }}</h3>
+                </div>
+                <TriangleAlert :size="17" aria-hidden="true" />
+              </div>
+              <ul>
+                <li v-for="(conflict, index) in templates.adoptionPlan.conflicts" :key="`${gestureIdentityKey(conflict.gesture)}-${index}`">
+                  <MnemonicText :gesture="conflict.gesture" />
+                  <span>{{ conflict.templateName }} / {{ conflict.existingNames.join(", ") }}</span>
+                </li>
+              </ul>
+              <fieldset class="template-detail__conflict-policy">
+                <legend class="gg-sr-only">{{ t("templates.adoption.conflicts", { count: templates.adoptionPlan.conflicts.length }) }}</legend>
+                <label :class="{ 'is-selected': templates.conflictPolicy === 'keepExisting' }">
+                  <input
+                    :checked="templates.conflictPolicy === 'keepExisting'"
+                    type="radio"
+                    name="template-conflict-policy"
+                    value="keepExisting"
+                    @change="templates.setConflictPolicy('keepExisting')"
+                  />
+                  <span>{{ t("templates.adoption.keepExisting") }}</span>
+                </label>
+                <label :class="{ 'is-selected': templates.conflictPolicy === 'replaceExisting' }">
+                  <input
+                    :checked="templates.conflictPolicy === 'replaceExisting'"
+                    type="radio"
+                    name="template-conflict-policy"
+                    value="replaceExisting"
+                    @change="templates.setConflictPolicy('replaceExisting')"
+                  />
+                  <span>{{ t("templates.adoption.replaceExisting") }}</span>
+                </label>
+              </fieldset>
+            </section>
+
+            <label v-if="hasElevatedRisk" class="template-detail__risk-confirm">
+              <input v-model="riskConfirmed" type="checkbox" />
+              <span>{{ t("templates.risk.confirm") }}</span>
+            </label>
+          </div>
+        </section>
 
         <AppAlert v-if="templates.adoptionError" variant="error" :title="errorText(templates.adoptionError)" />
       </template>
@@ -500,17 +521,12 @@ function confirmAdoption(): void {
 <style scoped>
 .templates-view { width: min(100%, 920px); height: 100%; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 14px; overflow: hidden; }
 .templates-view__header > div { min-width: 0; }
-.templates-view__header h2, .template-detail__conflicts h3 { margin: 0; font-size: 16px; }
+.templates-view__header h2 { margin: 0; font-size: 16px; }
 .templates-view__header p { margin: 5px 0 0; }
-.templates-view__filters { display: grid; grid-template-columns: minmax(180px, 1fr) auto 150px; gap: 10px; align-items: center; }
+.templates-view__filters { display: grid; grid-template-columns: minmax(180px, 1fr) 150px; gap: 10px; align-items: center; }
 .templates-view__search { display: flex; min-width: 0; align-items: center; gap: 8px; border: 1px solid var(--gg-border); border-radius: 6px; padding: 0 10px; color: var(--gg-text-muted); background: var(--gg-surface); }
 .templates-view__search:focus-within { outline: 2px solid var(--gg-ring); outline-offset: 1px; }
 .templates-view__search .gg-input { min-width: 0; border: 0; box-shadow: none; }
-.templates-view__scope-filter, .template-detail__conflict-policy { display: flex; gap: 2px; margin: 0; padding: 2px; border: 1px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface-muted); }
-.templates-view__scope-option, .template-detail__conflict-policy label, .template-detail__risk-confirm { display: inline-flex; align-items: center; gap: 6px; color: var(--gg-text); font-size: 12px; cursor: pointer; }
-.templates-view__scope-option { min-height: 32px; padding: 0 8px; border-radius: 4px; }
-.templates-view__scope-option:has(input:checked) { color: var(--gg-primary); background: var(--gg-surface); }
-.templates-view__scope-option input, .template-detail__conflict-policy input, .template-detail__risk-confirm input { accent-color: var(--gg-primary); }
 .templates-view__list { min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--gg-border); }
 .templates-view__row { width: 100%; min-height: 94px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 13px 8px; border: 0; border-bottom: 1px solid var(--gg-border); color: var(--gg-text); background: var(--gg-surface); text-align: left; cursor: pointer; }
 .templates-view__row:hover { background: var(--gg-surface-hover); }
@@ -521,35 +537,612 @@ function confirmAdoption(): void {
 .templates-view__summary { color: var(--gg-text-muted); font-size: 13px; line-height: 1.45; }
 .templates-view__tags { flex-wrap: wrap; gap: 5px; }
 .templates-view__row-meta { width: 128px; flex-direction: column; align-items: flex-end; gap: 7px; color: var(--gg-text-muted); font-size: 12px; }
-:deep(.template-detail) { width: min(860px, calc(100vw - 32px)); }
-:deep(.template-detail .gg-dialog__body) { max-height: calc(100vh - 190px); overflow-y: auto; }
-.template-detail__hero { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--gg-border); }
-.template-detail__hero-copy { min-width: 0; }
-.template-detail__eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; color: var(--gg-text-muted); font-size: 12px; }
-.template-detail__hero h3 { margin: 0; font-size: 20px; line-height: 1.25; }
-.template-detail__hero p { margin: 6px 0 0; color: var(--gg-text-muted); line-height: 1.55; }
-.template-detail__hero-targets { display: flex; flex: 0 0 86px; flex-direction: column; justify-content: center; align-items: flex-end; color: var(--gg-text-muted); text-align: right; }
-.template-detail__hero-targets strong { color: var(--gg-primary); font-size: 26px; line-height: 1; }
-.template-detail__hero-targets span { margin-top: 6px; font-size: 12px; }
-.template-detail__workspace { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 500px; margin-top: 16px; border: 1px solid var(--gg-border); border-radius: 6px; overflow: hidden; }
-.template-detail__apps { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--gg-border); background: var(--gg-surface-muted); }
-.template-detail__apps-head, .template-detail__toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 10px; border-bottom: 1px solid var(--gg-border); color: var(--gg-text-muted); font-size: 13px; }
-.template-detail__apps-count, .template-detail__app-count, .template-detail__count { color: var(--gg-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.template-detail__app-list { min-height: 0; margin: 0; padding: 6px; overflow-y: auto; list-style: none; }
-.template-detail__app-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 5px 7px; border: 0; border-radius: 5px; color: var(--gg-text); background: transparent; text-align: left; cursor: pointer; }
-.template-detail__app-button:hover { background: var(--gg-surface-hover); }
-.template-detail__app-button:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }
-.template-detail__app-item.is-active .template-detail__app-button { color: var(--gg-primary); background: var(--gg-primary-soft); }
-.template-detail__app-identity, .template-detail__app-copy { display: flex; min-width: 0; }
-.template-detail__app-identity { flex: 1; align-items: center; gap: 8px; }
-.template-detail__app-copy { flex-direction: column; gap: 2px; }
-.template-detail__app-name, .template-detail__app-binding { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.template-detail__app-name { font-size: 13px; }.template-detail__app-binding { color: var(--gg-text-muted); font-size: 11px; }
-.template-detail__main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(150px, .9fr) minmax(190px, 1.1fr); gap: 10px; padding: 10px; background: var(--gg-surface); }
-.template-detail__main-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }.template-detail__main-head h3 { margin: 0; font-size: 15px; }.template-detail__main-head p { margin: 4px 0 0; overflow-wrap: anywhere; }
-.template-detail__table-pane, .template-detail__editor-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface); }
-.template-detail__table-pane { display: grid; grid-template-rows: 40px minmax(0, 1fr); }.template-detail__table-scroll { min-width: 0; overflow: auto; }
-.template-detail__table { width: 100%; min-width: 590px; border-collapse: collapse; font-size: 12px; }.template-detail__table th, .template-detail__table td { padding: 8px 10px; border-bottom: 1px solid var(--gg-border); text-align: left; vertical-align: middle; }.template-detail__table th { position: sticky; top: 0; z-index: 1; color: var(--gg-text-muted); background: var(--gg-surface-muted); font-weight: 600; }.template-detail__table tbody tr { cursor: pointer; }.template-detail__table tbody tr:hover { background: var(--gg-surface-hover); }.template-detail__table tbody tr.is-selected { background: var(--gg-primary-soft); }.template-detail__table tbody tr.is-conflict td { color: var(--gg-warning); }
-.template-detail__editor-pane { padding: 12px 14px; overflow-y: auto; }.template-detail__intent-editor { display: grid; min-width: 0; gap: 16px; }.template-detail__intent-summary { display: grid; grid-template-columns: minmax(150px, 1.35fr) minmax(150px, 1fr) minmax(100px, .8fr); gap: 12px 18px; padding-bottom: 14px; border-bottom: 1px solid var(--gg-border); }.template-detail__readonly-value { display: flex; align-items: center; min-height: 32px; padding: 0 11px; overflow-wrap: anywhere; border: 1px solid var(--gg-border); border-radius: 5px; color: var(--gg-text); background: var(--gg-surface-muted); }.template-detail__editor-mnemonic { min-height: 32px; font-size: 20px; }.template-detail__command-value { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; }.template-detail__command-value code { display: block; max-width: 100%; overflow: auto; color: var(--gg-text); font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.template-detail__risk-list, .template-detail__conflicts ul { margin: 5px 0 0; padding-left: 18px; line-height: 1.5; }.template-detail__adoption { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }.template-detail__conflicts { padding: 10px 12px; border: 1px solid var(--gg-border); border-radius: 6px; }.template-detail__conflicts ul { font-size: 12px; }.template-detail__conflict-policy { width: fit-content; margin-top: 9px; }.template-detail__conflict-policy label { min-height: 32px; padding: 0 7px; }.template-detail__stats { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--gg-text); font-size: 13px; }.template-detail__risk-confirm { width: fit-content; min-height: 32px; }
+:deep(.template-detail) {
+  width: min(900px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 28px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:deep(.template-detail .gg-dialog__header) {
+  min-height: 64px;
+  padding: 0 20px 0 24px;
+  background: var(--gg-surface-muted);
+}
+
+:deep(.template-detail .gg-dialog__title) {
+  font-size: 18px;
+}
+
+:deep(.template-detail .gg-dialog__body) {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 0 20px 18px;
+}
+
+:deep(.template-detail .gg-dialog__footer) {
+  min-height: 64px;
+  align-items: center;
+  padding: 12px 20px 16px;
+}
+
+.template-detail__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  padding: 18px 0 16px;
+  border-bottom: 1px solid var(--gg-border);
+}
+
+.template-detail__hero-copy,
+.template-detail__hero-metrics {
+  min-width: 0;
+}
+
+.template-detail__eyebrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+}
+
+.template-detail__eyebrow code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--gg-border);
+  border-radius: 4px;
+  padding: 3px 7px;
+  background: var(--gg-surface-muted);
+  color: var(--gg-text-muted);
+  font: 11px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.template-detail__hero-summary {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: var(--gg-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.template-detail__hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+}
+
+.template-detail__hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  align-self: stretch;
+  gap: 10px;
+  border-left: 1px solid var(--gg-border);
+  padding-left: 20px;
+}
+
+.template-detail__metric {
+  display: flex;
+  min-width: 72px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.template-detail__metric strong {
+  color: var(--gg-primary);
+  font-size: 26px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.template-detail__workspace {
+  display: grid;
+  grid-template-columns: 204px minmax(0, 1fr);
+  height: 500px;
+  min-height: 0;
+  margin-top: 16px;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--gg-surface);
+}
+
+.template-detail__apps {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--gg-border);
+  background: var(--gg-surface-muted);
+}
+
+.template-detail__apps-head,
+.template-detail__toolbar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--gg-border);
+  padding: 0 12px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+}
+
+.template-detail__section-label,
+.template-detail__command-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.template-detail__section-label svg,
+.template-detail__command-label svg {
+  color: var(--gg-primary);
+}
+
+.template-detail__apps-count,
+.template-detail__app-count,
+.template-detail__count {
+  color: var(--gg-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.template-detail__app-list {
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.template-detail__app-item {
+  position: relative;
+}
+
+.template-detail__app-button {
+  width: 100%;
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--gg-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.template-detail__app-button:hover {
+  border-color: var(--gg-border);
+  background: var(--gg-surface-hover);
+}
+
+.template-detail__app-button:focus-visible {
+  outline: 2px solid var(--gg-ring);
+  outline-offset: -2px;
+}
+
+.template-detail__app-item.is-active .template-detail__app-button {
+  border-color: var(--gg-primary-border);
+  color: var(--gg-primary);
+  background: var(--gg-primary-soft);
+  box-shadow: inset 3px 0 0 var(--gg-primary);
+}
+
+.template-detail__app-identity,
+.template-detail__app-copy {
+  display: flex;
+  min-width: 0;
+}
+
+.template-detail__app-identity {
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+}
+
+.template-detail__app-copy {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.template-detail__app-name,
+.template-detail__app-binding {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-detail__app-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.template-detail__app-binding {
+  color: var(--gg-text-muted);
+  font-size: 11px;
+}
+
+.template-detail__main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(170px, 1fr) minmax(185px, .95fr);
+  gap: 12px;
+  padding: 12px;
+  background: var(--gg-surface);
+}
+
+.template-detail__main-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.template-detail__main-head h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.template-detail__main-head p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.template-detail__table-pane,
+.template-detail__editor-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--gg-border);
+  border-radius: 7px;
+  background: var(--gg-surface);
+}
+
+.template-detail__table-pane {
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+}
+
+.template-detail__table-scroll {
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.template-detail__table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.template-detail__table th,
+.template-detail__table td {
+  border-bottom: 1px solid var(--gg-border);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.template-detail__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--gg-text-muted);
+  background: var(--gg-surface-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.template-detail__table tbody tr {
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.template-detail__table tbody tr:hover {
+  background: var(--gg-surface-hover);
+}
+
+.template-detail__table tbody tr.is-selected {
+  background: var(--gg-primary-soft);
+  box-shadow: inset 3px 0 0 var(--gg-primary);
+}
+
+.template-detail__table tbody tr.is-conflict td {
+  color: var(--gg-warning);
+}
+
+.template-detail__editor-pane {
+  overflow-y: auto;
+  padding: 14px;
+  scrollbar-gutter: stable;
+}
+
+.template-detail__intent-editor {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.template-detail__editor-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--gg-border);
+}
+
+.template-detail__section-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--gg-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.template-detail__editor-head h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.template-detail__intent-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(130px, .8fr);
+  gap: 12px;
+}
+
+.template-detail__readonly-value {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid var(--gg-border);
+  border-radius: 5px;
+  padding: 0 10px;
+  overflow-wrap: anywhere;
+  color: var(--gg-text);
+  background: var(--gg-surface-muted);
+}
+
+.template-detail__editor-mnemonic {
+  min-height: 34px;
+  font-size: 20px;
+}
+
+.template-detail__command-preview {
+  display: grid;
+  gap: 7px;
+}
+
+.template-detail__command-label {
+  color: var(--gg-text);
+}
+
+.template-detail__command-value {
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  align-items: flex-start;
+  border: 1px solid var(--gg-border);
+  border-radius: 5px;
+  padding: 10px 11px;
+  background: var(--gg-surface-muted);
+}
+
+.template-detail__command-value code {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  color: var(--gg-text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.template-detail__review {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gg-border);
+}
+
+.template-detail__review-head,
+.template-detail__review-title,
+.template-detail__conflict-heading {
+  display: flex;
+  align-items: center;
+}
+
+.template-detail__review-head {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.template-detail__review-title {
+  min-width: 0;
+  gap: 9px;
+}
+
+.template-detail__review-title > svg {
+  flex: 0 0 auto;
+  color: var(--gg-success);
+}
+
+.template-detail__review-title.is-elevated > svg {
+  color: var(--gg-warning);
+}
+
+.template-detail__review-title h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.template-detail__review-notices {
+  display: grid;
+  gap: 8px;
+}
+
+.template-detail__review-notices :deep(.gg-alert) {
+  margin: 0;
+}
+
+.template-detail__risk-list {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 17px;
+  line-height: 1.45;
+}
+
+.template-detail__adoption {
+  display: grid;
+  gap: 12px;
+}
+
+.template-detail__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-detail__stats span {
+  min-width: 0;
+  border: 1px solid var(--gg-border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  color: var(--gg-text);
+  background: var(--gg-surface-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.template-detail__conflicts {
+  border: 1px solid var(--gg-warning-border);
+  border-radius: 7px;
+  padding: 12px;
+  background: var(--gg-warning-soft);
+}
+
+.template-detail__conflict-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.template-detail__conflict-heading h3 {
+  margin: 0;
+  color: var(--gg-text);
+  font-size: 14px;
+}
+
+.template-detail__conflict-heading > svg {
+  flex: 0 0 auto;
+  color: var(--gg-warning);
+}
+
+.template-detail__conflicts ul {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--gg-text);
+  font-size: 12px;
+}
+
+.template-detail__conflicts li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--gg-warning-border);
+}
+
+.template-detail__conflicts li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.template-detail__conflict-policy {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.template-detail__conflict-policy label {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--gg-border);
+  border-radius: 5px;
+  padding: 0 9px;
+  color: var(--gg-text);
+  background: var(--gg-surface);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.template-detail__conflict-policy label:hover,
+.template-detail__conflict-policy label.is-selected {
+  border-color: var(--gg-primary);
+  background: var(--gg-primary-soft);
+}
+
+.template-detail__conflict-policy input,
+.template-detail__risk-confirm input {
+  accent-color: var(--gg-primary);
+}
+
+.template-detail__risk-confirm {
+  display: flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--gg-warning-border);
+  border-radius: 5px;
+  padding: 0 10px;
+  color: var(--gg-text);
+  background: var(--gg-warning-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.template-detail__review + .gg-alert {
+  margin-top: 12px;
+}
 </style>

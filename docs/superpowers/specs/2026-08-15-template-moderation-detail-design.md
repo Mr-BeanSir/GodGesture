@@ -4,6 +4,8 @@
 
 修复 Web Console 模板审核页的两个遗漏：把审核动作放进指定的 bordered header 区域，并把版本详情中的模板目标从 JSON 原文改为接近 `/config` 的按目标分组手势明细。明细中只展示审核需要的类型、名称、助记符和命令类型，不展示“已启用”状态。
 
+同时统一模板族版本语义：更新已有模板必须继续使用同一个 `templateId`；公共目录每个模板族只展示最高版本号的已发布版本；新版本审核期间继续展示旧的已发布版本；新版本审核通过后自动切换到新版本。暂停发布属于父模板族，不修改任何版本状态，也不回退旧版本；恢复后重新展示该模板族最高的已发布版本。更新版本的 `title`、`tags` 和 `summary` 均由该版本自己的元数据决定。
+
 ## Scope
 
 ### In scope
@@ -18,7 +20,7 @@
 ### Out of scope
 
 - 不改变模板包协议、公共目录的 `targetSummaries`、模板审核状态机或审核权限。
-- 不新增数据库字段和迁移；RustFS 中的不可变模板包仍是详情明细的唯一内容来源。
+- 为父模板族增加发布暂停时间字段和迁移；RustFS 中的不可变模板包仍是详情明细的唯一内容来源。
 - 不在管理员页面提供模板内容编辑、上传、删除或下载行为变更。
 - 不修改 Desktop、同步端点、模板投稿流程或其他 Web Console 页面。
 
@@ -31,7 +33,9 @@
 3. `TemplatesService` 将校验后的 UTF-8 JSON 解析并通过 `GestureTemplatePackage` 校验；解析失败或对象完整性不一致时让详情请求进入现有错误态，不返回不可信明细。
 4. 详情响应继续返回现有 `targetSummaries`，另返回原始模板目标组成的 `targetDetails`。`targetDetails` 使用现有 shared `GestureTemplateTarget` 协议类型，保留每条 intent 的 `name`、`gesture` 和 `command` 数据，前端只按需要读取其中的展示字段。
 
-公共目录继续使用数据库中的 `targetSummaries`，因此不会因为审核详情变更而增大匿名目录响应或改变目录校验逻辑。
+公共目录继续使用数据库中的 `targetSummaries`，因此不会因为审核详情变更而增大匿名目录响应或改变目录校验逻辑。目录查询以父 `templateId` 分组，每族只选最高 `versionNumber` 的 `published` 版本，并排除父模板族处于暂停状态的记录。详情、下载和举报读取遵循相同的父模板暂停边界。
+
+审核队列查询父模板族而不是平铺版本，每族返回一行并默认指向最高版本；详情响应保留版本历史摘要供顶部版本选择器切换。暂停/恢复操作作用于父模板族，版本审核 `approve`/`reject` 仍然只作用于当前选中的不可变版本。
 
 ### Web Console layout
 
@@ -60,6 +64,8 @@ targetDetails: GestureTemplateTarget[]
 
 字段结构与 `@godgesture/shared` 的 `GestureTemplateTarget` 完全一致，`targetSummaries` 保持原字段和语义不变。API 解析失败时沿用现有 `invalid_server_response` 错误处理；RustFS 对象读取或完整性校验失败时由详情请求的错误态提示管理员重试。
 
+审核队列和审核详情响应增加 `templateSuspended` 与 `hasPublishedVersion`，用于区分父模板族暂停状态和当前版本状态。公共目录响应的 `id` 是父 `templateId`，版本号和元数据来自该族当前最高已发布版本。
+
 ## Error handling and security
 
 - RustFS 对象读取必须在服务端完成，浏览器不直接请求 RustFS 签名 URL 来生成明细。
@@ -76,6 +82,7 @@ targetDetails: GestureTemplateTarget[]
 - Server 模板服务测试：审核详情读取并返回 `targetDetails`，同时保留 `targetSummaries` 和现有历史/审核记录。
 - Web Console API schema 测试：合法 `targetDetails` 通过，缺失该字段或结构不合法时拒绝。
 - `TemplateModerationView` 测试：审核动作挂在指定 header、目标名称和每条手势明细可见、命令类型和助记符可见、不再渲染 JSON `<pre>` 或“已启用”。
+- `TemplatesService` 测试：模板族目录只返回最高已发布版本，审核队列按父模板族分组，暂停不改变任何版本状态，恢复后重新投影最高已发布版本。
 - Web Console 类型检查和该视图测试；若 Server API DTO/OpenAPI 明确变更，再运行对应 API 合同检查，不运行无关全仓测试。
 
 ## Acceptance criteria
@@ -84,4 +91,5 @@ targetDetails: GestureTemplateTarget[]
 - 版本详情按全局/App 目标显示每条模板手势的名称、助记符和命令类型。
 - 页面不显示目标 JSON `<pre>`，不显示“已启用”列或状态 badge。
 - RustFS 读取失败、包损坏或 API 数据缺失时显示可重试错误，而不是渲染半截数据。
+- 更新版本审核期间公共目录仍可读取旧版本；更新版本通过后目录切换到新版本元数据；父模板族暂停时目录、详情、下载和举报均不可用，恢复后回到最高已发布版本。
 - 既有审核确认、审核状态限制、举报处理和包下载行为不回归。
