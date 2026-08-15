@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳；取代 ADR-0008 中“默认手势模板库由 GitHub 运行时分发”的部分。ADR-0008
+已采纳并于 2026-08-15 修订；取代 ADR-0008 中“默认手势模板库由 GitHub 运行时分发”的部分。ADR-0008
 关于 GitHub Releases 更新和官方在线插件目录/源码分发的结论继续有效。
 
 ## 背景
@@ -24,12 +24,17 @@ GitHub 静态目录要求投稿者熟悉仓库协作，所有模板元数据集�
 - 模板版本为不可变审核单元：作者可撤回，管理员可审核、拒绝、下架、恢复、处理举报和调整
   配额，但不能编辑已提交的内容。账户不提供注销或删除接口；禁用账户不可登录、关联 OAuth
   或投稿。
-- 同一模板允许多个版本同时发布。`TemplateVersion.status` 是公开可见性和审核生命周期的事实
-  来源；`Template.status` 只是版本集合的持久化聚合投影，优先级固定为
-  `published > pending_review > suspended > rejected > withdrawn`。版本状态变化必须在同一数据库
-  事务内锁定父模板行、条件更新版本并重算父状态，避免不同版本并发审核产生最后写入覆盖。
-  `publishedTemplateLimit` 按“至少存在一个 `published` 版本”的父模板数量统计，不直接信任父
-  状态字段。已有数据通过幂等 migration 按相同优先级回填。
+- 同一模板族的每次更新都创建新的不可变 `TemplateVersion`，更新版本自己的 `title`、`tags` 和
+  `summary` 随该版本审核。公共目录、公共详情和默认下载每个父 `templateId` 只选择
+  `versionNumber` 最高的 `published` 版本；新版本待审核期间继续使用旧的已发布版本，通过后自动切换到
+  新版本，因此同一模板族不会在目录中出现多行。旧的已发布版本仍可通过明确的版本下载入口读取。
+- `TemplateVersion.status` 是版本审核生命周期的事实来源；父 `Template.status` 是版本集合的持久化
+  聚合投影，优先级固定为 `published > pending_review > suspended > rejected > withdrawn`。父模板新增
+  `publicationSuspendedAt` 作为发布闸门：管理员暂停作用于整个 `templateId`，不改变任何版本状态，也
+  不回退到旧版本；暂停期间目录、详情、下载和举报均隐藏，恢复时清空该字段并重新展示最高已发布版本。
+  版本状态变化和父模板暂停/恢复必须在同一数据库事务内锁定父模板行，避免并发审核产生最后写入覆盖。
+  已有 `status = suspended` 的父模板由幂等 migration 回填暂停时间。
+- `publishedTemplateLimit` 按“至少存在一个 `published` 版本”的父模板数量统计，不直接信任父状态字段。
 - 公共响应中的 `title`、`summary` 是已验证的单一普通字符串，不是本地化对象。UI 自身仍使用
   vue-i18n。模板命令和配置只引用 `pluginId`；安装时从固定
   `Mr-BeanSir/GodGesture-Plugins` 的 `main` 官方目录解析受启用的 `pluginId -> subdirectory`。

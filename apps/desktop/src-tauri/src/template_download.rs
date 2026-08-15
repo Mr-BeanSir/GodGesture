@@ -320,15 +320,22 @@ fn validated_url(input: &str, code: &'static str) -> Result<Url, TemplateDownloa
 }
 
 fn validated_parsed_url(url: Url, code: &'static str) -> Result<Url, TemplateDownloadError> {
-    if url.scheme() != "https"
-        || url.host_str().is_none()
+    let scheme_allowed = match url.scheme() {
+        "https" => true,
+        "http" => matches!(
+            url.host_str(),
+            Some("127.0.0.1") | Some("localhost") | Some("::1") | Some("[::1]")
+        ),
+        _ => false,
+    };
+    if !scheme_allowed
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
     {
         return Err(TemplateDownloadError::new(
             code,
-            "template URL must use HTTPS without credentials or fragments",
+            "template URL must use HTTPS, or HTTP on loopback, without credentials or fragments",
         ));
     }
     Ok(url)
@@ -382,6 +389,13 @@ mod tests {
                     .code,
                 "template_url_invalid"
             );
+        }
+        for input in [
+            "http://127.0.0.1/catalog.json",
+            "http://localhost/catalog.json",
+            "http://[::1]/catalog.json",
+        ] {
+            assert!(validated_url(input, "template_url_invalid").is_ok());
         }
         assert!(validated_url("https://example.com/catalog.json", "bad").is_ok());
     }

@@ -6,6 +6,7 @@ import {
   type GestureTemplateCatalogEntry,
   type GestureTemplatePackage,
 } from "@godgesture/shared";
+import { isTauriRuntime, useBackend } from "../api/backend";
 import { gestureTemplateCatalogFixture, gestureTemplatePackageFixtures } from "./fixtures";
 import { resolveApiOrigin } from "../cloud/origin";
 
@@ -17,10 +18,27 @@ export interface GestureTemplateSource {
   loadCatalog(force?: boolean): Promise<GestureTemplateCatalog>;
   loadPackage(entry: GestureTemplateCatalogEntry): Promise<GestureTemplatePackage>;
 }
+export type TemplatePackageTextTransport = (url: string) => Promise<string>;
 
 function protocolError(error: unknown): never {
   if (error instanceof GestureTemplateProtocolError) throw new TemplateSourceError(error.code === "invalid_catalog" ? "invalid_catalog" : "invalid_package", error.message, error);
   throw error;
+}
+
+async function fetchPackageText(
+  url: string,
+  fetchImpl: typeof globalThis.fetch,
+): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  } catch (error) {
+    throw new TemplateSourceError("template_network", "Template package download failed", error);
+  }
+  if (!response.ok) {
+    throw new TemplateSourceError("template_http", `Template package download failed (${response.status})`);
+  }
+  return response.text();
 }
 
 export function createFixtureGestureTemplateSource(): GestureTemplateSource {
@@ -39,6 +57,10 @@ export function createFixtureGestureTemplateSource(): GestureTemplateSource {
 export function createOfficialApiGestureTemplateSource(
   apiOrigin: string | null = resolveApiOrigin(),
   fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+  packageTransport: TemplatePackageTextTransport = (url) =>
+    isTauriRuntime()
+      ? useBackend().downloadTemplateText(url, "package")
+      : fetchPackageText(url, fetchImpl),
 ): GestureTemplateSource {
   const configuredOrigin = apiOrigin;
   const base = configuredOrigin
@@ -94,11 +116,11 @@ export function createOfficialApiGestureTemplateSource(
         signed = await response.json() as { url?: string };
       } catch (error) { if (error instanceof TemplateSourceError) throw error; throw new TemplateSourceError("template_network", "Template package request failed", error); }
       if (!signed.url) throw new TemplateSourceError("invalid_package", "Template package URL is missing");
+      let packageText: string;
       try {
-        const response = await fetchImpl(signed.url, { headers: { Accept: "application/json" } });
-        if (!response.ok) throw new TemplateSourceError("template_http", `Template package download failed (${response.status})`);
-        return parseGestureTemplatePackage(await response.text());
+        packageText = await packageTransport(signed.url);
       } catch (error) { if (error instanceof TemplateSourceError) throw error; return protocolError(error); }
+      try { return parseGestureTemplatePackage(packageText); } catch (error) { return protocolError(error); }
     },
   };
 }

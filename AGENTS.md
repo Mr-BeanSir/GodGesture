@@ -29,6 +29,9 @@ WGestures 配置导入是用户迁移能力,不代表 WGestures 仍是产品基�
 ## 工程约定
 
 - 与用户使用中文交流;commit message 使用英文。
+- 子智能体必须使用与主会话完全相同的模型和推理强度。工具支持继承时不得传入
+  `model` 或 `reasoning` 覆盖参数;工具要求显式参数时必须填写主会话的当前值。
+  除非维护者明确授权,不得为任何任务擅自升级、降级或切换子智能体模型/推理强度。
 - pnpm monorepo;协议改动必须同时更新 `packages/shared` 及全部消费方并保证编译通过。
 - 运行 Python 脚本统一使用 `uv`,例如 `uv run python <script> [args]`;不要直接调用
   `python`、`python3` 或 `py`。

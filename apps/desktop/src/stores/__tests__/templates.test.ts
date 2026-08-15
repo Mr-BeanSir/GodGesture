@@ -54,7 +54,6 @@ function fixture(withPlugin = false) {
     summary: "Window commands",
     author: "GodGesture",
     tags: ["window"],
-    targets: [{ scope: "global" as const }],
     risks: [],
     downloadCount: 0,
     publishedAt: "2026-07-28T15:00:00Z",

@@ -92,7 +92,6 @@ export const GestureTemplateCatalogEntry = z.object({
   summary: templateSummary,
   author: templateAuthor,
   tags: templateTags,
-  targets: z.array(GestureTemplateTargetSummary).min(1).max(MAX_GESTURE_TEMPLATE_TARGETS),
   risks: z.array(GestureTemplateRisk).max(GestureTemplateRisk.options.length).refine((values) => new Set(values).size === values.length, "Template risks must be unique"),
   downloadCount: z.number().int().nonnegative(),
   publishedAt: z.string().datetime({ offset: true }),
@@ -287,7 +286,6 @@ export function gestureTemplatePackagePlatforms(
 
 export function verifyGestureTemplatePackage(entry: GestureTemplateCatalogEntry, templatePackage: GestureTemplatePackage): GestureTemplatePackage {
   if (entry.title !== templatePackage.title || entry.summary !== templatePackage.summary || JSON.stringify(entry.tags) !== JSON.stringify(templatePackage.tags)) throw new GestureTemplateProtocolError("metadata_mismatch", "Template package metadata does not match its catalog entry");
-  if (JSON.stringify(entry.targets) !== JSON.stringify(gestureTemplateTargetSummaries(templatePackage))) throw new GestureTemplateProtocolError("target_mismatch", "Template package target does not match its catalog entry");
   if (JSON.stringify(entry.risks) !== JSON.stringify(gestureTemplatePackageRisks(templatePackage))) throw new GestureTemplateProtocolError("risk_mismatch", "Template package risks do not match its catalog entry");
   return templatePackage;
 }

@@ -35,7 +35,6 @@ const validEntry = () => ({
   summary: "Three window gestures.",
   author: "GodGesture",
   tags: ["window"],
-  targets: [{ scope: "global" as const }],
   risks: [],
   downloadCount: 0,
   publishedAt: "2026-08-08T00:00:00Z",
@@ -85,6 +84,7 @@ describe("gesture template protocol", () => {
       entries: [validEntry(), { ...validEntry(), id: "10000000-0000-4000-8000-000000000002", versionNumber: 3 }],
     });
     expect(catalog.entries).toHaveLength(2);
+    expect(catalog.entries[0]).not.toHaveProperty("targets");
     expect(catalog.entries[0]).not.toHaveProperty("slug");
     expect(() => GestureTemplateCatalog.parse({
       formatVersion: 2,
