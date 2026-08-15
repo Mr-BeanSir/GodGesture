@@ -134,6 +134,10 @@ function selectFromKey(row: GestureActionTableRow, event: KeyboardEvent): void {
   background: var(--gg-surface);
 }
 
+.gesture-action-table.is-readonly {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .gesture-action-table__toolbar {
   display: flex;
   align-items: center;

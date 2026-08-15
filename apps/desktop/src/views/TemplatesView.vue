@@ -625,7 +625,7 @@ function confirmAdoption(): void {
 .template-detail__workspace {
   display: grid;
   grid-template-columns: 204px minmax(0, 1fr);
-  height: 500px;
+  height: 369px;
   min-height: 0;
   margin-top: 16px;
   border: 1px solid var(--gg-border);
