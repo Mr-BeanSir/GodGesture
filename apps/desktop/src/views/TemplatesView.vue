@@ -10,6 +10,7 @@ import {
   AppEmptyState,
   AppSkeleton,
   AppSpinner,
+  AppTabs,
   pushToast,
   useConfirmDialog,
 } from "@godgesture/ui";
@@ -21,6 +22,7 @@ import {
 } from "@godgesture/shared";
 import { useTemplatesStore } from "../stores/templates";
 import AppIcon from "../components/AppIcon.vue";
+import GestureActionTable, { type GestureActionTableRow } from "../components/GestureActionTable.vue";
 import MnemonicText from "../components/MnemonicText.vue";
 
 const { t } = useI18n();
@@ -36,17 +38,25 @@ const detailVisible = computed({
 });
 const selectedTargetIndex = ref(0);
 const selectedIntentIndex = ref(0);
+const detailTab = ref<"targets" | "gestures" | "preview">("targets");
 const packageTargets = computed(() => templates.selectedPackage?.targets ?? []);
 const selectedTarget = computed(() =>
   packageTargets.value[selectedTargetIndex.value] ?? packageTargets.value[0] ?? null,
 );
 const packageIntents = computed(() => selectedTarget.value?.intents ?? []);
-const templateIntentRows = computed(() =>
+const detailTabs = computed(() => [
+  { id: "targets", label: t("templates.detail.tabs.targets"), count: packageTargets.value.length },
+  { id: "gestures", label: t("templates.detail.tabs.gestures"), count: packageIntents.value.length },
+  { id: "preview", label: t("templates.detail.tabs.preview") },
+]);
+const templateActionRows = computed<GestureActionTableRow[]>(() =>
   packageIntents.value.map((intent, index) => ({
     key: `${selectedTargetIndex.value}:${index}`,
-    index,
+    kind: "gesture" as const,
     name: intent.name,
-    intent,
+    gesture: intent.gesture,
+    commandType: intent.command.type,
+    conflict: hasConflict(intent),
   })),
 );
 const selectedTemplateIntent = computed<GestureTemplateIntent | null>(
@@ -71,6 +81,7 @@ watch(
     riskConfirmed.value = false;
     selectedTargetIndex.value = 0;
     selectedIntentIndex.value = 0;
+    detailTab.value = "targets";
   },
 );
 
@@ -111,8 +122,9 @@ function selectTarget(index: number): void {
   selectedIntentIndex.value = 0;
 }
 
-function selectTemplateIntent(index: number): void {
-  selectedIntentIndex.value = index;
+function selectTemplateAction(key: string): void {
+  const index = templateActionRows.value.findIndex((row) => row.key === key);
+  if (index >= 0) selectedIntentIndex.value = index;
 }
 
 function hasConflict(intent: GestureTemplateIntent): boolean {
@@ -288,95 +300,75 @@ function confirmAdoption(): void {
           </div>
         </header>
 
-        <div class="template-detail__workspace">
-          <aside class="template-detail__apps">
-            <div class="template-detail__apps-head">
-              <span>{{ t("templates.detail.target") }}</span>
-              <span class="template-detail__apps-count">{{ packageTargets.length }}</span>
-            </div>
-            <ul class="template-detail__app-list">
-              <li
-                v-for="(target, index) in packageTargets"
-                :key="`${target.scope}-${index}-${target.scope === 'app' ? target.name : 'global'}`"
-                class="template-detail__app-item"
-                :class="{ 'is-active': selectedTargetIndex === index }"
-              >
-                <button
-                  type="button"
-                  class="template-detail__app-button"
-                  :aria-label="targetName(target)"
-                  :aria-current="selectedTargetIndex === index ? 'true' : undefined"
-                  @click="selectTarget(index)"
-                >
-                  <span class="template-detail__app-identity">
-                    <AppIcon
-                      :label="targetName(target)"
-                      :global="target.scope === 'global'"
-                      :windows-exe-name="target.scope === 'app' ? target.windows?.exeName : null"
-                      :mac-bundle-id="target.scope === 'app' ? target.mac?.bundleId : null"
-                    />
-                    <span class="template-detail__app-copy">
-                      <span class="template-detail__app-name">{{ targetName(target) }}</span>
-                      <small v-if="targetBinding(target).length" class="template-detail__app-binding">
-                        {{ targetBinding(target).join(" · ") }}
-                      </small>
-                    </span>
-                  </span>
-                  <span class="template-detail__app-count">{{ target.intents.length }}</span>
-                </button>
-              </li>
-            </ul>
-          </aside>
-
-          <section v-if="selectedTarget" class="template-detail__main">
-            <header class="template-detail__main-head">
-              <div>
-                <h3>{{ targetName(selectedTarget) }}</h3>
-                <p class="gg-hint">{{ targetBinding(selectedTarget).join(" · ") || t("templates.detail.globalTarget") }}</p>
-              </div>
-              <AppBadge>{{ t("templates.detail.gestures", { count: selectedTarget.intents.length }) }}</AppBadge>
-            </header>
-
-            <section class="template-detail__table-pane">
-              <div class="template-detail__toolbar"><span class="template-detail__count">{{ templateIntentRows.length }}</span></div>
-              <div v-if="templateIntentRows.length" class="template-detail__table-scroll">
-                <table class="template-detail__table">
-                  <thead>
-                    <tr>
-                      <th scope="col">{{ t("gestures.colKind") }}</th>
-                      <th scope="col">{{ t("gestures.colName") }}</th>
-                      <th scope="col">{{ t("gestures.colMnemonic") }}</th>
-                      <th scope="col">{{ t("gestures.colCommand") }}</th>
-                      <th scope="col">{{ t("gestures.colStatus") }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="row in templateIntentRows"
-                      :key="row.key"
-                      :class="{ 'is-selected': row.index === selectedIntentIndex, 'is-conflict': hasConflict(row.intent) }"
-                      :aria-selected="row.index === selectedIntentIndex"
-                      tabindex="0"
-                      @click="selectTemplateIntent(row.index)"
-                      @keydown.enter.prevent="selectTemplateIntent(row.index)"
-                      @keydown.space.prevent="selectTemplateIntent(row.index)"
+        <AppTabs
+          v-model="detailTab"
+          class="template-detail__tabs"
+          :tabs="detailTabs"
+          :aria-label="t('templates.detail.targetNav')"
+        >
+          <template #targets>
+            <div class="template-detail__target-panel">
+              <aside class="template-detail__apps">
+                <div class="template-detail__apps-head">
+                  <span>{{ t("templates.detail.target") }}</span>
+                  <span class="template-detail__apps-count">{{ packageTargets.length }}</span>
+                </div>
+                <ul class="template-detail__app-list">
+                  <li
+                    v-for="(target, index) in packageTargets"
+                    :key="`${target.scope}-${index}-${target.scope === 'app' ? target.name : 'global'}`"
+                    class="template-detail__app-item"
+                    :class="{ 'is-active': selectedTargetIndex === index }"
+                  >
+                    <button
+                      type="button"
+                      class="template-detail__app-button"
+                      :aria-label="targetName(target)"
+                      :aria-current="selectedTargetIndex === index ? 'true' : undefined"
+                      @click="selectTarget(index)"
                     >
-                      <td><AppBadge variant="info">{{ t("gestures.gestureKind") }}</AppBadge></td>
-                      <td>{{ row.name }}</td>
-                      <td><MnemonicText :gesture="row.intent.gesture" /></td>
-                      <td>{{ t(`command.types.${row.intent.command.type}`) }}</td>
-                      <td>
-                        <AppBadge :variant="hasConflict(row.intent) ? 'warning' : 'success'">
-                          {{ t(hasConflict(row.intent) ? "templates.detail.conflict" : "templates.detail.noConflict") }}
-                        </AppBadge>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
-            </section>
+                      <span class="template-detail__app-identity">
+                        <AppIcon
+                          :label="targetName(target)"
+                          :global="target.scope === 'global'"
+                          :windows-exe-name="target.scope === 'app' ? target.windows?.exeName : null"
+                          :mac-bundle-id="target.scope === 'app' ? target.mac?.bundleId : null"
+                        />
+                        <span class="template-detail__app-copy">
+                          <span class="template-detail__app-name">{{ targetName(target) }}</span>
+                          <small v-if="targetBinding(target).length" class="template-detail__app-binding">
+                            {{ targetBinding(target).join(" · ") }}
+                          </small>
+                        </span>
+                      </span>
+                      <span class="template-detail__app-count">{{ target.intents.length }}</span>
+                    </button>
+                  </li>
+                </ul>
+              </aside>
+            </div>
+          </template>
 
+          <template #gestures>
+            <section v-if="selectedTarget" class="template-detail__gesture-panel">
+              <header class="template-detail__main-head">
+                <div>
+                  <h3>{{ targetName(selectedTarget) }}</h3>
+                  <p class="gg-hint">{{ targetBinding(selectedTarget).join(" · ") || t("templates.detail.globalTarget") }}</p>
+                </div>
+                <AppBadge>{{ t("templates.detail.gestures", { count: selectedTarget.intents.length }) }}</AppBadge>
+              </header>
+              <GestureActionTable
+                :rows="templateActionRows"
+                :selected-key="templateActionRows[selectedIntentIndex]?.key ?? null"
+                mode="readonly"
+                @select="selectTemplateAction"
+              />
+            </section>
+            <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
+          </template>
+
+          <template #preview>
             <section class="template-detail__editor-pane">
               <div v-if="selectedTemplateIntent" class="template-detail__intent-editor">
                 <div class="template-detail__intent-summary">
@@ -403,8 +395,8 @@ function confirmAdoption(): void {
               </div>
               <p v-else class="gg-hint">{{ t("gestures.noSelection") }}</p>
             </section>
-          </section>
-        </div>
+          </template>
+        </AppTabs>
 
         <AppAlert
           v-if="hasElevatedRisk"
@@ -514,15 +506,22 @@ function confirmAdoption(): void {
 .templates-view__list { min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--gg-border); }
 .templates-view__row { width: 100%; min-height: 94px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 13px 8px; border: 0; border-bottom: 1px solid var(--gg-border); color: var(--gg-text); background: var(--gg-surface); text-align: left; cursor: pointer; }
 .templates-view__row:hover { background: var(--gg-surface-hover); }
-.templates-view__row:focus-visible, .template-detail__table tr:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }
+.templates-view__row:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }
 .templates-view__row-main, .templates-view__row-meta, .templates-view__tags { display: flex; }
 .templates-view__row-main { min-width: 0; flex-direction: column; gap: 7px; }
 .templates-view__row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; font-weight: 600; }
 .templates-view__summary { color: var(--gg-text-muted); font-size: 13px; line-height: 1.45; }
 .templates-view__tags { flex-wrap: wrap; gap: 5px; }
 .templates-view__row-meta { width: 128px; flex-direction: column; align-items: flex-end; gap: 7px; color: var(--gg-text-muted); font-size: 12px; }
-:deep(.template-detail) { width: min(860px, calc(100vw - 32px)); }
-:deep(.template-detail .gg-dialog__body) { max-height: calc(100vh - 190px); overflow-y: auto; }
+:global(.template-detail) {
+  width: min(100%, 750px);
+  height: min(720px, calc(100dvh - 60px));
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+:global(.template-detail .gg-dialog__body) { min-height: 0; flex: 1; overflow-y: auto; }
 .template-detail__hero { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--gg-border); }
 .template-detail__hero-copy { min-width: 0; }
 .template-detail__eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; color: var(--gg-text-muted); font-size: 12px; }
@@ -531,11 +530,16 @@ function confirmAdoption(): void {
 .template-detail__hero-targets { display: flex; flex: 0 0 86px; flex-direction: column; justify-content: center; align-items: flex-end; color: var(--gg-text-muted); text-align: right; }
 .template-detail__hero-targets strong { color: var(--gg-primary); font-size: 26px; line-height: 1; }
 .template-detail__hero-targets span { margin-top: 6px; font-size: 12px; }
-.template-detail__workspace { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 500px; margin-top: 16px; border: 1px solid var(--gg-border); border-radius: 6px; overflow: hidden; }
-.template-detail__apps { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--gg-border); background: var(--gg-surface-muted); }
-.template-detail__apps-head, .template-detail__toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 10px; border-bottom: 1px solid var(--gg-border); color: var(--gg-text-muted); font-size: 13px; }
-.template-detail__apps-count, .template-detail__app-count, .template-detail__count { color: var(--gg-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.template-detail__app-list { min-height: 0; margin: 0; padding: 6px; overflow-y: auto; list-style: none; }
+.template-detail__tabs { min-width: 0; margin-top: 16px; }
+:deep(.template-detail__tabs .gg-tabs__panel) { min-height: 0; }
+.template-detail__target-panel,
+.template-detail__gesture-panel,
+.template-detail__editor-pane { min-width: 0; min-height: 420px; }
+.template-detail__target-panel { border: 1px solid var(--gg-border); border-radius: 6px; overflow: hidden; }
+.template-detail__apps { min-width: 0; min-height: 0; height: 420px; display: flex; flex-direction: column; overflow: hidden; background: var(--gg-surface-muted); }
+.template-detail__apps-head { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 10px; border-bottom: 1px solid var(--gg-border); color: var(--gg-text-muted); font-size: 13px; }
+.template-detail__apps-count, .template-detail__app-count { color: var(--gg-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.template-detail__app-list { min-height: 0; flex: 1; margin: 0; padding: 6px; overflow-y: auto; list-style: none; }
 .template-detail__app-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 5px 7px; border: 0; border-radius: 5px; color: var(--gg-text); background: transparent; text-align: left; cursor: pointer; }
 .template-detail__app-button:hover { background: var(--gg-surface-hover); }
 .template-detail__app-button:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }
@@ -545,11 +549,12 @@ function confirmAdoption(): void {
 .template-detail__app-copy { flex-direction: column; gap: 2px; }
 .template-detail__app-name, .template-detail__app-binding { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .template-detail__app-name { font-size: 13px; }.template-detail__app-binding { color: var(--gg-text-muted); font-size: 11px; }
-.template-detail__main { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(150px, .9fr) minmax(190px, 1.1fr); gap: 10px; padding: 10px; background: var(--gg-surface); }
-.template-detail__main-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }.template-detail__main-head h3 { margin: 0; font-size: 15px; }.template-detail__main-head p { margin: 4px 0 0; overflow-wrap: anywhere; }
-.template-detail__table-pane, .template-detail__editor-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface); }
-.template-detail__table-pane { display: grid; grid-template-rows: 40px minmax(0, 1fr); }.template-detail__table-scroll { min-width: 0; overflow: auto; }
-.template-detail__table { width: 100%; min-width: 590px; border-collapse: collapse; font-size: 12px; }.template-detail__table th, .template-detail__table td { padding: 8px 10px; border-bottom: 1px solid var(--gg-border); text-align: left; vertical-align: middle; }.template-detail__table th { position: sticky; top: 0; z-index: 1; color: var(--gg-text-muted); background: var(--gg-surface-muted); font-weight: 600; }.template-detail__table tbody tr { cursor: pointer; }.template-detail__table tbody tr:hover { background: var(--gg-surface-hover); }.template-detail__table tbody tr.is-selected { background: var(--gg-primary-soft); }.template-detail__table tbody tr.is-conflict td { color: var(--gg-warning); }
-.template-detail__editor-pane { padding: 12px 14px; overflow-y: auto; }.template-detail__intent-editor { display: grid; min-width: 0; gap: 16px; }.template-detail__intent-summary { display: grid; grid-template-columns: minmax(150px, 1.35fr) minmax(150px, 1fr) minmax(100px, .8fr); gap: 12px 18px; padding-bottom: 14px; border-bottom: 1px solid var(--gg-border); }.template-detail__readonly-value { display: flex; align-items: center; min-height: 32px; padding: 0 11px; overflow-wrap: anywhere; border: 1px solid var(--gg-border); border-radius: 5px; color: var(--gg-text); background: var(--gg-surface-muted); }.template-detail__editor-mnemonic { min-height: 32px; font-size: 20px; }.template-detail__command-value { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; }.template-detail__command-value code { display: block; max-width: 100%; overflow: auto; color: var(--gg-text); font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.template-detail__gesture-panel { display: grid; min-height: 420px; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+.template-detail__main-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
+.template-detail__main-head h3 { margin: 0; font-size: 15px; }
+.template-detail__main-head p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.template-detail__gesture-panel :deep(.gesture-action-table) { min-height: 0; height: 100%; }
+.template-detail__editor-pane { padding: 12px 14px; overflow-y: auto; border: 1px solid var(--gg-border); border-radius: 6px; background: var(--gg-surface); }
+.template-detail__intent-editor { display: grid; min-width: 0; gap: 16px; }.template-detail__intent-summary { display: grid; grid-template-columns: minmax(150px, 1.35fr) minmax(150px, 1fr) minmax(100px, .8fr); gap: 12px 18px; padding-bottom: 14px; border-bottom: 1px solid var(--gg-border); }.template-detail__readonly-value { display: flex; align-items: center; min-height: 32px; padding: 0 11px; overflow-wrap: anywhere; border: 1px solid var(--gg-border); border-radius: 5px; color: var(--gg-text); background: var(--gg-surface-muted); }.template-detail__editor-mnemonic { min-height: 32px; font-size: 20px; }.template-detail__command-value { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; }.template-detail__command-value code { display: block; max-width: 100%; overflow: auto; color: var(--gg-text); font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .template-detail__risk-list, .template-detail__conflicts ul { margin: 5px 0 0; padding-left: 18px; line-height: 1.5; }.template-detail__adoption { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }.template-detail__conflicts { padding: 10px 12px; border: 1px solid var(--gg-border); border-radius: 6px; }.template-detail__conflicts ul { font-size: 12px; }.template-detail__conflict-policy { width: fit-content; margin-top: 9px; }.template-detail__conflict-policy label { min-height: 32px; padding: 0 7px; }.template-detail__stats { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--gg-text); font-size: 13px; }.template-detail__risk-confirm { width: fit-content; min-height: 32px; }
 </style>

@@ -105,6 +105,7 @@ function mountGestures() {
     global: {
       plugins: [i18n],
       stubs: {
+        GestureActionTable: false,
         AppIcon: { template: "<span><slot /></span>" },
         MnemonicText: { template: "<span>Mnemonic</span>" },
         BoundaryMnemonic: { template: "<span>Boundary</span>" },
@@ -145,23 +146,24 @@ afterEach(() => {
 describe("GesturesView", () => {
   it("keeps the Desktop workbench controls flat and compact", () => {
     const source = readFileSync(resolve(process.cwd(), "src/views/GesturesView.vue"), "utf8");
+    const actionTable = readFileSync(resolve(process.cwd(), "src/components/GestureActionTable.vue"), "utf8");
     const desktopStyles = readFileSync(resolve(process.cwd(), "src/desktop.css"), "utf8");
 
     expect(source).not.toContain("gestures__count");
     expect(source).not.toContain("CircleCheck");
     expect(source).not.toContain("CircleX");
     expect(source).toContain("gestures__apps-head-button");
-    expect(source).toContain("gestures__status-dot");
-    expect(source).toContain("gestures__cell-mnemonic");
-    expect(source).toContain("overflow-x: hidden");
-    expect(source).toContain("table-layout: fixed");
-    expect(source).toContain("min-width: 0");
-    expect(source).toContain("padding: 2px 8px");
+    expect(actionTable).toContain("gestures__status-dot");
+    expect(actionTable).toContain("gestures__cell-mnemonic");
+    expect(actionTable).toContain("overflow-x: hidden");
+    expect(actionTable).toContain("table-layout: fixed");
+    expect(actionTable).toContain("min-width: 0");
+    expect(actionTable).toContain("padding: 2px 8px");
     expect(source).toContain(".gestures__app-actions .gg-icon-button :deep(svg)");
-    expect(source).toContain("width: 59px");
-    expect(source).toContain(".gestures__icon-action:hover:not(:disabled)");
-    expect(source).toContain("color: #38b567");
-    expect(source).toContain("justify-content: flex-end");
+    expect(actionTable).toContain("width: 59px");
+    expect(actionTable).toContain(".gesture-action-table__status-button:hover:not(:disabled)");
+    expect(actionTable).toContain("color: #38b567");
+    expect(actionTable).toContain("justify-content: flex-end");
     expect(desktopStyles).toContain(".gg-desktop ::-webkit-scrollbar");
   });
 

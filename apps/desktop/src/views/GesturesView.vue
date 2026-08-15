@@ -19,7 +19,6 @@ import {
   AppBadge,
   AppButton,
   AppDialog as SharedAppDialog,
-  AppEmptyState,
   pushToast,
   useConfirmDialog,
 } from "@godgesture/ui";
@@ -49,15 +48,14 @@ import {
 } from "../utils/group-drag";
 import { createDefaultCommand } from "../utils/commands";
 import { findBoundaryConflict } from "../utils/boundary-actions";
-import MnemonicText from "../components/MnemonicText.vue";
 import IntentEditor from "../components/IntentEditor.vue";
 import CaptureDialog from "../components/CaptureDialog.vue";
 import AppEntryDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AddActionDialog from "../components/AddActionDialog.vue";
 import BoundaryIntentEditor from "../components/BoundaryIntentEditor.vue";
-import BoundaryMnemonic from "../components/BoundaryMnemonic.vue";
 import GestureExportDialog from "../components/GestureExportDialog.vue";
+import GestureActionTable, { type GestureActionTableRow } from "../components/GestureActionTable.vue";
 
 const GLOBAL = "__global__";
 
@@ -147,6 +145,27 @@ const sortedActions = computed<ActionRow[]>(() => {
     }));
   return [...gestures, ...boundaries];
 });
+const actionTableRows = computed<GestureActionTableRow[]>(() =>
+  sortedActions.value.map((row) =>
+    row.kind === "gesture"
+      ? {
+          kind: row.kind,
+          key: row.key,
+          name: row.name,
+          gesture: row.intent.gesture,
+          commandType: row.intent.command.type,
+          enabled: row.intent.enabled,
+        }
+      : {
+          kind: row.kind,
+          key: row.key,
+          name: row.name,
+          boundary: row.intent,
+          commandType: row.intent.command.type,
+          enabled: row.intent.enabled,
+        },
+  ),
+);
 const selectedIntent = computed<GestureIntent | null>(
   () => {
     const id = selectedIntentId.value?.startsWith("gesture:")
@@ -189,12 +208,6 @@ function selectApp(id: string) {
 
 function selectIntent(id: string) {
   selectedIntentId.value = id;
-}
-
-function selectActionFromKey(row: ActionRow, event: KeyboardEvent) {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  selectIntent(row.key);
 }
 
 // ---- 应用增删改 ----
@@ -487,6 +500,11 @@ function openReRecord() {
 }
 function toggleAction(row: ActionRow) {
   row.intent.enabled = !row.intent.enabled;
+}
+
+function toggleActionByKey(key: string) {
+  const row = sortedActions.value.find((candidate) => candidate.key === key);
+  if (row) toggleAction(row);
 }
 
 function onCaptureConfirm({ gesture, overwriteId }: { gesture: GestureSpec; overwriteId: string | null }) {
@@ -810,60 +828,19 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="gestures__workspace">
-        <section class="gestures__table-pane">
-          <div class="gestures__toolbar">
+        <GestureActionTable
+          :rows="actionTableRows"
+          :selected-key="selectedIntentId"
+          @select="selectIntent"
+          @toggle="toggleActionByKey"
+        >
+          <template #toolbar>
             <AppButton variant="primary" size="sm" @click="openRecordNew">
               <Video aria-hidden="true" />
               {{ t("gestures.addIntent") }}
             </AppButton>
-          </div>
-          <div class="gestures__table-body">
-            <div v-if="sortedActions.length" class="gestures__table-scroll">
-              <table class="gg-table gestures__table">
-                <thead>
-                  <tr>
-                    <th scope="col">{{ t("gestures.colKind") }}</th>
-                    <th scope="col">{{ t("gestures.colName") }}</th>
-                    <th scope="col">{{ t("gestures.colMnemonic") }}</th>
-                    <th scope="col">{{ t("gestures.colCommand") }}</th>
-                    <th scope="col"><span class="gg-sr-only">{{ t("gestures.colStatus") }}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in sortedActions"
-                    :key="row.key"
-                    :data-action-key="row.key"
-                    :class="{ 'is-selected': row.key === selectedIntentId, 'is-disabled': !row.intent.enabled }"
-                    :aria-selected="row.key === selectedIntentId"
-                    tabindex="0"
-                    @click="selectIntent(row.key)"
-                    @keydown="selectActionFromKey(row, $event)"
-                  >
-                    <td class="gestures__cell-kind"><AppBadge :variant="row.kind === 'boundary' ? 'warning' : 'info'">{{ t(row.kind === "boundary" ? "gestures.boundaryKind" : "gestures.gestureKind") }}</AppBadge></td>
-                    <td class="gestures__cell-name">{{ row.name }}</td>
-                    <td class="gestures__cell-mnemonic"><MnemonicText v-if="row.kind === 'gesture'" :gesture="row.intent.gesture" /><BoundaryMnemonic v-else :intent="row.intent" /></td>
-                    <td class="gestures__cell-command">{{ t(`command.types.${row.intent.command.type}`) }}</td>
-                    <td class="gestures__cell-toggle">
-                      <button
-                        type="button"
-                        class="gg-icon-button gestures__icon-action"
-                        :class="{ 'is-enabled': row.intent.enabled, 'is-disabled': !row.intent.enabled }"
-                        :aria-pressed="row.intent.enabled"
-                        :aria-label="t(row.intent.enabled ? 'gestures.disableAction' : 'gestures.enableAction')"
-                        :title="t(row.intent.enabled ? 'gestures.disableAction' : 'gestures.enableAction')"
-                        @click.stop="toggleAction(row)"
-                      >
-                        <span class="gestures__status-dot" aria-hidden="true" />
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <AppEmptyState v-else :title="t('gestures.emptyIntents')" />
-          </div>
-        </section>
+          </template>
+        </GestureActionTable>
 
         <section class="gestures__editor-pane">
           <IntentEditor
@@ -1317,7 +1294,6 @@ onBeforeUnmount(() => {
   margin-top: 10px;
   gap: 10px;
 }
-.gestures__table-pane,
 .gestures__editor-pane {
   min-width: 0;
   min-height: 0;
@@ -1325,100 +1301,6 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: var(--gg-surface);
   overflow: hidden;
-}
-.gestures__table-pane {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 40px minmax(0, 1fr);
-}
-.gestures__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--gg-border);
-}
-.gestures__table-body {
-  min-height: 0;
-  overflow: hidden;
-}
-.gestures__table-scroll {
-  height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.gestures__table {
-  width: 100%;
-  min-width: 0;
-  table-layout: fixed;
-}
-.gestures__table th,
-.gestures__table td {
-  padding: 2px 8px;
-  line-height: 1.2;
-}
-.gestures__table th:nth-child(1),
-.gestures__table td:nth-child(1) { width: 59px; }
-.gestures__table th:nth-child(2),
-.gestures__table td:nth-child(2) { width: 23%; }
-.gestures__table th:nth-child(3),
-.gestures__table td:nth-child(3) { width: 28%; }
-.gestures__table th:nth-child(4),
-.gestures__table td:nth-child(4) { width: auto; }
-.gestures__table th:nth-child(5),
-.gestures__table td:nth-child(5) { width: 44px; }
-.gestures__table tbody tr { cursor: pointer; }
-.gestures__table tbody tr.is-selected { background: var(--gg-primary-soft); }
-.gestures__table tbody tr.is-disabled { color: var(--gg-text-muted); }
-.gestures__table tbody tr:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }
-.gestures__cell-kind,
-.gestures__cell-mnemonic,
-.gestures__cell-name,
-.gestures__cell-command {
-  min-width: 0;
-  max-width: 230px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gestures__cell-kind :deep(.gg-badge) {
-  white-space: nowrap;
-}
-.gestures__cell-mnemonic :deep(.mnemonic),
-.gestures__cell-mnemonic :deep(.boundary-mnemonic) {
-  max-width: 100%;
-  flex-wrap: nowrap;
-  overflow: hidden;
-}
-.gestures__cell-toggle { width: 44px; text-align: right; }
-.gestures__icon-action {
-  min-width: 36px;
-  min-height: 36px;
-  margin-left: 0;
-  color: var(--gg-text-subtle);
-}
-.gestures__icon-action.is-enabled {
-  color: #38b567;
-}
-.gestures__icon-action.is-disabled {
-  color: var(--gg-danger);
-}
-.gestures__icon-action:hover:not(:disabled) {
-  background: transparent;
-}
-.gestures__status-dot {
-  display: block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent), 0 0 8px color-mix(in srgb, currentColor 68%, transparent);
-  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-.gestures__icon-action:hover:not(:disabled) .gestures__status-dot {
-  transform: scale(1.12);
 }
 .gestures__group-name-form { display: grid; gap: 8px; }
 .gestures__group-name-error { margin: 0; color: var(--gg-danger); font-size: 13px; }

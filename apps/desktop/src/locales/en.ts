@@ -601,6 +601,11 @@ export default {
       author: "Author",
       target: "Adoption target",
       targetNav: "Template targets",
+      tabs: {
+        targets: "Targets",
+        gestures: "Gestures",
+        preview: "Preview",
+      },
       targets: "targets",
       globalTarget: "Global gestures",
       app: "App name",

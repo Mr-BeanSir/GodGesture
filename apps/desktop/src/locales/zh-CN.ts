@@ -601,6 +601,11 @@ export default {
       author: "作者",
       target: "采纳目标",
       targetNav: "模板目标",
+      tabs: {
+        targets: "目标",
+        gestures: "手势",
+        preview: "预览",
+      },
       targets: "个目标",
       globalTarget: "全局手势",
       app: "应用名称",

@@ -242,12 +242,13 @@ describe("desktop app shell", () => {
     expect(responsiveSources).toEqual([]);
   });
 
-  it("keeps Desktop workbench side rails at their original fixed width", () => {
+  it("keeps Desktop workbench layout contracts stable", () => {
     const gestures = readFileSync(resolve(process.cwd(), "src/views/GesturesView.vue"), "utf8");
     const templates = readFileSync(resolve(process.cwd(), "src/views/TemplatesView.vue"), "utf8");
 
     expect(gestures).toContain("grid-template-columns: 200px minmax(0, 1fr);");
-    expect(templates).toContain("grid-template-columns: 200px minmax(0, 1fr);");
+    expect(templates).toContain('class="template-detail__tabs"');
+    expect(templates).toContain(":tabs=\"detailTabs\"");
     expect(`${gestures}${templates}`).not.toContain("22vw");
   });
 });
