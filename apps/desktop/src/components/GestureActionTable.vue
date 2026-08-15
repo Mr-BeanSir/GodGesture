@@ -31,8 +31,9 @@ withDefaults(
     rows: readonly GestureActionTableRow[];
     selectedKey?: string | null;
     mode?: "editable" | "readonly";
+    showToolbar?: boolean;
   }>(),
-  { selectedKey: null, mode: "editable" },
+  { selectedKey: null, mode: "editable", showToolbar: true },
 );
 
 const emit = defineEmits<{
@@ -52,7 +53,7 @@ function selectFromKey(row: GestureActionTableRow, event: KeyboardEvent): void {
 
 <template>
   <div class="gesture-action-table" :class="{ 'is-readonly': mode === 'readonly' }">
-    <div class="gesture-action-table__toolbar">
+    <div v-if="showToolbar" class="gesture-action-table__toolbar">
       <slot name="toolbar">
         <span class="gesture-action-table__count">{{ rows.length }}</span>
       </slot>
