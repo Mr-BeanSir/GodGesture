@@ -275,6 +275,40 @@ describe("TemplatesView", () => {
     expect(source).toContain("height: min(720px, calc(100dvh - 60px))");
   });
 
+  it("places elevated-risk confirmation directly in the dialog footer", async () => {
+    templates.selectedPackage = {
+      targets: [{
+        scope: "global",
+        name: "Global",
+        intents: [{
+          name: "Run command",
+          gesture: { trigger: "right", inputs: [], modifier: "none" },
+          command: { type: "cmd", code: "echo ready", showWindow: true, autoSetWorkingDir: true },
+        }],
+      }],
+    };
+    const { view, confirmHost, toasts } = await mountTemplates();
+
+    try {
+      const footer = document.querySelector<HTMLElement>(".template-detail .gg-dialog__footer");
+      const confirmation = footer?.querySelector<HTMLElement>(":scope > .template-detail__risk-confirm");
+
+      expect(confirmation).not.toBeNull();
+      expect(confirmation?.querySelector('input[type="checkbox"]')).not.toBeNull();
+      expect(document.querySelector(".template-detail__review .template-detail__risk-confirm")).toBeNull();
+      expect(document.querySelector<HTMLButtonElement>("[data-testid='templates-adopt']")?.disabled).toBe(true);
+
+      const source = await readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8");
+      const ruleStart = source.indexOf(".template-detail__risk-confirm {");
+      const ruleEnd = source.indexOf("}", ruleStart);
+      expect(source.slice(ruleStart, ruleEnd)).toContain("margin-right: auto;");
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+      toasts.unmount();
+    }
+  });
+
   it("keeps template adoption confirmed and non-dismissible while it is running", async () => {
     const adoption = deferred<boolean>();
     templates.adopt.mockImplementation(async () => {

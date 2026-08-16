@@ -457,10 +457,6 @@ function confirmAdoption(): void {
               </fieldset>
             </section>
 
-            <label v-if="hasElevatedRisk" class="template-detail__risk-confirm">
-              <input v-model="riskConfirmed" type="checkbox" />
-              <span>{{ t("templates.risk.confirm") }}</span>
-            </label>
           </div>
             </section>
 
@@ -470,6 +466,10 @@ function confirmAdoption(): void {
       </template>
 
       <template #footer>
+        <label v-if="hasElevatedRisk" class="template-detail__risk-confirm">
+          <input v-model="riskConfirmed" type="checkbox" />
+          <span>{{ t("templates.risk.confirm") }}</span>
+        </label>
         <AppButton :disabled="templates.adopting" @click="detailVisible = false">{{ t("common.cancel") }}</AppButton>
         <AppButton
           data-testid="templates-adopt"
@@ -1113,6 +1113,7 @@ function confirmAdoption(): void {
   width: fit-content;
   min-height: 36px;
   align-items: center;
+  margin-right: auto;
   gap: 8px;
   border: 1px solid var(--gg-warning-border);
   border-radius: 5px;
