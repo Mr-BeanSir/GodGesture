@@ -496,7 +496,7 @@ function confirmAdoption(): void {
 .templates-view__search { display: flex; min-width: 0; align-items: center; gap: 8px; border: 1px solid var(--gg-border); border-radius: 6px; padding: 0 10px; color: var(--gg-text-muted); background: var(--gg-surface); }
 .templates-view__search:focus-within { outline: 2px solid var(--gg-ring); outline-offset: 1px; }
 .templates-view__search .gg-input { min-width: 0; border: 0; box-shadow: none; }
-.templates-view__list { display: grid; min-width: 0; min-height: 0; gap: 8px; overflow-y: auto; padding: 1px 2px 4px; scrollbar-gutter: stable; }
+.templates-view__list { display: grid; grid-auto-rows: max-content; align-content: start; min-width: 0; min-height: 0; gap: 8px; overflow-y: auto; padding: 1px 2px 4px; scrollbar-gutter: stable; }
 .templates-view__row { width: 100%; min-height: 96px; display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 18px; padding: 14px 16px; border: 1px solid var(--gg-border); border-radius: 8px; color: var(--gg-text); background: var(--gg-surface); text-align: left; cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
 .templates-view__row:hover { border-color: var(--gg-primary-border); background: var(--gg-surface-hover); }
 .templates-view__row:focus-visible { outline: 2px solid var(--gg-ring); outline-offset: -2px; }

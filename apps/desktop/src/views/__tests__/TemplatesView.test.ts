@@ -192,6 +192,26 @@ describe("TemplatesView", () => {
     }
   });
 
+  it("keeps catalog rows content-sized when the list has spare height", async () => {
+    const { view, confirmHost, toasts } = await mountTemplates();
+
+    try {
+      expect(document.querySelector(".templates-view__list")).not.toBeNull();
+
+      const source = await readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8");
+      const listRuleStart = source.indexOf(".templates-view__list {");
+      const listRuleEnd = source.indexOf("}", listRuleStart);
+      const listRule = source.slice(listRuleStart, listRuleEnd);
+
+      expect(listRule).toContain("grid-auto-rows: max-content;");
+      expect(listRule).toContain("align-content: start;");
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+      toasts.unmount();
+    }
+  });
+
   it("moves the adoption conflict review to the second outer tab", async () => {
     templates.adoptionPlan.conflicts = [{
       gesture: { trigger: "left", inputs: [], modifier: "none" },
