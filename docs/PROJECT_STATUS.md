@@ -64,7 +64,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 
 ### 共享 UI 与设置工作台
 
-- 根 `packages/ui` 以 `@godgesture/ui` 提供无业务 Vue 原语、`--gg-*` token、`AppDialog`、`AppCollapsiblePanel`、确认 Promise、Toast 与基础加载/空状态；它不读取应用 router、store、API client 或 i18n，`packages/shared` 仍只承载协议和领域类型。
+- 根 `packages/ui` 以 `@godgesture/ui` 提供无业务 Vue 原语、`--gg-*` token、`AppDialog`、`AppCollapsiblePanel`、确认 Promise、Toast、全局 Message 队列与基础加载/空状态；它不读取应用 router、store、API client 或 i18n，`packages/shared` 仍只承载协议和领域类型。
 - Desktop 已从 Element Plus 迁移到共享原语、Lucide 和原生语义表单/表格/菜单控件。不可逆操作通过 `UiConfirmHost` 与共享确认服务处理；异步 busy 时 Escape、遮罩、关闭图标和取消不能绕过进行中的操作。
 - Web Console 源码和路由继续由私有 Server 子模块拥有，其 `src/ui` 以本地薄适配层保留 Console 文案与测试选择器，同时复用共享原语；它没有迁入根包，也没有改变协议或 Server 业务边界。
 
@@ -141,6 +141,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 - 2026-08-15 公共模板目录契约与本地 RustFS 下载定向验证：Rust `template_download` `4/4`、Shared 模板协议 `8/8`、Desktop 模板源/Store/View `8 passed / 3 skipped`、Server 模板服务/OpenAPI `67/67`、Web Console 审核视图 `26/26`、Shared/Server typecheck、`pnpm generate:api` 与 `pnpm check:api` 均通过。Desktop 仅允许 HTTPS 或 loopback HTTP 下载签名包；公共目录 entry 已移除 `targets`，App 目标筛选和列表 badge 随之删除，下载后的模板包详情仍展示 targets；all 审核工作区队列 header 已移除且保留可访问名称。Desktop 全量 typecheck 仍受本工作树既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断；未运行仓库全量测试，真实 RustFS、登录态手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending。
 - 2026-08-15 Desktop 官方模板端点与 RustFS 包下载回归验证：模板目录默认读取构建环境 `GODGESTURE_API`，签名 RustFS 包在 Tauri 运行时改由 `download_template_text` 原生命令读取，避免 WebView 直连 RustFS 的 CORS 拦截；Desktop 受影响套件 `21 passed / 3 skipped`，Rust 下载器 `4/4`。Desktop 全量 typecheck 仍仅受上述既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断。
 - 2026-08-16 Desktop 模板详情复核布局定向验证：高风险确认 `label` 仅从 review 内容移至共享 `AppDialog` footer 左侧直接子元素，保留原有复选框状态和采纳禁用逻辑，未移动 adoption 父容器；`TemplatesView` 套件 `8/8`、Desktop 全量测试 `50 files / 234 passed / 3 skipped`、`git diff --check` 均通过。Desktop typecheck 仍被既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断，本次未新增 `TemplatesView` 类型错误；该变更已合并到本地 `main`，尚未部署或进行 live 验证。
+- 2026-08-16 Desktop 手势页全局 Message 队列定向验证：`@godgesture/ui` 全部 `9 files / 24 tests`、Desktop 受影响的 `AppShell` 与 `GesturesView` `2 files / 32 tests`均通过；UI typecheck 通过。应用切换时每次缺失平台绑定提示生成独立消息并在 body 顶部纵向堆叠，各自默认 3 秒后消失；Desktop typecheck 仍仅受既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断，未运行仓库全量测试，尚未进行 Windows/macOS 原生验收。
 
 更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。

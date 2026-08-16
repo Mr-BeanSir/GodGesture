@@ -16,9 +16,9 @@ import {
   Video,
 } from "lucide-vue-next";
 import {
-  AppBadge,
   AppButton,
   AppDialog as SharedAppDialog,
+  pushMessage,
   pushToast,
   useConfirmDialog,
 } from "@godgesture/ui";
@@ -204,6 +204,12 @@ const blacklisted = computed<boolean>({
 function selectApp(id: string) {
   selectedAppId.value = id;
   selectedIntentId.value = sortedActions.value[0]?.key ?? null;
+
+  if (id === GLOBAL) return;
+  const app = sortedApps.value.find((candidate) => candidate.id === id);
+  if (!app) return;
+  if (!app.windows) pushMessage({ kind: "info", message: t("gestures.dormantWindows") });
+  if (!app.mac) pushMessage({ kind: "info", message: t("gestures.dormantMac") });
 }
 
 function selectIntent(id: string) {
@@ -798,12 +804,11 @@ onBeforeUnmount(() => {
     <section class="gestures__main">
       <header class="gestures__main-head">
         <h3 class="gestures__title">{{ currentTitle }}</h3>
+        <AppButton variant="primary" size="sm" @click="openRecordNew">
+          <Video aria-hidden="true" />
+          {{ t("gestures.addIntent") }}
+        </AppButton>
       </header>
-
-      <div v-if="!currentIsGlobal && currentApp" class="gestures__dormant">
-        <AppBadge v-if="!currentApp.windows" variant="info">{{ t("gestures.dormantWindows") }}</AppBadge>
-        <AppBadge v-if="!currentApp.mac" variant="info">{{ t("gestures.dormantMac") }}</AppBadge>
-      </div>
 
       <div class="gestures__workspace">
         <GestureActionTable
@@ -845,10 +850,6 @@ onBeforeUnmount(() => {
                 </label>
               </span>
             </div>
-            <AppButton variant="primary" size="sm" @click="openRecordNew">
-              <Video aria-hidden="true" />
-              {{ t("gestures.addIntent") }}
-            </AppButton>
           </template>
         </GestureActionTable>
 
@@ -1256,7 +1257,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .gestures__main-head {
   display: flex;
@@ -1305,11 +1306,6 @@ onBeforeUnmount(() => {
 .gestures__setting--danger {
   color: var(--gg-danger);
 }
-.gestures__dormant {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
 .gestures__workspace {
   display: grid;
   grid-template-rows: minmax(150px, 1.1fr) minmax(190px, 0.9fr);
@@ -1328,6 +1324,17 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 10px;
   min-height: 40px;
+}
+.gestures__settings-strip .gg-switch {
+  width: 32px;
+  height: 18px;
+}
+.gestures__settings-strip .gg-switch::after {
+  width: 12px;
+  height: 12px;
+}
+.gestures__settings-strip .gg-switch:checked::after {
+  transform: translateX(14px);
 }
 .gestures__editor-pane {
   min-width: 0;

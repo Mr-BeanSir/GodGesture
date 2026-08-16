@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, reactive } from "vue";
-import { useConfirmDialog } from "@godgesture/ui";
+import { AppMessageViewport, clearMessages, useConfirmDialog } from "@godgesture/ui";
 import UiConfirmHost from "../../components/UiConfirmHost.vue";
 import { i18n, setLocale } from "../../locales";
 import { useConfigStore } from "../../stores/config";
@@ -137,6 +137,7 @@ function mountGestures() {
 beforeEach(resetConfig);
 
 afterEach(() => {
+  clearMessages();
   const dialog = useConfirmDialog();
   if (dialog.pending.value) dialog.pending.value.busy = false;
   dialog.resolveConfirm(false);
@@ -217,6 +218,69 @@ describe("GesturesView", () => {
     } finally {
       view.unmount();
       confirmHost.unmount();
+    }
+  });
+
+  it("renders dormant bindings as messages and keeps add action in the main header", async () => {
+    const { view, confirmHost } = mountGestures();
+    const messageHost = mount(AppMessageViewport, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: { closeLabel: "Close" },
+    });
+    try {
+      const appButton = view.findAll(".gestures__app-select").find((button) => button.text().includes("Desktop app"));
+      expect(appButton).toBeDefined();
+      await appButton!.trigger("click");
+      await nextTick();
+
+      const header = view.get(".gestures__main-head");
+      expect(header.get(".gg-button").text()).toContain("Add new action");
+      expect(view.get(".gesture-action-table__toolbar").find(".gg-button").exists()).toBe(false);
+      const messages = [...document.body.querySelectorAll(".gg-message")].map((message) => message.textContent ?? "");
+      expect(messages).toHaveLength(2);
+      expect(messages.join(" ")).toContain("No Windows binding");
+      expect(messages.join(" ")).toContain("No macOS binding");
+    } finally {
+      messageHost.unmount();
+      view.unmount();
+      confirmHost.unmount();
+    }
+  });
+
+  it("keeps earlier dormant messages when switching between apps without a macOS binding", async () => {
+    addCustomGroupWithApp();
+    config.apps[0].windows = { exeName: "desktop.exe" };
+    config.apps[1].windows = { exeName: "custom.exe" };
+    vi.useFakeTimers();
+    const { view, confirmHost } = mountGestures();
+    const messageHost = mount(AppMessageViewport, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: { closeLabel: "Close" },
+    });
+    try {
+      const desktopButton = view.findAll(".gestures__app-select").find((button) => button.text().includes("Desktop app"));
+      const customButton = view.findAll(".gestures__app-select").find((button) => button.text().includes("Custom app"));
+      expect(desktopButton).toBeDefined();
+      expect(customButton).toBeDefined();
+
+      await desktopButton!.trigger("click");
+      await nextTick();
+      expect(document.body.querySelectorAll(".gg-message")).toHaveLength(1);
+
+      await customButton!.trigger("click");
+      await nextTick();
+      expect(document.body.querySelectorAll(".gg-message")).toHaveLength(2);
+
+      vi.advanceTimersByTime(3_000);
+      await nextTick();
+      expect(document.body.querySelectorAll(".gg-message")).toHaveLength(0);
+    } finally {
+      messageHost.unmount();
+      view.unmount();
+      confirmHost.unmount();
+      vi.useRealTimers();
     }
   });
 

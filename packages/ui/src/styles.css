@@ -670,6 +670,155 @@ input[type="radio"]:not(:disabled) {
   opacity: 0.88;
 }
 
+.gg-message {
+  --gg-message-accent: var(--gg-primary);
+  --gg-message-accent-soft: var(--gg-primary-soft);
+
+  position: fixed;
+  z-index: 80;
+  top: calc(60px + var(--gg-message-offset, 0px));
+  left: 50%;
+  display: grid;
+  width: min(520px, calc(100vw - 32px));
+  min-height: 42px;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--gg-border);
+  border-inline-start: 3px solid var(--gg-message-accent);
+  border-radius: 6px;
+  padding: 5px 4px 5px 9px;
+  background: var(--gg-surface);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.14);
+  color: var(--gg-text);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.gg-message--success {
+  --gg-message-accent: var(--gg-success);
+  --gg-message-accent-soft: var(--gg-success-soft);
+}
+
+.gg-message--warning {
+  --gg-message-accent: var(--gg-warning);
+  --gg-message-accent-soft: var(--gg-warning-soft);
+}
+
+.gg-message--error {
+  --gg-message-accent: var(--gg-danger);
+  --gg-message-accent-soft: var(--gg-danger-soft);
+}
+
+.gg-message__icon-shell {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--gg-message-accent-soft);
+  color: var(--gg-message-accent);
+}
+
+.gg-message__icon {
+  width: 15px;
+  height: 15px;
+}
+
+.gg-message__body {
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--gg-text);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.gg-message__close {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  color: var(--gg-text-subtle);
+}
+
+.gg-message__close-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.gg-message-viewport {
+  position: fixed;
+  z-index: 80;
+  top: 60px;
+  left: 50%;
+  display: block;
+  width: min(520px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.gg-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  pointer-events: none;
+}
+
+.gg-message-viewport .gg-message {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.gg-message-list-enter-active,
+.gg-message-list-leave-active,
+.gg-message-list-move {
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+
+.gg-message-viewport .gg-message-list .gg-message.gg-message-list-enter-from {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.gg-message-viewport .gg-message-list .gg-message.gg-message-list-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.gg-message-enter-active {
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+
+.gg-message-leave-active {
+  transition: opacity 150ms ease-in, transform 150ms ease-in;
+}
+
+.gg-message-enter-from {
+  opacity: 0;
+  transform: translate(-50%, -12px);
+}
+
+.gg-message-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-message-enter-active,
+  .gg-message-leave-active,
+  .gg-message-list-enter-active,
+  .gg-message-list-leave-active,
+  .gg-message-list-move {
+    transition: none;
+  }
+}
+
 .gg-dialog-layer {
   position: fixed;
   z-index: 60;

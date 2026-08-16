@@ -42,6 +42,7 @@ import {
 } from "./onboarding/quick-guide";
 import { resolveInitialSection, type Section } from "./shell";
 import UiConfirmHost from "./components/UiConfirmHost.vue";
+import UiMessageHost from "./components/UiMessageHost.vue";
 import UiToastHost from "./components/UiToastHost.vue";
 import QuickStartDialog from "./components/QuickStartDialog.vue";
 import WindowControls from "./components/WindowControls.vue";
@@ -322,6 +323,7 @@ onUnmounted(() => unlistenSingleInstance?.());
       @navigate="openGuideDestination"
     />
     <UiConfirmHost />
+    <UiMessageHost />
     <UiToastHost />
   </div>
 </template>
