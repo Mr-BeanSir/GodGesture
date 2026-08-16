@@ -798,28 +798,6 @@ onBeforeUnmount(() => {
     <section class="gestures__main">
       <header class="gestures__main-head">
         <h3 class="gestures__title">{{ currentTitle }}</h3>
-        <div class="gestures__settings-strip">
-          <template v-if="!currentIsGlobal && currentApp">
-            <label class="gestures__setting" for="gestures-inherit-global">
-              <span>{{ t("gestures.inheritGlobal") }}</span>
-              <input id="gestures-inherit-global" v-model="currentApp.inheritGlobalGestures" class="gg-switch" type="checkbox" />
-            </label>
-          </template>
-          <template v-else>
-            <label class="gestures__setting" for="gestures-hot-corners">
-              <span>{{ t("actions.enableHotCorners") }}</span>
-              <input id="gestures-hot-corners" v-model="doc.hotCorners.enabled" class="gg-switch" type="checkbox" />
-            </label>
-            <label class="gestures__setting" for="gestures-rub-edges">
-              <span>{{ t("actions.enableRubEdges") }}</span>
-              <input id="gestures-rub-edges" v-model="doc.rubEdges.enabled" class="gg-switch" type="checkbox" />
-            </label>
-          </template>
-          <label class="gestures__setting gestures__setting--danger" for="gestures-blacklist">
-            <span>{{ currentIsGlobal ? t("gestures.blacklistGlobalShort") : t("gestures.blacklistShort") }}</span>
-            <input id="gestures-blacklist" v-model="blacklisted" class="gg-switch" type="checkbox" />
-          </label>
-        </div>
       </header>
 
       <div v-if="!currentIsGlobal && currentApp" class="gestures__dormant">
@@ -835,6 +813,38 @@ onBeforeUnmount(() => {
           @toggle="toggleActionByKey"
         >
           <template #toolbar>
+            <div class="gestures__settings-strip">
+              <template v-if="!currentIsGlobal && currentApp">
+                <span class="gestures__setting-group">
+                  <label class="gestures__setting" for="gestures-inherit-global">
+                    <span>{{ t("gestures.inheritGlobal") }}</span>
+                    <input id="gestures-inherit-global" v-model="currentApp.inheritGlobalGestures" class="gg-switch" type="checkbox" />
+                  </label>
+                </span>
+              </template>
+              <template v-else>
+                <span class="gestures__setting-group">
+                  <label class="gestures__setting" for="gestures-hot-corners">
+                    <span>{{ t("actions.enableHotCorners") }}</span>
+                    <input id="gestures-hot-corners" v-model="doc.hotCorners.enabled" class="gg-switch" type="checkbox" />
+                  </label>
+                </span>
+                <span class="gestures__setting-group">
+                  <span class="gestures__setting-separator" aria-hidden="true">|</span>
+                  <label class="gestures__setting" for="gestures-rub-edges">
+                    <span>{{ t("actions.enableRubEdges") }}</span>
+                    <input id="gestures-rub-edges" v-model="doc.rubEdges.enabled" class="gg-switch" type="checkbox" />
+                  </label>
+                </span>
+              </template>
+              <span class="gestures__setting-group">
+                <span class="gestures__setting-separator" aria-hidden="true">|</span>
+                <label class="gestures__setting gestures__setting--danger" for="gestures-blacklist">
+                  <span>{{ currentIsGlobal ? t("gestures.blacklistGlobalShort") : t("gestures.blacklistShort") }}</span>
+                  <input id="gestures-blacklist" v-model="blacklisted" class="gg-switch" type="checkbox" />
+                </label>
+              </span>
+            </div>
             <AppButton variant="primary" size="sm" @click="openRecordNew">
               <Video aria-hidden="true" />
               {{ t("gestures.addIntent") }}
@@ -1263,21 +1273,34 @@ onBeforeUnmount(() => {
 .gestures__settings-strip {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 5px 8px;
-  border: 1px solid var(--gg-border);
-  border-radius: 6px;
-  background: var(--gg-surface-muted);
+  gap: 0;
+  min-width: 0;
+}
+.gestures__setting-group {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex: 0 0 auto;
 }
 .gestures__setting {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
   min-height: 26px;
   color: var(--gg-text);
   font-size: 12px;
   white-space: nowrap;
+}
+.gestures__setting-separator {
+  flex: 0 0 auto;
+  margin: 0 10px;
+  color: var(--gg-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
 }
 .gestures__setting--danger {
   color: var(--gg-danger);
@@ -1295,8 +1318,16 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 .gestures__workspace > :deep(.gesture-action-table) {
+  grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--gg-border);
   border-radius: 6px;
+}
+.gestures__workspace > :deep(.gesture-action-table__toolbar) {
+  justify-content: space-between;
+  align-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 40px;
 }
 .gestures__editor-pane {
   min-width: 0;

@@ -167,6 +167,59 @@ describe("GesturesView", () => {
     expect(desktopStyles).toContain(".gg-desktop ::-webkit-scrollbar");
   });
 
+  it("places global settings in the action toolbar with visible separators", async () => {
+    const { view, confirmHost } = mountGestures();
+    try {
+      await nextTick();
+
+      const toolbar = view.get(".gesture-action-table__toolbar");
+      const settings = toolbar.get(".gestures__settings-strip");
+
+      expect(view.find(".gestures__main-head .gestures__settings-strip").exists()).toBe(false);
+      expect(toolbar.element.firstElementChild).toBe(settings.element);
+      expect(settings.findAll(".gestures__setting")).toHaveLength(3);
+      expect(settings.findAll(".gestures__setting-separator")).toHaveLength(2);
+
+      await settings.get("#gestures-hot-corners").setValue(true);
+      await settings.get("#gestures-rub-edges").setValue(true);
+      await settings.get("#gestures-blacklist").setValue(true);
+
+      expect(config.hotCorners.enabled).toBe(true);
+      expect(config.rubEdges.enabled).toBe(true);
+      expect(config.global.gesturingEnabled).toBe(false);
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+    }
+  });
+
+  it("keeps app settings in the toolbar with one separator and working bindings", async () => {
+    const { view, confirmHost } = mountGestures();
+    try {
+      await nextTick();
+      const appButton = view.findAll(".gestures__app-select").find((button) => button.text().includes("Desktop app"));
+      expect(appButton).toBeDefined();
+      await appButton!.trigger("click");
+      await nextTick();
+
+      const toolbar = view.get(".gesture-action-table__toolbar");
+      const settings = toolbar.get(".gestures__settings-strip");
+
+      expect(toolbar.element.firstElementChild).toBe(settings.element);
+      expect(settings.findAll(".gestures__setting")).toHaveLength(2);
+      expect(settings.findAll(".gestures__setting-separator")).toHaveLength(1);
+
+      await settings.get("#gestures-inherit-global").setValue(false);
+      await settings.get("#gestures-blacklist").setValue(true);
+
+      expect(config.apps[0].inheritGlobalGestures).toBe(false);
+      expect(config.apps[0].gesturingEnabled).toBe(false);
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+    }
+  });
+
   it("keeps an app when deletion is cancelled and removes it only after shared confirmation", async () => {
     const { view, confirmHost } = mountGestures();
 
