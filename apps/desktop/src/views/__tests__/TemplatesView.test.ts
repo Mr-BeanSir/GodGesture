@@ -184,7 +184,7 @@ describe("TemplatesView", () => {
       expect(document.querySelector(".template-detail__main")).not.toBeNull();
       expect(document.querySelector(".template-detail__tabs")).toBeNull();
       expect(document.querySelector('[data-action-key="0:0"]')).not.toBeNull();
-      expect(document.querySelector(".template-detail__editor-pane")?.textContent).toContain("Open workspace");
+      expect(document.querySelector(".template-detail__command-value")?.textContent).toContain("Recognize the gesture but do nothing");
     } finally {
       view.unmount();
       confirmHost.unmount();
@@ -232,7 +232,7 @@ describe("TemplatesView", () => {
 
       document.querySelector<HTMLElement>('[data-action-key="1:1"]')?.click();
       await nextTick();
-      expect(document.querySelector(".template-detail__editor-pane")?.textContent).toContain("Open settings");
+      expect(document.querySelector<HTMLElement>(".template-detail__editor-mnemonic")?.getAttribute("aria-label")).toBe("left");
 
       targetButtons[0]?.click();
       await nextTick();
