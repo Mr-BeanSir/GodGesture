@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-## 官方模板、Web Console 与共享 UI（2026-08-12）
+## 官方模板、Web Console 与共享 UI（2026-08-16）
 
 Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
 Desktop 设置工作台与 Server-owned Web Console 现通过根 `@godgesture/ui` 共享无业务 Vue
@@ -10,7 +10,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 左侧导航分为用户功能与管理员功能，管理员区仅对管理员显示。配置查看中的应用分组使用树形
 连接线呈现应用层级，中间项和末项分别保持连续分支与收口分支。
 
-最后核对：2026-08-15。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-16。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 与 [`docs/history/`](history/)。
@@ -60,7 +60,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 - 轨迹与命令名称由 Windows/macOS 原生覆盖层绘制，不能迁移到 WebView；边角和普通手势复用既有覆盖层消息协议。
 - Windows 使用低级鼠标/键盘钩子与 Raw Input 兜底，macOS 使用 CGEventTap；平台差异留在输入来源、合成、屏幕查询和窗口层。
 - Windows 轨迹不可见现场：旧日志曾显示轨迹点增长、栅格化和提交统计均完成，但用户未看到轨迹。当前 `platform/windows/overlay.rs` 已恢复 `WS_POPUP` 与 `ShowWindow` 的覆盖层可见性语义，并为 `UpdateLayeredWindow` 局部/完整提交增加错误日志；覆盖层 focused 测试 `16/16`、Rust 格式检查均通过。原始复现进程在修改后二进制完成现场验证前已退出，因此运行态修复仍为 pending；下次必须先接管并监控当前实例，再允许编译或重启。
-- Desktop 手势页支持导出 Gesture Template v2 多目标 JSON；可填写统一的标题和摘要，按全局或应用目标多选手势，并在分组中展开、收起和搜索。桌面端导出使用原生保存面板选择路径，浏览器预览回退到下载。模板详情弹窗沿用手势页的应用左栏、手势表格和选中手势预览区，表格显示类型、名称、新版 SVG 助记符、命令类型及与本地配置的冲突状态。
+- Desktop 手势页支持导出 Gesture Template v2 多目标 JSON；可填写统一的标题和摘要，按全局或应用目标多选手势，并在分组中展开、收起和搜索。桌面端导出使用原生保存面板选择路径，浏览器预览回退到下载。模板详情弹窗沿用手势页的应用左栏、手势表格和选中手势预览区，详情工作区与风险/采纳复核分别位于两个外层标签页；复核表格显示类型、名称、新版 SVG 助记符、命令类型及与本地配置的冲突状态，高风险确认复选框位于共享 dialog footer 左侧且仍是采纳前置条件。
 
 ### 共享 UI 与设置工作台
 
@@ -140,6 +140,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 - 2026-08-15 模板发布治理记录定向验证：模板服务/OpenAPI `2 suites / 67 tests`、共享协议 `89 tests`、Web Console schema/审核视图 `29 tests`、Server/Web Console typecheck、`pnpm generate:api` 与 `pnpm check:api` 均通过。暂停/恢复从 `AdminAuditLog` 按父 `templateId` 读取，版本审核记录保持只记录通过/驳回；审核详情新增独立发布治理记录区，并对旧格式元数据安全显示未知版本。未运行仓库全量测试；真实数据库、RustFS、登录态 Web 手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending，需维护者手动测试。
 - 2026-08-15 公共模板目录契约与本地 RustFS 下载定向验证：Rust `template_download` `4/4`、Shared 模板协议 `8/8`、Desktop 模板源/Store/View `8 passed / 3 skipped`、Server 模板服务/OpenAPI `67/67`、Web Console 审核视图 `26/26`、Shared/Server typecheck、`pnpm generate:api` 与 `pnpm check:api` 均通过。Desktop 仅允许 HTTPS 或 loopback HTTP 下载签名包；公共目录 entry 已移除 `targets`，App 目标筛选和列表 badge 随之删除，下载后的模板包详情仍展示 targets；all 审核工作区队列 header 已移除且保留可访问名称。Desktop 全量 typecheck 仍受本工作树既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断；未运行仓库全量测试，真实 RustFS、登录态手动操作、Windows/macOS 原生验收、live OAuth/SMTP、生产部署仍 pending。
 - 2026-08-15 Desktop 官方模板端点与 RustFS 包下载回归验证：模板目录默认读取构建环境 `GODGESTURE_API`，签名 RustFS 包在 Tauri 运行时改由 `download_template_text` 原生命令读取，避免 WebView 直连 RustFS 的 CORS 拦截；Desktop 受影响套件 `21 passed / 3 skipped`，Rust 下载器 `4/4`。Desktop 全量 typecheck 仍仅受上述既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断。
+- 2026-08-16 Desktop 模板详情复核布局定向验证：高风险确认 `label` 仅从 review 内容移至共享 `AppDialog` footer 左侧直接子元素，保留原有复选框状态和采纳禁用逻辑，未移动 adoption 父容器；`TemplatesView` 套件 `8/8`、Desktop 全量测试 `50 files / 234 passed / 3 skipped`、`git diff --check` 均通过。Desktop typecheck 仍被既有 `GestureExportDialog`、账户测试和 `GesturesView` 错误阻断，本次未新增 `TemplatesView` 类型错误；该变更已合并到本地 `main`，尚未部署或进行 live 验证。
 
 更早的逐轮验证、稳定版发布证据和已退役链路不在现役入口重复保存：按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 及 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
