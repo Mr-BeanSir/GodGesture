@@ -37,11 +37,6 @@ html.gg-desktop #app {
   min-height: 36px;
 }
 
-.gg-desktop {
-  scrollbar-color: var(--gg-border-strong) transparent;
-  scrollbar-width: thin;
-}
-
 .gg-desktop ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
