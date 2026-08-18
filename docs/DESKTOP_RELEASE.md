@@ -46,11 +46,33 @@ not become latest. Stable tags such as `v0.1.0` create a normal Release and
 become latest. This allows an installed RC to exercise the real updater against
 the first stable release without publishing an artificial patch version.
 
-Before creating a tag, set the same semantic version in all three files:
+Maintainers create a Desktop release from the repository root with an explicit
+version request:
 
+```powershell
+pnpm install --frozen-lockfile
+pnpm release patch --dry-run
+pnpm validate:release
+pnpm release 0.2.0
+```
+
+`patch`, `minor`, `major`, and a complete SemVer are explicit maintainer input.
+Commit message prefixes such as `feat` and `fix` only affect the Release Notes
+section; they do not choose a version automatically. A real release creates a
+`chore: release vX.Y.Z` commit and `vX.Y.Z` tag, which triggers
+`.github/workflows/desktop-release.yml`. `release-it` does not create a GitHub
+Release and does not publish npm packages.
+
+The release command synchronizes these four Desktop version files:
+
+- the root `package.json`;
 - `apps/desktop/src-tauri/tauri.conf.json`;
 - `apps/desktop/package.json`;
 - `apps/desktop/src-tauri/Cargo.toml`.
+
+The Server is an independent private subproject: its internal version is not
+read, modified, or validated by this release flow. `packages/shared`,
+`packages/ui`, and `packages/sdk` also keep independent versions.
 
 The tag must be exactly `v<version>`, for example `v0.1.0`. The assembly job
 fails on a version mismatch, missing or extra asset, malformed updater
@@ -63,6 +85,23 @@ pnpm validate:release
 
 The Windows and macOS jobs have read-only repository permissions. Only the
 tag-only release job receives `contents: write`.
+
+## Release Notes
+
+The GitHub Release page is the only release log for this workflow. The
+repository does not maintain `docs/CHANGELOG.md` for these releases. Accepted
+pull request title examples are:
+
+```text
+feat(ui): add template search
+fix: prevent overlay flicker
+fix(overlay)!: restore trail
+```
+
+The pull request workflow maintains one `type:*` label per pull request.
+GitHub uses `.github/release.yml` to generate bilingual sections with links to
+merged pull requests and their authors. Direct commits without merged pull
+requests are not promised to appear in a typed section.
 
 ## Release Assets
 

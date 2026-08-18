@@ -10,5 +10,5 @@ Tasks:
 - Task 2: minor (deferred): add docs/PROJECT_STATUS.md release workflow status in Task 4; live GitHub API remains unverified by design
 - Task 2: complete (commits a73c260..ec73d95, review clean)
 - Task 3: fix round 1/5 complete (official changelog.categories[*].labels schema restored; focused tests and validator pass)
-- Task 4: pending
+- Task 4: complete (documentation, project status, focused scan, and diff hygiene; report: task-4-report.md)
 - Task 5: pending

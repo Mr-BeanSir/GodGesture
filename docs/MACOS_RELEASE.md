@@ -14,11 +14,14 @@ The shared `Signed desktop release` workflow is documented in
   same artifact and attach it to a GitHub Release. Prerelease versions are
   marked prerelease and do not become latest; stable versions become latest.
 
-For a tag build, the version after `v` must exactly match
-`apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, and
+The root `pnpm release` command produces the release tag. For a tag build, the
+version after `v` must exactly match the four Desktop manifests: the root
+`package.json`, `apps/desktop/package.json`,
+`apps/desktop/src-tauri/tauri.conf.json`, and
 `apps/desktop/src-tauri/Cargo.toml`. A mismatch fails before publication. Both
 manual and tag builds require the updater signing secrets described in the
-desktop release guide.
+desktop release guide. Windows release automation does not prove macOS
+artifact or real-device acceptance.
 
 The workflow:
 

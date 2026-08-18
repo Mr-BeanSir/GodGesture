@@ -105,6 +105,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 ### 本地日志与发布
 
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
+- 2026-08-18 Desktop 发布自动化已接入：根 `pnpm release` wrapper 使用 release-it 同步四个 Desktop 版本文件，PR workflow 维护 `type:*` 标签，GitHub 使用 `.github/release.yml` 生成 Release Notes。当前本地验证入口为 `pnpm release patch --dry-run` 和 `pnpm validate:release`；live GitHub API 的生成正文检查，以及真实 Windows/macOS `v0.2.0` 产物验收，仍待维护者执行带 tag 的发布和平台检查，不能由本地验证替代。
 - `pnpm dev:server` 会先生成 Prisma Client 并幂等应用已提交迁移，再等待后端健康检查后启动 Web Console；本地 PostgreSQL 与 RustFS 仍由 `apps/server/docker-compose.dev.yml` 提供。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
 - Desktop `release` wrapper 允许透传 release-it 的自定义配置和非发布选项，但最终 invocation 固定追加 `npm=false`、`npm.publish=false` 与 `github.release=false`；直接发布覆盖参数仍在读取版本和 Git 状态前拒绝。
