@@ -1,25 +1,38 @@
-categories:
-  - label: "type: feat"
+changelog:
+  categories:
+  - labels:
+      - "type: feat"
     title: "✨ Features | 新功能"
-  - label: "type: fix"
+  - labels:
+      - "type: fix"
     title: "🐛 Bug Fixes | Bug 修复"
-  - label: "type: chore"
+  - labels:
+      - "type: chore"
     title: "🎫 Chores | 其他更新"
-  - label: "type: docs"
+  - labels:
+      - "type: docs"
     title: "📝 Documentation | 文档"
-  - label: "type: style"
+  - labels:
+      - "type: style"
     title: "💄 Styles | 风格"
-  - label: "type: refactor"
+  - labels:
+      - "type: refactor"
     title: "♻ Code Refactoring | 代码重构"
-  - label: "type: perf"
+  - labels:
+      - "type: perf"
     title: "⚡ Performance Improvements | 性能优化"
-  - label: "type: test"
+  - labels:
+      - "type: test"
     title: "✅ Tests | 测试"
-  - label: "type: revert"
+  - labels:
+      - "type: revert"
     title: "⏪ Reverts | 回退"
-  - label: "type: build"
+  - labels:
+      - "type: build"
     title: "👷 Build System | 构建"
-  - label: "type: ci"
+  - labels:
+      - "type: ci"
     title: "🔧 Continuous Integration | CI 配置"
-  - label: "type: config"
+  - labels:
+      - "type: config"
     title: "🔨 CONFIG | 配置"

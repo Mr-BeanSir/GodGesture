@@ -31,10 +31,19 @@ const expectedReleaseCategories = {
   "type: config": "🔨 CONFIG | 配置",
 };
 
-assert.ok(Array.isArray(releaseConfig.categories), "Release notes categories must be a list");
+const releaseCategories = releaseConfig.changelog?.categories;
+assert.ok(Array.isArray(releaseCategories), "Release notes changelog.categories must be a list");
+assert.equal(releaseCategories.length, 12, "Release notes must define exactly twelve categories");
+assert.equal(releaseConfig.categories, undefined, "Release notes must not use the legacy top-level categories schema");
+const releaseLabels = releaseCategories.flatMap(({ labels }) => {
+  assert.ok(Array.isArray(labels), "Each release category must define labels as a list");
+  assert.equal(labels.length, 1, "Each release category must define exactly one label");
+  return labels;
+});
+assert.equal(new Set(releaseLabels).size, releaseLabels.length, "Release category labels must be unique");
 assert.deepEqual(
   Object.fromEntries(
-    releaseConfig.categories.map(({ label, title }) => [label, title]),
+    releaseCategories.map(({ labels, title }) => [labels[0], title]),
   ),
   expectedReleaseCategories,
   "Release notes categories must cover the approved type labels exactly",

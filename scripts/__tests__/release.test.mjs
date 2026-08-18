@@ -342,12 +342,19 @@ test("configures categorized GitHub release notes without a second release path"
   const releaseConfig = parseYaml(
     await readFile(new URL("../../.github/release.yml", import.meta.url), "utf8"),
   );
+  const categories = releaseConfig.changelog?.categories ?? [];
+  assert.equal(categories.length, 12);
+  const labels = categories.flatMap(({ labels }) => {
+    assert.ok(Array.isArray(labels));
+    assert.equal(labels.length, 1);
+    return labels;
+  });
+  assert.equal(new Set(labels).size, labels.length);
   assert.deepEqual(
-    Object.fromEntries(
-      (releaseConfig.categories ?? []).map(({ label, title }) => [label, title]),
-    ),
+    Object.fromEntries(categories.map(({ labels, title }) => [labels[0], title])),
     expected,
   );
+  assert.equal(releaseConfig.categories, undefined);
 
   const workflow = parseYaml(
     await readFile(
