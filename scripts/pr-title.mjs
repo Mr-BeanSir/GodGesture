@@ -61,10 +61,20 @@ export function reconcileTypeLabels(existingLabels, canonicalLabel) {
 
   return {
     remove: existingLabels.filter(
-      (label) => typeof label === "string" && label.startsWith("type: "),
+      (label) => typeof label === "string" && label.startsWith("type:"),
     ),
     add: [canonicalLabel],
   };
+}
+
+export function flattenLabelPages(labelPages) {
+  if (
+    !Array.isArray(labelPages) ||
+    labelPages.some((page) => !Array.isArray(page))
+  ) {
+    throw new TypeError("Label pages must be an array of arrays");
+  }
+  return labelPages.flat();
 }
 
 function invalidTitleError() {

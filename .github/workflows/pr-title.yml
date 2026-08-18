@@ -9,6 +9,10 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   classify:
     name: Classify PR title
@@ -31,6 +35,7 @@ jobs:
           node --input-type=module <<'NODE'
           import {
             PR_TYPES,
+            flattenLabelPages,
             parsePrTitle,
             reconcileTypeLabels,
           } from "./scripts/pr-title.mjs";
@@ -58,34 +63,55 @@ jobs:
             return response.status === 204 ? null : response.json();
           }
 
-          let parsed;
+          async function listAllLabelPages(repo, number) {
+            const pages = [];
+            for (let page = 1; ; page += 1) {
+              const labels = await githubRequest(
+                `/repos/${repo}/issues/${number}/labels?per_page=100&page=${page}`,
+              );
+              if (!Array.isArray(labels)) {
+                throw new Error("GitHub labels response was not an array");
+              }
+              pages.push(labels);
+              if (labels.length < 100) return pages;
+            }
+          }
+
+          async function main() {
+            let parsed;
+            try {
+              parsed = parsePrTitle(process.env.PR_TITLE ?? "");
+            } catch (error) {
+              console.error(error.message);
+              console.error(`Allowed types: ${PR_TYPES.join(", ")}`);
+              process.exit(1);
+            }
+
+            const repo = requireEnvironment("GITHUB_REPOSITORY");
+            const number = requireEnvironment("PR_NUMBER");
+            const labelPages = await listAllLabelPages(repo, number);
+            const existingLabels = flattenLabelPages(labelPages)
+              .map((label) => label?.name)
+              .filter(Boolean);
+            const reconciliation = reconcileTypeLabels(existingLabels, parsed.label);
+            for (const label of reconciliation.remove) {
+              await githubRequest(
+                `/repos/${repo}/issues/${number}/labels/${encodeURIComponent(label)}`,
+                { method: "DELETE" },
+              );
+            }
+            await githubRequest(`/repos/${repo}/issues/${number}/labels`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ labels: reconciliation.add }),
+            });
+            console.log(`Applied ${parsed.label} to PR #${number}`);
+          }
+
           try {
-            parsed = parsePrTitle(process.env.PR_TITLE ?? "");
+            await main();
           } catch (error) {
-            console.error(error.message);
-            console.error(`Allowed types: ${PR_TYPES.join(", ")}`);
-            process.exit(1);
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exitCode = 1;
           }
-
-          const repo = requireEnvironment("GITHUB_REPOSITORY");
-          const number = requireEnvironment("PR_NUMBER");
-          const labels = await githubRequest(
-            `/repos/${repo}/issues/${number}/labels?per_page=100`,
-          );
-          if (!Array.isArray(labels)) throw new Error("GitHub labels response was not an array");
-
-          const existingLabels = labels.map((label) => label?.name).filter(Boolean);
-          const reconciliation = reconcileTypeLabels(existingLabels, parsed.label);
-          for (const label of reconciliation.remove) {
-            await githubRequest(
-              `/repos/${repo}/issues/${number}/labels/${encodeURIComponent(label)}`,
-              { method: "DELETE" },
-            );
-          }
-          await githubRequest(`/repos/${repo}/issues/${number}/labels`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ labels: reconciliation.add }),
-          });
-          console.log(`Applied ${parsed.label} to PR #${number}`);
           NODE
