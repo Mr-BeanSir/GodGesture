@@ -71,6 +71,10 @@ const PROTECTED_PUBLICATION_OPTIONS = new Set([
   "github",
   "github.release",
 ]);
+const RELEASE_IT_PUBLICATION_GUARDS = [
+  "--no-npm",
+  "--no-github.release",
+];
 
 export function parseReleaseArguments(args) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
@@ -276,9 +280,12 @@ export async function runRelease(
   });
 
   console.log(`Release target: ${targetVersion} (${targetTag})`);
-  const releaseItFlags = shouldUseNonInteractiveDryRun(releaseItArgs)
-    ? [...releaseItArgs, "--ci"]
-    : releaseItArgs;
+  const releaseItFlags = [
+    ...(shouldUseNonInteractiveDryRun(releaseItArgs)
+      ? [...releaseItArgs, "--ci"]
+      : releaseItArgs),
+    ...RELEASE_IT_PUBLICATION_GUARDS,
+  ];
   const invocation = pnpmInvocation([
     "exec",
     "release-it",

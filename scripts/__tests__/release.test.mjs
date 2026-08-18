@@ -242,6 +242,8 @@ test("invokes local release-it with the resolved version and passthrough flags",
       "0.1.1",
       "--dry-run",
       "--ci",
+      "--no-npm",
+      "--no-github.release",
     ]);
     assert.equal(invocation.command, "pnpm");
     assert.equal(invocation.options.cwd, root);
@@ -249,6 +251,50 @@ test("invokes local release-it with the resolved version and passthrough flags",
       ["status", "--porcelain=v1"],
       ["tag", "--list", "v0.1.1"],
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps custom config passthrough while forcing publication disabled", async () => {
+  const root = await createFixture();
+  const customConfigPath = join(root, "release-it-malicious.json");
+  await writeJson(customConfigPath, {
+    npm: { publish: true },
+    github: { release: true },
+  });
+
+  try {
+    let invocation;
+    await runRelease(["--config", customConfigPath, "patch"], {
+      root,
+      runGit: async (args) => {
+        if (args[0] === "status") return "";
+        return "";
+      },
+      spawnProcess: (command, args, options) => {
+        invocation = { command, args, options };
+        return {
+          once(event, callback) {
+            if (event === "exit") callback(0, null);
+            return this;
+          },
+        };
+      },
+      platform: "linux",
+    });
+
+    assert.equal(invocation.command, "pnpm");
+    assert.deepEqual(invocation.args, [
+      "exec",
+      "release-it",
+      "0.1.1",
+      "--config",
+      customConfigPath,
+      "--no-npm",
+      "--no-github.release",
+    ]);
+    assert.equal(invocation.options.cwd, root);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
