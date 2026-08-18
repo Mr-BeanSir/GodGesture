@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 import {
   assertReleasePreconditions,
   parseReleaseArguments,
@@ -321,6 +322,60 @@ test("configures release-it for four version files without npm or GitHub publica
       path: "package.version",
     },
   ]);
+});
+
+test("configures categorized GitHub release notes without a second release path", async () => {
+  const expected = {
+    "type: feat": "✨ Features | 新功能",
+    "type: fix": "🐛 Bug Fixes | Bug 修复",
+    "type: chore": "🎫 Chores | 其他更新",
+    "type: docs": "📝 Documentation | 文档",
+    "type: style": "💄 Styles | 风格",
+    "type: refactor": "♻ Code Refactoring | 代码重构",
+    "type: perf": "⚡ Performance Improvements | 性能优化",
+    "type: test": "✅ Tests | 测试",
+    "type: revert": "⏪ Reverts | 回退",
+    "type: build": "👷 Build System | 构建",
+    "type: ci": "🔧 Continuous Integration | CI 配置",
+    "type: config": "🔨 CONFIG | 配置",
+  };
+  const releaseConfig = parseYaml(
+    await readFile(new URL("../../.github/release.yml", import.meta.url), "utf8"),
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      (releaseConfig.categories ?? []).map(({ label, title }) => [label, title]),
+    ),
+    expected,
+  );
+
+  const workflow = parseYaml(
+    await readFile(
+      new URL("../../.github/workflows/desktop-release.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(workflow.on?.push?.tags, ["v*"]);
+  const releaseJob = workflow.jobs.release;
+  assert.equal(releaseJob.needs, "assemble");
+  assert.equal(releaseJob.if, "startsWith(github.ref, 'refs/tags/v')");
+  assert.equal(releaseJob.permissions?.contents, "write");
+  const releaseAction = releaseJob.steps.find(
+    (step) => step.uses === "softprops/action-gh-release@v2",
+  );
+  assert.ok(releaseAction);
+  assert.equal(releaseAction.with.generate_release_notes, true);
+  assert.match(releaseAction.with.body, /Authenticode signed/);
+  assert.match(releaseAction.with.body, /ad-hoc signed/);
+  assert.match(releaseAction.with.body, /Accessibility and Input Monitoring/);
+  assert.match(releaseAction.with.body, /SHA-256 checksum/);
+  assert.match(releaseAction.with.body, /Installation and first-use instructions/);
+  assert.match(releaseAction.with.body, /docs\/USER_GUIDE\.md/);
+
+  const releaseItConfig = JSON.parse(
+    await readFile(new URL("../../.release-it.json", import.meta.url), "utf8"),
+  );
+  assert.equal(releaseItConfig.github.release, false);
 });
 
 async function createFixture({

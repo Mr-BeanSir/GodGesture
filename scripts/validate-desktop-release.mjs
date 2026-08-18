@@ -13,6 +13,32 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = resolve(root, ".github/workflows/desktop-release.yml");
 const source = await readFile(workflowPath, "utf8");
 const workflow = parse(source);
+const releaseConfigPath = resolve(root, ".github/release.yml");
+const releaseConfig = parse(await readFile(releaseConfigPath, "utf8"));
+
+const expectedReleaseCategories = {
+  "type: feat": "✨ Features | 新功能",
+  "type: fix": "🐛 Bug Fixes | Bug 修复",
+  "type: chore": "🎫 Chores | 其他更新",
+  "type: docs": "📝 Documentation | 文档",
+  "type: style": "💄 Styles | 风格",
+  "type: refactor": "♻ Code Refactoring | 代码重构",
+  "type: perf": "⚡ Performance Improvements | 性能优化",
+  "type: test": "✅ Tests | 测试",
+  "type: revert": "⏪ Reverts | 回退",
+  "type: build": "👷 Build System | 构建",
+  "type: ci": "🔧 Continuous Integration | CI 配置",
+  "type: config": "🔨 CONFIG | 配置",
+};
+
+assert.ok(Array.isArray(releaseConfig.categories), "Release notes categories must be a list");
+assert.deepEqual(
+  Object.fromEntries(
+    releaseConfig.categories.map(({ label, title }) => [label, title]),
+  ),
+  expectedReleaseCategories,
+  "Release notes categories must cover the approved type labels exactly",
+);
 
 assert.equal(workflow.name, "Signed desktop release");
 assert.ok(workflow.on?.workflow_dispatch !== undefined);
@@ -26,7 +52,7 @@ assert.equal(jobs.macos["runs-on"], "macos-15");
 assert.equal(jobs.assemble["runs-on"], "ubuntu-latest");
 assert.deepEqual(jobs.assemble.needs, ["windows", "macos"]);
 assert.equal(jobs.release.needs, "assemble");
-assert.match(jobs.release.if, /refs\/tags\/v/);
+assert.equal(jobs.release.if, "startsWith(github.ref, 'refs/tags/v')");
 assert.equal(jobs.release.permissions?.contents, "write");
 for (const name of ["windows", "macos", "assemble"]) {
   assert.notEqual(jobs[name].permissions?.contents, "write");
@@ -104,13 +130,23 @@ assert.match(JSON.stringify(jobs.assemble), /merge-multiple/);
 const assemble = runText(jobs.assemble);
 assert.match(assemble, /scripts\/desktop-release\.mjs/);
 assert.match(assemble, /--commit "\$GITHUB_SHA"/);
-assert.match(JSON.stringify(jobs.release), /softprops\/action-gh-release@v2/);
+const releaseAction = jobs.release.steps.find(
+  (step) => step.uses === "softprops/action-gh-release@v2",
+);
+assert.ok(releaseAction, "Release job must publish through softprops/action-gh-release@v2");
+assert.equal(releaseAction.with?.generate_release_notes, true);
 assert.match(JSON.stringify(jobs.release), /release-artifacts\/\*/);
 assert.match(JSON.stringify(jobs.release), /fail_on_unmatched_files/);
 assert.match(JSON.stringify(jobs.release), /contains\(github\.ref_name, '-'/);
 assert.match(JSON.stringify(jobs.release), /prerelease/);
 assert.match(JSON.stringify(jobs.release), /make_latest/);
-assert.match(JSON.stringify(jobs.release), /docs\/USER_GUIDE\.md/);
+const releaseBody = releaseAction.with?.body ?? "";
+assert.match(releaseBody, /Authenticode signed/);
+assert.match(releaseBody, /ad-hoc signed/);
+assert.match(releaseBody, /Accessibility and Input Monitoring/);
+assert.match(releaseBody, /SHA-256 checksum/);
+assert.match(releaseBody, /Installation and first-use instructions/);
+assert.match(releaseBody, /docs\/USER_GUIDE\.md/);
 
 for (const forbidden of [
   "APPLE_CERTIFICATE",
