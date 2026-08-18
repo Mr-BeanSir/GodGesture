@@ -11,4 +11,5 @@ Tasks:
 - Task 2: complete (commits a73c260..ec73d95, review clean)
 - Task 3: fix round 1/5 complete (official changelog.categories[*].labels schema restored; focused tests and validator pass)
 - Task 4: complete (documentation, project status, focused scan, and diff hygiene; report: task-4-report.md)
+- Task 4: fix round 1/5 complete (12-type PR whitelist, reproducible report evidence; `pnpm validate:release` 32/32)
 - Task 5: pending

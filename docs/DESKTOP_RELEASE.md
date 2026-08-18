@@ -99,6 +99,16 @@ fix(overlay)!: restore trail
 ```
 
 The pull request workflow maintains one `type:*` label per pull request.
+PR titles may use only these 12 types, which are the complete whitelist enforced
+by `.github/workflows/pr-title.yml` and categorized by `.github/release.yml`:
+
+```text
+feat, fix, chore, docs, style, refactor, perf, test, revert, build, ci, config
+```
+
+No other PR title type or `type:*` label is allowed. The workflow rejects a
+title outside this whitelist and reconciles the pull request to its one
+canonical `type: <type>` label.
 GitHub uses `.github/release.yml` to generate bilingual sections with links to
 merged pull requests and their authors. Direct commits without merged pull
 requests are not promised to appear in a typed section.
