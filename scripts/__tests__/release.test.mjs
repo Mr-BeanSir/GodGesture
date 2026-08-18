@@ -31,6 +31,75 @@ test("requires exactly one selector", () => {
   assert.throws(() => parseReleaseArguments(["--dry-run"]), /version selector/i);
 });
 
+test("rejects npm publication overrides before reading release state", async () => {
+  for (const args of [
+    ["--npm", "patch"],
+    ["patch", "--npm.publish"],
+    ["--no-npm", "patch"],
+    ["patch", "--npm.publish=true"],
+  ]) {
+    await assert.rejects(
+      runRelease(args, {
+        root: join(tmpdir(), "release-argument-test-does-not-exist"),
+        runGit: async () => {
+          throw new Error("git must not run for a rejected publication option");
+        },
+        spawnProcess: () => {
+          throw new Error("release-it must not run for a rejected publication option");
+        },
+      }),
+      /publication|npm/i,
+    );
+  }
+});
+
+test("rejects GitHub publication overrides before reading release state", async () => {
+  for (const args of [
+    ["--github", "patch"],
+    ["patch", "--github.release"],
+    ["--github.release=true", "patch"],
+    ["patch", "--no-github"],
+    ["patch", "--no-github.release"],
+  ]) {
+    await assert.rejects(
+      runRelease(args, {
+        root: join(tmpdir(), "release-argument-test-does-not-exist"),
+        runGit: async () => {
+          throw new Error("git must not run for a rejected publication option");
+        },
+        spawnProcess: () => {
+          throw new Error("release-it must not run for a rejected publication option");
+        },
+      }),
+      /publication|GitHub|github/i,
+    );
+  }
+});
+
+test("keeps independent option values out of version selector parsing", () => {
+  assert.deepEqual(
+    parseReleaseArguments(["--config", "release.config.js", "patch"]),
+    {
+      selector: "patch",
+      releaseItArgs: ["--config", "release.config.js"],
+    },
+  );
+  assert.deepEqual(
+    parseReleaseArguments(["minor", "--preRelease", "rc", "--dry-run"]),
+    {
+      selector: "minor",
+      releaseItArgs: ["--preRelease", "rc", "--dry-run"],
+    },
+  );
+  assert.deepEqual(
+    parseReleaseArguments(["--config=release.config.js", "--preRelease=rc", "major"]),
+    {
+      selector: "major",
+      releaseItArgs: ["--config=release.config.js", "--preRelease=rc"],
+    },
+  );
+});
+
 test("rejects invalid, non-forward, and unsupported selectors", () => {
   assert.throws(
     () => resolveReleaseVersion("0.1.0", "wat"),

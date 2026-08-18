@@ -8,15 +8,109 @@ import semver from "semver";
 const execFileAsync = promisify(execFile);
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const RELEASE_INCREMENT_SELECTORS = new Set(["patch", "minor", "major"]);
+const RELEASE_IT_OPTION_ALIASES = new Map([
+  ["c", "config"],
+  ["i", "increment"],
+]);
+const RELEASE_IT_VALUE_OPTIONS = new Set([
+  "config",
+  "configDir",
+  "extends",
+  "increment",
+  "preRelease",
+  "snapshot",
+  "preReleaseBase",
+  "preReleaseId",
+  "git.changelog",
+  "git.commitsPath",
+  "git.commitMessage",
+  "git.pushRepo",
+  "git.tagAnnotation",
+  "git.tagExclude",
+  "git.tagMatch",
+  "git.tagName",
+  "git.commitArgs",
+  "git.requireBranch",
+  "git.pushArgs",
+  "git.tagArgs",
+  "npm.otp",
+  "npm.publishPackageManager",
+  "npm.publishPath",
+  "npm.tag",
+  "npm.timeout",
+  "npm.publishArgs",
+  "npm.versionArgs",
+  "github.comments.issue",
+  "github.comments.pr",
+  "github.host",
+  "github.proxy",
+  "github.releaseName",
+  "github.releaseNotes",
+  "github.releaseNotes.commit",
+  "github.discussionCategoryName",
+  "github.makeLatest",
+  "github.timeout",
+  "github.tokenRef",
+  "github.assets",
+  "github.releaseNotes.excludeMatches",
+  "gitlab.certificateAuthorityFile",
+  "gitlab.certificateAuthorityFileRef",
+  "gitlab.genericPackageRepositoryName",
+  "gitlab.origin",
+  "gitlab.releaseName",
+  "gitlab.releaseNotes",
+  "gitlab.repoId",
+  "gitlab.tokenHeader",
+  "gitlab.tokenRef",
+  "gitlab.assets",
+  "gitlab.milestones",
+]);
+const PROTECTED_PUBLICATION_OPTIONS = new Set([
+  "npm",
+  "npm.publish",
+  "github",
+  "github.release",
+]);
 
 export function parseReleaseArguments(args) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
     throw new TypeError("Release arguments must be an array of strings");
   }
 
-  const positional = args
-    .map((arg, index) => ({ arg, index }))
-    .filter(({ arg }) => !arg.startsWith("-"));
+  const positional = [];
+  let optionTerminated = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (optionTerminated) {
+      positional.push({ arg, index });
+      continue;
+    }
+    if (arg === "--") {
+      optionTerminated = true;
+      continue;
+    }
+    if (!arg.startsWith("-")) {
+      positional.push({ arg, index });
+      continue;
+    }
+
+    const option = parseOptionToken(arg);
+    if (option && PROTECTED_PUBLICATION_OPTIONS.has(option.name)) {
+      throw new Error(
+        `Release CLI option "${arg}" is forbidden: npm and GitHub publication settings are fixed by repository configuration`,
+      );
+    }
+
+    if (
+      option &&
+      !option.inlineValue &&
+      RELEASE_IT_VALUE_OPTIONS.has(option.name) &&
+      args[index + 1] !== undefined &&
+      !args[index + 1].startsWith("-")
+    ) {
+      index += 1;
+    }
+  }
 
   if (positional.length === 0) {
     throw new Error(
@@ -38,6 +132,18 @@ export function parseReleaseArguments(args) {
     selector,
     releaseItArgs: args.filter((_, argIndex) => argIndex !== index),
   };
+}
+
+function parseOptionToken(arg) {
+  if (!arg.startsWith("-")) return null;
+  const token = arg.replace(/^-+/, "");
+  const separatorIndex = token.indexOf("=");
+  const rawName = separatorIndex === -1 ? token : token.slice(0, separatorIndex);
+  const aliasedName = RELEASE_IT_OPTION_ALIASES.get(rawName) ?? rawName;
+  const name = aliasedName.startsWith("no-")
+    ? aliasedName.slice(3)
+    : aliasedName;
+  return { name, inlineValue: separatorIndex !== -1 };
 }
 
 export function resolveReleaseVersion(currentVersion, requested) {
