@@ -20,7 +20,11 @@ version after `v` must exactly match the four Desktop manifests: the root
 `apps/desktop/src-tauri/tauri.conf.json`, and
 `apps/desktop/src-tauri/Cargo.toml`. A mismatch fails before publication. Both
 manual and tag builds require the updater signing secrets described in the
-desktop release guide. Windows release automation does not prove macOS
+desktop release guide. Both platform jobs also require the GitHub Actions
+repository variable `GODGESTURE_API`, set to the deployed official Server HTTPS
+origin, for example `https://api.example.com`. The workflow injects this public
+build-time value only into the validation and Tauri build steps; the frontend
+test step does not receive it. Windows release automation does not prove macOS
 artifact or real-device acceptance.
 
 The workflow:
@@ -45,8 +49,15 @@ On a Mac with the repository toolchain installed, run:
 ```bash
 pnpm install --frozen-lockfile
 # Load TAURI_SIGNING_PRIVATE_KEY and its optional password from secure storage.
+export GODGESTURE_API=https://api.example.com
 APPLE_SIGNING_IDENTITY=- pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg
 ```
+
+Alternatively, put `GODGESTURE_API` in the uncommitted
+`apps/desktop/.env` before the build. The value is compiled into the frontend;
+the installed application does not read or require an external `.env` file.
+The workflow and Desktop release guide reject missing, non-HTTPS, credentialed,
+path, query, or fragment-bearing values.
 
 This produces the application, updater archive, and DMG below
 `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle`. Do not put

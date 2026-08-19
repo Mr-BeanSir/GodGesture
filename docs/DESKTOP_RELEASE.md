@@ -32,6 +32,26 @@ Both Windows and macOS build jobs require the same private key. The public key
 is committed in `apps/desktop/src-tauri/tauri.conf.json`; do not regenerate or
 replace either side as routine release housekeeping.
 
+## Desktop Production API
+
+Configure this GitHub Actions repository variable before building a release:
+
+- `GODGESTURE_API` (required): the deployed official Server HTTPS origin, for
+  example `https://api.example.com`.
+
+The value is public client configuration, not a secret. Both platform jobs
+inject it while Vite builds the Desktop frontend, so the resulting application
+does not load or ship an external `.env` file. The workflow rejects a missing
+value and any URL that is not an HTTPS origin without credentials, a path,
+query parameters, or a fragment. Changing the official origin requires a new
+Desktop build.
+
+`VITE_GODGESTURE_REPOSITORY_URL` and
+`VITE_GODGESTURE_PLUGIN_CATALOG_URL` remain optional build-time overrides. The
+official repository and plugin catalog URLs already have matching defaults in
+the Desktop source and do not need GitHub repository variables for the official
+release.
+
 ## Workflow
 
 `.github/workflows/desktop-release.yml` has two entry points:

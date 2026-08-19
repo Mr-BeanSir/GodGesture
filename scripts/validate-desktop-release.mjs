@@ -99,6 +99,7 @@ assert.doesNotMatch(macos, /tar -tzf.*grep/s);
 assert.match(macos, /shasum -a 256/);
 
 for (const jobName of ["windows", "macos"]) {
+  assert.equal(jobs[jobName].env?.GODGESTURE_API, undefined, `${jobName} must not expose GODGESTURE_API to every step`);
   const steps = jobs[jobName].steps;
   const toolchainIndex = steps.findIndex((step) =>
     step.uses?.startsWith("dtolnay/rust-toolchain@"),
@@ -112,6 +113,7 @@ for (const jobName of ["windows", "macos"]) {
   const desktopBuildIndex = steps.findIndex((step) =>
     step.run?.includes("@godgesture/desktop tauri build"),
   );
+  const desktopTestIndex = steps.findIndex((step) => step.name === "Test desktop frontend");
   assert.ok(sharedBuildIndex >= 0, `${jobName} must build the shared package`);
   assert.ok(toolchainIndex >= 0, `${jobName} must install the Rust toolchain`);
   assert.ok(rustCacheIndex > toolchainIndex, `${jobName} must cache Rust after toolchain setup`);
@@ -131,6 +133,46 @@ for (const jobName of ["windows", "macos"]) {
     sharedBuildIndex < desktopBuildIndex,
     `${jobName} must build the shared package before the desktop bundle`,
   );
+  const apiOriginIndex = steps.findIndex(
+    (step) => step.name === "Require official API origin",
+  );
+  assert.ok(
+    apiOriginIndex >= 0,
+    `${jobName} must validate GODGESTURE_API before the desktop bundle`,
+  );
+  assert.ok(
+    apiOriginIndex < desktopBuildIndex,
+    `${jobName} must validate GODGESTURE_API before the desktop bundle`,
+  );
+  assert.equal(
+    steps[apiOriginIndex].env?.GODGESTURE_API,
+    "${{ vars.GODGESTURE_API }}",
+    `${jobName} origin validation must use the repository variable`,
+  );
+  assert.match(
+    typeof steps[apiOriginIndex].run === "string" ? steps[apiOriginIndex].run : "",
+    /^node scripts\/desktop-api-origin\.mjs$/,
+  );
+  assert.equal(
+    steps[desktopBuildIndex].env?.GODGESTURE_API,
+    "${{ vars.GODGESTURE_API }}",
+    `${jobName} Desktop build must use the repository variable`,
+  );
+  if (desktopTestIndex >= 0) {
+    assert.equal(
+      steps[desktopTestIndex].env?.GODGESTURE_API,
+      undefined,
+      `${jobName} frontend tests must not receive the production API origin`,
+    );
+  }
+  for (const [index, step] of steps.entries()) {
+    if (index === apiOriginIndex || index === desktopBuildIndex) continue;
+    assert.equal(
+      step.env?.GODGESTURE_API,
+      undefined,
+      `${jobName} step ${step.name ?? index} must not receive the production API origin`,
+    );
+  }
   const serialized = JSON.stringify(jobs[jobName]);
   assert.match(serialized, /secrets\.TAURI_SIGNING_PRIVATE_KEY/);
   assert.match(serialized, /actions\/upload-artifact@v4/);

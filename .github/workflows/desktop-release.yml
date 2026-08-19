@@ -28,6 +28,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Require official API origin
+        env:
+          GODGESTURE_API: ${{ vars.GODGESTURE_API }}
+        run: node scripts/desktop-api-origin.mjs
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -63,6 +68,7 @@ jobs:
 
       - name: Build x64 NSIS installer and updater signature
         env:
+          GODGESTURE_API: ${{ vars.GODGESTURE_API }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter @godgesture/desktop tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis
@@ -141,6 +147,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Require official API origin
+        env:
+          GODGESTURE_API: ${{ vars.GODGESTURE_API }}
+        run: node scripts/desktop-api-origin.mjs
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -170,6 +181,7 @@ jobs:
       - name: Build ad-hoc universal app, DMG, and updater archive
         env:
           APPLE_SIGNING_IDENTITY: "-"
+          GODGESTURE_API: ${{ vars.GODGESTURE_API }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg
