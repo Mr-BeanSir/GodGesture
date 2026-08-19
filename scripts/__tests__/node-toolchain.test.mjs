@@ -11,6 +11,7 @@ import {
   PNPM_SHA512,
   PNPM_VERSION,
   copyBundledNpm,
+  ensurePnpmArchive,
   extractArchive,
   targetNames,
 } from "../fetch-node-toolchain.mjs";
@@ -72,6 +73,28 @@ test("copies the npm CLI package required by online plugin installation", async 
       await readFile(join(output, "npm", "lib", "cli.js"), "utf8"),
       "module.exports = {}\n",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reuses one pnpm archive across universal architecture preparations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "godgesture-toolchain-test-"));
+  let downloadCount = 0;
+  try {
+    const downloadArchive = async (_url, destination, algorithm) => {
+      downloadCount += 1;
+      assert.equal(algorithm, "sha512");
+      await writeFile(destination, "pnpm archive");
+      return PNPM_SHA512;
+    };
+
+    const first = await ensurePnpmArchive(root, downloadArchive);
+    const second = await ensurePnpmArchive(root, downloadArchive);
+
+    assert.equal(first, join(root, `pnpm-${PNPM_VERSION}.tgz`));
+    assert.equal(second, first);
+    assert.equal(downloadCount, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

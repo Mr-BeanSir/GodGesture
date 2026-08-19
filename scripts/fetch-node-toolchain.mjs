@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { cp, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -130,13 +130,29 @@ async function copyBundledNpm(extracted, npmCliPath, output) {
 }
 
 async function installPnpm(target, tempRoot) {
-  const archive = join(tempRoot, `pnpm-${PNPM_VERSION}.tgz`);
-  const actual = await download(`https://registry.npmjs.org/pnpm/-/pnpm-${PNPM_VERSION}.tgz`, archive, "sha512");
-  if (actual !== PNPM_SHA512) throw new Error(`pnpm SHA-512 integrity mismatch for ${archive}`);
+  const archive = await ensurePnpmArchive(tempRoot);
   const extracted = join(tempRoot, `${target}-pnpm`);
   await extractArchive(archive, "tar.gz", extracted);
   const source = join(extracted, "package");
   await cp(source, join(OUTPUT_ROOT, target, "pnpm"), { recursive: true });
+}
+
+async function ensurePnpmArchive(tempRoot, downloadFile = download) {
+  const archive = join(tempRoot, `pnpm-${PNPM_VERSION}.tgz`);
+  try {
+    await access(archive);
+    return archive;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  const actual = await downloadFile(
+    `https://registry.npmjs.org/pnpm/-/pnpm-${PNPM_VERSION}.tgz`,
+    archive,
+    "sha512",
+  );
+  if (actual !== PNPM_SHA512) throw new Error(`pnpm SHA-512 integrity mismatch for ${archive}`);
+  return archive;
 }
 
 async function copySupervisor(target) {
@@ -187,6 +203,7 @@ export {
   PNPM_VERSION,
   NODE_VERSION,
   copyBundledNpm,
+  ensurePnpmArchive,
   extractArchive,
   targetNames,
 };
