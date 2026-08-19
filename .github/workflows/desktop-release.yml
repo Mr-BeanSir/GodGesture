@@ -14,18 +14,18 @@ jobs:
     name: Windows x64 NSIS
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24.18.1
           cache: pnpm
 
       - name: Require official API origin
@@ -122,7 +122,7 @@ jobs:
             [Text.UTF8Encoding]::new($false)
           )
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: GodGesture-Windows-x64
           path: apps/desktop/src-tauri/target/release-artifacts/windows/*
@@ -133,18 +133,18 @@ jobs:
     name: macOS universal ad-hoc
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24.18.1
           cache: pnpm
 
       - name: Require official API origin
@@ -233,7 +233,7 @@ jobs:
             printf '%s  %s\n' "$hash" "$name" > "$release_dir/$name.sha256"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: GodGesture-macOS-universal-ad-hoc
           path: apps/desktop/src-tauri/target/release-artifacts/macos/*
@@ -245,18 +245,18 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24.18.1
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: GodGesture-*
           path: incoming
@@ -274,7 +274,7 @@ jobs:
             --ref-type "$GITHUB_REF_TYPE" \
             --ref-name "$GITHUB_REF_NAME"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: GodGesture-desktop-release
           path: release-artifacts/*
@@ -289,12 +289,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: GodGesture-desktop-release
           path: release-artifacts
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: release-artifacts/*
           fail_on_unmatched_files: true

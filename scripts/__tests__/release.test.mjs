@@ -368,7 +368,7 @@ test("configures categorized GitHub release notes without a second release path"
   assert.equal(releaseJob.if, "startsWith(github.ref, 'refs/tags/v')");
   assert.equal(releaseJob.permissions?.contents, "write");
   const releaseAction = releaseJob.steps.find(
-    (step) => step.uses === "softprops/action-gh-release@v2",
+    (step) => step.uses === "softprops/action-gh-release@v3",
   );
   assert.ok(releaseAction);
   assert.equal(releaseAction.with.generate_release_notes, true);

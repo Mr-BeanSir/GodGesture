@@ -175,16 +175,16 @@ for (const jobName of ["windows", "macos"]) {
   }
   const serialized = JSON.stringify(jobs[jobName]);
   assert.match(serialized, /secrets\.TAURI_SIGNING_PRIVATE_KEY/);
-  assert.match(serialized, /actions\/upload-artifact@v4/);
+  assert.match(serialized, /actions\/upload-artifact@v7/);
 }
 assert.match(JSON.stringify(jobs.assemble), /merge-multiple/);
 const assemble = runText(jobs.assemble);
 assert.match(assemble, /scripts\/desktop-release\.mjs/);
 assert.match(assemble, /--commit "\$GITHUB_SHA"/);
 const releaseAction = jobs.release.steps.find(
-  (step) => step.uses === "softprops/action-gh-release@v2",
+  (step) => step.uses === "softprops/action-gh-release@v3",
 );
-assert.ok(releaseAction, "Release job must publish through softprops/action-gh-release@v2");
+assert.ok(releaseAction, "Release job must publish through softprops/action-gh-release@v3");
 assert.equal(releaseAction.with?.generate_release_notes, true);
 assert.match(JSON.stringify(jobs.release), /release-artifacts\/\*/);
 assert.match(JSON.stringify(jobs.release), /fail_on_unmatched_files/);
