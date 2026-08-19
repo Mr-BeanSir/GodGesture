@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-## 官方模板、Web Console 与共享 UI（2026-08-16）
+## 官方模板、Web Console 与共享 UI（2026-08-19）
 
 Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
 Desktop 设置工作台与 Server-owned Web Console 现通过根 `@godgesture/ui` 共享无业务 Vue
@@ -10,7 +10,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 左侧导航分为用户功能与管理员功能，管理员区仅对管理员显示。配置查看中的应用分组使用树形
 连接线呈现应用层级，中间项和末项分别保持连续分支与收口分支。
 
-最后核对：2026-08-16。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+最后核对：2026-08-19。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 与 [`docs/history/`](history/)。
@@ -126,6 +126,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 
 ## 已有验证基线
 
+- 2026-08-19 Desktop 发布构建阻断修复验证：`pnpm --filter @godgesture/desktop test` 通过 `50 files / 238 passed / 3 skipped`，`pnpm --filter @godgesture/desktop typecheck` 与 `pnpm --filter @godgesture/desktop build` 均通过，`git diff --check` 通过。修复了投稿复核 props 与 Shared 版本协议的多余 `parentId` 要求、账户会话 mock 的 fetch 参数类型、Vue Test Utils `get()` 的错误存在性断言，以及拖拽 pointer-up 的可空引用；Vite 仅保留动态导入和大 chunk 警告。该验证覆盖 Desktop Vue/Vite，不能替代真实 Windows/macOS Tauri 安装包和原生能力验收。
 - 2026-08-13 固定首笔 8 方向规则验证：Desktop 设置页 focused 测试 `5/5`、Shared 配置协议测试 `4/4`、Rust 解析器测试 `7/7`、旧字段 Serde 兼容测试 `1/1`、Web Console focused 配置测试所在套件 `21 files / 150 tests`、Shared/Web Console typecheck 与 `pnpm check:api` 均通过；未执行全量测试。Desktop typecheck 仍受本工作树上一轮 `GesturesView` 改动的 3 个既有 TypeScript 错误阻断，与本次设置项移除无关。
 - 2026-08-13 `pnpm dev:server` Windows 启动器修复验证：`scripts/__tests__/dev-server.test.mjs` 通过 `5/5`；Windows 子进程通过系统 PowerShell 解析可用的 `pnpm`/`pnpm.ps1`，不再使用 `pnpm.cmd` + `shell: true`，成功与失败退出码均正确传递，且不再触发 Node `DEP0190`。完整 Server 启动仍需本机 PostgreSQL/RustFS 与允许 Prisma/esbuild 构建脚本的 pnpm 策略。
 - 2026-08-12 Desktop 与 Web Console 共享 UI 迁移验证：`pnpm --filter @godgesture/ui test` 通过 `5 files / 12 tests` 且 typecheck 通过；Desktop `test` 通过 `49 files / 206 passed / 3 skipped`，typecheck 与 Vite 生产 build 通过；Server-owned Web Console `web:test` 通过 `21 files / 150 tests`，`web:typecheck` 与 `web:build` 通过；`pnpm test:repository-layout` 为 `8/8`。`apps/desktop`、`packages/ui` 和根 lockfile 的 Element Plus/`--el-` 扫描为空，`git diff --check` 通过。浏览器预览已核对浅色/深色 `980x700` 和 `800x560`：Desktop 始终为 48px 顶栏、168px 常驻左栏、30px 底栏，无导航切换按钮/抽屉；Desktop 常规按钮和表单为 32px，手势动作保留 36px、分组菜单保留 40px，页面级横向溢出为零。Web Console 继续独立验证多尺寸响应式行为；浏览器预览不替代 Windows/macOS 原生窗口按钮、拖拽区域、权限、全局输入或覆盖层的真实设备验收。

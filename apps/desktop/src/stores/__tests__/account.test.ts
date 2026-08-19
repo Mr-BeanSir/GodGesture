@@ -179,7 +179,7 @@ function makeSession() {
     setExpiredHandler: vi.fn(),
     restore: vi.fn(async () => false),
     clearLocal: vi.fn(async () => undefined),
-    authenticatedFetch: vi.fn(async () => jsonResponse(null, 404)),
+    authenticatedFetch: vi.fn(async (_input: unknown, _init?: unknown) => jsonResponse(null, 404)),
   };
 }
 

@@ -196,10 +196,6 @@ function nextButton() {
   return dialogButton(document, "Next");
 }
 
-function backButton() {
-  return dialogButton(document, "Back");
-}
-
 function submitButton() {
   return [...document.body.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.trim() === "Submit to public directory");

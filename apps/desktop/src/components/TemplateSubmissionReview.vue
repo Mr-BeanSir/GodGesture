@@ -16,7 +16,6 @@ const props = withDefaults(defineProps<{
   limits: { dailySubmissionLimit: number; pendingVersionLimit: number; publishedTemplateLimit: number; maxPackageBytes: number };
   submissionMode?: "new" | "update";
   targetVersion?: {
-    parentId: string;
     versionNumber: number;
     title: string;
     status: "pending_review" | "published" | "rejected" | "withdrawn" | "suspended";

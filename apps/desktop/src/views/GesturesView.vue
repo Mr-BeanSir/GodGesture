@@ -458,11 +458,12 @@ function onGroupGripClick(groupId: string) {
 }
 
 function onPointerUp(event: PointerEvent) {
-  if (!isActivePointerDrag(pointerDrag.value, event.pointerId)) return;
+  const currentPointerDrag = pointerDrag.value;
+  if (!currentPointerDrag || !isActivePointerDrag(currentPointerDrag, event.pointerId)) return;
   event.preventDefault();
   event.stopPropagation();
   updateDragPreview(event);
-  if (pointerDrag.value.kind === "group" && pointerDragMoved.value) {
+  if (currentPointerDrag.kind === "group" && pointerDragMoved.value) {
     suppressNextGroupGripClick.value = true;
   }
   const targetGroupId =

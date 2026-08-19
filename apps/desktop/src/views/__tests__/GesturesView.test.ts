@@ -352,7 +352,7 @@ describe("GesturesView", () => {
 
     expect(group.get(".gestures__group-icon-slot").find(".gestures__group-chevron").exists()).toBe(true);
     expect(group.get(".gestures__group-icon-slot").find(".gestures__group-grip").exists()).toBe(true);
-    expect(group.get(".gestures__group-apps").exists()).toBe(true);
+    expect(group.find(".gestures__group-apps").exists()).toBe(true);
 
     await head.trigger("click");
     expect(group.find(".gestures__group-apps").exists()).toBe(false);
@@ -603,7 +603,7 @@ describe("GesturesView", () => {
     const second = view.get('[data-action-key="gesture:30000000-0000-4000-8000-000000000002"]');
     const status = second.get(".gestures__icon-action");
 
-    expect(status.get(".gestures__status-dot").exists()).toBe(true);
+    expect(status.find(".gestures__status-dot").exists()).toBe(true);
     expect(status.classes()).toContain("is-enabled");
 
     await second.trigger("keydown", { key: " " });
