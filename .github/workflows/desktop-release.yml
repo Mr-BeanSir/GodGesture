@@ -288,17 +288,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ github.token }}
+          submodules: false
+          fetch-depth: 1
+
       - uses: actions/download-artifact@v8
         with:
           name: GodGesture-desktop-release
           path: release-artifacts
 
+      - name: Generate release notes
+        id: release-notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_API_URL: ${{ github.api_url }}
+        run: node scripts/generate-release-notes.mjs --output "$GITHUB_OUTPUT"
+
       - uses: softprops/action-gh-release@v3
         with:
           files: release-artifacts/*
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          generate_release_notes: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
           body: |
@@ -309,3 +325,5 @@ jobs:
             SHA-256 checksum files are attached for every installer and updater package.
 
             Installation and first-use instructions: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/USER_GUIDE.md
+
+            ${{ steps.release-notes.outputs.body }}

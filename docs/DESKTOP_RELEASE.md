@@ -52,6 +52,20 @@ official repository and plugin catalog URLs already have matching defaults in
 the Desktop source and do not need GitHub repository variables for the official
 release.
 
+## Windows Installer
+
+The Windows x64 NSIS installer uses Tauri's `perMachine` mode. A new
+installation defaults to `C:\Program Files\GodGesture` and requests
+administrator permission before writing files there. Later upgrades of that
+per-machine installation reuse the directory recorded by the installer.
+
+The installer intentionally does not migrate legacy `currentUser` installations
+from earlier development releases. A machine with such an installation must
+uninstall that copy before installing the per-machine release. A normal
+uninstall clears only the installer location metadata; it does not delete the
+application's user data. The `/UPDATE` path preserves the metadata so an update
+continues to use the existing directory.
+
 ## Workflow
 
 `.github/workflows/desktop-release.yml` has two entry points:
@@ -129,9 +143,31 @@ feat, fix, chore, docs, style, refactor, perf, test, revert, build, ci, config
 No other PR title type or `type:*` label is allowed. The workflow rejects a
 title outside this whitelist and reconciles the pull request to its one
 canonical `type: <type>` label.
-GitHub uses `.github/release.yml` to generate bilingual sections with links to
-merged pull requests and their authors. Direct commits without merged pull
-requests are not promised to appear in a typed section.
+
+GitHub's native `generate_release_notes` only classifies merged pull requests;
+it does not classify commits pushed directly to `main`. v0.2.1 demonstrated this
+boundary: the API returned the generated-notes marker, but the repository had no
+pull requests and the generated sections were empty even though the tag range
+contained direct commits.
+
+The tag release workflow therefore generates the release-notes portion at
+publish time with `scripts/generate-release-notes.mjs`. The script queries the
+previous non-draft Release, compares the two tags, reads merged pull requests,
+and emits one body containing:
+
+- the fixed installation, signing and checksum notes;
+- `## 自动生成的 Release Notes` with the 12 approved sections from
+  `.github/release.yml`;
+- pull request titles (with their `#number`) and direct commits, grouped by
+  their Conventional Commit type; and
+- a `Full Changelog` compare link, falling back to the current tag's commits
+  page when no previous Release exists.
+
+The workflow sets `generate_release_notes: false` deliberately because the
+custom generator already includes both commits and pull requests. Enabling the
+native flag as well would append a second, PR-only notes block. The repository
+still does not maintain `docs/CHANGELOG.md`; the body is generated afresh for
+each tag release.
 
 ## Release Assets
 

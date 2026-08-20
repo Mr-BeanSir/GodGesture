@@ -324,7 +324,7 @@ test("configures release-it for four version files without npm or GitHub publica
   ]);
 });
 
-test("configures categorized GitHub release notes without a second release path", async () => {
+test("configures a fixed GitHub release body without a second release path", async () => {
   const expected = {
     "type: feat": "✨ Features | 新功能",
     "type: fix": "🐛 Bug Fixes | Bug 修复",
@@ -367,22 +367,63 @@ test("configures categorized GitHub release notes without a second release path"
   assert.equal(releaseJob.needs, "assemble");
   assert.equal(releaseJob.if, "startsWith(github.ref, 'refs/tags/v')");
   assert.equal(releaseJob.permissions?.contents, "write");
+  assert.equal(releaseJob.permissions?.["pull-requests"], "read");
+  const releaseCheckoutIndex = releaseJob.steps.findIndex(
+    (step) => step.uses === "actions/checkout@v7",
+  );
+  const releaseArtifactDownloadIndex = releaseJob.steps.findIndex(
+    (step) => step.uses === "actions/download-artifact@v8",
+  );
+  assert.ok(releaseCheckoutIndex >= 0);
+  assert.ok(releaseArtifactDownloadIndex >= 0);
+  assert.ok(releaseCheckoutIndex < releaseArtifactDownloadIndex);
   const releaseAction = releaseJob.steps.find(
     (step) => step.uses === "softprops/action-gh-release@v3",
   );
   assert.ok(releaseAction);
-  assert.equal(releaseAction.with.generate_release_notes, true);
+  assert.equal(releaseAction.with.generate_release_notes, false);
+  const releaseCheckout = releaseJob.steps.find(
+    (step) => step.uses === "actions/checkout@v7",
+  );
+  assert.ok(releaseCheckout);
+  assert.equal(releaseCheckout.with.token, "${{ github.token }}");
+  assert.equal(releaseCheckout.with.submodules, false);
+  const releaseNotesStep = releaseJob.steps.find(
+    (step) => step.name === "Generate release notes",
+  );
+  assert.ok(releaseNotesStep);
+  assert.ok(
+    releaseArtifactDownloadIndex <
+      releaseJob.steps.findIndex((step) => step.name === "Generate release notes"),
+  );
+  assert.equal(releaseNotesStep.id, "release-notes");
+  assert.equal(
+    releaseNotesStep.run,
+    'node scripts/generate-release-notes.mjs --output "$GITHUB_OUTPUT"',
+  );
+  assert.equal(releaseNotesStep.env.GITHUB_TOKEN, "${{ github.token }}");
+  assert.equal(releaseNotesStep.env.GITHUB_REPOSITORY, "${{ github.repository }}");
+  assert.equal(releaseNotesStep.env.GITHUB_REF_NAME, "${{ github.ref_name }}");
   assert.match(releaseAction.with.body, /Authenticode signed/);
   assert.match(releaseAction.with.body, /ad-hoc signed/);
   assert.match(releaseAction.with.body, /Accessibility and Input Monitoring/);
   assert.match(releaseAction.with.body, /SHA-256 checksum/);
   assert.match(releaseAction.with.body, /Installation and first-use instructions/);
   assert.match(releaseAction.with.body, /docs\/USER_GUIDE\.md/);
+  assert.match(releaseAction.with.body, /steps\.release-notes\.outputs\.body/);
+  assert.doesNotMatch(JSON.stringify(releaseJob), /Resolve previous release tag/);
 
   const releaseItConfig = JSON.parse(
     await readFile(new URL("../../.release-it.json", import.meta.url), "utf8"),
   );
   assert.equal(releaseItConfig.github.release, false);
+});
+
+test("release notes generator is included in the release validation suite", async () => {
+  const packageJson = JSON.parse(
+    await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+  );
+  assert.match(packageJson.scripts["validate:release"], /release-notes\.test\.mjs/);
 });
 
 async function createFixture({

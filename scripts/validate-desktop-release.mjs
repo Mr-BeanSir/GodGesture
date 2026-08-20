@@ -8,6 +8,7 @@ import {
   readProjectVersion,
   releaseArtifactNames,
 } from "./desktop-release.mjs";
+import { RELEASE_CATEGORIES } from "./generate-release-notes.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = resolve(root, ".github/workflows/desktop-release.yml");
@@ -48,6 +49,13 @@ assert.deepEqual(
   expectedReleaseCategories,
   "Release notes categories must cover the approved type labels exactly",
 );
+assert.deepEqual(
+  Object.fromEntries(
+    RELEASE_CATEGORIES.map(({ type, title }) => [`type: ${type}`, title]),
+  ),
+  expectedReleaseCategories,
+  "Release notes generator categories must match .github/release.yml",
+);
 
 assert.equal(workflow.name, "Signed desktop release");
 assert.ok(workflow.on?.workflow_dispatch !== undefined);
@@ -63,6 +71,7 @@ assert.deepEqual(jobs.assemble.needs, ["windows", "macos"]);
 assert.equal(jobs.release.needs, "assemble");
 assert.equal(jobs.release.if, "startsWith(github.ref, 'refs/tags/v')");
 assert.equal(jobs.release.permissions?.contents, "write");
+assert.equal(jobs.release.permissions?.["pull-requests"], "read");
 for (const name of ["windows", "macos", "assemble"]) {
   assert.notEqual(jobs[name].permissions?.contents, "write");
 }
@@ -185,7 +194,39 @@ const releaseAction = jobs.release.steps.find(
   (step) => step.uses === "softprops/action-gh-release@v3",
 );
 assert.ok(releaseAction, "Release job must publish through softprops/action-gh-release@v3");
-assert.equal(releaseAction.with?.generate_release_notes, true);
+assert.equal(releaseAction.with?.generate_release_notes, false);
+assert.equal(jobs.release.permissions?.contents, "write");
+assert.equal(jobs.release.permissions?.["pull-requests"], "read");
+const releaseCheckout = jobs.release.steps.find(
+  (step) => step.uses === "actions/checkout@v7",
+);
+assert.ok(releaseCheckout, "Release job must checkout the trusted release-notes generator");
+assert.equal(releaseCheckout.with?.token, "${{ github.token }}");
+assert.equal(releaseCheckout.with?.submodules, false);
+assert.equal(releaseCheckout.with?.["fetch-depth"], 1);
+const releaseCheckoutIndex = jobs.release.steps.findIndex(
+  (step) => step.uses === "actions/checkout@v7",
+);
+const releaseArtifactDownloadIndex = jobs.release.steps.findIndex(
+  (step) => step.uses === "actions/download-artifact@v8",
+);
+assert.ok(releaseCheckoutIndex < releaseArtifactDownloadIndex);
+const releaseNotesStep = jobs.release.steps.find(
+  (step) => step.name === "Generate release notes",
+);
+assert.ok(releaseNotesStep, "Release job must generate notes from commits and PRs");
+assert.equal(releaseNotesStep.id, "release-notes");
+assert.equal(
+  releaseNotesStep.run,
+  'node scripts/generate-release-notes.mjs --output "$GITHUB_OUTPUT"',
+);
+assert.equal(releaseNotesStep.env?.GITHUB_TOKEN, "${{ github.token }}");
+assert.equal(releaseNotesStep.env?.GITHUB_REPOSITORY, "${{ github.repository }}");
+assert.equal(releaseNotesStep.env?.GITHUB_REF_NAME, "${{ github.ref_name }}");
+assert.ok(
+  releaseArtifactDownloadIndex <
+    jobs.release.steps.findIndex((step) => step.name === "Generate release notes"),
+);
 assert.match(JSON.stringify(jobs.release), /release-artifacts\/\*/);
 assert.match(JSON.stringify(jobs.release), /fail_on_unmatched_files/);
 assert.match(JSON.stringify(jobs.release), /contains\(github\.ref_name, '-'/);
@@ -198,6 +239,8 @@ assert.match(releaseBody, /Accessibility and Input Monitoring/);
 assert.match(releaseBody, /SHA-256 checksum/);
 assert.match(releaseBody, /Installation and first-use instructions/);
 assert.match(releaseBody, /docs\/USER_GUIDE\.md/);
+assert.match(releaseBody, /steps\.release-notes\.outputs\.body/);
+assert.doesNotMatch(JSON.stringify(jobs.release), /Resolve previous release tag/);
 
 for (const forbidden of [
   "APPLE_CERTIFICATE",

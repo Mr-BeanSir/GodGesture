@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-## 官方模板、Web Console 与共享 UI（2026-08-19）
+## 官方模板、Web Console、共享 UI 与 Windows 安装器（2026-08-20）
 
 Desktop 公共投稿现在会在提交前展示作者、目标、手势数量和插件摘要并要求确认。
 Desktop 设置工作台与 Server-owned Web Console 现通过根 `@godgesture/ui` 共享无业务 Vue
@@ -10,7 +10,12 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 左侧导航分为用户功能与管理员功能，管理员区仅对管理员显示。配置查看中的应用分组使用树形
 连接线呈现应用层级，中间项和末项分别保持连续分支与收口分支。
 
-最后核对：2026-08-19。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
+Windows NSIS 安装器现统一使用 `perMachine`：新安装默认到
+`C:\Program Files\GodGesture` 并在安装时请求 UAC；后续全机安装升级沿用已记录的安装目录。
+正常卸载会清除安装位置元数据，使下一次安装恢复该默认目录。当前不提供旧版
+`currentUser` 安装的自动迁移，旧版用户需要先卸载旧安装再安装全机版本。
+
+最后核对：2026-08-20。本文是当前实际实现的唯一状态入口；术语以 [`CONTEXT.md`](../CONTEXT.md) 为准，
 协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按 [`docs/adr/README.md`](adr/README.md) 路由。
 本文不记录逐日开发流水；历史里程碑和发布审计资料按需读取 [`docs/CHANGELOG.md`](CHANGELOG.md)
 与 [`docs/history/`](history/)。
@@ -106,6 +111,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 
 - Desktop 日志落在 `app_log_dir()` 的脱敏 JSONL，级别为 `off/error/warn/info/debug`，不上传、不参与同步；日志页支持最新优先、trace 折叠、筛选、导出、清理和可关闭的自动跟随。
 - 2026-08-19 Desktop 发布自动化已接入：根 `pnpm release` wrapper 使用 release-it 同步四个 Desktop 版本文件，PR workflow 维护 `type:*` 标签，GitHub 使用 `.github/release.yml` 生成 Release Notes。Windows/macOS 发布 job 现在从 GitHub Actions Repository Variable `GODGESTURE_API` 注入官方 Server origin，并在打包前拒绝缺失或非法的非 HTTPS origin；该值由 Vite 编译进应用，安装包不读取或携带外部 `.env`。发布 workflow 和 macOS CI 已统一使用 Node `24.18.1`，并切换到 Node 24 runtime 的 GitHub Actions major。当前本地验证入口为 `pnpm release patch --dry-run` 和 `pnpm validate:release`；live GitHub API 的生成正文检查，以及真实 Windows/macOS `v0.2.0` 产物验收，仍待维护者执行带 tag 的发布和平台检查，不能由本地验证替代。
+- 2026-08-20 GitHub Release 正文已改为发布时生成：GitHub 原生 `generate_release_notes` 只按合并 PR 生成，不能覆盖直接提交；v0.2.1 的 live body 已证明仓库无 PR 时会只有空的生成标记。tag job 现在由 `scripts/generate-release-notes.mjs` 查询上一个非 draft Release、比较 tag 提交、读取合并 PR，并按 `.github/release.yml` 的 12 类同时归类 PR title 与直接提交，输出固定说明、`自动生成的 Release Notes` 和 `Full Changelog`。因此 action 明确关闭原生生成以避免重复；本地契约与假 API 测试已覆盖，新的 live tag 页面仍待维护者验证。
 - 2026-08-19 macOS universal 发布阻断修复：`fetch:node-toolchain --target=universal-apple-darwin` 在两个架构间复用同一个 pnpm 归档，避免 Node 24 下第二次创建 `pnpm-10.34.5.tgz` 触发 `EEXIST`；两个架构仍分别解压并复制 pnpm 到各自工具链目录。回归测试 `scripts/__tests__/node-toolchain.test.mjs` 通过 `8/8`，真实 macOS universal 打包仍需 GitHub Actions 平台运行证据。
 - `pnpm dev:server` 会先生成 Prisma Client 并幂等应用已提交迁移，再等待后端健康检查后启动 Web Console；本地 PostgreSQL 与 RustFS 仍由 `apps/server/docker-compose.dev.yml` 提供。
 - stable `v0.1.0` 已有 Windows x64 NSIS 与 macOS universal ad-hoc DMG/Updater。当前分发模型不提供 Authenticode、Developer ID、公证或 staple。
@@ -127,6 +133,7 @@ vue-i18n 文案 key 层但只注册中文 locale，移除浏览器语言检测�
 
 ## 已有验证基线
 
+- 2026-08-20 Release Notes 根因与回归验证：GitHub API 检查 v0.2.1 的 body 含原生生成标记但没有分类条目；`v0.1.0...v0.2.1` 有 196 个直接提交且仓库没有 PR。新增 `scripts/generate-release-notes.mjs` 及 4 个 Node 测试，覆盖 12 类分组、PR title、直接提交、PR 提交去重、无历史 Release 回退链接和假 GitHub API/$GITHUB_OUTPUT 链路；发布工作流合同与 `node scripts/validate-desktop-release.mjs` 均通过。真实 tag 生成正文、Windows/macOS 产物和平台安装验收仍需维护者执行。
 - 2026-08-19 Desktop 发布构建阻断修复验证：`pnpm --filter @godgesture/desktop test` 通过 `50 files / 238 passed / 3 skipped`，`pnpm --filter @godgesture/desktop typecheck` 与 `pnpm --filter @godgesture/desktop build` 均通过，`git diff --check` 通过。修复了投稿复核 props 与 Shared 版本协议的多余 `parentId` 要求、账户会话 mock 的 fetch 参数类型、Vue Test Utils `get()` 的错误存在性断言，以及拖拽 pointer-up 的可空引用；Vite 仅保留动态导入和大 chunk 警告。该验证覆盖 Desktop Vue/Vite，不能替代真实 Windows/macOS Tauri 安装包和原生能力验收。
 - 2026-08-13 固定首笔 8 方向规则验证：Desktop 设置页 focused 测试 `5/5`、Shared 配置协议测试 `4/4`、Rust 解析器测试 `7/7`、旧字段 Serde 兼容测试 `1/1`、Web Console focused 配置测试所在套件 `21 files / 150 tests`、Shared/Web Console typecheck 与 `pnpm check:api` 均通过；未执行全量测试。Desktop typecheck 仍受本工作树上一轮 `GesturesView` 改动的 3 个既有 TypeScript 错误阻断，与本次设置项移除无关。
 - 2026-08-13 `pnpm dev:server` Windows 启动器修复验证：`scripts/__tests__/dev-server.test.mjs` 通过 `5/5`；Windows 子进程通过系统 PowerShell 解析可用的 `pnpm`/`pnpm.ps1`，不再使用 `pnpm.cmd` + `shell: true`，成功与失败退出码均正确传递，且不再触发 Node `DEP0190`。完整 Server 启动仍需本机 PostgreSQL/RustFS 与允许 Prisma/esbuild 构建脚本的 pnpm 策略。
