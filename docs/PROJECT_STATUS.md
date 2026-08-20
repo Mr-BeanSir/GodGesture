@@ -21,6 +21,12 @@
 在首个按钮仍按住时延期该超时，等待释放后再走取消。未形成方向轨迹时仍回放点击，形成方向轨迹后按
 `PathTracker` 语义吞掉主键释放且不回放，已由 Rust 回归测试覆盖。真实 Windows 现场仍需验收。
 
+Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标下窗口及父链识别
+`TrayNotifyWnd`、`TrayButton` 和通知区域溢出窗口；没有普通或边角捕获时，托盘区域的鼠标按下直接放行，
+不再先被 `BoundaryMatcher`/`PathTracker` 吞掉后依赖 `SendInput` 回放，从而避免 GodGesture 托盘右键菜单在
+重复点击后失去原生打开机会。该适配仅属于 Windows；macOS 不使用该判定，现有行为不变。真实 Windows
+托盘菜单重复点击仍需在新构建进程中现场验收。
+
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由
 `PathTracker` 负责准入，边角路径仍由 `BoundaryMatcher` 负责边/角候选，但两侧共用同一个 parser、输入顺序、
 释放锚点和已消费输入记录。边角首 token 的候选判断由 `BoundaryMatcher` 内部完成，无匹配时仍建立 visual-only
@@ -99,13 +105,14 @@
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
-- Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。底部托盘最新日志只有新的 `ButtonDown`，没有对应的移动、引擎完成、覆盖层 Begin 或 ButtonUp，尚不能判断是没有越过普通手势阈值、钩子分发阻塞还是覆盖层渲染问题；须结合新增的生命周期和 `mouse_input_slow` 日志验收。
+- Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 
 ## 最近验证
 
 - 2026-08-20：Release Notes 定向测试 `4/4`，`pnpm validate:release` `42/42`；v0.2.2 tag run #13 在 `e38ddf1` 成功完成双平台资产，但 live body 仍是旧标题。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
-- 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `272 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
+- 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
+- 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
 - 更早的逐轮验证已压缩至 [`docs/CHANGELOG.md`](CHANGELOG.md)，stable `v0.1.0` 完整发布证据见 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
 
 ## 工作区与文档路由

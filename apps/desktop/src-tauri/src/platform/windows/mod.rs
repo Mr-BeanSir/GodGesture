@@ -103,6 +103,10 @@ impl PlatformServices for WindowsPlatform {
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo> {
         window::screen_at(pos)
     }
+
+    fn is_system_tray_point(&self, pos: Point) -> bool {
+        window::is_system_tray_point(pos)
+    }
 }
 
 struct EngineHookHandler {

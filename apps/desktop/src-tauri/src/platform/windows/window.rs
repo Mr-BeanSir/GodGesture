@@ -26,8 +26,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
+    GetAncestor, GetClassNameW, GetCursorPos, GetForegroundWindow, GetParent, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT,
 };
 
 /// pid → (exe_name, exe_path) 缓存(pid 复用风险低,进程退出后条目自然失效)
@@ -120,6 +120,36 @@ pub fn window_info(hwnd: HWND) -> Option<WindowAppInfo> {
 pub fn foreground_window_info() -> Option<WindowAppInfo> {
     let hwnd = unsafe { GetForegroundWindow() };
     window_info(hwnd)
+}
+
+const SYSTEM_TRAY_CLASSES: &[&str] = &["TrayNotifyWnd", "TrayButton", "NotifyIconOverflowWindow"];
+
+fn is_system_tray_class(class: &str) -> bool {
+    SYSTEM_TRAY_CLASSES.contains(&class)
+}
+
+/// Returns whether the physical point belongs to Windows' notification area.
+/// The toolbar itself is nested below `TrayNotifyWnd`, so inspect the parent
+/// chain instead of relying on the localized window title.
+pub fn is_system_tray_point(pos: Point) -> bool {
+    unsafe {
+        let mut hwnd = WindowFromPoint(POINT { x: pos.x, y: pos.y });
+        for _ in 0..8 {
+            if hwnd.is_invalid() {
+                return false;
+            }
+            let mut class_buf = [0u16; 128];
+            let n = GetClassNameW(hwnd, &mut class_buf) as usize;
+            if n > 0 && is_system_tray_class(&String::from_utf16_lossy(&class_buf[..n])) {
+                return true;
+            }
+            hwnd = match GetParent(hwnd) {
+                Ok(parent) => parent,
+                Err(_) => return false,
+            };
+        }
+    }
+    false
 }
 
 /// Application identity for the root window under the physical cursor.
@@ -384,5 +414,14 @@ mod tests {
     fn unpackaged_test_process_has_no_aumid() {
         let handle = unsafe { windows::Win32::System::Threading::GetCurrentProcess() };
         assert_eq!(query_aumid(handle), None);
+    }
+
+    #[test]
+    fn system_tray_class_matching_ignores_localized_titles() {
+        assert!(is_system_tray_class("TrayNotifyWnd"));
+        assert!(is_system_tray_class("TrayButton"));
+        assert!(is_system_tray_class("NotifyIconOverflowWindow"));
+        assert!(!is_system_tray_class("ToolbarWindow32"));
+        assert!(!is_system_tray_class("Shell_TrayWnd"));
     }
 }

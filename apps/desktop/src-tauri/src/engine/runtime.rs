@@ -110,6 +110,11 @@ pub trait PlatformServices: Send + Sync {
     /// 光标所在显示器的完整边界与 DPI 缩放(触发角/摩擦边判定用)。
     /// 该点不属于任何已知显示器时返回 None。
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo>;
+    /// Windows 通知区域等系统输入面应优先收到原生鼠标事件。
+    /// 其它平台没有该类系统托盘命中判定时保持放行。
+    fn is_system_tray_point(&self, _pos: Point) -> bool {
+        false
+    }
 }
 
 /// 手势进行中的会话状态(仅钩子线程与定时线程经锁访问)
@@ -346,6 +351,24 @@ impl EngineShared {
                     mask_before & !bit
                 );
                 return true;
+            }
+        }
+
+        // System tray icons must receive their native click sequence. Only
+        // bypass gesture admission when no existing capture owns the input;
+        // an active gesture still has priority for its secondary buttons.
+        if let Input::ButtonDown(button, pos) = &input {
+            let capture_active =
+                self.tracker.lock().is_capturing() || self.boundary.lock().is_active();
+            if !capture_active && !self.is_recording() && self.platform.is_system_tray_point(*pos) {
+                log::debug!(
+                    target: "platform.windows",
+                    "event=system_tray_input_passthrough phase=down button={:?} x={} y={}",
+                    button,
+                    pos.x,
+                    pos.y
+                );
+                return false;
             }
         }
 
@@ -1561,6 +1584,7 @@ mod tests {
     struct BoundaryPlatform {
         clicks: Mutex<Vec<(MouseButton, Point)>>,
         wheels: Mutex<Vec<bool>>,
+        tray_points: Mutex<Vec<Point>>,
     }
 
     impl PlatformServices for BoundaryPlatform {
@@ -1596,6 +1620,10 @@ mod tests {
                 },
                 dpi_scale: 1.0,
             })
+        }
+
+        fn is_system_tray_point(&self, pos: Point) -> bool {
+            self.tray_points.lock().contains(&pos)
         }
     }
 
@@ -1822,6 +1850,19 @@ mod tests {
             platform.clicks.lock().as_slice(),
             &[(MouseButton::Right, corner)]
         );
+    }
+
+    #[test]
+    fn system_tray_button_clicks_bypass_gesture_capture() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let tray = Point { x: 2199, y: 1072 };
+        platform.tray_points.lock().push(tray);
+        let (shared, _rx) = EngineShared::new(ConfigDocument::default(), platform);
+
+        for _ in 0..8 {
+            assert!(!shared.on_hook_event(Input::ButtonDown(MouseButton::Right, tray)));
+            assert!(!shared.on_hook_event(Input::ButtonUp(MouseButton::Right, tray)));
+        }
     }
 
     #[test]
