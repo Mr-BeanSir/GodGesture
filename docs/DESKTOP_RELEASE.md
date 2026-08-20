@@ -156,7 +156,7 @@ previous non-draft Release, compares the two tags, reads merged pull requests,
 and emits one body containing:
 
 - the fixed installation, signing and checksum notes;
-- `## 自动生成的 Release Notes` with the 12 approved sections from
+- `## Release Notes` with the 12 approved sections from
   `.github/release.yml`;
 - pull request titles (with their `#number`) and direct commits, grouped by
   their Conventional Commit type; and

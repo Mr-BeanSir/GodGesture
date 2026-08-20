@@ -54,7 +54,7 @@ test("groups direct commits and pull request titles into the configured sections
     ],
   });
 
-  assert.match(notes, /## 自动生成的 Release Notes/);
+  assert.match(notes, /## Release Notes/);
   assert.match(notes, /### ✨ Features \| 新功能/);
   assert.match(notes, /### 🐛 Bug Fixes \| Bug 修复/);
   assert.match(notes, /### 📝 Documentation \| 文档/);
@@ -73,7 +73,8 @@ test("groups direct commits and pull request titles into the configured sections
     notes,
     /\*\*Full Changelog\*\*: https:\/\/github\.com\/Mr-BeanSir\/GodGesture\/compare\/v0\.2\.1\.\.\.v0\.2\.2/,
   );
-  assert.equal((notes.match(/## 自动生成的 Release Notes/g) ?? []).length, 1);
+  assert.equal((notes.match(/## Release Notes/g) ?? []).length, 1);
+  assert.doesNotMatch(notes, /## 自动生成的 Release Notes/);
   assert.ok(notes.endsWith(
     "**Full Changelog**: https://github.com/Mr-BeanSir/GodGesture/compare/v0.2.1...v0.2.2",
   ));

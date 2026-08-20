@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { parsePrTitle, PR_TYPES } from "./pr-title.mjs";
 
 const PAGE_SIZE = 100;
-const RELEASE_TITLE = "自动生成的 Release Notes";
+const RELEASE_TITLE = "Release Notes";
 const RELEASE_TYPE_TITLES = Object.freeze({
   feat: "✨ Features | 新功能",
   fix: "🐛 Bug Fixes | Bug 修复",
