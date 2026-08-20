@@ -419,6 +419,25 @@ test("configures a fixed GitHub release body without a second release path", asy
   assert.equal(releaseItConfig.github.release, false);
 });
 
+test("runs Windows Rust tests in the release profile before packaging", async () => {
+  const workflow = parseYaml(
+    await readFile(
+      new URL("../../.github/workflows/desktop-release.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  const windowsJob = workflow.jobs.windows;
+  assert.equal(windowsJob["timeout-minutes"], 30);
+  const rustTestStep = windowsJob.steps.find(
+    (step) => step.name === "Test Rust library",
+  );
+  assert.ok(rustTestStep);
+  assert.equal(
+    rustTestStep.run,
+    "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release",
+  );
+});
+
 test("release notes generator is included in the release validation suite", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../../package.json", import.meta.url), "utf8"),

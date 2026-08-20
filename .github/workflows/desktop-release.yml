@@ -13,6 +13,7 @@ jobs:
   windows:
     name: Windows x64 NSIS
     runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -55,7 +56,7 @@ jobs:
         run: pnpm --filter @godgesture/desktop test
 
       - name: Test Rust library
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release
 
       - name: Require updater signing key
         shell: pwsh
