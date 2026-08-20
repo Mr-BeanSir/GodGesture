@@ -4,8 +4,9 @@
 //! 一旦进入活动捕获,输入标准化、有序步骤与独立修饰符仲裁、消费记录和主释放键语义必须一致。
 
 use super::config::{GestureInput, GestureInputButton};
+use super::parser::{StrokeEvent, StrokeParser};
 use super::tracker::MouseButton;
-use super::types::Modifier;
+use super::types::{Direction, Modifier, Point};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ReleaseAnchor {
@@ -83,6 +84,10 @@ impl<C: Clone> OrderedMatcher<C> {
 
     pub fn next_index(&self) -> usize {
         self.next_index
+    }
+
+    pub fn candidate_count(&self) -> usize {
+        self.candidates.len()
     }
 
     pub fn has_fallback(&self) -> bool {
@@ -176,6 +181,36 @@ impl CaptureLedger {
         &mut self.inputs
     }
 
+    /// Keep ordered stroke inputs aligned with the parser. The parser may
+    /// rewrite the first diagonal stroke after a turn, so replacing existing
+    /// stroke entries must happen before appending any new ones.
+    pub fn sync_strokes(&mut self, strokes: &[Direction]) {
+        let stroke_positions = self
+            .inputs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, input)| {
+                matches!(input, GestureInput::Stroke { .. }).then_some(index)
+            })
+            .collect::<Vec<_>>();
+
+        for (position, direction) in stroke_positions
+            .iter()
+            .copied()
+            .zip(strokes.iter().copied())
+        {
+            self.inputs[position] = GestureInput::Stroke { direction };
+        }
+        if strokes.len() > stroke_positions.len() {
+            self.inputs.extend(
+                strokes[stroke_positions.len()..]
+                    .iter()
+                    .copied()
+                    .map(|direction| GestureInput::Stroke { direction }),
+            );
+        }
+    }
+
     pub fn push_ordered(
         &mut self,
         input: GestureInput,
@@ -252,6 +287,91 @@ impl CaptureLedger {
     }
 }
 
+/// Shared active gesture capture used by ordinary and boundary admissions.
+///
+/// Admission and candidate lookup stay outside this type. Once an input owner
+/// has been selected, both paths use the same stroke parser, ordered input
+/// ledger, release anchor and replay bookkeeping.
+#[derive(Debug)]
+pub struct GestureCapture {
+    parser: StrokeParser,
+    ledger: CaptureLedger,
+}
+
+impl GestureCapture {
+    pub fn new(origin: Point, effective_move_px: f64, release_anchor: Option<MouseButton>) -> Self {
+        Self {
+            parser: StrokeParser::new(origin, effective_move_px),
+            ledger: CaptureLedger::with_release_anchor(release_anchor),
+        }
+    }
+
+    pub fn feed_move(&mut self, point: Point) -> StrokeEvent {
+        self.parser.feed(point)
+    }
+
+    pub fn strokes(&self) -> &[Direction] {
+        self.parser.strokes()
+    }
+
+    pub fn sync_strokes(&mut self) {
+        self.ledger.sync_strokes(self.parser.strokes());
+    }
+
+    pub fn inputs(&self) -> &[GestureInput] {
+        self.ledger.inputs()
+    }
+
+    pub fn inputs_mut(&mut self) -> &mut Vec<GestureInput> {
+        self.ledger.inputs_mut()
+    }
+
+    pub fn push_ordered(
+        &mut self,
+        input: GestureInput,
+        replay: Option<CaptureReplay>,
+        button: Option<MouseButton>,
+    ) {
+        self.ledger.push_ordered(input, replay, button);
+    }
+
+    pub fn release_anchor(&self) -> ReleaseAnchor {
+        self.ledger.release_anchor()
+    }
+
+    pub fn arm_release(&mut self, anchor: Option<MouseButton>) -> bool {
+        self.ledger.arm_release(anchor)
+    }
+
+    pub fn waiting_for_release(&self) -> Option<MouseButton> {
+        self.ledger.waiting_for_release()
+    }
+
+    pub fn release_button(&mut self, button: MouseButton) -> ReleaseDisposition {
+        self.ledger.release_button(button)
+    }
+
+    pub fn consumed(&self) -> &[CaptureReplay] {
+        self.ledger.consumed()
+    }
+
+    pub fn take_consumed(&mut self) -> Vec<CaptureReplay> {
+        self.ledger.take_consumed()
+    }
+
+    pub fn released_buttons(&self) -> &[MouseButton] {
+        self.ledger.released_buttons()
+    }
+
+    pub fn take_released_buttons(&mut self) -> Vec<MouseButton> {
+        self.ledger.take_released_buttons()
+    }
+
+    pub fn has_consumed_button(&self, button: MouseButton) -> bool {
+        self.ledger.has_consumed_button(button)
+    }
+}
+
 pub fn button_input(button: MouseButton) -> GestureInput {
     GestureInput::Button {
         button: match button {
@@ -268,7 +388,14 @@ pub fn button_input(button: MouseButton) -> GestureInput {
 mod tests {
     use super::*;
     use crate::engine::config::BoundaryWheelDirection;
+    use crate::engine::parser::StrokeEvent;
+    use crate::engine::tracker::MouseButton;
+    use crate::engine::types::Direction;
     use crate::engine::types::Point;
+
+    fn point(x: i32, y: i32) -> Point {
+        Point { x, y }
+    }
 
     fn stroke() -> GestureInput {
         GestureInput::Stroke {
@@ -310,6 +437,7 @@ mod tests {
             ),
             Ok(None)
         );
+        assert_eq!(matcher.candidate_count(), 2);
         assert_eq!(
             matcher.feed(
                 &'c',
@@ -318,6 +446,7 @@ mod tests {
             ),
             Ok(Some(vec!['a', 'c']))
         );
+        assert_eq!(matcher.candidate_count(), 1);
     }
 
     #[test]
@@ -337,5 +466,33 @@ mod tests {
         );
         assert!(ledger.record_consumed_button_up(MouseButton::Right));
         assert_eq!(ledger.released_buttons(), &[MouseButton::Right]);
+    }
+
+    #[test]
+    fn shared_capture_syncs_diagonal_rewrite_without_duplicate_strokes() {
+        let mut capture = GestureCapture::new(point(0, 0), 10.0, Some(MouseButton::Right));
+        assert_eq!(capture.feed_move(point(20, -20)), StrokeEvent::Grew);
+        capture.push_ordered(
+            GestureInput::Stroke {
+                direction: Direction::RightUp,
+            },
+            None,
+            None,
+        );
+        capture.feed_move(point(40, -40));
+        assert_eq!(capture.feed_move(point(80, -40)), StrokeEvent::Grew);
+        capture.sync_strokes();
+        assert_eq!(capture.strokes(), &[Direction::Up, Direction::Right]);
+        assert_eq!(
+            capture.inputs(),
+            &[
+                GestureInput::Stroke {
+                    direction: Direction::Up,
+                },
+                GestureInput::Stroke {
+                    direction: Direction::Right,
+                },
+            ]
+        );
     }
 }

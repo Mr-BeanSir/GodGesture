@@ -6,6 +6,7 @@ use super::hook::EXTRA_INFO_TAG;
 use super::keys;
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
+use std::time::{Duration, Instant};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE,
@@ -14,9 +15,48 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, SetCursorPos, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_SWAPBUTTON,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetCursorPos, GetSystemMetrics, SetCursorPos, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_SWAPBUTTON, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CursorRecoveryClassification {
+    TargetAlreadyCurrent,
+    MovedSuccessfully,
+    SucceededButTargetNotObserved,
+    Failed { win32_error: u32 },
+}
+
+fn classify_cursor_recovery(
+    target: Point,
+    before: Option<Point>,
+    set_succeeded: bool,
+    win32_error: u32,
+    after: Option<Point>,
+) -> CursorRecoveryClassification {
+    if before == Some(target) && after == Some(target) {
+        return CursorRecoveryClassification::TargetAlreadyCurrent;
+    }
+    if !set_succeeded {
+        return CursorRecoveryClassification::Failed { win32_error };
+    }
+    if after == Some(target) {
+        return CursorRecoveryClassification::MovedSuccessfully;
+    }
+    CursorRecoveryClassification::SucceededButTargetNotObserved
+}
+
+fn cursor_position() -> Option<Point> {
+    let mut point = windows::Win32::Foundation::POINT::default();
+    if unsafe { GetCursorPos(&mut point) }.is_ok() {
+        Some(Point {
+            x: point.x,
+            y: point.y,
+        })
+    } else {
+        None
+    }
+}
 
 fn button_flags(button: MouseButton, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
     // 主/副键交换时,逻辑右键要发左键事件才能到达目标语义
@@ -83,6 +123,25 @@ fn send_button(button: MouseButton, down: bool, _pos: Point) -> Result<(), Strin
     send_inputs(&[button_input(button, down)]).map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SendInputTiming {
+    requested: usize,
+    inserted: usize,
+    short_write: bool,
+    elapsed_us: u128,
+}
+
+impl SendInputTiming {
+    fn from_counts(requested: usize, inserted: usize, elapsed: Duration) -> Self {
+        Self {
+            requested,
+            inserted,
+            short_write: inserted != requested,
+            elapsed_us: elapsed.as_micros(),
+        }
+    }
+}
+
 /// 合成一次按下(用于起始超时转普通拖拽)
 pub fn synthesize_down(button: MouseButton, pos: Point) {
     if let Err(error) = send_button(button, true, pos) {
@@ -90,12 +149,68 @@ pub fn synthesize_down(button: MouseButton, pos: Point) {
     }
 }
 
-/// 合成一次完整点击(down + up)
-pub fn synthesize_click(button: MouseButton, pos: Point) {
-    if let Err(error) = unsafe { SetCursorPos(pos.x, pos.y) } {
-        log::warn!("无法在点击重放前恢复光标位置: {error}");
+/// 合成一次完整点击(down + up),并记录一次边界重放的分段诊断数据。
+pub fn synthesize_click(replay_id: u64, button: MouseButton, pos: Point) {
+    let cursor_started = Instant::now();
+    let before = cursor_position();
+    let set_result = unsafe { SetCursorPos(pos.x, pos.y) };
+    let (set_succeeded, win32_error) = match &set_result {
+        Ok(()) => (true, 0),
+        Err(error) => (false, error.code().0 as u32),
+    };
+    let after = cursor_position();
+    let classification = classify_cursor_recovery(pos, before, set_succeeded, win32_error, after);
+    let cursor_us = cursor_started.elapsed().as_micros();
+    log::debug!(
+        target: "platform.windows",
+        "event=replay_cursor replay_id={} target=({}, {}) before={:?} after={:?} set_succeeded={} win32_error={} classification={:?} cursor_us={}",
+        replay_id,
+        pos.x,
+        pos.y,
+        before,
+        after,
+        set_succeeded,
+        win32_error,
+        classification,
+        cursor_us
+    );
+    if matches!(classification, CursorRecoveryClassification::Failed { .. }) {
+        let error = set_result
+            .as_ref()
+            .expect_err("failed cursor recovery must carry the SetCursorPos error");
+        log::warn!(
+            target: "platform.windows",
+            "无法在点击重放前恢复光标位置: replay_id={} target=({}, {}) before={:?} after={:?} win32_error={} error={error}",
+            replay_id,
+            pos.x,
+            pos.y,
+            before,
+            after,
+            win32_error
+        );
     }
-    if let Err(error) = synthesize_click_checked(button) {
+
+    let down = button_input(button, true);
+    let up = button_input(button, false);
+    let send_started = Instant::now();
+    let send_result = send_inputs(&[down, up]);
+    let timing = match &send_result {
+        Ok(()) => SendInputTiming::from_counts(2, 2, send_started.elapsed()),
+        Err(error) => SendInputTiming::from_counts(2, error.inserted, send_started.elapsed()),
+    };
+    log::debug!(
+        target: "platform.windows",
+        "event=replay_send_input replay_id={} requested={} inserted={} short_write={} injection_us={}",
+        replay_id,
+        timing.requested,
+        timing.inserted,
+        timing.short_write,
+        timing.elapsed_us
+    );
+    if let Err(error) = send_result {
+        if error.inserted == 1 {
+            let _ = send_inputs(&[up]);
+        }
         log::error!("合成鼠标点击失败: {error}");
     }
 }
@@ -568,6 +683,72 @@ fn modified_char_key_name(ch: char) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_recovery_classifies_target_already_current() {
+        let target = Point { x: 100, y: 200 };
+
+        assert_eq!(
+            classify_cursor_recovery(target, Some(target), true, 0, Some(target)),
+            CursorRecoveryClassification::TargetAlreadyCurrent
+        );
+    }
+
+    #[test]
+    fn cursor_recovery_classifies_observed_target_even_when_set_cursor_pos_reports_false() {
+        let target = Point { x: 100, y: 200 };
+
+        assert_eq!(
+            classify_cursor_recovery(target, Some(target), false, 0, Some(target)),
+            CursorRecoveryClassification::TargetAlreadyCurrent
+        );
+    }
+
+    #[test]
+    fn cursor_recovery_classifies_successful_move() {
+        let target = Point { x: 100, y: 200 };
+
+        assert_eq!(
+            classify_cursor_recovery(target, Some(Point { x: 10, y: 20 }), true, 0, Some(target),),
+            CursorRecoveryClassification::MovedSuccessfully
+        );
+    }
+
+    #[test]
+    fn cursor_recovery_keeps_zero_win32_error_on_failed_set_cursor_pos() {
+        let target = Point { x: 100, y: 200 };
+
+        assert_eq!(
+            classify_cursor_recovery(
+                target,
+                Some(Point { x: 10, y: 20 }),
+                false,
+                0,
+                Some(Point { x: 10, y: 20 }),
+            ),
+            CursorRecoveryClassification::Failed { win32_error: 0 }
+        );
+    }
+
+    #[test]
+    fn cursor_recovery_keeps_nonzero_win32_error_on_failure() {
+        let target = Point { x: 100, y: 200 };
+
+        assert_eq!(
+            classify_cursor_recovery(target, None, false, 5, None),
+            CursorRecoveryClassification::Failed { win32_error: 5 }
+        );
+    }
+
+    #[test]
+    fn click_send_input_timing_reports_two_requested_events() {
+        let timing = SendInputTiming::from_counts(2, 2, Duration::from_micros(7));
+
+        assert_eq!(timing.requested, 2);
+        assert_eq!(timing.inserted, 2);
+        assert!(!timing.short_write);
+        assert_eq!(timing.elapsed_us, 7);
+    }
 
     const CTRL: VIRTUAL_KEY = VIRTUAL_KEY(1);
     const ALT: VIRTUAL_KEY = VIRTUAL_KEY(2);

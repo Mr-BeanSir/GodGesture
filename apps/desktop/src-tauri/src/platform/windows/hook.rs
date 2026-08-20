@@ -12,13 +12,13 @@
 
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
-use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TrySendError};
 use serde::Serialize;
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -130,6 +130,8 @@ thread_local! {
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 const WM_REPLAY_CLICK: u32 = 0x8000 + 0x47;
 const MAX_PENDING_CLICKS: usize = 32;
+static NEXT_MOUSE_EVENT_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_CLICK_REPLAY_ID: AtomicU64 = AtomicU64::new(1);
 const RAW_KEYBOARD_USAGE_PAGE: u16 = 0x01;
 const RAW_KEYBOARD_USAGE: u16 = 0x06;
 const RI_KEY_BREAK: u16 = 0x01;
@@ -137,9 +139,36 @@ const MAX_RAW_INPUT_BYTES: u32 = 4096;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClickReplay {
+    pub replay_id: u64,
     pub button: MouseButton,
     pub pos: Point,
     pub queued_at: Instant,
+}
+
+pub fn next_click_replay_id() -> u64 {
+    NEXT_CLICK_REPLAY_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReplayTiming {
+    queue_wait_us: u128,
+    worker_wait_us: u128,
+    injection_us: u128,
+    request_to_completion_us: u128,
+}
+
+impl ReplayTiming {
+    fn from_durations(queue_wait: Duration, worker_wait: Duration, injection: Duration) -> Self {
+        let queue_wait_us = queue_wait.as_micros();
+        let worker_wait_us = worker_wait.as_micros();
+        let injection_us = injection.as_micros();
+        Self {
+            queue_wait_us,
+            worker_wait_us,
+            injection_us,
+            request_to_completion_us: queue_wait_us + worker_wait_us + injection_us,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -149,7 +178,7 @@ pub struct ClickReplayQueue {
 }
 
 impl ClickReplayQueue {
-    pub fn enqueue(&self, replay: ClickReplay) -> Result<(), String> {
+    pub fn enqueue(&self, replay: ClickReplay) -> Result<usize, String> {
         let thread_id = self.hook_thread_id.load(Ordering::SeqCst);
         if thread_id == 0 {
             return Err("mouse hook thread is unavailable".into());
@@ -164,7 +193,7 @@ impl ClickReplayQueue {
         &self,
         replay: ClickReplay,
         wake: impl FnOnce() -> Result<(), String>,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let mut pending = self
             .pending
             .lock()
@@ -179,7 +208,7 @@ impl ClickReplayQueue {
             pending.pop_back();
             return Err(format!("cannot wake mouse hook thread: {error}"));
         }
-        Ok(())
+        Ok(pending.len())
     }
 
     fn take(&self) -> Option<ClickReplay> {
@@ -187,6 +216,13 @@ impl ClickReplayQueue {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .pop_front()
+    }
+
+    fn pending_depth(&self) -> usize {
+        self.pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len()
     }
 
     fn attach(&self, thread_id: u32) {
@@ -204,6 +240,74 @@ impl ClickReplayQueue {
 
 pub struct MouseHook {
     thread: Option<JoinHandle<()>>,
+    replay_worker: Option<ReplayWorker>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReplayDispatch {
+    replay: ClickReplay,
+    dispatched_at: Instant,
+}
+
+struct ReplayWorker {
+    tx: Sender<ReplayDispatch>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl ReplayWorker {
+    fn start(replay_click: impl Fn(ClickReplay) + Send + 'static) -> Self {
+        let (tx, rx) = unbounded::<ReplayDispatch>();
+        let thread = std::thread::Builder::new()
+            .name("gg-click-replay".into())
+            .spawn(move || {
+                while let Ok(dispatch) = rx.recv() {
+                    let worker_started_at = Instant::now();
+                    log::debug!(
+                        target: "platform.windows",
+                        "event=replay_worker_started replay_id={} worker_wait_us={}",
+                        dispatch.replay.replay_id,
+                        worker_started_at
+                            .duration_since(dispatch.dispatched_at)
+                            .as_micros()
+                    );
+                    replay_click(dispatch.replay);
+                    let queue_wait = dispatch
+                        .dispatched_at
+                        .duration_since(dispatch.replay.queued_at);
+                    let worker_wait = worker_started_at.duration_since(dispatch.dispatched_at);
+                    let timing = ReplayTiming::from_durations(
+                        queue_wait,
+                        worker_wait,
+                        worker_started_at.elapsed(),
+                    );
+                    log::debug!(
+                        target: "platform.windows",
+                        "event=replay_completed replay_id={} queue_wait_us={} worker_wait_us={} injection_us={} request_to_completion_us={}",
+                        dispatch.replay.replay_id,
+                        timing.queue_wait_us,
+                        timing.worker_wait_us,
+                        timing.injection_us,
+                        timing.request_to_completion_us
+                    );
+                }
+            })
+            .expect("failed to spawn click replay worker");
+        Self {
+            tx,
+            thread: Some(thread),
+        }
+    }
+
+    fn sender(&self) -> Sender<ReplayDispatch> {
+        self.tx.clone()
+    }
+
+    fn shutdown(mut self) {
+        drop(self.tx);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 impl MouseHook {
@@ -214,19 +318,15 @@ impl MouseHook {
         keyboard_capture: Arc<KeyboardCapture>,
         replay_click: impl Fn(ClickReplay) + Send + 'static,
     ) -> Self {
+        let replay_worker = ReplayWorker::start(replay_click);
+        let replay_sender = replay_worker.sender();
         let thread = std::thread::Builder::new()
             .name("gg-mouse-hook".into())
-            .spawn(move || {
-                hook_thread_main(
-                    handler,
-                    replay_queue,
-                    keyboard_capture,
-                    Box::new(replay_click),
-                )
-            })
+            .spawn(move || hook_thread_main(handler, replay_queue, keyboard_capture, replay_sender))
             .expect("failed to spawn hook thread");
         Self {
             thread: Some(thread),
+            replay_worker: Some(replay_worker),
         }
     }
 }
@@ -242,6 +342,9 @@ impl Drop for MouseHook {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+        if let Some(worker) = self.replay_worker.take() {
+            worker.shutdown();
+        }
     }
 }
 
@@ -249,7 +352,7 @@ fn hook_thread_main(
     handler: Box<dyn HookHandler>,
     replay_queue: Arc<ClickReplayQueue>,
     keyboard_capture: Arc<KeyboardCapture>,
-    replay_click: Box<dyn Fn(ClickReplay) + Send>,
+    replay_sender: Sender<ReplayDispatch>,
 ) {
     *HANDLER
         .lock()
@@ -316,11 +419,26 @@ fn hook_thread_main(
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             if msg.message == WM_REPLAY_CLICK {
                 if let Some(replay) = replay_queue.take() {
+                    let dispatched_at = Instant::now();
+                    let queue_wait = dispatched_at.duration_since(replay.queued_at);
                     log::debug!(
-                        "鼠标点击重放调度耗时: {} us",
-                        replay.queued_at.elapsed().as_micros()
+                        target: "platform.windows",
+                        "event=replay_dispatched replay_id={} queue_depth={} queue_wait_us={}",
+                        replay.replay_id,
+                        replay_queue.pending_depth(),
+                        queue_wait.as_micros()
                     );
-                    replay_click(replay);
+                    if let Err(error) = replay_sender.send(ReplayDispatch {
+                        replay,
+                        dispatched_at,
+                    }) {
+                        log::error!(
+                            target: "platform.windows",
+                            "event=replay_dispatch_failed replay_id={} queue_wait_us={} error={error}",
+                            replay.replay_id,
+                            queue_wait.as_micros()
+                        );
+                    }
                 }
                 continue;
             }
@@ -743,7 +861,57 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
     };
 
     if let Some(input) = input {
-        if dispatch_input(input) {
+        let button_event = match &input {
+            Input::ButtonDown(button, point) => Some(("down", *button, *point)),
+            Input::ButtonUp(button, point) => Some(("up", *button, *point)),
+            _ => None,
+        };
+        let event_id = button_event.map(|_| NEXT_MOUSE_EVENT_ID.fetch_add(1, Ordering::Relaxed));
+        if let (Some(event_id), Some((phase, button, point))) = (event_id, button_event) {
+            log::debug!(
+                target: "platform.windows",
+                "event=mouse_button_received mouse_event_id={} phase={} button={:?} x={} y={}",
+                event_id,
+                phase,
+                button,
+                point.x,
+                point.y
+            );
+        }
+        let input_kind = match &input {
+            Input::Move(_) => "move",
+            Input::ButtonDown(_, _) => "button_down",
+            Input::ButtonUp(_, _) => "button_up",
+            Input::KeyDown(_) => "key_down",
+            Input::KeyUp(_) => "key_up",
+            Input::Wheel { .. } => "wheel",
+        };
+        let dispatch_started = Instant::now();
+        let swallowed = dispatch_input(input);
+        let dispatch_us = dispatch_started.elapsed().as_micros();
+        if dispatch_us >= 1_000 {
+            log::debug!(
+                target: "platform.windows",
+                "event=mouse_input_slow input_kind={} swallowed={} dispatch_us={}",
+                input_kind,
+                swallowed,
+                dispatch_us
+            );
+        }
+        if let (Some(event_id), Some((phase, button, point))) = (event_id, button_event) {
+            log::debug!(
+                target: "platform.windows",
+                "event=mouse_button_completed mouse_event_id={} phase={} button={:?} x={} y={} swallowed={} dispatch_us={}",
+                event_id,
+                phase,
+                button,
+                point.x,
+                point.y,
+                swallowed,
+                dispatch_us
+            );
+        }
+        if swallowed {
             return LRESULT(1);
         }
     }
@@ -875,22 +1043,27 @@ mod tests {
     fn click_replay_queue_is_fifo() {
         let queue = ClickReplayQueue::default();
         let first = ClickReplay {
+            replay_id: 41,
             button: MouseButton::Right,
             pos: Point { x: 10, y: 20 },
             queued_at: Instant::now(),
         };
         let second = ClickReplay {
+            replay_id: 42,
             button: MouseButton::Middle,
             pos: Point { x: 30, y: 40 },
             queued_at: Instant::now(),
         };
 
-        queue.enqueue_with(first, || Ok(())).unwrap();
-        queue.enqueue_with(second, || Ok(())).unwrap();
+        assert_eq!(queue.enqueue_with(first, || Ok(())).unwrap(), 1);
+        assert_eq!(queue.enqueue_with(second, || Ok(())).unwrap(), 2);
 
         let replay = queue.take().unwrap();
+        assert_eq!(replay.replay_id, first.replay_id);
         assert_eq!((replay.button, replay.pos), (first.button, first.pos));
+        assert_eq!(queue.pending_depth(), 1);
         let replay = queue.take().unwrap();
+        assert_eq!(replay.replay_id, second.replay_id);
         assert_eq!((replay.button, replay.pos), (second.button, second.pos));
         assert!(queue.take().is_none());
     }
@@ -901,6 +1074,7 @@ mod tests {
         let error = queue
             .enqueue_with(
                 ClickReplay {
+                    replay_id: 43,
                     button: MouseButton::Right,
                     pos: point(),
                     queued_at: Instant::now(),
@@ -920,6 +1094,7 @@ mod tests {
             queue
                 .enqueue_with(
                     ClickReplay {
+                        replay_id: 44 + index as u64,
                         button: MouseButton::Right,
                         pos: Point {
                             x: index as i32,
@@ -935,6 +1110,7 @@ mod tests {
         let error = queue
             .enqueue_with(
                 ClickReplay {
+                    replay_id: 100,
                     button: MouseButton::Right,
                     pos: point(),
                     queued_at: Instant::now(),
@@ -943,6 +1119,50 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("queue is full"));
+    }
+
+    #[test]
+    fn replay_timing_keeps_queue_wait_and_injection_duration_separate() {
+        let timing = ReplayTiming::from_durations(
+            Duration::from_micros(12),
+            Duration::from_micros(8),
+            Duration::from_micros(34),
+        );
+
+        assert_eq!(timing.queue_wait_us, 12);
+        assert_eq!(timing.worker_wait_us, 8);
+        assert_eq!(timing.injection_us, 34);
+        assert_eq!(timing.request_to_completion_us, 54);
+    }
+
+    #[test]
+    fn replay_worker_dispatch_does_not_wait_for_injection_to_finish() {
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let worker = ReplayWorker::start(move |_replay| {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        let replay = ClickReplay {
+            replay_id: 45,
+            button: MouseButton::Right,
+            pos: point(),
+            queued_at: Instant::now(),
+        };
+
+        let dispatch_started = Instant::now();
+        worker
+            .sender()
+            .send(ReplayDispatch {
+                replay,
+                dispatched_at: Instant::now(),
+            })
+            .unwrap();
+        assert!(started_rx.recv_timeout(Duration::from_secs(1)).is_ok());
+        assert!(dispatch_started.elapsed() < Duration::from_millis(100));
+
+        release_tx.send(()).unwrap();
+        worker.shutdown();
     }
 
     #[test]

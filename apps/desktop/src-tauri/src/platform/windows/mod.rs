@@ -18,7 +18,8 @@ use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
 use crossbeam_channel::Receiver;
 use hook::{
-    ClickReplay, ClickReplayQueue, HookHandler, KeyboardCapture, KeyboardCaptureEvent, MouseHook,
+    next_click_replay_id, ClickReplay, ClickReplayQueue, HookHandler, KeyboardCapture,
+    KeyboardCaptureEvent, MouseHook,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -57,12 +58,35 @@ impl PlatformServices for WindowsPlatform {
     }
 
     fn synthesize_click(&self, button: MouseButton, pos: Point) {
-        if let Err(error) = self.click_replays.enqueue(ClickReplay {
+        let replay = ClickReplay {
+            replay_id: next_click_replay_id(),
             button,
             pos,
             queued_at: Instant::now(),
-        }) {
-            log::error!("无法投递鼠标点击重放: {error}");
+        };
+        log::debug!(
+            target: "platform.windows",
+            "event=boundary_replay_requested replay_id={} button={:?} x={} y={}",
+            replay.replay_id,
+            replay.button,
+            replay.pos.x,
+            replay.pos.y
+        );
+        let enqueue_started = Instant::now();
+        match self.click_replays.enqueue(replay) {
+            Ok(queue_depth) => log::debug!(
+                target: "platform.windows",
+                "event=replay_enqueued replay_id={} queue_depth={} enqueue_us={}",
+                replay.replay_id,
+                queue_depth,
+                enqueue_started.elapsed().as_micros()
+            ),
+            Err(error) => log::error!(
+                target: "platform.windows",
+                "event=replay_enqueue_failed replay_id={} enqueue_us={} error={error}",
+                replay.replay_id,
+                enqueue_started.elapsed().as_micros()
+            ),
         }
     }
 
@@ -107,6 +131,6 @@ pub fn start(shared: Arc<EngineShared>, platform: Arc<WindowsPlatform>) -> Mouse
         Box::new(EngineHookHandler { shared }),
         Arc::clone(&platform.click_replays),
         Arc::clone(&platform.keyboard_capture),
-        |replay| input::synthesize_click(replay.button, replay.pos),
+        |replay| input::synthesize_click(replay.replay_id, replay.button, replay.pos),
     )
 }

@@ -345,6 +345,12 @@ fn spawn_engine_consumer(
                         overlay.send(OverlayCmd::Grow(point));
                     }
                     EngineMsg::BoundaryPathStarted { origin } => {
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=boundary_overlay_begin x={} y={}",
+                            origin.x,
+                            origin.y
+                        );
                         let (main, unrecognized, show_path, show_label, fade_out) =
                             shared.trail_style_for(engine::types::TriggerButton::Right);
                         overlay.send(OverlayCmd::Begin {
@@ -359,9 +365,14 @@ fn spawn_engine_consumer(
                         overlay.send(OverlayCmd::Grow(point));
                     }
                     EngineMsg::BoundaryPathEnded => {
+                        log::debug!(target: "gesture.boundary", "event=boundary_overlay_end");
                         overlay.send(OverlayCmd::End);
                     }
                     EngineMsg::BoundaryPathCancelled => {
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=boundary_overlay_cancel"
+                        );
                         overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::RecognitionChanged { name } => {

@@ -26,6 +26,7 @@ pub enum StrokeEvent {
     Saturated,
 }
 
+#[derive(Debug)]
 pub struct StrokeParser {
     strokes: Vec<Direction>,
     last_point: Point,
@@ -63,13 +64,16 @@ impl StrokeParser {
                 if self.strokes.len() >= MAX_STROKES {
                     return StrokeEvent::Saturated;
                 }
-                self.push_stroke(dir, dx, dy);
-                StrokeEvent::Grew
+                if self.push_stroke(dir, dx, dy) {
+                    StrokeEvent::Grew
+                } else {
+                    StrokeEvent::None
+                }
             }
         }
     }
 
-    fn push_stroke(&mut self, dir: Direction, dx: f64, dy: f64) {
+    fn push_stroke(&mut self, dir: Direction, dx: f64, dy: f64) -> bool {
         // 8 向语义:斜向仅首笔;次笔时决定延伸或回写
         if self.strokes.len() == 1 {
             let first = self.strokes[0];
@@ -77,7 +81,7 @@ impl StrokeParser {
                 let angle = angle_between_deg(dx, dy, diagonal_unit(first));
                 if angle < DIAGONAL_CONTINUE_DEG {
                     // 仍在首笔斜向的容差内:视为延续,不新增笔画
-                    return;
+                    return false;
                 }
                 // 回写首笔为 4 向等价
                 self.strokes[0] = first.to_cardinal();
@@ -85,10 +89,11 @@ impl StrokeParser {
                 if self.strokes[0] != cardinal {
                     self.strokes.push(cardinal);
                 }
-                return;
+                return true;
             }
         }
         self.strokes.push(dir);
+        true
     }
 
     fn classify(&self, dx: f64, dy: f64) -> Direction {
@@ -179,6 +184,14 @@ mod tests {
         let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
         // 一路右上(屏幕 y 减小)
         feed_path(&mut p, &[(20, -20), (40, -40), (60, -60)]);
+        assert_eq!(p.strokes(), &[Direction::RightUp]);
+    }
+
+    #[test]
+    fn diagonal_continuation_does_not_report_a_new_stroke() {
+        let mut p = StrokeParser::new(Point { x: 0, y: 0 }, 10.0);
+        assert_eq!(p.feed(Point { x: 20, y: -20 }), StrokeEvent::Grew);
+        assert_eq!(p.feed(Point { x: 40, y: -40 }), StrokeEvent::None);
         assert_eq!(p.strokes(), &[Direction::RightUp]);
     }
 

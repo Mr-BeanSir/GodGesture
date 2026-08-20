@@ -1,8 +1,9 @@
 use super::capture::{
-    CaptureLedger, CaptureReplay, OrderedMatchError, OrderedMatcher, ReleaseDisposition,
+    CaptureReplay, GestureCapture, OrderedMatchError, OrderedMatcher, ReleaseDisposition,
 };
 use super::config::{BoundaryIntent, BoundaryToken, ConfigDocument, GestureInput};
 use super::corners::CornerEdgeHit;
+use super::parser::StrokeEvent;
 use super::tracker::MouseButton;
 use super::types::Point;
 use std::time::{Duration, Instant};
@@ -42,8 +43,9 @@ struct ActiveBoundary {
     origin: Point,
     hit: CornerEdgeHit,
     last_input_at: Instant,
-    capture: CaptureLedger,
+    capture: GestureCapture,
     waiting_intent: Option<BoundaryIntent>,
+    visual_only: bool,
 }
 
 fn timeout_for(active: &ActiveBoundary) -> Duration {
@@ -69,6 +71,17 @@ impl BoundaryMatcher {
         origin: Point,
         now: Instant,
     ) -> BoundaryResult {
+        self.activate_with_effective_move(config, hit, origin, now, 1.0)
+    }
+
+    fn activate_with_effective_move(
+        &mut self,
+        config: &ConfigDocument,
+        hit: CornerEdgeHit,
+        origin: Point,
+        now: Instant,
+        effective_move_px: f64,
+    ) -> BoundaryResult {
         self.active = None;
         let (kind, key, enabled) = match hit {
             CornerEdgeHit::Corner(corner) => {
@@ -88,6 +101,13 @@ impl BoundaryMatcher {
             .collect();
         candidates.sort_by_key(|intent| intent.order);
         if candidates.is_empty() {
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_activation_rejected hit={:?} origin=({}, {}) reason=no_enabled_intent",
+                hit,
+                origin.x,
+                origin.y
+            );
             return BoundaryResult::Idle;
         }
 
@@ -111,15 +131,94 @@ impl BoundaryMatcher {
             };
         }
 
+        log::debug!(
+            target: "gesture.boundary",
+            "event=boundary_activated hit={:?} origin=({}, {}) candidate_count={} has_fallback={}",
+            hit,
+            origin.x,
+            origin.y,
+            candidates.len(),
+            fallback.is_some()
+        );
+
         self.active = Some(ActiveBoundary {
             sequence: OrderedMatcher::new(candidates, fallback),
             origin,
             hit,
             last_input_at: now,
-            capture: CaptureLedger::default(),
+            capture: GestureCapture::new(origin, effective_move_px, None),
             waiting_intent: None,
+            visual_only: false,
         });
         BoundaryResult::Pending
+    }
+
+    /// Arm a boundary capture even when the first token has no configured
+    /// candidate. The boundary still owns the input and renders its trail;
+    /// cancellation only replays consumed input if no stroke was formed.
+    pub fn activate_visual_only(
+        &mut self,
+        config: &ConfigDocument,
+        hit: CornerEdgeHit,
+        origin: Point,
+        now: Instant,
+    ) -> BoundaryResult {
+        self.activate_visual_only_with_effective(config, hit, origin, now, 1.0)
+    }
+
+    fn activate_visual_only_with_effective(
+        &mut self,
+        config: &ConfigDocument,
+        hit: CornerEdgeHit,
+        origin: Point,
+        now: Instant,
+        effective_move_px: f64,
+    ) -> BoundaryResult {
+        self.active = None;
+        let enabled = match hit {
+            CornerEdgeHit::Corner(_) => config.hot_corners.enabled,
+            CornerEdgeHit::Edge(_) => config.rub_edges.enabled,
+        };
+        if !enabled {
+            return BoundaryResult::Idle;
+        }
+
+        log::debug!(
+            target: "gesture.boundary",
+            "event=boundary_activated hit={:?} origin=({}, {}) candidate_count=0 has_fallback=false mode=visual_only",
+            hit,
+            origin.x,
+            origin.y
+        );
+        self.active = Some(ActiveBoundary {
+            sequence: OrderedMatcher::new(Vec::new(), None),
+            origin,
+            hit,
+            last_input_at: now,
+            capture: GestureCapture::new(origin, effective_move_px, None),
+            waiting_intent: None,
+            visual_only: true,
+        });
+        BoundaryResult::Pending
+    }
+
+    /// Establish ownership for the first edge/corner input. The boundary
+    /// matcher, rather than runtime routing, decides whether the token has a
+    /// candidate; a miss still creates a visual-only capture.
+    pub fn activate_for_input(
+        &mut self,
+        config: &ConfigDocument,
+        hit: CornerEdgeHit,
+        origin: Point,
+        now: Instant,
+        effective_move_px: f64,
+        token: &BoundaryToken,
+    ) -> BoundaryResult {
+        if Self::has_prefix(config, hit, token) {
+            self.activate_with_effective_move(config, hit, origin, now, effective_move_px)
+        } else {
+            self.activate_visual_only_with_effective(config, hit, origin, now, effective_move_px)
+        }
     }
 
     /// Complete an empty-sequence action from a movement-triggered corner or
@@ -187,6 +286,18 @@ impl BoundaryMatcher {
             .is_some_and(|active| active.capture.waiting_for_release().is_some())
     }
 
+    pub fn has_trail(&self) -> bool {
+        self.active
+            .as_ref()
+            .is_some_and(|active| !active.capture.strokes().is_empty())
+    }
+
+    pub fn release_anchor(&self) -> Option<MouseButton> {
+        self.active
+            .as_ref()
+            .and_then(|active| active.capture.release_anchor().button())
+    }
+
     /// Returns the name once an active sequence has fully matched and is only
     /// waiting for its primary button to be released.
     pub fn recognized_name(&self) -> Option<String> {
@@ -206,12 +317,65 @@ impl BoundaryMatcher {
             return BoundaryResult::Idle;
         };
         if active.capture.waiting_for_release().is_some() {
+            if let BoundaryToken::Button { button } = &token {
+                let button = boundary_mouse_button(*button);
+                if active.capture.waiting_for_release() != Some(button) {
+                    active.capture.push_ordered(
+                        boundary_token_to_input(&token),
+                        replay,
+                        Some(button),
+                    );
+                    active.last_input_at = now;
+                    log::debug!(
+                        target: "gesture.boundary",
+                        "event=boundary_input_recorded reason=waiting_for_button_up token={:?} release_anchor={:?}",
+                        token,
+                        active.capture.waiting_for_release()
+                    );
+                    return BoundaryResult::Pending;
+                }
+            }
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_input_ignored reason=waiting_for_button_up token={:?} release_anchor={:?}",
+                token,
+                active.capture.waiting_for_release()
+            );
             return BoundaryResult::Pending;
         }
         if now.duration_since(active.last_input_at) > timeout_for(active) {
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_cancelled reason=sequence_timeout hit={:?} next_index={} candidate_count={} token={:?}",
+                active.hit,
+                active.sequence.next_index(),
+                active.sequence.candidate_count(),
+                token
+            );
             return self.cancel();
         }
 
+        if active.visual_only {
+            active.capture.push_ordered(
+                boundary_token_to_input(&token),
+                replay,
+                match &token {
+                    BoundaryToken::Button { button } => Some(boundary_mouse_button(*button)),
+                    _ => None,
+                },
+            );
+            active.last_input_at = now;
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_input_recorded mode=visual_only hit={:?} token={:?}",
+                active.hit,
+                token
+            );
+            return BoundaryResult::Pending;
+        }
+
+        let next_index = active.sequence.next_index();
+        let candidate_count = active.sequence.candidate_count();
         let button_token = match &token {
             BoundaryToken::Button { button } => Some(boundary_mouse_button(*button)),
             _ => None,
@@ -222,7 +386,22 @@ impl BoundaryMatcher {
             |intent, index| intent.sequence.len() == index,
         ) {
             Ok(completed) => completed,
-            Err(OrderedMatchError::NoCandidate) => return self.cancel(),
+            Err(OrderedMatchError::NoCandidate) => {
+                log::debug!(
+                    target: "gesture.boundary",
+                    "event=boundary_capture_downgraded reason=token_mismatch hit={:?} next_index={} candidate_count={} token={:?}",
+                    active.hit,
+                    next_index,
+                    candidate_count,
+                    token
+                );
+                active.visual_only = true;
+                active
+                    .capture
+                    .push_ordered(boundary_token_to_input(&token), replay, button_token);
+                active.last_input_at = now;
+                return BoundaryResult::Pending;
+            }
         };
         active
             .capture
@@ -248,6 +427,28 @@ impl BoundaryMatcher {
         BoundaryResult::Pending
     }
 
+    /// Advance the shared path parser and feed a newly grown direction into
+    /// the boundary candidate matcher.
+    pub fn feed_move(&mut self, point: Point, now: Instant) -> BoundaryResult {
+        let direction = {
+            let Some(active) = self.active.as_mut() else {
+                return BoundaryResult::Idle;
+            };
+            if active.capture.feed_move(point) != StrokeEvent::Grew {
+                return BoundaryResult::Pending;
+            }
+            active.capture.strokes().last().copied()
+        };
+        let Some(direction) = direction else {
+            return BoundaryResult::Pending;
+        };
+        let result = self.feed(BoundaryToken::Stroke { direction }, None, now);
+        if let Some(active) = self.active.as_mut() {
+            active.capture.sync_strokes();
+        }
+        result
+    }
+
     pub fn release(&mut self, button: MouseButton) -> BoundaryResult {
         if !self
             .active
@@ -262,6 +463,12 @@ impl BoundaryMatcher {
             .expect("waiting boundary must exist")
             .capture
             .release_button(button);
+        log::debug!(
+            target: "gesture.boundary",
+            "event=boundary_button_released button={:?} disposition={:?}",
+            button,
+            disposition
+        );
         if disposition == ReleaseDisposition::Anchor {
             let mut active = self.active.take().expect("waiting boundary must exist");
             let intent = active
@@ -287,6 +494,14 @@ impl BoundaryMatcher {
     }
 
     pub fn tick(&mut self, now: Instant) -> BoundaryResult {
+        self.tick_with_held_anchor(now, None)
+    }
+
+    pub fn tick_with_held_anchor(
+        &mut self,
+        now: Instant,
+        held_anchor: Option<MouseButton>,
+    ) -> BoundaryResult {
         let expired = self
             .active
             .as_ref()
@@ -299,10 +514,40 @@ impl BoundaryMatcher {
             };
         }
 
+        let anchor_is_held = self
+            .active
+            .as_ref()
+            .and_then(|active| active.capture.release_anchor().button())
+            .zip(held_anchor)
+            .is_some_and(|(anchor, held)| anchor == held);
+        if anchor_is_held {
+            let active = self
+                .active
+                .as_mut()
+                .expect("expired boundary must still be active");
+            active.last_input_at = now;
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_timeout_deferred reason=release_anchor_held hit={:?} next_index={} candidate_count={} anchor={:?}",
+                active.hit,
+                active.sequence.next_index(),
+                active.sequence.candidate_count(),
+                held_anchor
+            );
+            return BoundaryResult::Pending;
+        }
+
         let mut active = self
             .active
             .take()
             .expect("expired boundary must still be active");
+        log::debug!(
+            target: "gesture.boundary",
+            "event=boundary_cancelled reason=timer_expired hit={:?} next_index={} candidate_count={}",
+            active.hit,
+            active.sequence.next_index(),
+            active.sequence.candidate_count()
+        );
         if active.sequence.next_index() == 0 {
             if let Some(intent) = active.sequence.take_fallback() {
                 return BoundaryResult::Complete {
@@ -316,7 +561,7 @@ impl BoundaryMatcher {
             }
         }
         BoundaryResult::Cancelled {
-            replay: active.capture.take_consumed(),
+            replay: cancel_replay(&mut active.capture),
         }
     }
 
@@ -324,10 +569,27 @@ impl BoundaryMatcher {
         self.active
             .take()
             .map_or(BoundaryResult::Idle, |mut active| {
+                log::debug!(
+                    target: "gesture.boundary",
+                    "event=boundary_cancelled reason=external hit={:?} next_index={} candidate_count={} replay_count={}",
+                    active.hit,
+                    active.sequence.next_index(),
+                    active.sequence.candidate_count(),
+                    active.capture.consumed().len()
+                );
                 BoundaryResult::Cancelled {
-                    replay: active.capture.take_consumed(),
+                    replay: cancel_replay(&mut active.capture),
                 }
             })
+    }
+}
+
+fn cancel_replay(capture: &mut GestureCapture) -> Vec<BoundaryReplay> {
+    let consumed = capture.take_consumed();
+    if capture.strokes().is_empty() {
+        consumed
+    } else {
+        Vec::new()
     }
 }
 
@@ -536,6 +798,54 @@ mod tests {
     }
 
     #[test]
+    fn feed_move_uses_shared_capture_parser_for_boundary_strokes() {
+        let config = config_with(vec![intent(
+            "button-stroke",
+            vec![
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::Right,
+                },
+                BoundaryToken::Stroke {
+                    direction: Direction::Down,
+                },
+            ],
+            0,
+        )]);
+        let mut matcher = BoundaryMatcher::default();
+        let t = Instant::now();
+        assert_eq!(
+            matcher.activate(
+                &config,
+                CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+                pt(),
+                t,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.feed(
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::Right,
+                },
+                Some(BoundaryReplay::Click {
+                    button: MouseButton::Right,
+                    pos: pt(),
+                }),
+                t,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.feed_move(Point { x: 0, y: 100 }, t),
+            BoundaryResult::Pending
+        );
+        assert!(matches!(
+            matcher.release(MouseButton::Right),
+            BoundaryResult::Complete { intent, .. } if intent.id == "button-stroke"
+        ));
+    }
+
+    #[test]
     fn final_button_waits_for_release_before_completing() {
         let config = config_with(vec![intent(
             "button",
@@ -580,6 +890,49 @@ mod tests {
             } if intent.id == "button" && consumed.len() == 1
         ));
         assert!(!matcher.is_active());
+    }
+
+    #[test]
+    fn sequence_timeout_waits_while_the_release_anchor_is_still_held() {
+        let config = config_with(vec![intent(
+            "button-stroke",
+            vec![
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::Right,
+                },
+                BoundaryToken::Stroke {
+                    direction: Direction::Down,
+                },
+            ],
+            0,
+        )]);
+        let mut matcher = BoundaryMatcher::default();
+        let t = Instant::now();
+        matcher.activate(
+            &config,
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+            pt(),
+            t,
+        );
+        matcher.feed(
+            BoundaryToken::Button {
+                button: BoundaryMouseButton::Right,
+            },
+            Some(BoundaryReplay::Click {
+                button: MouseButton::Right,
+                pos: pt(),
+            }),
+            t,
+        );
+
+        assert_eq!(
+            matcher.tick_with_held_anchor(
+                t + BOUNDARY_SEQUENCE_TIMEOUT + Duration::from_millis(1),
+                Some(MouseButton::Right),
+            ),
+            BoundaryResult::Pending
+        );
+        assert!(matcher.is_active());
     }
 
     #[test]
@@ -660,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn mismatch_and_timeout_return_only_previously_consumed_input() {
+    fn mismatch_keeps_input_captured_until_cancel_and_timeout() {
         let config = config_with(vec![intent(
             "wheel",
             vec![
@@ -696,8 +1049,15 @@ mod tests {
                 Some(BoundaryReplay::Wheel { forward: true }),
                 t,
             ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.cancel(),
             BoundaryResult::Cancelled {
-                replay: vec![BoundaryReplay::Wheel { forward: true }]
+                replay: vec![
+                    BoundaryReplay::Wheel { forward: true },
+                    BoundaryReplay::Wheel { forward: true },
+                ]
             }
         );
 
@@ -760,6 +1120,86 @@ mod tests {
                 Instant::now(),
             ),
             BoundaryResult::Idle
+        );
+    }
+
+    #[test]
+    fn visual_only_activation_records_unmatched_input_for_replay() {
+        let config = ConfigDocument::default();
+        let mut matcher = BoundaryMatcher::default();
+        let now = Instant::now();
+        let origin = pt();
+
+        assert_eq!(
+            matcher.activate_visual_only(
+                &config,
+                CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+                origin,
+                now,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.feed(
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::X2,
+                },
+                Some(BoundaryReplay::Click {
+                    button: MouseButton::X2,
+                    pos: origin,
+                }),
+                now,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.cancel(),
+            BoundaryResult::Cancelled {
+                replay: vec![BoundaryReplay::Click {
+                    button: MouseButton::X2,
+                    pos: origin,
+                }]
+            }
+        );
+    }
+
+    #[test]
+    fn visual_only_capture_drops_replay_after_a_stroke() {
+        let config = ConfigDocument::default();
+        let mut matcher = BoundaryMatcher::default();
+        let now = Instant::now();
+        let origin = pt();
+
+        assert_eq!(
+            matcher.activate_visual_only(
+                &config,
+                CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+                origin,
+                now,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.feed(
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::Right,
+                },
+                Some(BoundaryReplay::Click {
+                    button: MouseButton::Right,
+                    pos: origin,
+                }),
+                now,
+            ),
+            BoundaryResult::Pending
+        );
+        assert_eq!(
+            matcher.feed_move(Point { x: 0, y: 32 }, now),
+            BoundaryResult::Pending
+        );
+        assert!(matcher.has_trail());
+        assert_eq!(
+            matcher.cancel(),
+            BoundaryResult::Cancelled { replay: vec![] }
         );
     }
 }
