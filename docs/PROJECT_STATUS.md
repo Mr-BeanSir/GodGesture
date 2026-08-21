@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-21。本文是当前实现的唯一状态入口；术语以
+最后核对：2026-08-22。本文是当前实现的唯一状态入口；术语以
 [`CONTEXT.md`](../CONTEXT.md) 为准，协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按
 [`docs/adr/README.md`](adr/README.md) 路由。本文不保存逐日开发流水；历史与发布审计按需读取
 [`docs/CHANGELOG.md`](CHANGELOG.md) 和 [`docs/history/`](history/)。
@@ -31,7 +31,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 `/usr/bin/defaults read -g AppleLocale` 读取并按进程缓存；两者失败时均回退 English。系统 locale 只将语言首段
 为 `zh` 的标签解析为简体中文，具体平台设备现场验收仍按 M4/M8 清单执行。
 
-本轮音量反馈已建立公共 `platform::overlay::OverlaySink`、`show_label_feedback` 和
+音量反馈设计已实现：当前使用公共 `platform::overlay::OverlaySink`、`show_label_feedback` 和
 `ShowLabelFeedback` 边界，普通手势、修饰手势、触发角和摩擦边共用消费者路径。Windows 和 macOS
 音量命令都在 mutation 后读取最终系统音量；非静音时显示最终整数百分比，静音按 `Locale::ZhCn`/
 `Locale::En` 显示 `静音`/`Muted`。`show_command_name` 控制标签可见性，`fade_out` 控制原生覆盖层
@@ -43,7 +43,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由
 `PathTracker` 负责准入，边角路径仍由 `BoundaryMatcher` 负责边/角候选，但两侧共用同一个 parser、输入顺序、
 释放锚点和已消费输入记录。边角首 token 的候选判断由 `BoundaryMatcher` 内部完成，无匹配时仍建立 visual-only
-捕获并阻止 `PathTracker` 接管；未形成方向笔画时取消才 replay 原生输入，形成方向笔画后按普通捕获语义吞掉主键释放且不 replay。统一捕获阶段的历史验证基线为 272 passed、2 ignored；当前（Task 8 音量反馈验证）Rust 库基线为 294 passed、0 failed、2 ignored；真实 Windows/macOS 输入现场仍 pending。
+捕获并阻止 `PathTracker` 接管；未形成方向笔画时取消才 replay 原生输入，形成方向笔画后按普通捕获语义吞掉主键释放且不 replay。统一捕获阶段的历史验证基线为 272 passed、2 ignored；当前 Rust 库基线为 295 passed、0 failed、2 ignored；真实 Windows/macOS 输入现场仍 pending。
 
 ## 里程碑状态
 
@@ -57,7 +57,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | M5 后端与账户 | 已完成 | Server 是私有子模块；注册开关覆盖邮箱注册和首次未绑定 OAuth 建号；OAuth/SMTP 凭证由部署环境提供；模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8、乐观并发、后写胜出、快照和离线优先 |
 | M7 Web Console 与分发 | 已完成 | Server-owned Console、模板审核/举报/配额、系统配置、账户编辑和作者管理已接入 |
-| M8 打磨与发布 | `v0.2.2` 已发布 | `6008e1d` 的 Release Notes 标题修复从下一次 tag 生效；双平台安装验收仍 pending |
+| M8 打磨与发布 | `v0.2.3` 已发布 | tag 指向 `57c2aa6`，之后仅同步 Cargo.lock 到 `2749bf8`；双平台安装验收和生产部署仍 pending |
 
 ## 部件地图
 
@@ -126,12 +126,12 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ## 最近验证
 
-- 2026-08-20：Release Notes 定向测试 `4/4`，`pnpm validate:release` `42/42`；v0.2.2 tag run #13 在 `e38ddf1` 成功完成双平台资产，但 live body 仍是旧标题。
+- 2026-08-22：`v0.2.3` 已完成本地版本发布、tag 和远程 `main` push；发布 tag 保持在 `57c2aa6`，后续 Cargo.lock 版本同步提交为 `2749bf8`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
 - 2026-08-21：音量反馈自动 locale 接入 Windows `GetUserDefaultLocaleName` 与 macOS `defaults` 缓存；Desktop Rust 全量库测试 `283 passed, 2 ignored`，Windows check 通过，macOS cross-target check 因本机缺少 `cc` 未完成。
-- 2026-08-21（Task 8 最终音量反馈验证）：`cargo fmt --check` 通过；`cargo test --lib --no-default-features` `294 passed, 0 failed, 2 ignored`；`cargo clippy --lib --no-default-features -- -D warnings` 通过。
+- 2026-08-21（Task 8 最终音量反馈验证）：`cargo fmt --check` 通过；`cargo test --lib --no-default-features` `295 passed, 0 failed, 2 ignored`；`cargo clippy --lib --no-default-features -- -D warnings` 通过。
 - 2026-08-21（Task 8 Desktop 验证）：`pnpm --filter @godgesture/shared build` 通过（为生成 workspace 类型声明）；首次 `pnpm --filter @godgesture/desktop typecheck` 因 shared dist 类型声明未生成失败，构建 shared 后 `pnpm --filter @godgesture/desktop typecheck` 通过；`pnpm --filter @godgesture/desktop test -- --run` 通过，`50 files passed`，`242 tests passed`，`3 skipped`；`git diff --check` 通过。Windows 仅完成自动化和代码验证，macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。
 - 2026-08-21：快速入门新增程序权限步骤，覆盖 Windows 管理员启动/开机启动开关及 macOS 管理员项禁用引导；`QuickStartDialog` 定向测试 4/4 通过。
 - 更早的逐轮验证已压缩至 [`docs/CHANGELOG.md`](CHANGELOG.md)，stable `v0.1.0` 完整发布证据见 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
