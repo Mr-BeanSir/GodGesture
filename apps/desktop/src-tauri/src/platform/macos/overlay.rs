@@ -66,7 +66,9 @@ impl Overlay {
 
     pub fn send(&self, command: OverlayCommand) {
         let generation = match command {
-            OverlayCommand::Begin { .. } | OverlayCommand::Cancel => {
+            OverlayCommand::Begin { .. }
+            | OverlayCommand::Cancel
+            | OverlayCommand::ShowLabelFeedback { .. } => {
                 self.generation.fetch_add(1, Ordering::AcqRel) + 1
             }
             _ => self.generation.load(Ordering::Acquire),
@@ -345,6 +347,17 @@ impl Default for OverlayState {
 
 impl OverlayState {
     fn apply(&mut self, command: OverlayCommand) -> ApplyEffect {
+        self.apply_with_surface(command, Self::ensure_surface)
+    }
+
+    fn apply_with_surface<F>(
+        &mut self,
+        command: OverlayCommand,
+        mut ensure_surface: F,
+    ) -> ApplyEffect
+    where
+        F: FnMut(&mut Self, Point) -> Result<(), String>,
+    {
         match command {
             OverlayCommand::Begin {
                 origin,
@@ -353,7 +366,7 @@ impl OverlayState {
                 show_label,
                 fade_out,
             } => {
-                if let Err(error) = self.ensure_surface(origin) {
+                if let Err(error) = ensure_surface(self, origin) {
                     log::error!("create macOS overlay surface failed: {error}");
                     return ApplyEffect::default();
                 }
@@ -424,7 +437,42 @@ impl OverlayState {
                     suppress_render: true,
                 }
             }
-            OverlayCommand::ShowLabelFeedback { .. } => ApplyEffect::default(),
+            OverlayCommand::ShowLabelFeedback {
+                origin,
+                text,
+                fade_out,
+            } => {
+                self.hide();
+                self.active = false;
+                if let Err(error) = ensure_surface(self, origin) {
+                    log::error!("create macOS overlay surface failed: {error}");
+                    return ApplyEffect::default();
+                }
+                self.points.clear();
+                self.rendered_points = 0;
+                self.needs_full_redraw = true;
+                self.recognized = true;
+                self.label = Some(text);
+                self.show_path = false;
+                self.show_label = true;
+                self.fade_out = fade_out;
+                self.active = false;
+                self.set_alpha(1.0);
+                if fade_out {
+                    ApplyEffect {
+                        dirty: true,
+                        fade: true,
+                        suppress_render: false,
+                    }
+                } else {
+                    self.hide();
+                    ApplyEffect {
+                        dirty: false,
+                        fade: false,
+                        suppress_render: true,
+                    }
+                }
+            }
         }
     }
 
@@ -908,6 +956,66 @@ fn draw_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn independent_label_feedback_does_not_require_active_trail() {
+        let mut state = OverlayState {
+            points: vec![Point { x: 10, y: 10 }, Point { x: 20, y: 20 }],
+            label: Some("old label".into()),
+            show_path: true,
+            show_label: true,
+            active: false,
+            ..OverlayState::default()
+        };
+
+        let command = OverlayCommand::ShowLabelFeedback {
+            origin: Point { x: 100, y: 200 },
+            text: "42%".into(),
+            fade_out: true,
+        };
+        let mut selected_origin = None;
+        let effect = state.apply_with_surface(command, |_state, origin| {
+            selected_origin = Some(origin);
+            Ok(())
+        });
+
+        assert!(effect.dirty);
+        assert!(effect.fade);
+        assert_eq!(selected_origin, Some(Point { x: 100, y: 200 }));
+        assert_eq!(state.label.as_deref(), Some("42%"));
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert!(state.show_label);
+        assert!(state.recognized);
+        assert!(state.fade_out);
+    }
+
+    #[test]
+    fn independent_label_feedback_without_fade_hides_immediately() {
+        let mut state = OverlayState {
+            points: vec![Point { x: 10, y: 10 }, Point { x: 20, y: 20 }],
+            label: Some("old label".into()),
+            show_path: true,
+            show_label: true,
+            active: false,
+            ..OverlayState::default()
+        };
+
+        let effect = state.apply_with_surface(
+            OverlayCommand::ShowLabelFeedback {
+                origin: Point { x: 100, y: 200 },
+                text: "0%".into(),
+                fade_out: false,
+            },
+            |_state, _origin| Ok(()),
+        );
+
+        assert!(effect.suppress_render);
+        assert!(!effect.fade);
+        assert!(state.label.is_none());
+        assert!(state.points.is_empty());
+        assert!(!state.active);
+    }
 
     #[test]
     fn active_display_union_keeps_negative_and_offset_screen_origins() {

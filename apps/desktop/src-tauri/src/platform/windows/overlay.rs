@@ -594,10 +594,22 @@ fn append_visual_point(points: &mut Vec<Point>, point: Point, limit: usize) -> b
 /// Applies at most one frame's worth of commands and reports whether another wake is required.
 /// Rendering before returning prevents a continuously growing queue from starving the overlay.
 fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bool {
+    drain_commands_with_surface(rx, state, ensure_surface_for)
+}
+
+fn drain_commands_with_surface<F>(
+    rx: &Receiver<OverlayCommand>,
+    state: &mut OverlayState,
+    mut ensure_surface: F,
+) -> bool
+where
+    F: FnMut(&mut OverlayState, Point),
+{
     let batch = take_command_batch(rx, MAX_COMMANDS_PER_FRAME);
     let queue_depth = batch.commands.len() + rx.len();
     let mut grow_count = 0;
     let mut visual_dirty = false;
+    let mut fade_after_render = false;
     for cmd in batch.commands {
         match cmd {
             OverlayCommand::Begin {
@@ -607,6 +619,7 @@ fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bo
                 show_label,
                 fade_out,
             } => {
+                fade_after_render = false;
                 stop_fade(state);
                 hide(state);
                 state.points.clear();
@@ -621,7 +634,7 @@ fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bo
                 state.show_label = show_label;
                 state.fade_out = fade_out;
                 state.alpha = 255;
-                ensure_surface_for(state, origin);
+                ensure_surface(state, origin);
             }
             OverlayCommand::Grow(p) => {
                 // 距上个渲染点至少 3px 才记点(StepSize,降密)
@@ -640,6 +653,7 @@ fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bo
                 }
             }
             OverlayCommand::End => {
+                fade_after_render = false;
                 if state.visible {
                     if state.fade_out {
                         start_fade(state);
@@ -652,17 +666,48 @@ fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bo
                 state.rendered_points = 0;
             }
             OverlayCommand::Cancel => {
+                fade_after_render = false;
                 hide(state);
                 visual_dirty = false;
                 state.points.clear();
                 state.rendered_points = 0;
             }
-            OverlayCommand::ShowLabelFeedback { .. } => {}
+            OverlayCommand::ShowLabelFeedback {
+                origin,
+                text,
+                fade_out,
+            } => {
+                stop_fade(state);
+                hide(state);
+                state.label = None;
+                state.points.clear();
+                state.rendered_points = 0;
+                state.needs_full_redraw = true;
+                state.needs_full_present = true;
+                ensure_surface(state, origin);
+                state.recognized = true;
+                state.label = Some(text);
+                state.show_path = false;
+                state.show_label = true;
+                state.fade_out = fade_out;
+                state.alpha = 255;
+                fade_after_render = false;
+                if fade_out {
+                    visual_dirty = true;
+                    fade_after_render = true;
+                } else {
+                    hide(state);
+                    visual_dirty = false;
+                }
+            }
         }
     }
     state.stats.record_batch(grow_count, queue_depth);
     if visual_dirty {
         render(state);
+    }
+    if fade_after_render && state.visible {
+        start_fade(state);
     }
     batch.has_more
 }
@@ -1364,6 +1409,69 @@ mod tests {
             font: None,
             stats: OverlayStats::new(),
         }
+    }
+
+    #[test]
+    fn independent_label_feedback_does_not_require_active_trail() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.points = vec![point(10), point(20)];
+        state.label = Some("old label".into());
+        state.show_path = true;
+        state.show_label = true;
+        state.visible = true;
+        state.alpha = 96;
+        state.tiles.clear();
+
+        let command = OverlayCommand::ShowLabelFeedback {
+            origin: Point { x: 100, y: 200 },
+            text: "42%".into(),
+            fade_out: true,
+        };
+        tx.send(command).unwrap();
+
+        let mut selected_origin = None;
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, origin| selected_origin = Some(origin),
+        ));
+        assert_eq!(selected_origin, Some(Point { x: 100, y: 200 }));
+        assert_eq!(state.label.as_deref(), Some("42%"));
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert!(state.show_label);
+        assert!(state.recognized);
+        assert_eq!(state.alpha, 255);
+        assert!(state.fade_out);
+    }
+
+    #[test]
+    fn independent_label_feedback_without_fade_hides_immediately() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        state.points = vec![point(10), point(20)];
+        state.label = Some("old label".into());
+        state.visible = true;
+        state.alpha = 64;
+        tx.send(OverlayCommand::ShowLabelFeedback {
+            origin: Point { x: 100, y: 200 },
+            text: "0%".into(),
+            fade_out: false,
+        })
+        .unwrap();
+
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {},
+        ));
+        assert_eq!(state.label.as_deref(), Some("0%"));
+        assert!(state.points.is_empty());
+        assert!(!state.visible);
+        assert_eq!(state.alpha, 255);
+        assert!(!state.fade_out);
     }
 
     #[test]
