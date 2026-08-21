@@ -1,6 +1,9 @@
 // Main-thread AppKit overlay backed by a CALayer and tiny-skia frames.
 
 use crate::engine::types::Point;
+pub use crate::platform::overlay::OverlayCommand as OverlayCmd;
+use crate::platform::overlay::OverlaySink;
+pub use crate::platform::overlay::{OverlayCommand, TrailColors};
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
@@ -22,33 +25,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapMut, Stroke, Transform};
 
-#[derive(Debug, Clone, Copy)]
-pub struct TrailColors {
-    pub main: u32,
-    pub unrecognized: u32,
-}
-
 #[derive(Clone, Copy)]
 struct TrailRenderStyle {
     screen_origin: Point,
     scale: f32,
     recognized: bool,
     colors: TrailColors,
-}
-
-#[derive(Debug, Clone)]
-pub enum OverlayCmd {
-    Begin {
-        origin: Point,
-        colors: TrailColors,
-        show_path: bool,
-        show_label: bool,
-        fade_out: bool,
-    },
-    Grow(Point),
-    Recognized(Option<String>),
-    End,
-    Cancel,
 }
 
 #[derive(Clone)]
@@ -61,7 +43,7 @@ pub struct Overlay {
 
 #[derive(Debug)]
 struct QueuedCommand {
-    command: OverlayCmd,
+    command: OverlayCommand,
     generation: u64,
 }
 
@@ -82,9 +64,9 @@ impl Overlay {
         }
     }
 
-    pub fn send(&self, command: OverlayCmd) {
+    pub fn send(&self, command: OverlayCommand) {
         let generation = match command {
-            OverlayCmd::Begin { .. } | OverlayCmd::Cancel => {
+            OverlayCommand::Begin { .. } | OverlayCommand::Cancel => {
                 self.generation.fetch_add(1, Ordering::AcqRel) + 1
             }
             _ => self.generation.load(Ordering::Acquire),
@@ -99,6 +81,12 @@ impl Overlay {
             Arc::clone(&self.pending),
             Arc::clone(&self.drain_scheduled),
         );
+    }
+}
+
+impl OverlaySink for Overlay {
+    fn send(&self, command: OverlayCommand) {
+        Overlay::send(self, command);
     }
 }
 
@@ -356,9 +344,9 @@ impl Default for OverlayState {
 }
 
 impl OverlayState {
-    fn apply(&mut self, command: OverlayCmd) -> ApplyEffect {
+    fn apply(&mut self, command: OverlayCommand) -> ApplyEffect {
         match command {
-            OverlayCmd::Begin {
+            OverlayCommand::Begin {
                 origin,
                 colors,
                 show_path,
@@ -383,7 +371,7 @@ impl OverlayState {
                 self.set_alpha(1.0);
                 ApplyEffect::dirty()
             }
-            OverlayCmd::Grow(point) => {
+            OverlayCommand::Grow(point) => {
                 if !self.active {
                     return ApplyEffect::default();
                 }
@@ -395,7 +383,7 @@ impl OverlayState {
                     suppress_render: false,
                 }
             }
-            OverlayCmd::Recognized(label) => {
+            OverlayCommand::Recognized(label) => {
                 if !self.active {
                     return ApplyEffect::default();
                 }
@@ -410,7 +398,7 @@ impl OverlayState {
                     suppress_render: false,
                 }
             }
-            OverlayCmd::End => {
+            OverlayCommand::End => {
                 self.active = false;
                 if self.fade_out {
                     ApplyEffect {
@@ -427,7 +415,7 @@ impl OverlayState {
                     }
                 }
             }
-            OverlayCmd::Cancel => {
+            OverlayCommand::Cancel => {
                 self.active = false;
                 self.hide();
                 ApplyEffect {
@@ -436,6 +424,7 @@ impl OverlayState {
                     suppress_render: true,
                 }
             }
+            OverlayCommand::ShowLabelFeedback { .. } => ApplyEffect::default(),
         }
     }
 
@@ -937,7 +926,7 @@ mod tests {
 
     fn queued(value: i32) -> QueuedCommand {
         QueuedCommand {
-            command: OverlayCmd::Grow(Point { x: value, y: value }),
+            command: OverlayCommand::Grow(Point { x: value, y: value }),
             generation: 0,
         }
     }
@@ -949,11 +938,11 @@ mod tests {
         assert_eq!(batch.len(), 2);
         assert!(matches!(
             batch[0].command,
-            OverlayCmd::Grow(Point { x: 1, .. })
+            OverlayCommand::Grow(Point { x: 1, .. })
         ));
         assert!(matches!(
             batch[1].command,
-            OverlayCmd::Grow(Point { x: 2, .. })
+            OverlayCommand::Grow(Point { x: 2, .. })
         ));
         assert!(has_more);
 
@@ -971,7 +960,7 @@ mod tests {
         assert!(!has_more);
         assert!(matches!(
             batch.last().map(|queued| &queued.command),
-            Some(OverlayCmd::Grow(Point { x: 999, y: 999 }))
+            Some(OverlayCommand::Grow(Point { x: 999, y: 999 }))
         ));
     }
 
@@ -1006,12 +995,12 @@ mod tests {
             ..OverlayState::default()
         };
         for value in 1..700 {
-            state.apply(OverlayCmd::Grow(Point { x: value * 3, y: 0 }));
+            state.apply(OverlayCommand::Grow(Point { x: value * 3, y: 0 }));
         }
         assert_eq!(state.points.len(), 512);
 
-        state.apply(OverlayCmd::Recognized(Some("match".into())));
-        let end = state.apply(OverlayCmd::End);
+        state.apply(OverlayCommand::Recognized(Some("match".into())));
+        let end = state.apply(OverlayCommand::End);
         assert!(state.recognized);
         assert_eq!(state.label.as_deref(), Some("match"));
         assert!(!state.active);

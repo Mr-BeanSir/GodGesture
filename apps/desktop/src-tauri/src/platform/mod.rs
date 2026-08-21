@@ -1,5 +1,7 @@
 //! 平台层 —— 每个平台实现 PlatformServices + 原生输入钩子。
 
+pub mod overlay;
+
 #[cfg(windows)]
 pub mod windows;
 

@@ -11,6 +11,9 @@
 //! 命令提示标签(文字)在 M1 后段接入(需字形栅格化)。
 
 use crate::engine::types::Point;
+pub use crate::platform::overlay::OverlayCommand as OverlayCmd;
+use crate::platform::overlay::OverlaySink;
+pub use crate::platform::overlay::{OverlayCommand, TrailColors};
 use crossbeam_channel::{unbounded, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -47,13 +50,6 @@ const FADE_TIMER_ID: usize = 1;
 const FADE_STEP: u16 = 48;
 const FADE_INTERVAL_MS: u32 = 30;
 
-/// 覆盖层配色(#AARRGGBB 解析后的 premultiplied 前的原始 ARGB)
-#[derive(Debug, Clone, Copy)]
-pub struct TrailColors {
-    pub main: u32,
-    pub unrecognized: u32,
-}
-
 #[derive(Clone, Copy)]
 struct TrailRenderStyle {
     monitor_origin: (i32, i32),
@@ -62,27 +58,9 @@ struct TrailRenderStyle {
     colors: TrailColors,
 }
 
-#[derive(Debug)]
-pub enum OverlayCmd {
-    Begin {
-        origin: Point,
-        colors: TrailColors,
-        show_path: bool,
-        show_label: bool,
-        fade_out: bool,
-    },
-    Grow(Point),
-    /// 当前笔画命中的意图名(None = 无匹配;轨迹变色 + 提示标签)
-    Recognized(Option<String>),
-    /// 手势正常结束(fade_out 则淡出,否则立即消失)
-    End,
-    /// 取消/超时:立即消失
-    Cancel,
-}
-
 #[derive(Clone)]
 pub struct Overlay {
-    tx: Sender<OverlayCmd>,
+    tx: Sender<OverlayCommand>,
     thread_id: Arc<AtomicU32>,
     wake_pending: Arc<AtomicBool>,
 }
@@ -105,12 +83,18 @@ impl Overlay {
         }
     }
 
-    pub fn send(&self, cmd: OverlayCmd) {
+    pub fn send(&self, cmd: OverlayCommand) {
         let _ = self.tx.send(cmd);
         let tid = self.thread_id.load(Ordering::SeqCst);
         if tid != 0 && !self.wake_pending.swap(true, Ordering::AcqRel) && !post_overlay_wake(tid) {
             self.wake_pending.store(false, Ordering::Release);
         }
+    }
+}
+
+impl OverlaySink for Overlay {
+    fn send(&self, command: OverlayCommand) {
+        Overlay::send(self, command);
     }
 }
 
@@ -460,7 +444,7 @@ impl OverlayStats {
 }
 
 fn overlay_thread_main(
-    rx: Receiver<OverlayCmd>,
+    rx: Receiver<OverlayCommand>,
     tid_slot: Arc<AtomicU32>,
     wake_pending: Arc<AtomicBool>,
 ) {
@@ -561,11 +545,11 @@ fn overlay_thread_main(
 }
 
 struct CommandBatch {
-    commands: Vec<OverlayCmd>,
+    commands: Vec<OverlayCommand>,
     has_more: bool,
 }
 
-fn take_command_batch(rx: &Receiver<OverlayCmd>, limit: usize) -> CommandBatch {
+fn take_command_batch(rx: &Receiver<OverlayCommand>, limit: usize) -> CommandBatch {
     let mut commands = Vec::with_capacity(rx.len().min(limit).max(1));
     while commands.len() < limit {
         match rx.try_recv() {
@@ -609,14 +593,14 @@ fn append_visual_point(points: &mut Vec<Point>, point: Point, limit: usize) -> b
 
 /// Applies at most one frame's worth of commands and reports whether another wake is required.
 /// Rendering before returning prevents a continuously growing queue from starving the overlay.
-fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) -> bool {
+fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bool {
     let batch = take_command_batch(rx, MAX_COMMANDS_PER_FRAME);
     let queue_depth = batch.commands.len() + rx.len();
     let mut grow_count = 0;
     let mut visual_dirty = false;
     for cmd in batch.commands {
         match cmd {
-            OverlayCmd::Begin {
+            OverlayCommand::Begin {
                 origin,
                 colors,
                 show_path,
@@ -639,14 +623,14 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) -> bool {
                 state.alpha = 255;
                 ensure_surface_for(state, origin);
             }
-            OverlayCmd::Grow(p) => {
+            OverlayCommand::Grow(p) => {
                 // 距上个渲染点至少 3px 才记点(StepSize,降密)
                 if append_visual_point(&mut state.points, p, state.visual_point_limit) {
                     grow_count += 1;
                     visual_dirty |= state.show_path;
                 }
             }
-            OverlayCmd::Recognized(name) => {
+            OverlayCommand::Recognized(name) => {
                 let recognized = name.is_some();
                 if state.recognized != recognized || state.label != name {
                     state.recognized = recognized;
@@ -655,7 +639,7 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) -> bool {
                     visual_dirty = state.show_path || (state.show_label && state.label.is_some());
                 }
             }
-            OverlayCmd::End => {
+            OverlayCommand::End => {
                 if state.visible {
                     if state.fade_out {
                         start_fade(state);
@@ -667,12 +651,13 @@ fn drain_commands(rx: &Receiver<OverlayCmd>, state: &mut OverlayState) -> bool {
                 state.points.clear();
                 state.rendered_points = 0;
             }
-            OverlayCmd::Cancel => {
+            OverlayCommand::Cancel => {
                 hide(state);
                 visual_dirty = false;
                 state.points.clear();
                 state.rendered_points = 0;
             }
+            OverlayCommand::ShowLabelFeedback { .. } => {}
         }
     }
     state.stats.record_batch(grow_count, queue_depth);
@@ -1385,7 +1370,7 @@ mod tests {
     fn command_batch_is_bounded_and_reports_remaining_work() {
         let (tx, rx) = unbounded();
         for value in 0..5 {
-            tx.send(OverlayCmd::Grow(point(value))).unwrap();
+            tx.send(OverlayCommand::Grow(point(value))).unwrap();
         }
 
         let first = take_command_batch(&rx, 2);
@@ -1508,23 +1493,23 @@ mod tests {
     #[test]
     fn command_batch_preserves_control_command_order() {
         let (tx, rx) = unbounded();
-        tx.send(OverlayCmd::Grow(point(1))).unwrap();
-        tx.send(OverlayCmd::Recognized(Some("match".into())))
+        tx.send(OverlayCommand::Grow(point(1))).unwrap();
+        tx.send(OverlayCommand::Recognized(Some("match".into())))
             .unwrap();
-        tx.send(OverlayCmd::End).unwrap();
+        tx.send(OverlayCommand::End).unwrap();
 
         let batch = take_command_batch(&rx, MAX_COMMANDS_PER_FRAME);
-        assert!(matches!(batch.commands[0], OverlayCmd::Grow(_)));
+        assert!(matches!(batch.commands[0], OverlayCommand::Grow(_)));
         assert!(matches!(
             &batch.commands[1],
-            OverlayCmd::Recognized(Some(label)) if label == "match"
+            OverlayCommand::Recognized(Some(label)) if label == "match"
         ));
-        assert!(matches!(batch.commands[2], OverlayCmd::End));
+        assert!(matches!(batch.commands[2], OverlayCommand::End));
     }
 
     #[test]
     fn command_batch_handles_empty_and_disconnected_receivers() {
-        let (tx, rx) = unbounded::<OverlayCmd>();
+        let (tx, rx) = unbounded::<OverlayCommand>();
         drop(tx);
 
         let batch = take_command_batch(&rx, MAX_COMMANDS_PER_FRAME);
@@ -1536,7 +1521,7 @@ mod tests {
     fn mouse_rate_backlog_is_presented_as_one_latest_frame() {
         let (tx, rx) = unbounded();
         for value in 0..1000 {
-            tx.send(OverlayCmd::Grow(point(value))).unwrap();
+            tx.send(OverlayCommand::Grow(point(value))).unwrap();
         }
 
         let batch = take_command_batch(&rx, MAX_COMMANDS_PER_FRAME);
@@ -1544,7 +1529,7 @@ mod tests {
         assert!(!batch.has_more);
         assert!(matches!(
             batch.commands.last(),
-            Some(OverlayCmd::Grow(Point { x: 999, y: 999 }))
+            Some(OverlayCommand::Grow(Point { x: 999, y: 999 }))
         ));
     }
 
@@ -1657,12 +1642,12 @@ mod tests {
     fn reaching_visual_point_limit_does_not_delay_recognized_or_end() {
         let (tx, rx) = unbounded();
         for value in 1..700 {
-            tx.send(OverlayCmd::Grow(Point { x: value * 3, y: 0 }))
+            tx.send(OverlayCommand::Grow(Point { x: value * 3, y: 0 }))
                 .unwrap();
         }
-        tx.send(OverlayCmd::Recognized(Some("match".into())))
+        tx.send(OverlayCommand::Recognized(Some("match".into())))
             .unwrap();
-        tx.send(OverlayCmd::End).unwrap();
+        tx.send(OverlayCommand::End).unwrap();
 
         let mut state = test_state();
         assert!(!drain_commands(&rx, &mut state));
