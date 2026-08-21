@@ -45,6 +45,15 @@ pub fn execute(
     modifier: Modifier,
     ctx: &GestureContext,
 ) -> Option<AudioVolumeState> {
+    execute_with_audio_endpoint(cmd, modifier, ctx, None)
+}
+
+fn execute_with_audio_endpoint(
+    cmd: &Command,
+    modifier: Modifier,
+    ctx: &GestureContext,
+    mut audio_endpoint: Option<&mut dyn AudioEndpoint>,
+) -> Option<AudioVolumeState> {
     match cmd {
         // 由 consumer 特判 / 无动作
         Command::DoNothing => None,
@@ -99,13 +108,19 @@ pub fn execute(
             web_search(engine_url, browser.as_deref(), ctx);
             None
         }
-        Command::AudioVolume { delta } => match audio_volume(modifier, *delta) {
-            Ok(state) => Some(state),
-            Err(error) => {
-                log::error!("音量命令失败: {error}");
-                None
+        Command::AudioVolume { delta } => {
+            let result = match audio_endpoint.take() {
+                Some(endpoint) => audio_volume_with_endpoint(modifier, *delta, endpoint),
+                None => audio_volume(modifier, *delta),
+            };
+            match result {
+                Ok(state) => Some(state),
+                Err(error) => {
+                    log::error!("音量命令失败: {error}");
+                    None
+                }
             }
-        },
+        }
         Command::Cmd {
             code,
             show_window,
@@ -329,51 +344,80 @@ fn default_audio_endpoint() -> Result<(AudioComApartment, IAudioEndpointVolume),
     Ok((apartment, endpoint))
 }
 
+trait AudioEndpoint {
+    fn get_mute(&mut self) -> Result<bool, String>;
+    fn set_mute(&mut self, muted: bool) -> Result<(), String>;
+    fn get_scalar(&mut self) -> Result<f32, String>;
+    fn set_scalar(&mut self, scalar: f32) -> Result<(), String>;
+}
+
+struct ComAudioEndpoint<'a> {
+    endpoint: &'a IAudioEndpointVolume,
+}
+
+impl AudioEndpoint for ComAudioEndpoint<'_> {
+    fn get_mute(&mut self) -> Result<bool, String> {
+        unsafe { self.endpoint.GetMute() }
+            .map_err(|error| format!("read endpoint mute state: {error}"))
+            .map(|muted| muted.as_bool())
+    }
+
+    fn set_mute(&mut self, muted: bool) -> Result<(), String> {
+        unsafe { self.endpoint.SetMute(muted, std::ptr::null()) }
+            .map_err(|error| format!("set endpoint mute state: {error}"))
+    }
+
+    fn get_scalar(&mut self) -> Result<f32, String> {
+        unsafe { self.endpoint.GetMasterVolumeLevelScalar() }
+            .map_err(|error| format!("read endpoint volume: {error}"))
+    }
+
+    fn set_scalar(&mut self, scalar: f32) -> Result<(), String> {
+        unsafe {
+            self.endpoint
+                .SetMasterVolumeLevelScalar(scalar, std::ptr::null())
+        }
+        .map_err(|error| format!("set endpoint volume: {error}"))
+    }
+}
+
 fn audio_state_from_endpoint_values(muted: bool, scalar: f32) -> AudioVolumeState {
     AudioVolumeState::from_scalar(muted, scalar)
 }
 
-fn read_audio_volume_state(endpoint: &IAudioEndpointVolume) -> Result<AudioVolumeState, String> {
-    let muted = unsafe { endpoint.GetMute() }
-        .map_err(|error| format!("read endpoint mute state: {error}"))?
-        .as_bool();
-    let scalar = if muted {
-        0.0
-    } else {
-        unsafe { endpoint.GetMasterVolumeLevelScalar() }
-            .map_err(|error| format!("read endpoint volume: {error}"))?
-    };
+fn read_audio_volume_state(endpoint: &mut dyn AudioEndpoint) -> Result<AudioVolumeState, String> {
+    let muted = endpoint.get_mute()?;
+    let scalar = if muted { 0.0 } else { endpoint.get_scalar()? };
     Ok(audio_state_from_endpoint_values(muted, scalar))
 }
 
 fn audio_volume(modifier: Modifier, delta: i32) -> Result<AudioVolumeState, String> {
-    let action = audio_volume_action(modifier, delta);
     let (_apartment, endpoint) = default_audio_endpoint()?;
-    unsafe {
-        match action {
-            AudioVolumeAction::Mute => {
-                let muted = endpoint
-                    .GetMute()
-                    .map_err(|error| format!("read endpoint mute state: {error}"))?
-                    .as_bool();
-                endpoint
-                    .SetMute(!muted, std::ptr::null())
-                    .map_err(|error| format!("set endpoint mute state: {error}"))?;
-                read_audio_volume_state(&endpoint)
-            }
-            action => {
-                let current = endpoint
-                    .GetMasterVolumeLevelScalar()
-                    .map_err(|error| format!("read endpoint volume: {error}"))?;
-                let target = target_volume_scalar(current, action)
-                    .expect("non-mute audio action must have a scalar target");
-                endpoint
-                    .SetMasterVolumeLevelScalar(target, std::ptr::null())
-                    .map_err(|error| format!("set endpoint volume: {error}"))?;
-                read_audio_volume_state(&endpoint)
-            }
+    let mut endpoint = ComAudioEndpoint {
+        endpoint: &endpoint,
+    };
+    audio_volume_with_endpoint(modifier, delta, &mut endpoint)
+}
+
+fn audio_volume_with_endpoint(
+    modifier: Modifier,
+    delta: i32,
+    endpoint: &mut dyn AudioEndpoint,
+) -> Result<AudioVolumeState, String> {
+    let action = audio_volume_action(modifier, delta);
+    match action {
+        AudioVolumeAction::Mute => {
+            let muted = endpoint.get_mute()?;
+            endpoint.set_mute(!muted)?;
+        }
+        action => {
+            let current = endpoint.get_scalar()?;
+            let target = target_volume_scalar(current, action)
+                .expect("non-mute audio action must have a scalar target");
+            endpoint.set_scalar(target)?;
         }
     }
+    read_audio_volume_state(endpoint)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -759,16 +803,174 @@ fn hex_digit(n: u8) -> char {
 mod tests {
     use super::*;
 
+    struct FakeAudioEndpoint {
+        muted: bool,
+        scalar: f32,
+        scalar_after_set: Option<f32>,
+        scalar_reads: usize,
+        mute_reads: usize,
+        set_mute_calls: usize,
+        set_scalar_calls: usize,
+        set_mute_error: Option<String>,
+        set_scalar_error: Option<String>,
+        scalar_read_error_on_call: Option<usize>,
+    }
+
+    impl FakeAudioEndpoint {
+        fn new(muted: bool, scalar: f32) -> Self {
+            Self {
+                muted,
+                scalar,
+                scalar_after_set: None,
+                scalar_reads: 0,
+                mute_reads: 0,
+                set_mute_calls: 0,
+                set_scalar_calls: 0,
+                set_mute_error: None,
+                set_scalar_error: None,
+                scalar_read_error_on_call: None,
+            }
+        }
+    }
+
+    impl AudioEndpoint for FakeAudioEndpoint {
+        fn get_mute(&mut self) -> Result<bool, String> {
+            self.mute_reads += 1;
+            Ok(self.muted)
+        }
+
+        fn set_mute(&mut self, muted: bool) -> Result<(), String> {
+            self.set_mute_calls += 1;
+            if let Some(error) = &self.set_mute_error {
+                return Err(error.clone());
+            }
+            self.muted = muted;
+            Ok(())
+        }
+
+        fn get_scalar(&mut self) -> Result<f32, String> {
+            self.scalar_reads += 1;
+            if self.scalar_read_error_on_call == Some(self.scalar_reads) {
+                return Err("read endpoint volume: fake".into());
+            }
+            Ok(self.scalar)
+        }
+
+        fn set_scalar(&mut self, scalar: f32) -> Result<(), String> {
+            self.set_scalar_calls += 1;
+            if let Some(error) = &self.set_scalar_error {
+                return Err(error.clone());
+            }
+            self.scalar = self.scalar_after_set.unwrap_or(scalar);
+            Ok(())
+        }
+    }
+
     #[test]
-    fn endpoint_values_map_to_final_audio_state() {
-        assert_eq!(
-            audio_state_from_endpoint_values(true, 0.8),
-            AudioVolumeState::Muted
+    fn audio_command_returns_final_scalar_state_after_setter() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.5);
+        endpoint.scalar_after_set = Some(0.583);
+        let command = Command::AudioVolume { delta: 7 };
+
+        let feedback = execute_with_audio_endpoint(
+            &command,
+            Modifier::None,
+            &GestureContext::default(),
+            Some(&mut endpoint),
         );
-        assert_eq!(
-            audio_state_from_endpoint_values(false, 0.58),
-            AudioVolumeState::Percent(58)
+
+        assert_eq!(feedback, Some(AudioVolumeState::Percent(58)));
+        assert_eq!(endpoint.set_scalar_calls, 1);
+        assert_eq!(endpoint.scalar_reads, 2);
+    }
+
+    #[test]
+    fn audio_command_returns_muted_without_reading_scalar() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.8);
+        let command = Command::AudioVolume { delta: 0 };
+
+        let feedback = execute_with_audio_endpoint(
+            &command,
+            Modifier::None,
+            &GestureContext::default(),
+            Some(&mut endpoint),
         );
+
+        assert_eq!(feedback, Some(AudioVolumeState::Muted));
+        assert_eq!(endpoint.set_mute_calls, 1);
+        assert_eq!(endpoint.mute_reads, 2);
+        assert_eq!(endpoint.scalar_reads, 0);
+    }
+
+    #[test]
+    fn audio_command_returns_none_when_mutation_fails() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.5);
+        endpoint.set_scalar_error = Some("set endpoint volume: fake".into());
+        let command = Command::AudioVolume { delta: 1 };
+
+        let feedback = execute_with_audio_endpoint(
+            &command,
+            Modifier::None,
+            &GestureContext::default(),
+            Some(&mut endpoint),
+        );
+
+        assert_eq!(feedback, None);
+        assert_eq!(endpoint.set_scalar_calls, 1);
+        assert_eq!(endpoint.scalar_reads, 1);
+    }
+
+    #[test]
+    fn audio_volume_returns_mutation_error() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.5);
+        endpoint.set_scalar_error = Some("set endpoint volume: fake".into());
+
+        let result = audio_volume_with_endpoint(Modifier::None, 1, &mut endpoint);
+
+        assert_eq!(result, Err("set endpoint volume: fake".into()));
+    }
+
+    #[test]
+    fn audio_command_returns_none_when_readback_fails() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.5);
+        endpoint.scalar_read_error_on_call = Some(2);
+        let command = Command::AudioVolume { delta: 1 };
+
+        let feedback = execute_with_audio_endpoint(
+            &command,
+            Modifier::None,
+            &GestureContext::default(),
+            Some(&mut endpoint),
+        );
+
+        assert_eq!(feedback, None);
+        assert_eq!(endpoint.set_scalar_calls, 1);
+        assert_eq!(endpoint.scalar_reads, 2);
+    }
+
+    #[test]
+    fn audio_volume_returns_readback_error() {
+        let mut endpoint = FakeAudioEndpoint::new(false, 0.5);
+        endpoint.scalar_read_error_on_call = Some(2);
+
+        let result = audio_volume_with_endpoint(Modifier::None, 1, &mut endpoint);
+
+        assert_eq!(result, Err("read endpoint volume: fake".into()));
+    }
+
+    #[test]
+    fn non_audio_commands_return_no_feedback_at_execute_boundary() {
+        for command in [
+            Command::DoNothing,
+            Command::NodePlugin {
+                plugin_id: "test-plugin".into(),
+            },
+        ] {
+            assert_eq!(
+                execute(&command, Modifier::None, &GestureContext::default()),
+                None
+            );
+        }
     }
 
     #[test]
