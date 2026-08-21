@@ -6,6 +6,8 @@ pub mod platform;
 mod template_download;
 mod updater;
 
+#[cfg(any(windows, target_os = "macos"))]
+use engine::audio::{format_volume_feedback, AudioVolumeState};
 #[cfg(windows)]
 use engine::config::MachineSettingsSnapshot;
 #[cfg(any(windows, target_os = "macos"))]
@@ -18,6 +20,8 @@ use engine::plugin_workspace::{PluginWorkspace, PluginWorkspaceSnapshot};
 use engine::runtime::{EngineMsg, EngineShared};
 #[cfg(any(windows, target_os = "macos"))]
 use engine::script_host::{ScriptInvocation, ScriptSlot};
+#[cfg(any(windows, target_os = "macos"))]
+use platform::overlay::{show_label_feedback, OverlaySink};
 use std::{path::Path, sync::Arc};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
@@ -473,6 +477,7 @@ fn spawn_engine_consumer(
                                         &intent.command,
                                         invocation,
                                         &shared,
+                                        &overlay,
                                         node_service.as_ref(),
                                     );
                                 }
@@ -519,6 +524,7 @@ fn spawn_engine_consumer(
                                             modifier,
                                         },
                                         &shared,
+                                        &overlay,
                                         node_service.as_ref(),
                                     );
                                 } else {
@@ -537,6 +543,7 @@ fn spawn_engine_consumer(
                                     modifier,
                                 },
                                 &shared,
+                                &overlay,
                                 node_service.as_ref(),
                             );
                         }
@@ -611,6 +618,7 @@ fn spawn_engine_consumer(
                                 modifier: engine::types::Modifier::None,
                             },
                             &shared,
+                            &overlay,
                             node_service.as_ref(),
                         );
                     }
@@ -661,7 +669,8 @@ fn contains_key_q(inputs: &[engine::config::GestureInput]) -> bool {
 fn execute_intent(
     command: &engine::config::Command,
     invocation: ScriptInvocation,
-    _shared: &Arc<EngineShared>,
+    shared: &Arc<EngineShared>,
+    overlay: &platform::current::overlay::Overlay,
     node_service: Option<&NodeScriptService>,
 ) {
     if let engine::config::Command::NodePlugin { plugin_id, .. } = command {
@@ -680,8 +689,41 @@ fn execute_intent(
             invocation,
         );
     } else {
-        platform::current::commands::execute(command, invocation.modifier, &invocation.gesture);
+        if let Some(state) =
+            platform::current::commands::execute(command, invocation.modifier, &invocation.gesture)
+        {
+            let (locale, show_command_name, fade_out) = shared.command_feedback_preferences();
+            show_volume_feedback(
+                overlay,
+                state,
+                locale,
+                show_command_name,
+                fade_out,
+                invocation.gesture.origin,
+            );
+        }
     }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn show_volume_feedback(
+    sink: &impl OverlaySink,
+    state: AudioVolumeState,
+    locale: engine::config::Locale,
+    show_command_name: bool,
+    fade_out: bool,
+    origin: engine::types::Point,
+) {
+    if !show_command_name {
+        return;
+    }
+
+    show_label_feedback(
+        sink,
+        origin,
+        format_volume_feedback(state, locale),
+        fade_out,
+    );
 }
 
 trait TriggerMnemonic {
@@ -1930,7 +1972,59 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::types::{Direction, TriggerButton};
+    use engine::config::Locale;
+    use engine::types::{Direction, Point, TriggerButton};
+    use platform::overlay::{OverlayCommand, OverlaySink};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingSink {
+        commands: Mutex<Vec<OverlayCommand>>,
+    }
+
+    impl RecordingSink {
+        fn commands(&self) -> Vec<OverlayCommand> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+
+    impl OverlaySink for RecordingSink {
+        fn send(&self, command: OverlayCommand) {
+            self.commands.lock().unwrap().push(command);
+        }
+    }
+
+    #[test]
+    fn volume_feedback_helper_honors_visibility_and_uses_origin() {
+        let sink = RecordingSink::default();
+        show_volume_feedback(
+            &sink,
+            AudioVolumeState::Percent(42),
+            Locale::En,
+            true,
+            true,
+            Point { x: 300, y: 400 },
+        );
+        assert!(matches!(
+            sink.commands()[0],
+            OverlayCommand::ShowLabelFeedback {
+                origin: Point { x: 300, y: 400 },
+                ref text,
+                fade_out: true,
+            } if text == "42%"
+        ));
+
+        let hidden = RecordingSink::default();
+        show_volume_feedback(
+            &hidden,
+            AudioVolumeState::Muted,
+            Locale::ZhCn,
+            false,
+            true,
+            Point { x: 0, y: 0 },
+        );
+        assert!(hidden.commands().is_empty());
+    }
 
     #[test]
     fn captured_gesture_matches_frontend_contract() {
