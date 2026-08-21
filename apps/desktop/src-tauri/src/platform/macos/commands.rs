@@ -1,50 +1,60 @@
 // macOS command execution boundary. Runs on the engine consumer thread.
 
 use super::{clipboard, input, window};
-use crate::engine::audio::{audio_volume_action, AudioVolumeAction};
+use crate::engine::audio::{audio_volume_action, AudioVolumeAction, AudioVolumeState};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
 use objc2_app_kit::NSWorkspace;
 use objc2_foundation::{NSString, NSURL};
 
-pub fn execute(command: &Command, modifier: Modifier, context: &GestureContext) {
+pub fn execute(
+    command: &Command,
+    modifier: Modifier,
+    context: &GestureContext,
+) -> Option<AudioVolumeState> {
     let result = match command {
-        Command::DoNothing => Ok(()),
+        Command::DoNothing => Ok(None),
         Command::NodePlugin { .. } => Err("Script reached the native command dispatcher".into()),
         Command::HotKey { modifiers, keys } => {
             activate_best_effort(context);
-            input::synthesize_key_combo(modifiers, keys)
+            input::synthesize_key_combo(modifiers, keys).map(|_| None)
         }
         Command::SendText { text } => {
             activate_best_effort(context);
-            input::try_type_text_with_sleeps(text)
+            input::try_type_text_with_sleeps(text).map(|_| None)
         }
-        Command::TaskSwitcher => mission_control(),
+        Command::TaskSwitcher => mission_control().map(|_| None),
         Command::WindowControl { operation } => {
-            window::window_operation(*operation, context.native_window)
+            window::window_operation(*operation, context.native_window).map(|_| None)
         }
-        Command::OpenFile { path } => open_file(path),
-        Command::GotoUrl { url } => normalize_goto_url(url).and_then(|url| open_url(&url, None)),
+        Command::OpenFile { path } => open_file(path).map(|_| None),
+        Command::GotoUrl { url } => normalize_goto_url(url)
+            .and_then(|url| open_url(&url, None))
+            .map(|_| None),
         Command::WebSearch {
             engine_url,
             browser,
             ..
-        } => web_search(engine_url, browser.as_deref(), context),
-        Command::AudioVolume { delta } => audio_volume(modifier, *delta),
+        } => web_search(engine_url, browser.as_deref(), context).map(|_| None),
+        Command::AudioVolume { delta } => audio_volume(modifier, *delta).map(Some),
         Command::Cmd {
             code,
             show_window,
             auto_set_working_dir,
-        } => run_command(code, *show_window, *auto_set_working_dir, context),
+        } => run_command(code, *show_window, *auto_set_working_dir, context).map(|_| None),
         Command::PowerShell {
             code,
             show_window,
             auto_set_working_dir,
-        } => run_powershell(code, *show_window, *auto_set_working_dir, context),
+        } => run_powershell(code, *show_window, *auto_set_working_dir, context).map(|_| None),
     };
-    if let Err(error) = result {
-        log::error!("macOS command {command:?} failed: {error}");
+    match result {
+        Ok(feedback) => feedback,
+        Err(error) => {
+            log::error!("macOS command {command:?} failed: {error}");
+            None
+        }
     }
 }
 
@@ -126,8 +136,8 @@ fn web_search(
     }
 }
 
-fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
-    let script = match audio_volume_action(modifier, delta) {
+fn audio_volume(modifier: Modifier, delta: i32) -> Result<AudioVolumeState, String> {
+    let mutation = match audio_volume_action(modifier, delta) {
         AudioVolumeAction::Mute => concat!(
             "set currentMuted to output muted of (get volume settings)\n",
             "set volume output muted (not currentMuted)"
@@ -140,17 +150,53 @@ fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
             "set currentVolume to output volume of (get volume settings)\nset volume output volume (currentVolume - {points})"
         ),
     };
+    let script = format!(
+        "{mutation}\nset finalSettings to get volume settings\nreturn ((output volume of finalSettings) as text) & \"|\" & ((output muted of finalSettings) as text)"
+    );
     let output = std::process::Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
         .output()
         .map_err(|error| format!("launch volume AppleScript: {error}"))?;
     if output.status.success() {
-        Ok(())
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        parse_volume_state_output(&stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("volume AppleScript failed: {}", stderr.trim()))
     }
+}
+
+fn parse_volume_state_output(output: &str) -> Result<AudioVolumeState, String> {
+    let output = output.trim();
+    if output.is_empty() {
+        return Err("volume AppleScript returned empty output".into());
+    }
+
+    let fields = output.split('|').collect::<Vec<_>>();
+    if fields.len() != 2 {
+        return Err("volume AppleScript returned malformed state".into());
+    }
+
+    let volume = fields[0]
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "volume AppleScript returned an invalid volume".to_string())?;
+    if volume > 100 {
+        return Err("volume AppleScript returned an out-of-range volume".into());
+    }
+
+    let muted = match fields[1].trim() {
+        "true" => true,
+        "false" => false,
+        _ => return Err("volume AppleScript returned an invalid mute state".into()),
+    };
+
+    Ok(if muted {
+        AudioVolumeState::Muted
+    } else {
+        AudioVolumeState::Percent(volume as u8)
+    })
 }
 
 fn run_command(
@@ -427,6 +473,36 @@ pub(crate) fn window_control_for_script(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::audio::AudioVolumeState;
+
+    #[test]
+    fn parses_final_macos_volume_state() {
+        assert_eq!(
+            parse_volume_state_output("42|false\n").unwrap(),
+            AudioVolumeState::Percent(42)
+        );
+        assert_eq!(
+            parse_volume_state_output("0|true\n").unwrap(),
+            AudioVolumeState::Muted
+        );
+        assert!(parse_volume_state_output("not-a-state").is_err());
+        assert!(parse_volume_state_output("101|false").is_err());
+        assert!(parse_volume_state_output("").is_err());
+        assert!(parse_volume_state_output("42|maybe").is_err());
+        assert!(parse_volume_state_output("42|false|extra").is_err());
+    }
+
+    #[test]
+    fn non_audio_commands_return_no_feedback_at_execute_boundary() {
+        assert_eq!(
+            execute(
+                &Command::DoNothing,
+                Modifier::None,
+                &GestureContext::default()
+            ),
+            None
+        );
+    }
 
     #[test]
     fn goto_url_adds_http_only_when_no_scheme_exists() {
