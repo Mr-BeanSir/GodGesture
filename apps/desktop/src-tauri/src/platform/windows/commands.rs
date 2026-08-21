@@ -7,7 +7,9 @@
 //! DoNothing 顾名思义。
 
 use super::{clipboard, input, window};
-use crate::engine::audio::{audio_volume_action, target_volume_scalar, AudioVolumeAction};
+use crate::engine::audio::{
+    audio_volume_action, target_volume_scalar, AudioVolumeAction, AudioVolumeState,
+};
 use crate::engine::config::{Command, WindowOperation};
 use crate::engine::runtime::GestureContext;
 use crate::engine::types::Modifier;
@@ -38,12 +40,17 @@ const TASK_SWITCHER_MODIFIERS: &[VIRTUAL_KEY] = &[VK_CONTROL, VK_MENU];
 const TASK_SWITCHER_KEY: VIRTUAL_KEY = VK_TAB;
 
 /// 执行一条命令。`modifier` 是本次手势修饰,`ctx` 提供手势起点与目标窗口句柄。
-pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
+pub fn execute(
+    cmd: &Command,
+    modifier: Modifier,
+    ctx: &GestureContext,
+) -> Option<AudioVolumeState> {
     match cmd {
         // 由 consumer 特判 / 无动作
-        Command::DoNothing => {}
+        Command::DoNothing => None,
         Command::NodePlugin { .. } => {
             log::error!("脚本命令意外到达原生命令分发器");
+            None
         }
 
         Command::HotKey { modifiers, keys } => {
@@ -55,40 +62,66 @@ pub fn execute(cmd: &Command, modifier: Modifier, ctx: &GestureContext) {
                 activate_target(ctx);
                 let _ = input::synthesize_key_combo(modifiers, keys);
             }
+            None
         }
         Command::SendText { text } => {
             activate_target(ctx);
             input::type_text_with_sleeps(text);
+            None
         }
         Command::TaskSwitcher => {
             input::tap_with_modifiers(TASK_SWITCHER_MODIFIERS, TASK_SWITCHER_KEY);
+            None
         }
-        Command::WindowControl { operation } => window_control(*operation, ctx),
-        Command::OpenFile { path } => open_or_log(path, None),
+        Command::WindowControl { operation } => {
+            window_control(*operation, ctx);
+            None
+        }
+        Command::OpenFile { path } => {
+            open_or_log(path, None);
+            None
+        }
         Command::GotoUrl { url } => match normalize_goto_url(url) {
-            Ok(url) => open_or_log(&url, None),
-            Err(error) => log::error!("GotoUrl 命令被拒绝: {error}"),
+            Ok(url) => {
+                open_or_log(&url, None);
+                None
+            }
+            Err(error) => {
+                log::error!("GotoUrl 命令被拒绝: {error}");
+                None
+            }
         },
         Command::WebSearch {
             engine_url,
             browser,
             ..
-        } => web_search(engine_url, browser.as_deref(), ctx),
-        Command::AudioVolume { delta } => {
-            if let Err(error) = audio_volume(modifier, *delta) {
-                log::error!("音量命令失败: {error}");
-            }
+        } => {
+            web_search(engine_url, browser.as_deref(), ctx);
+            None
         }
+        Command::AudioVolume { delta } => match audio_volume(modifier, *delta) {
+            Ok(state) => Some(state),
+            Err(error) => {
+                log::error!("音量命令失败: {error}");
+                None
+            }
+        },
         Command::Cmd {
             code,
             show_window,
             auto_set_working_dir,
-        } => run_cmd(code, *show_window, *auto_set_working_dir, ctx),
+        } => {
+            run_cmd(code, *show_window, *auto_set_working_dir, ctx);
+            None
+        }
         Command::PowerShell {
             code,
             show_window,
             auto_set_working_dir,
-        } => run_powershell(code, *show_window, *auto_set_working_dir, ctx),
+        } => {
+            run_powershell(code, *show_window, *auto_set_working_dir, ctx);
+            None
+        }
     }
 }
 
@@ -296,7 +329,24 @@ fn default_audio_endpoint() -> Result<(AudioComApartment, IAudioEndpointVolume),
     Ok((apartment, endpoint))
 }
 
-fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
+fn audio_state_from_endpoint_values(muted: bool, scalar: f32) -> AudioVolumeState {
+    AudioVolumeState::from_scalar(muted, scalar)
+}
+
+fn read_audio_volume_state(endpoint: &IAudioEndpointVolume) -> Result<AudioVolumeState, String> {
+    let muted = unsafe { endpoint.GetMute() }
+        .map_err(|error| format!("read endpoint mute state: {error}"))?
+        .as_bool();
+    let scalar = if muted {
+        0.0
+    } else {
+        unsafe { endpoint.GetMasterVolumeLevelScalar() }
+            .map_err(|error| format!("read endpoint volume: {error}"))?
+    };
+    Ok(audio_state_from_endpoint_values(muted, scalar))
+}
+
+fn audio_volume(modifier: Modifier, delta: i32) -> Result<AudioVolumeState, String> {
     let action = audio_volume_action(modifier, delta);
     let (_apartment, endpoint) = default_audio_endpoint()?;
     unsafe {
@@ -308,7 +358,8 @@ fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
                     .as_bool();
                 endpoint
                     .SetMute(!muted, std::ptr::null())
-                    .map_err(|error| format!("set endpoint mute state: {error}"))
+                    .map_err(|error| format!("set endpoint mute state: {error}"))?;
+                read_audio_volume_state(&endpoint)
             }
             action => {
                 let current = endpoint
@@ -318,7 +369,8 @@ fn audio_volume(modifier: Modifier, delta: i32) -> Result<(), String> {
                     .expect("non-mute audio action must have a scalar target");
                 endpoint
                     .SetMasterVolumeLevelScalar(target, std::ptr::null())
-                    .map_err(|error| format!("set endpoint volume: {error}"))
+                    .map_err(|error| format!("set endpoint volume: {error}"))?;
+                read_audio_volume_state(&endpoint)
             }
         }
     }
@@ -706,6 +758,18 @@ fn hex_digit(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endpoint_values_map_to_final_audio_state() {
+        assert_eq!(
+            audio_state_from_endpoint_values(true, 0.8),
+            AudioVolumeState::Muted
+        );
+        assert_eq!(
+            audio_state_from_endpoint_values(false, 0.58),
+            AudioVolumeState::Percent(58)
+        );
+    }
 
     #[test]
     fn task_switcher_uses_ctrl_alt_tab() {
