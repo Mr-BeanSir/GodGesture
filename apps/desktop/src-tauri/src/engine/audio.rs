@@ -1,3 +1,4 @@
+use super::config::Locale;
 use super::types::Modifier;
 
 const MAX_VOLUME_STEPS: u32 = 20;
@@ -7,6 +8,49 @@ pub enum AudioVolumeAction {
     Mute,
     Up(u32),
     Down(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioVolumeState {
+    Muted,
+    Percent(u8),
+}
+
+impl AudioVolumeState {
+    pub fn from_scalar(muted: bool, scalar: f32) -> Self {
+        if muted {
+            return Self::Muted;
+        }
+
+        let scalar = if scalar.is_nan() {
+            0.0
+        } else {
+            scalar.clamp(0.0, 1.0)
+        };
+        Self::Percent((scalar * 100.0).round() as u8)
+    }
+}
+
+pub fn resolve_feedback_locale(configured: Locale, system: Locale) -> Locale {
+    match configured {
+        Locale::Auto => system,
+        locale => locale,
+    }
+}
+
+pub fn format_volume_feedback(state: AudioVolumeState, locale: Locale) -> String {
+    let locale = match locale {
+        Locale::Auto => Locale::En,
+        locale => locale,
+    };
+
+    match state {
+        AudioVolumeState::Muted => match locale {
+            Locale::ZhCn => "静音".to_string(),
+            Locale::En | Locale::Auto => "Muted".to_string(),
+        },
+        AudioVolumeState::Percent(percent) => format!("{percent}%"),
+    }
 }
 
 pub fn audio_volume_action(modifier: Modifier, delta: i32) -> AudioVolumeAction {
@@ -37,6 +81,7 @@ pub fn target_volume_scalar(current: f32, action: AudioVolumeAction) -> Option<f
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::config::Locale;
 
     #[test]
     fn signed_delta_controls_direction_without_a_wheel_modifier() {
@@ -101,5 +146,45 @@ mod tests {
             Some(0.0)
         );
         assert_eq!(target_volume_scalar(0.5, AudioVolumeAction::Mute), None);
+    }
+
+    #[test]
+    fn final_audio_state_clamps_and_rounds_percent() {
+        assert_eq!(
+            AudioVolumeState::from_scalar(false, -0.2),
+            AudioVolumeState::Percent(0)
+        );
+        assert_eq!(
+            AudioVolumeState::from_scalar(false, 0.424),
+            AudioVolumeState::Percent(42)
+        );
+        assert_eq!(
+            AudioVolumeState::from_scalar(false, 1.4),
+            AudioVolumeState::Percent(100)
+        );
+        assert_eq!(
+            AudioVolumeState::from_scalar(true, 0.75),
+            AudioVolumeState::Muted
+        );
+    }
+
+    #[test]
+    fn final_audio_state_formats_for_each_locale() {
+        assert_eq!(
+            format_volume_feedback(AudioVolumeState::Muted, Locale::ZhCn),
+            "静音"
+        );
+        assert_eq!(
+            format_volume_feedback(AudioVolumeState::Muted, Locale::En),
+            "Muted"
+        );
+        assert_eq!(
+            format_volume_feedback(AudioVolumeState::Percent(42), Locale::En),
+            "42%"
+        );
+        assert_eq!(
+            resolve_feedback_locale(Locale::Auto, Locale::ZhCn),
+            Locale::ZhCn
+        );
     }
 }

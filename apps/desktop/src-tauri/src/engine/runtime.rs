@@ -8,11 +8,12 @@
 //! 平台层负责保持输入恢复时序。Windows 普通点击在当前低级钩子回调返回后由
 //! 钩子消息泵重放;起始超时的 SynthesizeDown 仍同步执行以衔接后续真实抬起。
 
+use super::audio::resolve_feedback_locale;
 use super::boundary::{BoundaryMatcher, BoundaryReplay, BoundaryResult};
 use super::capture::{classify_supplemental_input, GestureCapture, SupplementalDisposition};
 use super::config::{
     BoundaryMouseButton, BoundaryToken, BoundaryWheelDirection, Command, ConfigDocument,
-    GestureInput, GestureInputButton, GestureIntent,
+    GestureInput, GestureInputButton, GestureIntent, Locale,
 };
 use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
 use super::intents::{ForegroundApp, IntentFinder};
@@ -142,6 +143,10 @@ pub trait PlatformServices: Send + Sync {
     /// 光标所在显示器的完整边界与 DPI 缩放(触发角/摩擦边判定用)。
     /// 该点不属于任何已知显示器时返回 None。
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo>;
+    /// 返回系统 locale。平台实现可在后续边界接入真实系统值。
+    fn system_locale(&self) -> Locale {
+        Locale::En
+    }
     /// Windows 通知区域等系统输入面应优先收到原生鼠标事件。
     /// 其它平台没有该类系统托盘命中判定时保持放行。
     fn is_system_tray_point(&self, _pos: Point) -> bool {
@@ -311,6 +316,16 @@ impl EngineShared {
 
     pub fn referenced_node_plugin_ids(&self) -> std::collections::HashSet<String> {
         self.finder.lock().config().referenced_node_plugin_ids()
+    }
+
+    pub fn command_feedback_preferences(&self) -> (Locale, bool, bool) {
+        let finder = self.finder.lock();
+        let preferences = &finder.config().preferences;
+        (
+            resolve_feedback_locale(preferences.locale, self.platform.system_locale()),
+            preferences.gesture_view.show_command_name,
+            preferences.gesture_view.fade_out,
+        )
     }
 
     /// 触发键对应的轨迹配色与显示开关
@@ -1334,6 +1349,20 @@ mod tests {
         assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(true)));
         shared.set_paused(false);
         assert!(matches!(rx.recv().unwrap(), EngineMsg::PauseChanged(false)));
+    }
+
+    #[test]
+    fn command_feedback_preferences_resolve_locale_and_view_flags() {
+        let mut config = ConfigDocument::default();
+        config.preferences.locale = crate::engine::config::Locale::ZhCn;
+        config.preferences.gesture_view.show_command_name = false;
+        config.preferences.gesture_view.fade_out = false;
+        let (shared, _rx) = EngineShared::new(config, Arc::new(StubPlatform));
+
+        assert_eq!(
+            shared.command_feedback_preferences(),
+            (crate::engine::config::Locale::ZhCn, false, false)
+        );
     }
 
     #[test]
