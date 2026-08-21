@@ -472,6 +472,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the public account registration policy */
+        get: operations["getRegistrationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices": {
         parameters: {
             query?: never;
@@ -782,6 +799,7 @@ export interface components {
             role: "user" | "admin";
         };
         AdminSystemConfigResponse: {
+            registrationEnabled: boolean;
             rustfs: {
                 accessKeyConfigured: boolean;
                 bucket: string;
@@ -805,6 +823,7 @@ export interface components {
             updatedAt: string;
         };
         AdminSystemConfigUpdateRequest: {
+            registrationEnabled?: boolean;
             rustfs?: {
                 accessKey?: string;
                 bucket?: string;
@@ -2521,6 +2540,13 @@ export interface components {
             email: string;
             password: string;
             verificationCode?: string;
+        };
+        RegistrationDisabledResponse: {
+            /** @enum {string} */
+            error: "registration_disabled";
+        };
+        RegistrationStatusResponse: {
+            enabled: boolean;
         };
         RenameDeviceRequest: {
             name: string;
@@ -4736,6 +4762,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request rate limit was exceeded. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitedResponse"];
+                };
+            };
+        };
+    };
+    getRegistrationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The public registration status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationStatusResponse"];
                 };
             };
             /** @description The request rate limit was exceeded. */

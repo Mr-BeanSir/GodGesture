@@ -100,6 +100,38 @@ pub enum EngineMsg {
     ScriptConfigChanged,
 }
 
+/// 输入事件来源与目标窗口的 Windows 完整性级别诊断。
+///
+/// macOS 和不支持该诊断的平台返回 `Unknown`;它不参与手势准入裁决。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputIntegrity {
+    Unknown,
+    Untrusted,
+    Low,
+    Medium,
+    High,
+    System,
+    Protected,
+}
+
+impl InputIntegrity {
+    pub fn is_higher_than(self, other: Self) -> bool {
+        self.rank() > other.rank() && self != Self::Unknown && other != Self::Unknown
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            Self::Unknown => 0,
+            Self::Untrusted => 1,
+            Self::Low => 2,
+            Self::Medium => 3,
+            Self::High => 4,
+            Self::System => 5,
+            Self::Protected => 6,
+        }
+    }
+}
+
 /// 平台服务:运行时需要但因平台而异的操作(由 platform 层注入)
 pub trait PlatformServices: Send + Sync {
     fn resolve_foreground_app(&self, pos: Point, prefer_cursor_window: bool) -> ForegroundApp;
@@ -114,6 +146,14 @@ pub trait PlatformServices: Send + Sync {
     /// 其它平台没有该类系统托盘命中判定时保持放行。
     fn is_system_tray_point(&self, _pos: Point) -> bool {
         false
+    }
+    /// 返回当前引擎进程和手势目标窗口的完整性级别,仅用于 Windows 诊断。
+    fn input_integrity(
+        &self,
+        _pos: Point,
+        _prefer_cursor_window: bool,
+    ) -> (InputIntegrity, InputIntegrity) {
+        (InputIntegrity::Unknown, InputIntegrity::Unknown)
     }
 }
 
@@ -1124,10 +1164,39 @@ impl TrackerHost for HostImpl<'_> {
             (p.prefer_cursor_window, p.disable_in_fullscreen)
         };
         if disable_fullscreen && shared.platform.is_fullscreen() {
+            log::debug!(
+                target: "gesture.capture",
+                "event=tracker_admission_denied reason=fullscreen x={} y={}",
+                pos.x,
+                pos.y
+            );
             return false;
         }
         let fg = shared.platform.resolve_foreground_app(pos, prefer_cursor);
-        shared.finder.lock().is_gesturing_enabled_for(&fg)
+        let (allowed, matched_app) = {
+            let finder = shared.finder.lock();
+            (
+                finder.is_gesturing_enabled_for(&fg),
+                finder.match_app(&fg).map(|app| app.id.clone()),
+            )
+        };
+        let (self_integrity, target_integrity) =
+            shared.platform.input_integrity(pos, prefer_cursor);
+        log::debug!(
+            target: "gesture.capture",
+            "event=tracker_admission_decision x={} y={} allowed={} matched_app={:?} exe={:?} aumid={:?} prefer_cursor_window={} self_integrity={:?} target_integrity={:?} elevation_boundary={}",
+            pos.x,
+            pos.y,
+            allowed,
+            matched_app,
+            fg.exe_name,
+            fg.aumid,
+            prefer_cursor,
+            self_integrity,
+            target_integrity,
+            target_integrity.is_higher_than(self_integrity)
+        );
+        allowed
     }
 
     fn is_recording(&self) -> bool {

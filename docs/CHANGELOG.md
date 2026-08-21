@@ -2,6 +2,17 @@
 
 > 这是历史与发布审计资料，不是现役开发入口。AI 普通接手任务不要默认读取本文件；只有需要追溯版本形成过程、历史验证证据或已取代决策时按需读取。现役事实以 [`CONTEXT.md`](../CONTEXT.md)、[`docs/PROJECT_STATUS.md`](PROJECT_STATUS.md) 和 [`docs/adr/README.md`](adr/README.md) 为准。
 
+## 2026-08 开发与发布历史
+
+- 2026-08-20：发布正文改为由 `scripts/generate-release-notes.mjs` 在 tag job 中生成，覆盖合并 PR 与直接提交，按 `.github/release.yml` 的 12 类归档，并输出固定说明、`Release Notes` 和 `Full Changelog`。原生 `generate_release_notes` 已关闭；v0.2.2 的 tag run #13 成功，但 live body 仍是旧标题，最新标题修改从下一次 tag 生效。发布校验为 `42/42`，脚本定向测试为 `4/4`。
+- 2026-08-19：Desktop 发布阻断已修复；Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 Vite build 通过。修复内容包括投稿复核 props、账户 mock、Vue Test Utils 断言和拖拽可空引用；Vite 仍保留动态导入与大 chunk 警告。真实 Windows/macOS 安装包验收仍 pending。
+- 2026-08-16：Desktop 模板详情复核和全局 Message 队列完成定向验证；共享 UI `9 files / 24 tests`、手势页相关套件 `2 files / 32 tests`通过。高风险采纳确认仍由共享 dialog footer 管理，缺失平台绑定提示按消息队列独立显示。
+- 2026-08-15：官方模板端点、RustFS 下载、审核详情、版本发布语义和发布治理记录完成定向验证。公共目录按模板族展示最高已发布版本，更新审核期间保留旧版本，父模板暂停隐藏整个模板族；Desktop 下载只接受 HTTPS 或 loopback HTTP，RustFS 包由 Tauri 原生命令读取。受影响的 Rust、Shared、Server、Web Console 和 Desktop 套件均通过，真实 RustFS、登录态手测和双平台原生验收仍 pending。
+- 2026-08-14：管理员控制台、系统配置折叠 panel、设备登录标识和作者模板生命周期完成定向验证。系统配置使用数据库 `SystemConfig` 单例，模板策略默认展开、RustFS 默认收起；作者可查看版本、撤回或删除符合状态条件的模板族。未运行全仓测试，真实 RustFS、OAuth/SMTP、双平台原生能力和生产部署仍 pending。
+- 2026-08-13：首笔 8 方向规则和 Windows `pnpm dev:server` 启动器完成 focused 验证；旧设置字段读取时忽略并在规范化保存时移除。Server 完整启动仍需要本地 PostgreSQL/RustFS 与允许 Prisma/esbuild 构建脚本的 pnpm 策略。
+- 2026-08-11 至 2026-08-12：Server-owned Web Console、共享 UI、管理员导航和应用树完成迁移与验证；Console 使用固定 `zh-CN`、共享 `@godgesture/ui` 原语和持久化设计系统。Server Jest、Console Vitest、E2E、生产 build、Docker smoke 与多视口浏览器验收通过；Windows checkout 的 `check:api` 差异仅为 `openapi.json` 的 CRLF/LF 行尾，内容无语义漂移。真实 macOS、live OAuth/SMTP、1Panel 和生产部署仍 pending。
+- 本次知识收尾：已删除已完成的一次性 `docs/superpowers` 计划/spec，逐轮验证流水迁入本历史区；现役入口只保留当前事实、边界和最近验证基线。
+
 ## Stable v0.1.0
 
 以下是首个正式版本的压缩里程碑，保留原路线图的索引价值：

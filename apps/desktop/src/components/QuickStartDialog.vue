@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   ArrowLeft,
@@ -8,8 +8,9 @@ import {
   LibraryBig,
 } from "lucide-vue-next";
 import { AppAlert, AppButton, AppDialog, AppSpinner } from "@godgesture/ui";
-import type { GestureIntent } from "@godgesture/shared";
+import type { GestureIntent, MachineLocalSettings } from "@godgesture/shared";
 import { useBackend, type PlatformRuntimeStatus } from "../api/backend";
+import { useConfigStore } from "../stores/config";
 import MnemonicText from "./MnemonicText.vue";
 
 const props = defineProps<{
@@ -24,15 +25,27 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const backend = useBackend();
+const store = useConfigStore();
 const activeStep = ref(0);
 const platformStatus = ref<PlatformRuntimeStatus | null>(null);
 const statusPending = ref(false);
 const permissionPending = ref(false);
 const settingsPending = ref(false);
 const examples = computed(() => props.intents.slice(0, 3));
-const dialogBusy = computed(() =>
-  statusPending.value || permissionPending.value || settingsPending.value,
+const machine = computed(() => store.machine);
+const machineSettingsBusy = computed(() =>
+  store.machineRecovering || Object.values(store.machinePending).some((count) => count > 0),
 );
+const dialogBusy = computed(() =>
+  statusPending.value || permissionPending.value || settingsPending.value || machineSettingsBusy.value,
+);
+const steps = computed(() => [
+  t("quickGuide.steps.ready"),
+  t("quickGuide.steps.permissions"),
+  t("quickGuide.steps.try"),
+  t("quickGuide.steps.personalize"),
+]);
+const isWindows = computed(() => platformStatus.value?.platform === "windows");
 const isMacOS = computed(() => platformStatus.value?.platform === "macos");
 const permissionsGranted = computed(() =>
   Boolean(
@@ -60,6 +73,10 @@ const readinessTitle = computed(() => {
     ? t("quickGuide.ready.permissionsRequired")
     : t("quickGuide.ready.engineUnavailable");
 });
+const machineErrorVisible = computed(() => Boolean(store.machineError));
+
+const autoStartId = useId();
+const runAsAdminId = useId();
 
 watch(
   () => props.modelValue,
@@ -106,6 +123,22 @@ function close() {
   emit("update:modelValue", false);
 }
 
+function updateMachine<K extends keyof MachineLocalSettings>(
+  key: K,
+  value: MachineLocalSettings[K],
+): void {
+  void store.updateMachineSetting(key, value).catch(() => undefined);
+}
+
+function updateMachineToggle<K extends keyof MachineLocalSettings>(
+  key: K,
+  event: Event,
+): void {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  updateMachine(key, target.checked as MachineLocalSettings[K]);
+}
+
 function navigate(destination: "gestures" | "templates") {
   emit("navigate", destination);
 }
@@ -123,12 +156,20 @@ function navigate(destination: "gestures" | "templates") {
   >
     <ol class="quick-guide__steps" :aria-label="t('quickGuide.title')">
       <li
-        v-for="(step, index) in [t('quickGuide.steps.ready'), t('quickGuide.steps.try'), t('quickGuide.steps.personalize')]"
+        v-for="(step, index) in steps"
         :key="step"
         :class="{ 'is-active': index === activeStep, 'is-complete': index < activeStep }"
       >
-        <span class="quick-guide__step-number" aria-hidden="true">{{ index + 1 }}</span>
-        <span>{{ step }}</span>
+        <span
+          v-if="index > 0"
+          class="quick-guide__step-connector"
+          :class="{ 'is-complete': index <= activeStep }"
+          aria-hidden="true"
+        />
+        <span class="quick-guide__step-content">
+          <span class="quick-guide__step-number" aria-hidden="true">{{ index + 1 }}</span>
+          <span class="quick-guide__step-label">{{ step }}</span>
+        </span>
       </li>
     </ol>
 
@@ -184,6 +225,48 @@ function navigate(destination: "gestures" | "templates") {
       </section>
 
       <section v-else-if="activeStep === 1" class="quick-guide__step">
+        <h3>{{ t("quickGuide.permissions.title") }}</h3>
+        <p class="gg-hint">{{ t("quickGuide.permissions.body") }}</p>
+        <AppAlert
+          v-if="machineErrorVisible"
+          variant="error"
+          :title="t('quickGuide.permissions.error')"
+        />
+        <div class="quick-guide__machine-settings">
+          <div class="quick-guide__machine-row">
+            <div class="quick-guide__machine-copy">
+              <label :for="runAsAdminId">{{ t("quickGuide.permissions.runAsAdmin") }}</label>
+              <span :class="{ 'is-warning': isWindows }">{{ t(isWindows ? "quickGuide.permissions.runAsAdminDesc" : "quickGuide.permissions.macUnavailable") }}</span>
+            </div>
+            <input
+              :id="runAsAdminId"
+              class="gg-switch"
+              type="checkbox"
+              :aria-label="t('quickGuide.permissions.runAsAdmin')"
+              :checked="Boolean(machine?.runAsAdmin)"
+              :disabled="dialogBusy || !isWindows || !machine"
+              @change="updateMachineToggle('runAsAdmin', $event)"
+            />
+          </div>
+          <div class="quick-guide__machine-row">
+            <div class="quick-guide__machine-copy">
+              <label :for="autoStartId">{{ t("quickGuide.permissions.autoStart") }}</label>
+              <span>{{ t("quickGuide.permissions.autoStartDesc") }}</span>
+            </div>
+            <input
+              :id="autoStartId"
+              class="gg-switch"
+              type="checkbox"
+              :aria-label="t('quickGuide.permissions.autoStart')"
+              :checked="Boolean(machine?.autoStart)"
+              :disabled="dialogBusy || !machine"
+              @change="updateMachineToggle('autoStart', $event)"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section v-else-if="activeStep === 2" class="quick-guide__step">
         <h3>{{ t("quickGuide.try.title") }}</h3>
         <p class="gg-hint">{{ t("quickGuide.try.body") }}</p>
         <div v-if="examples.length" class="quick-guide__examples">
@@ -233,7 +316,7 @@ function navigate(destination: "gestures" | "templates") {
         </div>
         <div>
           <AppButton
-            v-if="activeStep < 2"
+            v-if="activeStep < 3"
             variant="primary"
             :disabled="dialogBusy"
             :aria-label="t('quickGuide.next')"
@@ -259,22 +342,43 @@ function navigate(destination: "gestures" | "templates") {
 :deep(.gg-dialog.quick-guide) { width: min(620px, calc(100vw - 32px)); }
 .quick-guide__steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .quick-guide__steps li {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
   color: var(--gg-text-muted);
   font-size: 12px;
+  justify-content: center;
 }
 .quick-guide__steps li.is-active,
 .quick-guide__steps li.is-complete { color: var(--gg-primary); }
+.quick-guide__step-connector {
+  position: absolute;
+  z-index: 0;
+  top: 10px;
+  right: 50%;
+  left: -50%;
+  border-top: 2px solid var(--gg-border-strong);
+  border-radius: 999px;
+}
+.quick-guide__step-connector.is-complete { border-color: var(--gg-primary); }
+.quick-guide__step-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  background: var(--gg-surface);
+}
 .quick-guide__step-number {
   display: inline-flex;
   width: 20px;
@@ -286,6 +390,10 @@ function navigate(destination: "gestures" | "templates") {
   border-radius: 50%;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+.quick-guide__step-label {
+  min-width: 0;
+  line-height: 1.25;
 }
 .quick-guide__step {
   display: flex;
@@ -337,6 +445,38 @@ function navigate(destination: "gestures" | "templates") {
   border-color: var(--gg-warning-border);
   background: var(--gg-warning-soft);
   color: var(--gg-warning);
+}
+.quick-guide__machine-settings {
+  border-top: 1px solid var(--gg-border);
+}
+.quick-guide__machine-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 16px;
+  align-items: center;
+  min-height: 68px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gg-border);
+}
+.quick-guide__machine-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quick-guide__machine-copy label {
+  color: var(--gg-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.quick-guide__machine-copy span {
+  color: var(--gg-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.quick-guide__machine-copy span.is-warning { color: var(--gg-danger); }
+.quick-guide__machine-row .gg-switch {
+  justify-self: end;
 }
 .quick-guide__examples {
   border-top: 1px solid var(--gg-border);

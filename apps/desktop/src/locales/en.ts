@@ -64,7 +64,7 @@ export default {
       title: "General",
       autoStart: "Start at login",
       runAsAdmin: "Run as administrator",
-      runAsAdminHint: "Restart GodGesture to affect elevated programs",
+      runAsAdminHint: "If some programs run as administrator and cannot use gestures, enable this option. Restart GodGesture for the change to take effect.",
       runAsAdminMacHint: "Administrator mode is unavailable on macOS; gesture access is granted through Accessibility permissions",
       runAsAdminLocationWarning: "The elevated startup task points to the current executable location. If a standard user can replace that file, the replacement could gain administrator rights; moving or deleting it also breaks the task.",
       trayIconVisible: "Show tray icon",
@@ -660,6 +660,7 @@ export default {
     title: "Quick start",
     steps: {
       ready: "Check readiness",
+      permissions: "Program permissions",
       try: "Try a gesture",
       personalize: "Configure",
     },
@@ -672,6 +673,16 @@ export default {
       engineUnavailable: "The gesture engine is not running",
       unsupported: "Global gestures are unsupported on this platform",
       unavailable: "Runtime status is unavailable. Retry from Settings later.",
+    },
+    permissions: {
+      title: "Program permissions",
+      body: "These settings are stored on this device and are not synced.",
+      autoStart: "Start at login",
+      autoStartDesc: "Start GodGesture when you sign in.",
+      runAsAdmin: "Run as administrator",
+      runAsAdminDesc: "If a program runs as administrator and cannot use gestures, enable this option and retry after restarting GodGesture.",
+      macUnavailable: "Administrator mode is unavailable on macOS; use the system Accessibility and input permissions instead.",
+      error: "The local permission settings could not be applied. Retry from Settings.",
     },
     try: {
       title: "Try an existing gesture",

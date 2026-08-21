@@ -815,6 +815,26 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
 
     // 自己合成的事件直接放行
     if info.dwExtraInfo == EXTRA_INFO_TAG {
+        if matches!(
+            wparam.0 as u32,
+            WM_LBUTTONDOWN
+                | WM_LBUTTONUP
+                | WM_MBUTTONDOWN
+                | WM_MBUTTONUP
+                | WM_RBUTTONDOWN
+                | WM_RBUTTONUP
+                | WM_XBUTTONDOWN
+                | WM_XBUTTONUP
+        ) {
+            log::debug!(
+                target: "platform.windows",
+                "event=mouse_injected_ignored message=0x{:X} x={} y={} extra_info={}",
+                wparam.0 as u32,
+                info.pt.x,
+                info.pt.y,
+                info.dwExtraInfo
+            );
+        }
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
 

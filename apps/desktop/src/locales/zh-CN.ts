@@ -64,7 +64,7 @@ export default {
       title: "通用",
       autoStart: "开机自动运行",
       runAsAdmin: "以管理员身份运行",
-      runAsAdminHint: "对提权程序生效需要重启 GodGesture",
+      runAsAdminHint: "如果某些程序以管理员身份运行且无法使用手势，请开启此项。开启后需重启 GodGesture 才可生效。",
       runAsAdminMacHint: "macOS 不支持管理员运行;手势能力由系统辅助功能授权提供",
       runAsAdminLocationWarning: "管理员启动任务会指向当前程序位置。若该位置可被普通用户修改,程序被替换后可能获得管理员权限;移动或删除程序也会使启动任务失效。",
       trayIconVisible: "显示托盘图标",
@@ -660,6 +660,7 @@ export default {
     title: "快速入门",
     steps: {
       ready: "确认就绪",
+      permissions: "程序权限",
       try: "试用手势",
       personalize: "开始配置",
     },
@@ -672,6 +673,16 @@ export default {
       engineUnavailable: "手势引擎当前未运行",
       unsupported: "当前平台不支持全局手势",
       unavailable: "无法读取运行状态，请稍后在“设置”中重试",
+    },
+    permissions: {
+      title: "程序权限",
+      body: "这些设置只保存在本机，不会同步到其他设备。",
+      autoStart: "开机启动",
+      autoStartDesc: "登录系统后自动启动 GodGesture。",
+      runAsAdmin: "以管理员身份启动",
+      runAsAdminDesc: "如果某些程序以管理员身份运行且无法使用手势，请开启此项，并在重启 GodGesture 后重试。",
+      macUnavailable: "macOS 不支持管理员启动；请使用系统辅助功能和输入权限。",
+      error: "本机权限设置应用失败，请前往“设置”重试。",
     },
     try: {
       title: "试用已有手势",

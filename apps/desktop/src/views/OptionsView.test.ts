@@ -140,6 +140,44 @@ afterEach(() => {
 });
 
 describe("options view", () => {
+  it("renders the administrator hint as an accessible tooltip", async () => {
+    backend.platformStatus.mockResolvedValueOnce({
+      ...macosPermissionsMissing,
+      platform: "windows",
+    });
+    const wrapper = await mountOptions();
+
+    const info = wrapper.get("button.options__info");
+    const describedBy = info.attributes("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(info.attributes("title")).toBeUndefined();
+
+    const tooltip = wrapper.get(`#${describedBy}`);
+    expect(tooltip.attributes("role")).toBe("tooltip");
+    expect(tooltip.text()).toBe(
+      "If some programs run as administrator and cannot use gestures, enable this option. Restart GodGesture for the change to take effect.",
+    );
+
+    wrapper.unmount();
+  });
+
+  it("shows the updated Chinese administrator guidance in one tooltip", async () => {
+    backend.platformStatus.mockResolvedValueOnce({
+      ...macosPermissionsMissing,
+      platform: "windows",
+    });
+    setLocale("zh-CN");
+    const wrapper = await mountOptions();
+
+    const info = wrapper.get("button.options__info");
+    expect(info.attributes("title")).toBeUndefined();
+    expect(wrapper.get('[role="tooltip"]').text()).toBe(
+      "如果某些程序以管理员身份运行且无法使用手势，请开启此项。开启后需重启 GodGesture 才可生效。",
+    );
+
+    wrapper.unmount();
+  });
+
   it("uses labelled native controls and keeps the initial move distance in range", async () => {
     const wrapper = await mountOptions();
 
@@ -185,7 +223,10 @@ describe("options view", () => {
     expect((runAsAdmin.element as HTMLInputElement).disabled).toBe(true);
     const hint = wrapper.get('button[aria-label*="unavailable on macOS"]');
     expect(hint.attributes("type")).toBe("button");
-    expect(hint.attributes("title")).toContain("unavailable on macOS");
+    expect(hint.attributes("title")).toBeUndefined();
+    const describedBy = hint.attributes("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(wrapper.get(`#${describedBy}`).text()).toContain("Administrator mode is unavailable on macOS");
 
     wrapper.unmount();
   });

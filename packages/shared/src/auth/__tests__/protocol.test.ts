@@ -10,9 +10,12 @@ import {
   OAuthPendingBindingCompleteRequest,
   OAuthPendingBindingEmailCodeRequest,
   OAuthProvidersResponse,
+  AdminSystemConfigUpdateRequest,
   RateLimitedResponse,
   RefreshRotationRaceResponse,
   RenameDeviceRequest,
+  RegistrationDisabledResponse,
+  RegistrationStatusResponse,
   TemplateModerationReportListQuery,
   TemplateModerationReportListResponse,
 } from "../protocol.js";
@@ -136,6 +139,33 @@ describe("OAuth discovery and callback contract", () => {
       "oauth_access_denied",
     );
     expect(() => OAuthCallbackErrorCode.parse("provider_raw_error")).toThrow();
+  });
+});
+
+describe("Registration policy contract", () => {
+  it("accepts only a boolean public status", () => {
+    expect(RegistrationStatusResponse.parse({ enabled: false })).toEqual({
+      enabled: false,
+    });
+    expect(() => RegistrationStatusResponse.parse({ enabled: "false" })).toThrow();
+  });
+
+  it("accepts only the stable registration-disabled error", () => {
+    expect(
+      RegistrationDisabledResponse.parse({ error: "registration_disabled" }),
+    ).toEqual({ error: "registration_disabled" });
+    expect(() =>
+      RegistrationDisabledResponse.parse({ error: "email_taken" }),
+    ).toThrow();
+  });
+
+  it("allows an optional admin registration flag and rejects invalid values", () => {
+    expect(
+      AdminSystemConfigUpdateRequest.parse({ registrationEnabled: false }),
+    ).toEqual({ registrationEnabled: false });
+    expect(() =>
+      AdminSystemConfigUpdateRequest.parse({ registrationEnabled: "false" }),
+    ).toThrow();
   });
 });
 

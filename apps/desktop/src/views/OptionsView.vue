@@ -122,6 +122,7 @@ function updateTrackerNumberFromInput(
 
 const autoStartId = useId();
 const runAsAdminId = useId();
+const runAsAdminHintId = useId();
 const trayIconVisibleId = useId();
 const autoCheckForUpdateId = useId();
 const triggerRightId = useId();
@@ -223,9 +224,12 @@ const fadeOutId = useId();
           type="button"
           class="gg-icon-button options__info"
           :aria-label="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')"
-          :title="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')"
+          :aria-describedby="runAsAdminHintId"
         >
           <CircleHelp aria-hidden="true" />
+          <span :id="runAsAdminHintId" class="options__tooltip" role="tooltip">
+            {{ isMacOS ? t("options.general.runAsAdminMacHint") : t("options.general.runAsAdminHint") }}
+          </span>
         </button>
         <AppSpinner
           v-if="store.machinePending.runAsAdmin"
@@ -488,8 +492,41 @@ const fadeOutId = useId();
   color: var(--gg-text);
 }
 .options__info {
+  position: relative;
   display: inline-flex;
   color: var(--gg-text-muted);
+}
+.options__tooltip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid var(--gg-border);
+  border-radius: 4px;
+  background: var(--gg-surface);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.14);
+  color: var(--gg-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.options__info:hover .options__tooltip,
+.options__info:focus-visible .options__tooltip,
+.options__info:focus-within .options__tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.options__info:focus-visible {
+  z-index: 21;
 }
 .options__info svg {
   width: 18px;

@@ -13,7 +13,7 @@ pub mod window;
 
 use crate::engine::corners::ScreenInfo;
 use crate::engine::intents::ForegroundApp;
-use crate::engine::runtime::{EngineShared, PlatformServices};
+use crate::engine::runtime::{EngineShared, InputIntegrity, PlatformServices};
 use crate::engine::tracker::{Input, MouseButton};
 use crate::engine::types::Point;
 use crossbeam_channel::Receiver;
@@ -23,6 +23,8 @@ use hook::{
 };
 use std::sync::Arc;
 use std::time::Instant;
+
+const CLICK_REPLAY_LOG_EVENT: &str = "mouse_replay_requested";
 
 pub struct WindowsPlatform {
     click_replays: Arc<ClickReplayQueue>,
@@ -66,7 +68,8 @@ impl PlatformServices for WindowsPlatform {
         };
         log::debug!(
             target: "platform.windows",
-            "event=boundary_replay_requested replay_id={} button={:?} x={} y={}",
+            "event={} replay_id={} button={:?} x={} y={}",
+            CLICK_REPLAY_LOG_EVENT,
             replay.replay_id,
             replay.button,
             replay.pos.x,
@@ -106,6 +109,39 @@ impl PlatformServices for WindowsPlatform {
 
     fn is_system_tray_point(&self, pos: Point) -> bool {
         window::is_system_tray_point(pos)
+    }
+
+    fn input_integrity(
+        &self,
+        pos: Point,
+        prefer_cursor_window: bool,
+    ) -> (InputIntegrity, InputIntegrity) {
+        fn map(level: window::IntegrityLevel) -> InputIntegrity {
+            match level {
+                window::IntegrityLevel::Unknown => InputIntegrity::Unknown,
+                window::IntegrityLevel::Untrusted => InputIntegrity::Untrusted,
+                window::IntegrityLevel::Low => InputIntegrity::Low,
+                window::IntegrityLevel::Medium => InputIntegrity::Medium,
+                window::IntegrityLevel::High => InputIntegrity::High,
+                window::IntegrityLevel::System => InputIntegrity::System,
+                window::IntegrityLevel::Protected => InputIntegrity::Protected,
+            }
+        }
+
+        (
+            map(window::current_process_integrity_level()),
+            map(window::target_integrity_level(pos, prefer_cursor_window)),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CLICK_REPLAY_LOG_EVENT;
+
+    #[test]
+    fn click_replay_log_is_not_boundary_specific() {
+        assert_eq!(CLICK_REPLAY_LOG_EVENT, "mouse_replay_requested");
     }
 }
 

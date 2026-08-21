@@ -123,7 +123,8 @@ tag-only release job receives `contents: write`.
 ## Release Notes
 
 The GitHub Release page is the only release log for this workflow. The
-repository does not maintain `docs/CHANGELOG.md` for these releases. Accepted
+`docs/CHANGELOG.md` file is historical development and release-audit storage;
+it is not edited as a per-release changelog. Accepted
 pull request title examples are:
 
 ```text
@@ -166,22 +167,23 @@ and emits one body containing:
 The workflow sets `generate_release_notes: false` deliberately because the
 custom generator already includes both commits and pull requests. Enabling the
 native flag as well would append a second, PR-only notes block. The repository
-still does not maintain `docs/CHANGELOG.md`; the body is generated afresh for
-each tag release.
+does not maintain release notes in `docs/CHANGELOG.md`; the body is generated
+afresh for each tag release and the historical file is updated only when a
+development or release audit needs to preserve evidence.
 
 ## Release Assets
 
-For version `0.1.0`, the deterministic assets are:
+For version `<version>`, the deterministic assets are:
 
 ```text
-GodGesture_0.1.0_x64-setup.exe
-GodGesture_0.1.0_x64-setup.exe.sig
-GodGesture_0.1.0_x64-setup.exe.sha256
-GodGesture_0.1.0_universal.app.tar.gz
-GodGesture_0.1.0_universal.app.tar.gz.sig
-GodGesture_0.1.0_universal.app.tar.gz.sha256
-GodGesture_0.1.0_universal.dmg
-GodGesture_0.1.0_universal.dmg.sha256
+GodGesture_<version>_x64-setup.exe
+GodGesture_<version>_x64-setup.exe.sig
+GodGesture_<version>_x64-setup.exe.sha256
+GodGesture_<version>_universal.app.tar.gz
+GodGesture_<version>_universal.app.tar.gz.sig
+GodGesture_<version>_universal.app.tar.gz.sha256
+GodGesture_<version>_universal.dmg
+GodGesture_<version>_universal.dmg.sha256
 latest.json
 release-evidence.json
 ```

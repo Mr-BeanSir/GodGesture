@@ -14,6 +14,12 @@ export const OAuthProvidersResponse = z.object({
 });
 export type OAuthProvidersResponse = z.infer<typeof OAuthProvidersResponse>;
 
+/** GET /auth/registration:公开的注册策略状态,仅供界面展示。 */
+export const RegistrationStatusResponse = z.object({
+  enabled: z.boolean(),
+}).strict();
+export type RegistrationStatusResponse = z.infer<typeof RegistrationStatusResponse>;
+
 /** provider callback 安全回跳客户端时允许携带的规范化错误码。 */
 export const OAuthCallbackErrorCode = z.enum([
   "oauth_access_denied",
@@ -166,6 +172,14 @@ export type OAuthEmailConflictResponse = z.infer<
   typeof OAuthEmailConflictResponse
 >;
 
+/** 新账户创建被管理员策略关闭时的稳定错误载荷。 */
+export const RegistrationDisabledResponse = z.object({
+  error: z.literal("registration_disabled"),
+}).strict();
+export type RegistrationDisabledResponse = z.infer<
+  typeof RegistrationDisabledResponse
+>;
+
 /** 请求频率超过服务端窗口额度时的 429 响应。 */
 export const RateLimitedResponse = z.object({
   error: z.literal("rate_limited"),
@@ -294,6 +308,7 @@ export const RustFsConfigUpdateRequest = z.object({
 export type RustFsConfigUpdateRequest = z.infer<typeof RustFsConfigUpdateRequest>;
 
 export const AdminSystemConfigResponse = z.object({
+  registrationEnabled: z.boolean(),
   templatePolicy: TemplatePolicyResponse,
   rustfs: RustFsConfigResponse,
   updatedAt: z.string().datetime(),
@@ -301,6 +316,7 @@ export const AdminSystemConfigResponse = z.object({
 export type AdminSystemConfigResponse = z.infer<typeof AdminSystemConfigResponse>;
 
 export const AdminSystemConfigUpdateRequest = z.object({
+  registrationEnabled: z.boolean().optional(),
   templatePolicy: TemplatePolicyUpdateRequest.optional(),
   rustfs: RustFsConfigUpdateRequest.optional(),
 }).strict();

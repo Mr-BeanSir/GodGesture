@@ -14,15 +14,20 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HWND, POINT, RECT, WIN32_ERROR,
+    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HANDLE, HWND, POINT, RECT, WIN32_ERROR,
 };
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, HMONITOR, MONITORINFO,
     MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,
 };
+use windows::Win32::Security::{
+    GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel,
+    TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+};
 use windows::Win32::Storage::Packaging::Appx::GetApplicationUserModelId;
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -34,6 +39,127 @@ use windows::Win32::UI::WindowsAndMessaging::{
 type ExeIdentity = (String, String, Option<String>);
 
 static EXE_CACHE: Mutex<Option<HashMap<u32, ExeIdentity>>> = Mutex::new(None);
+
+/// Windows input hooks cannot cross from a lower-integrity process into a
+/// higher-integrity target without an elevated or uiAccess process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegrityLevel {
+    Unknown,
+    Untrusted,
+    Low,
+    Medium,
+    High,
+    System,
+    Protected,
+}
+
+impl IntegrityLevel {
+    pub fn is_higher_than(self, other: Self) -> bool {
+        self.rank() > other.rank() && self != Self::Unknown && other != Self::Unknown
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            Self::Unknown => 0,
+            Self::Untrusted => 1,
+            Self::Low => 2,
+            Self::Medium => 3,
+            Self::High => 4,
+            Self::System => 5,
+            Self::Protected => 6,
+        }
+    }
+}
+
+fn integrity_level_from_rid(rid: u32) -> IntegrityLevel {
+    match rid {
+        0 => IntegrityLevel::Untrusted,
+        0x1000..0x2000 => IntegrityLevel::Low,
+        0x2000..0x3000 => IntegrityLevel::Medium,
+        0x3000..0x4000 => IntegrityLevel::High,
+        0x4000..0x5000 => IntegrityLevel::System,
+        0x5000.. => IntegrityLevel::Protected,
+        _ => IntegrityLevel::Unknown,
+    }
+}
+
+fn token_integrity_level(token: HANDLE) -> IntegrityLevel {
+    let mut required = 0u32;
+    let _ = unsafe { GetTokenInformation(token, TokenIntegrityLevel, None, 0, &mut required) };
+    if required == 0 {
+        return IntegrityLevel::Unknown;
+    }
+
+    let words = (required as usize).div_ceil(std::mem::size_of::<usize>());
+    let mut buffer = vec![0usize; words];
+    if unsafe {
+        GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            Some(buffer.as_mut_ptr().cast()),
+            required,
+            &mut required,
+        )
+    }
+    .is_err()
+    {
+        return IntegrityLevel::Unknown;
+    }
+
+    let label = unsafe { &*(buffer.as_ptr().cast::<TOKEN_MANDATORY_LABEL>()) };
+    let count = unsafe { GetSidSubAuthorityCount(label.Label.Sid) };
+    if count.is_null() {
+        return IntegrityLevel::Unknown;
+    }
+    let count = unsafe { *count };
+    if count == 0 {
+        return IntegrityLevel::Unknown;
+    }
+    let rid = unsafe { GetSidSubAuthority(label.Label.Sid, u32::from(count - 1)) };
+    if rid.is_null() {
+        return IntegrityLevel::Unknown;
+    }
+    integrity_level_from_rid(unsafe { *rid })
+}
+
+fn process_integrity_level(pid: u32) -> IntegrityLevel {
+    let Ok(process) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
+    else {
+        return IntegrityLevel::Unknown;
+    };
+    let mut token = HANDLE::default();
+    let result = unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) }
+        .map(|()| token_integrity_level(token));
+    if !token.is_invalid() {
+        let _ = unsafe { CloseHandle(token) };
+    }
+    let _ = unsafe { CloseHandle(process) };
+    result.unwrap_or(IntegrityLevel::Unknown)
+}
+
+/// Returns the integrity level of the current GodGesture process.
+pub fn current_process_integrity_level() -> IntegrityLevel {
+    let mut token = HANDLE::default();
+    let result = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+        .map(|()| token_integrity_level(token));
+    if !token.is_invalid() {
+        let _ = unsafe { CloseHandle(token) };
+    }
+    result.unwrap_or(IntegrityLevel::Unknown)
+}
+
+/// Returns the integrity level of the root window under the cursor (or the
+/// foreground root window when cursor preference is disabled).
+pub fn target_integrity_level(pos: Point, prefer_cursor_window: bool) -> IntegrityLevel {
+    let Some(hwnd) = target_root_window(pos, prefer_cursor_window) else {
+        return IntegrityLevel::Unknown;
+    };
+    let pid = window_pid(hwnd);
+    if pid == 0 {
+        return IntegrityLevel::Unknown;
+    }
+    process_integrity_level(pid)
+}
 
 /// 手势目标窗口:指针下窗口或前台窗口的根窗口
 pub fn target_root_window(pos: Point, prefer_cursor_window: bool) -> Option<HWND> {
@@ -423,5 +549,15 @@ mod tests {
         assert!(is_system_tray_class("NotifyIconOverflowWindow"));
         assert!(!is_system_tray_class("ToolbarWindow32"));
         assert!(!is_system_tray_class("Shell_TrayWnd"));
+    }
+
+    #[test]
+    fn integrity_level_classifies_standard_windows_rids() {
+        assert_eq!(integrity_level_from_rid(4096), IntegrityLevel::Low);
+        assert_eq!(integrity_level_from_rid(8192), IntegrityLevel::Medium);
+        assert_eq!(integrity_level_from_rid(12288), IntegrityLevel::High);
+        assert_eq!(integrity_level_from_rid(16384), IntegrityLevel::System);
+        assert!(IntegrityLevel::High.is_higher_than(IntegrityLevel::Medium));
+        assert!(!IntegrityLevel::Medium.is_higher_than(IntegrityLevel::High));
     }
 }

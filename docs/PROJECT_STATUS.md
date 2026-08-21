@@ -74,6 +74,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 
 - `@godgesture/ui` 提供无业务原语、token、`AppDialog`、折叠 panel、确认服务、Toast 和全局 Message；不读取 router、store、API client 或 i18n。
 - Desktop 已移除 Element Plus，使用共享原语、Lucide 和原生语义控件；Web Console 由 Server 拥有，使用共享原语、Tailwind v4 和本地薄适配层。
+- 快速入门对话框包含“程序权限”步骤：Windows 用户可直接切换“以管理员身份启动”和“开机启动”，管理员项以红色说明高完整性目标窗口的使用条件和重启要求；macOS 保留开机启动并将管理员项标记为不可用。Windows 仍不使用 `uiAccess`/代码签名证书。
 - 现行配置为 v8：应用分组、有序 `inputs`、边角意图和 `nodePlugin.pluginId` 为现役结构；旧格式不迁移，旧 `enable8Directions` 只读取忽略并在规范化保存时移除。
 - 首笔笔画固定 8 方向，后续笔画 4 方向；`sendText` 只接受 `text`、`key`、`hotkey`、`sleep` DSL。
 - `全屏时自动禁用手势` 仍是可配置项，新配置默认开启，已有配置的显式关闭值继续保留。
@@ -92,7 +93,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 ### 日志、发布与部署
 
 - Desktop 在 `app_log_dir()` 写脱敏 JSONL，级别为 `off/error/warn/info/debug`；日志不上传、不参与同步，页面支持筛选、trace 折叠、导出、清理和关闭自动跟随。
-- Windows 边角点击重放在 debug 级别记录 `replay_id`、入队/调度/工作线程等待/完成耗时、队列深度、光标恢复前后位置与原始 Win32 错误码、`SendInput` 请求/插入数量和短写状态；低级钩子按钮事件、边角 token/候选索引/取消原因、释放吞咽掩码和 tracker 处理结果也按低频采集。另记录普通手势起始阈值、边角覆盖层生命周期和超过 1 ms 的输入分发。点击注入仍保持 FIFO，但执行已移出低级钩子消息泵，避免 `SendInput` 阻塞时丢失真实按钮释放。
+- Windows 边角点击重放在 debug 级别记录 `replay_id`、入队/调度/工作线程等待/完成耗时、队列深度、光标恢复前后位置与原始 Win32 错误码、`SendInput` 请求/插入数量和短写状态；低级钩子按钮事件、边角 token/候选索引/取消原因、释放吞咽掩码和 tracker 处理结果也按低频采集。另记录普通手势起始阈值、边角覆盖层生命周期和超过 1 ms 的输入分发。普通 `PathTracker` 无轨迹点击恢复统一记录为 `mouse_replay_requested`，不再使用边角专属事件名；触发键准入还记录 `tracker_admission_decision` 或具体拒绝原因，并包含 `self_integrity`、`target_integrity` 和 `elevation_boundary`。点击注入仍保持 FIFO，但执行已移出低级钩子消息泵，避免 `SendInput` 阻塞时丢失真实按钮释放。
 - `pnpm release` 由维护者显式指定 `patch`、`minor`、`major` 或完整 SemVer；`feat`/`fix` 只影响 Release Notes，不自动选择版本。Desktop 发布同步四个 Desktop 版本文件，Server 独立维护，不参与校验或修改。
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
 - Windows NSIS 统一 `perMachine`，新安装默认 `C:\Program Files\GodGesture`，升级沿用已记录目录；不自动迁移旧 `currentUser` 安装。macOS 为 universal ad-hoc DMG，不提供 Authenticode、Developer ID、公证或 staple。
@@ -106,6 +107,8 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
+- Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
+- 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
 
@@ -113,6 +116,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
+- 2026-08-21：快速入门新增程序权限步骤，覆盖 Windows 管理员启动/开机启动开关及 macOS 管理员项禁用引导；`QuickStartDialog` 定向测试 4/4 通过。
 - 更早的逐轮验证已压缩至 [`docs/CHANGELOG.md`](CHANGELOG.md)，stable `v0.1.0` 完整发布证据见 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
 
 ## 工作区与文档路由
