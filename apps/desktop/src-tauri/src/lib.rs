@@ -22,9 +22,13 @@ use engine::runtime::{EngineMsg, EngineShared};
 use engine::script_host::{ScriptInvocation, ScriptSlot};
 #[cfg(any(windows, target_os = "macos"))]
 use platform::overlay::{show_label_feedback, OverlaySink};
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+
+#[cfg(any(windows, target_os = "macos"))]
+const VOLUME_FEEDBACK_DISPLAY_DURATION: Duration = Duration::from_millis(500);
+const VOLUME_FEEDBACK_FADE_DURATION: Duration = Duration::from_millis(300);
 
 #[cfg(target_os = "macos")]
 use platform::macos::startup::{MachineRuntimeStatus, StartupError};
@@ -723,6 +727,8 @@ fn show_volume_feedback(
         origin,
         format_volume_feedback(state, locale),
         fade_out,
+        Some(VOLUME_FEEDBACK_DISPLAY_DURATION),
+        Some(VOLUME_FEEDBACK_FADE_DURATION),
     );
 }
 
@@ -2020,6 +2026,8 @@ mod tests {
                 origin: Point { x: 300, y: 400 },
                 ref text,
                 fade_out: true,
+                display_duration: Some(VOLUME_FEEDBACK_DISPLAY_DURATION),
+                fade_duration: Some(VOLUME_FEEDBACK_FADE_DURATION),
             } if text == "42%"
         ));
 

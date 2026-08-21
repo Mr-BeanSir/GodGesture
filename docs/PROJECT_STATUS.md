@@ -35,7 +35,9 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 `ShowLabelFeedback` 边界，普通手势、修饰手势、触发角和摩擦边共用消费者路径。Windows 和 macOS
 音量命令都在 mutation 后读取最终系统音量；非静音时显示最终整数百分比，静音按 `Locale::ZhCn`/
 `Locale::En` 显示 `静音`/`Muted`。`show_command_name` 控制标签可见性，`fade_out` 控制原生覆盖层
-生命周期，读取或显示失败时不显示反馈。Windows Core Audio 使用默认 `eRender`/`eMultimedia`
+生命周期；独立标签反馈还支持可选展示停留时长和淡出时长，当前音量反馈停留 500ms、淡出 300ms，
+普通手势继续使用默认时长。
+读取或显示失败时不显示反馈。Windows Core Audio 使用默认 `eRender`/`eMultimedia`
 endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`output muted`。
 
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由

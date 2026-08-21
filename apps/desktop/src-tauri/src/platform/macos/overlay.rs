@@ -23,6 +23,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapMut, Stroke, Transform};
 
 #[derive(Clone, Copy)]
@@ -49,6 +50,8 @@ struct QueuedCommand {
 
 const MAX_COMMANDS_PER_DRAIN: usize = 4096;
 const MAX_TRAIL_POINTS_BASE: usize = 512;
+const DEFAULT_FADE_FRAMES: u32 = 10;
+const FADE_FRAME_INTERVAL_MS: u128 = 16;
 
 thread_local! {
     static STATE: RefCell<Option<OverlayState>> = const { RefCell::new(None) };
@@ -126,7 +129,11 @@ fn schedule_drain(
                 let effect = state.apply(queued.command);
                 dirty = (dirty || effect.dirty) && !effect.suppress_render;
                 if effect.fade {
-                    fade_requests.push(queued.generation);
+                    fade_requests.push((
+                        queued.generation,
+                        effect.display_duration,
+                        effect.fade_duration,
+                    ));
                 }
             }
             if dirty {
@@ -134,11 +141,13 @@ fn schedule_drain(
             }
         });
         callback_scheduled.store(false, Ordering::Release);
-        for expected in fade_requests {
+        for (expected, display_duration, fade_duration) in fade_requests {
             spawn_fade(
                 callback_app.clone(),
                 Arc::clone(&callback_generation),
                 expected,
+                display_duration,
+                fade_duration,
             );
         }
         if has_more || !callback_pending.lock().is_empty() {
@@ -155,13 +164,26 @@ fn schedule_drain(
     }
 }
 
-fn spawn_fade(app: tauri::AppHandle, generation: Arc<AtomicU64>, expected: u64) {
+fn spawn_fade(
+    app: tauri::AppHandle,
+    generation: Arc<AtomicU64>,
+    expected: u64,
+    display_duration: Option<Duration>,
+    fade_duration: Option<Duration>,
+) {
     std::thread::spawn(move || {
-        for step in (0..=10).rev() {
+        if let Some(display_duration) = display_duration {
+            std::thread::sleep(display_duration);
             if generation.load(Ordering::Acquire) != expected {
                 return;
             }
-            let alpha = step as f64 / 10.0;
+        }
+        let (frames, interval) = fade_plan(fade_duration);
+        for step in (0..=frames).rev() {
+            if generation.load(Ordering::Acquire) != expected {
+                return;
+            }
+            let alpha = step as f64 / frames as f64;
             let finish = step == 0;
             let scheduled_generation = Arc::clone(&generation);
             if app
@@ -182,9 +204,25 @@ fn spawn_fade(app: tauri::AppHandle, generation: Arc<AtomicU64>, expected: u64) 
             {
                 return;
             }
-            std::thread::sleep(std::time::Duration::from_millis(16));
+            std::thread::sleep(interval);
         }
     });
+}
+
+fn fade_plan(fade_duration: Option<Duration>) -> (u32, Duration) {
+    let Some(duration) = fade_duration else {
+        return (
+            DEFAULT_FADE_FRAMES,
+            Duration::from_millis(FADE_FRAME_INTERVAL_MS as u64),
+        );
+    };
+    let duration_ms =
+        (duration.as_millis() + FADE_FRAME_INTERVAL_MS - 1).max(FADE_FRAME_INTERVAL_MS);
+    let frames = ((duration_ms + FADE_FRAME_INTERVAL_MS - 1) / FADE_FRAME_INTERVAL_MS)
+        .min(u32::MAX as u128)
+        .max(1) as u32;
+    let interval_ms = (duration_ms / frames as u128).max(1).min(u64::MAX as u128) as u64;
+    (frames, Duration::from_millis(interval_ms))
 }
 
 struct OverlayState {
@@ -402,6 +440,8 @@ impl OverlayState {
                 ApplyEffect {
                     dirty: changed && self.show_path,
                     fade: false,
+                    display_duration: None,
+                    fade_duration: None,
                     suppress_render: false,
                 }
             }
@@ -417,6 +457,8 @@ impl OverlayState {
                 ApplyEffect {
                     dirty: changed,
                     fade: false,
+                    display_duration: None,
+                    fade_duration: None,
                     suppress_render: false,
                 }
             }
@@ -429,6 +471,8 @@ impl OverlayState {
                     ApplyEffect {
                         dirty: false,
                         fade: true,
+                        display_duration: None,
+                        fade_duration: None,
                         suppress_render: false,
                     }
                 } else {
@@ -436,6 +480,8 @@ impl OverlayState {
                     ApplyEffect {
                         dirty: false,
                         fade: false,
+                        display_duration: None,
+                        fade_duration: None,
                         suppress_render: true,
                     }
                 }
@@ -447,6 +493,8 @@ impl OverlayState {
                 ApplyEffect {
                     dirty: false,
                     fade: false,
+                    display_duration: None,
+                    fade_duration: None,
                     suppress_render: true,
                 }
             }
@@ -454,6 +502,8 @@ impl OverlayState {
                 origin,
                 text,
                 fade_out,
+                display_duration,
+                fade_duration,
             } => {
                 self.hide();
                 self.active = false;
@@ -476,6 +526,8 @@ impl OverlayState {
                     ApplyEffect {
                         dirty: true,
                         fade: true,
+                        display_duration,
+                        fade_duration,
                         suppress_render: false,
                     }
                 } else {
@@ -483,6 +535,8 @@ impl OverlayState {
                     ApplyEffect {
                         dirty: false,
                         fade: false,
+                        display_duration: None,
+                        fade_duration: None,
                         suppress_render: true,
                     }
                 }
@@ -666,6 +720,8 @@ impl OverlayState {
 struct ApplyEffect {
     dirty: bool,
     fade: bool,
+    display_duration: Option<Duration>,
+    fade_duration: Option<Duration>,
     suppress_render: bool,
 }
 
@@ -674,6 +730,8 @@ impl ApplyEffect {
         Self {
             dirty: true,
             fade: false,
+            display_duration: None,
+            fade_duration: None,
             suppress_render: false,
         }
     }
@@ -972,6 +1030,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn custom_fade_plan_uses_requested_duration() {
+        assert_eq!(
+            fade_plan(Some(Duration::from_millis(800))),
+            (50, Duration::from_millis(16))
+        );
+        assert_eq!(
+            fade_plan(None),
+            (DEFAULT_FADE_FRAMES, Duration::from_millis(16))
+        );
+    }
+
+    #[test]
     fn independent_label_feedback_does_not_require_active_trail() {
         let mut state = OverlayState {
             points: vec![Point { x: 10, y: 10 }, Point { x: 20, y: 20 }],
@@ -986,6 +1056,8 @@ mod tests {
             origin: Point { x: 100, y: 200 },
             text: "42%".into(),
             fade_out: true,
+            display_duration: Some(Duration::from_millis(500)),
+            fade_duration: Some(Duration::from_millis(800)),
         };
         let mut selected_origin = None;
         let effect = state.apply_with_surface(command, |_state, origin| {
@@ -1002,6 +1074,8 @@ mod tests {
         assert!(state.show_label);
         assert!(state.recognized);
         assert!(state.fade_out);
+        assert_eq!(effect.display_duration, Some(Duration::from_millis(500)));
+        assert_eq!(effect.fade_duration, Some(Duration::from_millis(800)));
     }
 
     #[test]
@@ -1019,12 +1093,16 @@ mod tests {
                 origin: Point { x: 100, y: 200 },
                 text: "42%".into(),
                 fade_out: true,
+                display_duration: Some(Duration::from_millis(500)),
+                fade_duration: Some(Duration::from_millis(800)),
             },
             |_state, _origin| Ok(()),
         );
         let end = state.apply_with_surface(OverlayCommand::End, |_state, _origin| Ok(()));
 
         assert!(feedback.fade);
+        assert_eq!(feedback.display_duration, Some(Duration::from_millis(500)));
+        assert_eq!(feedback.fade_duration, Some(Duration::from_millis(800)));
         assert!(!end.fade);
         assert_eq!(state.mode, OverlayMode::LabelFeedback);
     }
@@ -1045,6 +1123,8 @@ mod tests {
                 origin: Point { x: 100, y: 200 },
                 text: "0%".into(),
                 fade_out: false,
+                display_duration: None,
+                fade_duration: None,
             },
             |_state, _origin| Ok(()),
         );

@@ -145,8 +145,12 @@ struct OverlayState {
     show_path: bool,
     show_label: bool,
     fade_out: bool,
+    display_duration: Option<Duration>,
+    fade_duration: Option<Duration>,
     visible: bool,
     alpha: u16,
+    fade_started_at: Option<Instant>,
+    fade_delay_until: Option<Instant>,
     fade_timer_id: usize,
     next_fade_timer_id: usize,
     dpi_factor: f32,
@@ -492,8 +496,12 @@ fn overlay_thread_main(
             show_path: true,
             show_label: true,
             fade_out: true,
+            display_duration: None,
+            fade_duration: None,
             visible: false,
             alpha: 255,
+            fade_started_at: None,
+            fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
             dpi_factor: 1.0,
@@ -636,6 +644,8 @@ where
                 state.show_path = show_path;
                 state.show_label = show_label;
                 state.fade_out = fade_out;
+                state.display_duration = None;
+                state.fade_duration = None;
                 state.alpha = 255;
                 ensure_surface(state, origin);
             }
@@ -679,6 +689,8 @@ where
                 origin,
                 text,
                 fade_out,
+                display_duration,
+                fade_duration,
             } => {
                 stop_fade(state);
                 hide(state);
@@ -693,6 +705,8 @@ where
                 state.show_path = false;
                 state.show_label = true;
                 state.fade_out = fade_out;
+                state.display_duration = display_duration;
+                state.fade_duration = fade_duration;
                 state.alpha = 255;
                 fade_after_render = false;
                 if fade_out {
@@ -1301,6 +1315,13 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
 
 fn start_fade(state: &mut OverlayState) {
     stop_fade_timer(state);
+    let now = Instant::now();
+    state.fade_delay_until = state.display_duration.map(|duration| now + duration);
+    state.fade_started_at = if state.display_duration.is_none() && state.fade_duration.is_some() {
+        Some(now)
+    } else {
+        None
+    };
     let timer_id = allocate_fade_timer_id(state);
     if let Some(tile) = state.tiles.first() {
         unsafe {
@@ -1311,6 +1332,8 @@ fn start_fade(state: &mut OverlayState) {
 
 fn stop_fade(state: &mut OverlayState) {
     stop_fade_timer(state);
+    state.fade_started_at = None;
+    state.fade_delay_until = None;
     state.alpha = 255;
 }
 
@@ -1340,6 +1363,32 @@ fn stop_fade_timer(state: &mut OverlayState) {
 fn fade_step(state: &mut OverlayState) {
     if !state.visible {
         stop_fade(state);
+        return;
+    }
+    if let Some(delay_until) = state.fade_delay_until {
+        if Instant::now() < delay_until {
+            return;
+        }
+        state.fade_delay_until = None;
+        state.fade_started_at = Some(Instant::now());
+    } else if state.fade_duration.is_some() && state.fade_started_at.is_none() {
+        state.fade_started_at = Some(Instant::now());
+    }
+    if let Some(duration) = state.fade_duration {
+        let elapsed = state
+            .fade_started_at
+            .map(|started_at| started_at.elapsed())
+            .unwrap_or(duration);
+        if duration.is_zero() || elapsed >= duration {
+            stop_fade(state);
+            hide(state);
+            return;
+        }
+        let remaining = duration.saturating_sub(elapsed);
+        state.alpha = ((remaining.as_secs_f64() / duration.as_secs_f64()) * 255.0)
+            .round()
+            .clamp(1.0, 255.0) as u16;
+        present(state, None);
         return;
     }
     if state.alpha <= FADE_STEP {
@@ -1423,8 +1472,12 @@ mod tests {
             show_path: false,
             show_label: false,
             fade_out: false,
+            display_duration: None,
+            fade_duration: None,
             visible: false,
             alpha: 255,
+            fade_started_at: None,
+            fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
             dpi_factor: 1.0,
@@ -1449,6 +1502,8 @@ mod tests {
             origin: Point { x: 100, y: 200 },
             text: "42%".into(),
             fade_out: true,
+            display_duration: Some(Duration::from_millis(500)),
+            fade_duration: Some(Duration::from_millis(800)),
         };
         tx.send(command).unwrap();
 
@@ -1466,6 +1521,8 @@ mod tests {
         assert!(state.recognized);
         assert_eq!(state.alpha, 255);
         assert!(state.fade_out);
+        assert_eq!(state.display_duration, Some(Duration::from_millis(500)));
+        assert_eq!(state.fade_duration, Some(Duration::from_millis(800)));
     }
 
     #[test]
@@ -1481,6 +1538,8 @@ mod tests {
             origin: Point { x: 100, y: 200 },
             text: "0%".into(),
             fade_out: false,
+            display_duration: None,
+            fade_duration: None,
         })
         .unwrap();
 
@@ -1505,6 +1564,20 @@ mod tests {
         assert_ne!(old_timer_id, current_timer_id);
         assert!(!fade_timer_matches(&state, old_timer_id));
         assert!(fade_timer_matches(&state, current_timer_id));
+    }
+
+    #[test]
+    fn custom_display_duration_delays_fade_start() {
+        let mut state = test_state();
+        state.visible = true;
+        state.display_duration = Some(Duration::from_millis(500));
+        state.fade_duration = Some(Duration::from_millis(300));
+        state.tiles.clear();
+
+        start_fade(&mut state);
+
+        assert!(state.fade_delay_until.is_some());
+        assert!(state.fade_started_at.is_none());
     }
 
     #[test]
