@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-20。本文是当前实现的唯一状态入口；术语以
+最后核对：2026-08-21。本文是当前实现的唯一状态入口；术语以
 [`CONTEXT.md`](../CONTEXT.md) 为准，协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按
 [`docs/adr/README.md`](adr/README.md) 路由。本文不保存逐日开发流水；历史与发布审计按需读取
 [`docs/CHANGELOG.md`](CHANGELOG.md) 和 [`docs/history/`](history/)。
@@ -30,6 +30,13 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 音量反馈的自动 locale 已接入双平台 `PlatformServices`：Windows 读取用户 locale 名称，macOS 从
 `/usr/bin/defaults read -g AppleLocale` 读取并按进程缓存；两者失败时均回退 English。系统 locale 只将语言首段
 为 `zh` 的标签解析为简体中文，具体平台设备现场验收仍按 M4/M8 清单执行。
+
+本轮音量反馈已建立公共 `platform::overlay::OverlaySink`、`show_label_feedback` 和
+`ShowLabelFeedback` 边界，普通手势、修饰手势、触发角和摩擦边共用消费者路径。Windows 和 macOS
+音量命令都在 mutation 后读取最终系统音量；非静音时显示最终整数百分比，静音按 `Locale::ZhCn`/
+`Locale::En` 显示 `静音`/`Muted`。`show_command_name` 控制标签可见性，`fade_out` 控制原生覆盖层
+生命周期，读取或显示失败时不显示反馈。Windows Core Audio 使用默认 `eRender`/`eMultimedia`
+endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`output muted`。
 
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由
 `PathTracker` 负责准入，边角路径仍由 `BoundaryMatcher` 负责边/角候选，但两侧共用同一个 parser、输入顺序、
@@ -111,6 +118,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
+- 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
 - Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
@@ -121,6 +129,8 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
 - 2026-08-21：音量反馈自动 locale 接入 Windows `GetUserDefaultLocaleName` 与 macOS `defaults` 缓存；Desktop Rust 全量库测试 `283 passed, 2 ignored`，Windows check 通过，macOS cross-target check 因本机缺少 `cc` 未完成。
+- 2026-08-21（Task 8 最终音量反馈验证）：`cargo fmt --check` 通过；`cargo test --lib --no-default-features` `293 passed, 0 failed, 2 ignored`；`cargo clippy --lib --no-default-features -- -D warnings` 通过。
+- 2026-08-21（Task 8 Desktop 验证）：`pnpm --filter @godgesture/shared build` 通过（为生成 workspace 类型声明）；首次 `pnpm --filter @godgesture/desktop typecheck` 因 shared dist 类型声明未生成失败，构建 shared 后 `pnpm --filter @godgesture/desktop typecheck` 通过；`pnpm --filter @godgesture/desktop test -- --run` 通过，`50 files passed`，`242 tests passed`，`3 skipped`；`git diff --check` 通过。Windows 仅完成自动化和代码验证，macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。
 - 2026-08-21：快速入门新增程序权限步骤，覆盖 Windows 管理员启动/开机启动开关及 macOS 管理员项禁用引导；`QuickStartDialog` 定向测试 4/4 通过。
 - 更早的逐轮验证已压缩至 [`docs/CHANGELOG.md`](CHANGELOG.md)，stable `v0.1.0` 完整发布证据见 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
 
