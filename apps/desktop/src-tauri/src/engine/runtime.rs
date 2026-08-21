@@ -1341,6 +1341,36 @@ mod tests {
         }
     }
 
+    struct ZhCnPlatform;
+
+    impl PlatformServices for ZhCnPlatform {
+        fn resolve_foreground_app(
+            &self,
+            _pos: Point,
+            _prefer_cursor_window: bool,
+        ) -> ForegroundApp {
+            ForegroundApp::default()
+        }
+
+        fn is_fullscreen(&self) -> bool {
+            false
+        }
+
+        fn synthesize_click(&self, _button: MouseButton, _pos: Point) {}
+
+        fn synthesize_down(&self, _button: MouseButton, _pos: Point) {}
+
+        fn synthesize_wheel(&self, _forward: bool) {}
+
+        fn screen_at(&self, _pos: Point) -> Option<ScreenInfo> {
+            None
+        }
+
+        fn system_locale(&self) -> Locale {
+            Locale::ZhCn
+        }
+    }
+
     #[test]
     fn pause_changes_are_atomic_and_published() {
         let (shared, rx) = EngineShared::new(ConfigDocument::default(), Arc::new(StubPlatform));
@@ -1354,14 +1384,14 @@ mod tests {
     #[test]
     fn command_feedback_preferences_resolve_locale_and_view_flags() {
         let mut config = ConfigDocument::default();
-        config.preferences.locale = crate::engine::config::Locale::ZhCn;
+        config.preferences.locale = Locale::Auto;
         config.preferences.gesture_view.show_command_name = false;
         config.preferences.gesture_view.fade_out = false;
-        let (shared, _rx) = EngineShared::new(config, Arc::new(StubPlatform));
+        let (shared, _rx) = EngineShared::new(config, Arc::new(ZhCnPlatform));
 
         assert_eq!(
             shared.command_feedback_preferences(),
-            (crate::engine::config::Locale::ZhCn, false, false)
+            (Locale::ZhCn, false, false)
         );
     }
 

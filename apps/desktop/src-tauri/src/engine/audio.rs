@@ -22,10 +22,10 @@ impl AudioVolumeState {
             return Self::Muted;
         }
 
-        let scalar = if scalar.is_nan() {
-            0.0
-        } else {
+        let scalar = if scalar.is_finite() {
             scalar.clamp(0.0, 1.0)
+        } else {
+            0.0
         };
         Self::Percent((scalar * 100.0).round() as u8)
     }
@@ -166,6 +166,16 @@ mod tests {
             AudioVolumeState::from_scalar(true, 0.75),
             AudioVolumeState::Muted
         );
+    }
+
+    #[test]
+    fn non_finite_scalar_uses_zero_percent_fallback() {
+        for scalar in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(
+                AudioVolumeState::from_scalar(false, scalar),
+                AudioVolumeState::Percent(0)
+            );
+        }
     }
 
     #[test]
