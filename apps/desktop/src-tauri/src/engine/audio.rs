@@ -39,11 +39,7 @@ pub fn resolve_feedback_locale(configured: Locale, system: Locale) -> Locale {
 }
 
 pub fn system_locale_from_tag(tag: &str) -> Locale {
-    let language = tag
-        .trim()
-        .split(|character| character == '-' || character == '_')
-        .next()
-        .unwrap_or_default();
+    let language = tag.trim().split(['-', '_']).next().unwrap_or_default();
 
     if language.eq_ignore_ascii_case("zh") {
         Locale::ZhCn
