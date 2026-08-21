@@ -41,7 +41,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由
 `PathTracker` 负责准入，边角路径仍由 `BoundaryMatcher` 负责边/角候选，但两侧共用同一个 parser、输入顺序、
 释放锚点和已消费输入记录。边角首 token 的候选判断由 `BoundaryMatcher` 内部完成，无匹配时仍建立 visual-only
-捕获并阻止 `PathTracker` 接管；未形成方向笔画时取消才 replay 原生输入，形成方向笔画后按普通捕获语义吞掉主键释放且不 replay。Rust 库测试当前基线为 272 passed、2 ignored；真实 Windows/macOS 输入现场仍 pending。
+捕获并阻止 `PathTracker` 接管；未形成方向笔画时取消才 replay 原生输入，形成方向笔画后按普通捕获语义吞掉主键释放且不 replay。统一捕获阶段的历史验证基线为 272 passed、2 ignored；当前（Task 8 音量反馈验证）Rust 库基线为 293 passed、0 failed、2 ignored；真实 Windows/macOS 输入现场仍 pending。
 
 ## 里程碑状态
 

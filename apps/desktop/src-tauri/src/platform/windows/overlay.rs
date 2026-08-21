@@ -46,7 +46,6 @@ const MAX_TRAIL_POINTS_BASE: usize = 512;
 // Extended styles provide all required overlay behavior; WS_POPUP supplies the borderless
 // top-level window semantics required by UpdateLayeredWindow.
 const OVERLAY_WINDOW_STYLE: WINDOW_STYLE = WS_POPUP;
-const FADE_TIMER_ID: usize = 1;
 const FADE_STEP: u16 = 48;
 const FADE_INTERVAL_MS: u32 = 30;
 
@@ -148,6 +147,8 @@ struct OverlayState {
     fade_out: bool,
     visible: bool,
     alpha: u16,
+    fade_timer_id: usize,
+    next_fade_timer_id: usize,
     dpi_factor: f32,
     font: Option<ab_glyph::FontVec>,
     stats: OverlayStats,
@@ -493,6 +494,8 @@ fn overlay_thread_main(
             fade_out: true,
             visible: false,
             alpha: 255,
+            fade_timer_id: 0,
+            next_fade_timer_id: 0,
             dpi_factor: 1.0,
             font: load_label_font(),
             stats: OverlayStats::new(),
@@ -527,7 +530,7 @@ fn overlay_thread_main(
                         }
                     }
                 }
-                WM_TIMER if msg.wParam.0 == FADE_TIMER_ID => {
+                WM_TIMER if fade_timer_matches(&state, msg.wParam.0) => {
                     fade_step(&mut state);
                 }
                 _ => {
@@ -1297,20 +1300,41 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
 }
 
 fn start_fade(state: &mut OverlayState) {
+    stop_fade_timer(state);
+    let timer_id = allocate_fade_timer_id(state);
     if let Some(tile) = state.tiles.first() {
         unsafe {
-            SetTimer(Some(tile.hwnd), FADE_TIMER_ID, FADE_INTERVAL_MS, None);
+            SetTimer(Some(tile.hwnd), timer_id, FADE_INTERVAL_MS, None);
         }
     }
 }
 
 fn stop_fade(state: &mut OverlayState) {
-    if let Some(tile) = state.tiles.first() {
-        unsafe {
-            let _ = KillTimer(Some(tile.hwnd), FADE_TIMER_ID);
-        }
-    }
+    stop_fade_timer(state);
     state.alpha = 255;
+}
+
+fn allocate_fade_timer_id(state: &mut OverlayState) -> usize {
+    let next = state.next_fade_timer_id.wrapping_add(1);
+    state.next_fade_timer_id = if next == 0 { 1 } else { next };
+    state.fade_timer_id = state.next_fade_timer_id;
+    state.fade_timer_id
+}
+
+fn fade_timer_matches(state: &OverlayState, timer_id: usize) -> bool {
+    timer_id != 0 && state.fade_timer_id == timer_id
+}
+
+fn stop_fade_timer(state: &mut OverlayState) {
+    let timer_id = state.fade_timer_id;
+    if timer_id != 0 {
+        if let Some(tile) = state.tiles.first() {
+            unsafe {
+                let _ = KillTimer(Some(tile.hwnd), timer_id);
+            }
+        }
+        state.fade_timer_id = 0;
+    }
 }
 
 fn fade_step(state: &mut OverlayState) {
@@ -1328,11 +1352,7 @@ fn fade_step(state: &mut OverlayState) {
 }
 
 fn hide(state: &mut OverlayState) {
-    if let Some(tile) = state.tiles.first() {
-        unsafe {
-            let _ = KillTimer(Some(tile.hwnd), FADE_TIMER_ID);
-        }
-    }
+    stop_fade_timer(state);
     set_overlay_visible(state, false);
     state.alpha = 255;
 }
@@ -1405,6 +1425,8 @@ mod tests {
             fade_out: false,
             visible: false,
             alpha: 255,
+            fade_timer_id: 0,
+            next_fade_timer_id: 0,
             dpi_factor: 1.0,
             font: None,
             stats: OverlayStats::new(),
@@ -1472,6 +1494,17 @@ mod tests {
         assert!(!state.visible);
         assert_eq!(state.alpha, 255);
         assert!(!state.fade_out);
+    }
+
+    #[test]
+    fn stale_fade_timer_is_ignored_but_current_timer_is_handled() {
+        let mut state = test_state();
+        let old_timer_id = allocate_fade_timer_id(&mut state);
+        let current_timer_id = allocate_fade_timer_id(&mut state);
+
+        assert_ne!(old_timer_id, current_timer_id);
+        assert!(!fade_timer_matches(&state, old_timer_id));
+        assert!(fade_timer_matches(&state, current_timer_id));
     }
 
     #[test]

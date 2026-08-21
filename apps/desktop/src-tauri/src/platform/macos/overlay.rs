@@ -207,7 +207,14 @@ struct OverlayState {
     show_label: bool,
     fade_out: bool,
     active: bool,
+    mode: OverlayMode,
     font: Option<ab_glyph::FontVec>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayMode {
+    Trail,
+    LabelFeedback,
 }
 
 fn union_display_bounds(displays: &[CGRect]) -> Option<CGRect> {
@@ -340,6 +347,7 @@ impl Default for OverlayState {
             show_label: true,
             fade_out: true,
             active: false,
+            mode: OverlayMode::Trail,
             font: load_label_font(),
         }
     }
@@ -381,6 +389,7 @@ impl OverlayState {
                 self.show_label = show_label;
                 self.fade_out = fade_out;
                 self.active = true;
+                self.mode = OverlayMode::Trail;
                 self.set_alpha(1.0);
                 ApplyEffect::dirty()
             }
@@ -412,6 +421,9 @@ impl OverlayState {
                 }
             }
             OverlayCommand::End => {
+                if self.mode == OverlayMode::LabelFeedback {
+                    return ApplyEffect::default();
+                }
                 self.active = false;
                 if self.fade_out {
                     ApplyEffect {
@@ -430,6 +442,7 @@ impl OverlayState {
             }
             OverlayCommand::Cancel => {
                 self.active = false;
+                self.mode = OverlayMode::Trail;
                 self.hide();
                 ApplyEffect {
                     dirty: false,
@@ -444,6 +457,7 @@ impl OverlayState {
             } => {
                 self.hide();
                 self.active = false;
+                self.mode = OverlayMode::LabelFeedback;
                 if let Err(error) = ensure_surface(self, origin) {
                     log::error!("create macOS overlay surface failed: {error}");
                     return ApplyEffect::default();
@@ -988,6 +1002,31 @@ mod tests {
         assert!(state.show_label);
         assert!(state.recognized);
         assert!(state.fade_out);
+    }
+
+    #[test]
+    fn modifier_feedback_followed_by_path_end_does_not_start_second_fade() {
+        let mut state = OverlayState {
+            active: true,
+            fade_out: true,
+            ..OverlayState::default()
+        };
+
+        // The runtime's ModifierFired branch sends ShowLabelFeedback, then the
+        // ordinary PathEnded branch may still send End for the same capture.
+        let feedback = state.apply_with_surface(
+            OverlayCommand::ShowLabelFeedback {
+                origin: Point { x: 100, y: 200 },
+                text: "42%".into(),
+                fade_out: true,
+            },
+            |_state, _origin| Ok(()),
+        );
+        let end = state.apply_with_surface(OverlayCommand::End, |_state, _origin| Ok(()));
+
+        assert!(feedback.fade);
+        assert!(!end.fade);
+        assert_eq!(state.mode, OverlayMode::LabelFeedback);
     }
 
     #[test]
