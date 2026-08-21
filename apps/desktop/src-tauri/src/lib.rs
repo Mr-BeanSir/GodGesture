@@ -1972,28 +1972,37 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(windows, target_os = "macos"))]
     use engine::config::Locale;
-    use engine::types::{Direction, Point, TriggerButton};
+    #[cfg(any(windows, target_os = "macos"))]
+    use engine::types::Point;
+    use engine::types::{Direction, TriggerButton};
+    #[cfg(any(windows, target_os = "macos"))]
     use platform::overlay::{OverlayCommand, OverlaySink};
+    #[cfg(any(windows, target_os = "macos"))]
     use std::sync::Mutex;
 
+    #[cfg(any(windows, target_os = "macos"))]
     #[derive(Default)]
     struct RecordingSink {
         commands: Mutex<Vec<OverlayCommand>>,
     }
 
+    #[cfg(any(windows, target_os = "macos"))]
     impl RecordingSink {
         fn commands(&self) -> Vec<OverlayCommand> {
             self.commands.lock().unwrap().clone()
         }
     }
 
+    #[cfg(any(windows, target_os = "macos"))]
     impl OverlaySink for RecordingSink {
         fn send(&self, command: OverlayCommand) {
             self.commands.lock().unwrap().push(command);
         }
     }
 
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn volume_feedback_helper_honors_visibility_and_uses_origin() {
         let sink = RecordingSink::default();
