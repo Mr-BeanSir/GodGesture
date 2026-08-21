@@ -11,6 +11,8 @@ pub mod script;
 pub mod startup;
 pub mod window;
 
+use crate::engine::audio::system_locale_from_tag;
+use crate::engine::config::Locale;
 use crate::engine::corners::ScreenInfo;
 use crate::engine::intents::ForegroundApp;
 use crate::engine::runtime::{EngineShared, InputIntegrity, PlatformServices};
@@ -23,6 +25,8 @@ use hook::{
 };
 use std::sync::Arc;
 use std::time::Instant;
+use windows::Win32::Globalization::GetUserDefaultLocaleName;
+use windows::Win32::System::SystemServices::LOCALE_NAME_MAX_LENGTH;
 
 const CLICK_REPLAY_LOG_EVENT: &str = "mouse_replay_requested";
 
@@ -105,6 +109,21 @@ impl PlatformServices for WindowsPlatform {
 
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo> {
         window::screen_at(pos)
+    }
+
+    fn system_locale(&self) -> Locale {
+        let mut buffer = [0u16; LOCALE_NAME_MAX_LENGTH as usize];
+        let length = unsafe { GetUserDefaultLocaleName(&mut buffer) };
+        if length == 0 {
+            return Locale::En;
+        }
+
+        let end = buffer
+            .iter()
+            .position(|character| *character == 0)
+            .unwrap_or(buffer.len());
+        let tag = String::from_utf16_lossy(&buffer[..end]);
+        system_locale_from_tag(&tag)
     }
 
     fn is_system_tray_point(&self, pos: Point) -> bool {

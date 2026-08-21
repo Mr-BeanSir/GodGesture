@@ -38,6 +38,20 @@ pub fn resolve_feedback_locale(configured: Locale, system: Locale) -> Locale {
     }
 }
 
+pub fn system_locale_from_tag(tag: &str) -> Locale {
+    let language = tag
+        .trim()
+        .split(|character| character == '-' || character == '_')
+        .next()
+        .unwrap_or_default();
+
+    if language.eq_ignore_ascii_case("zh") {
+        Locale::ZhCn
+    } else {
+        Locale::En
+    }
+}
+
 pub fn format_volume_feedback(state: AudioVolumeState, locale: Locale) -> String {
     let locale = match locale {
         Locale::Auto => Locale::En,
@@ -196,5 +210,19 @@ mod tests {
             resolve_feedback_locale(Locale::Auto, Locale::ZhCn),
             Locale::ZhCn
         );
+    }
+
+    #[test]
+    fn system_locale_tags_use_chinese_only_for_zh() {
+        assert_eq!(system_locale_from_tag("zh-CN"), Locale::ZhCn);
+        assert_eq!(system_locale_from_tag("zh-Hans-CN"), Locale::ZhCn);
+        assert_eq!(system_locale_from_tag("en-US"), Locale::En);
+        assert_eq!(system_locale_from_tag(""), Locale::En);
+    }
+
+    #[test]
+    fn system_locale_tags_trim_whitespace_and_accept_case_insensitive_language() {
+        assert_eq!(system_locale_from_tag("  ZH_hans_CN\n"), Locale::ZhCn);
+        assert_eq!(system_locale_from_tag(" en_US "), Locale::En);
     }
 }

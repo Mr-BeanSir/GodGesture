@@ -27,6 +27,10 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 重复点击后失去原生打开机会。该适配仅属于 Windows；macOS 不使用该判定，现有行为不变。真实 Windows
 托盘菜单重复点击仍需在新构建进程中现场验收。
 
+音量反馈的自动 locale 已接入双平台 `PlatformServices`：Windows 读取用户 locale 名称，macOS 从
+`/usr/bin/defaults read -g AppleLocale` 读取并按进程缓存；两者失败时均回退 English。系统 locale 只将语言首段
+为 `zh` 的标签解析为简体中文，具体平台设备现场验收仍按 M4/M8 清单执行。
+
 本轮将普通手势与边角手势的活动轨迹和输入账本统一收敛为 `engine::capture::GestureCapture`：普通路径仍由
 `PathTracker` 负责准入，边角路径仍由 `BoundaryMatcher` 负责边/角候选，但两侧共用同一个 parser、输入顺序、
 释放锚点和已消费输入记录。边角首 token 的候选判断由 `BoundaryMatcher` 内部完成，无匹配时仍建立 visual-only
@@ -116,6 +120,7 @@ Windows 通知区域现在拥有原生输入优先权：低级钩子通过光标
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
+- 2026-08-21：音量反馈自动 locale 接入 Windows `GetUserDefaultLocaleName` 与 macOS `defaults` 缓存；Desktop Rust 全量库测试 `283 passed, 2 ignored`，Windows check 通过，macOS cross-target check 因本机缺少 `cc` 未完成。
 - 2026-08-21：快速入门新增程序权限步骤，覆盖 Windows 管理员启动/开机启动开关及 macOS 管理员项禁用引导；`QuickStartDialog` 定向测试 4/4 通过。
 - 更早的逐轮验证已压缩至 [`docs/CHANGELOG.md`](CHANGELOG.md)，stable `v0.1.0` 完整发布证据见 [`docs/history/M8_RELEASE_ACCEPTANCE.md`](history/M8_RELEASE_ACCEPTANCE.md)。
 

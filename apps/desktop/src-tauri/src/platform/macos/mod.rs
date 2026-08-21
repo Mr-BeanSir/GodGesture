@@ -12,15 +12,33 @@ pub mod script;
 pub mod startup;
 pub mod window;
 
+use crate::engine::audio::system_locale_from_tag;
+use crate::engine::config::Locale;
 use crate::engine::corners::ScreenInfo;
 use crate::engine::intents::ForegroundApp;
 use crate::engine::runtime::{EngineShared, PlatformServices};
 use crate::engine::tracker::MouseButton;
 use crate::engine::types::Point;
-use std::sync::{Arc, Mutex};
+use std::process::Command;
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Default)]
 pub struct MacPlatform;
+
+static SYSTEM_LOCALE: OnceLock<Locale> = OnceLock::new();
+
+fn resolve_system_locale() -> Locale {
+    let output = match Command::new("/usr/bin/defaults")
+        .args(["read", "-g", "AppleLocale"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return Locale::En,
+    };
+
+    let tag = String::from_utf8_lossy(&output.stdout);
+    system_locale_from_tag(&tag)
+}
 
 #[derive(Default)]
 pub struct EngineState {
@@ -100,6 +118,10 @@ impl PlatformServices for MacPlatform {
 
     fn screen_at(&self, pos: Point) -> Option<ScreenInfo> {
         window::screen_at(pos)
+    }
+
+    fn system_locale(&self) -> Locale {
+        *SYSTEM_LOCALE.get_or_init(resolve_system_locale)
     }
 }
 
