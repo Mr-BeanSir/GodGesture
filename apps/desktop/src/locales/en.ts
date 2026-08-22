@@ -122,6 +122,7 @@ export default {
       showPath: "Show trail",
       showCommandName: "Show command hint",
       fadeOut: "Fade out after execution",
+      showBoundaryGuide: "Boundary guide",
       rightColor: "Right-button trail color",
       middleColor: "Middle-button trail color",
       xColor: "X-button trail color",
