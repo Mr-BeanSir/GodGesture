@@ -1554,6 +1554,8 @@ export interface components {
                     middleButtonPathColor: string;
                     /** @default #FF27E518 */
                     rightButtonPathColor: string;
+                    /** @default false */
+                    showBoundaryGuide: boolean;
                     /** @default true */
                     showCommandName: boolean;
                     /** @default true */
@@ -1920,6 +1922,8 @@ export interface components {
                     middleButtonPathColor: string;
                     /** @default #FF27E518 */
                     rightButtonPathColor: string;
+                    /** @default false */
+                    showBoundaryGuide: boolean;
                     /** @default true */
                     showCommandName: boolean;
                     /** @default true */
