@@ -1,5 +1,6 @@
 // Main-thread AppKit overlay backed by a CALayer and tiny-skia frames.
 
+use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenEdge};
 use crate::engine::types::Point;
 pub use crate::platform::overlay::OverlayCommand as OverlayCmd;
 use crate::platform::overlay::OverlaySink;
@@ -68,13 +69,10 @@ impl Overlay {
     }
 
     pub fn send(&self, command: OverlayCommand) {
-        let generation = match command {
-            OverlayCommand::Begin { .. }
-            | OverlayCommand::Cancel
-            | OverlayCommand::ShowLabelFeedback { .. } => {
-                self.generation.fetch_add(1, Ordering::AcqRel) + 1
-            }
-            _ => self.generation.load(Ordering::Acquire),
+        let generation = if starts_new_generation(&command) {
+            self.generation.fetch_add(1, Ordering::AcqRel) + 1
+        } else {
+            self.generation.load(Ordering::Acquire)
         };
         self.pending.lock().push_back(QueuedCommand {
             command,
@@ -87,6 +85,16 @@ impl Overlay {
             Arc::clone(&self.drain_scheduled),
         );
     }
+}
+
+fn starts_new_generation(command: &OverlayCommand) -> bool {
+    matches!(
+        command,
+        OverlayCommand::Begin { .. }
+            | OverlayCommand::Cancel
+            | OverlayCommand::SetBoundaryGuide(_)
+            | OverlayCommand::ShowLabelFeedback { .. }
+    )
 }
 
 impl OverlaySink for Overlay {
@@ -238,6 +246,8 @@ struct OverlayState {
     points: Vec<Point>,
     rendered_points: usize,
     needs_full_redraw: bool,
+    boundary_guide: Option<BoundaryGuideFrame>,
+    boundary_guide_dirty: Option<PixelRect>,
     colors: TrailColors,
     recognized: bool,
     label: Option<String>,
@@ -245,6 +255,8 @@ struct OverlayState {
     show_label: bool,
     fade_out: bool,
     active: bool,
+    visible: bool,
+    alpha: f64,
     mode: OverlayMode,
     font: Option<ab_glyph::FontVec>,
 }
@@ -325,6 +337,15 @@ impl PixelRect {
             && self.top < other.bottom
             && self.bottom > other.top
     }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            left: self.left.min(other.left),
+            top: self.top.min(other.top),
+            right: self.right.max(other.right),
+            bottom: self.bottom.max(other.bottom),
+        }
+    }
 }
 
 fn max_trail_points(scale: f32) -> usize {
@@ -355,6 +376,63 @@ fn append_visual_point(points: &mut Vec<Point>, point: Point, limit: usize) -> b
     step_ok
 }
 
+fn boundary_guide_rect(
+    frame: BoundaryGuideFrame,
+    screen_origin: Point,
+    scale: f32,
+    width: i32,
+    height: i32,
+) -> Option<PixelRect> {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale as f64
+    } else {
+        1.0
+    };
+    let local_pixel = |coordinate: i32, origin: i32, closed_end: bool| {
+        let coordinate = coordinate as i64 + if closed_end { 1 } else { 0 };
+        (((coordinate - origin as i64) as f64) * scale).round() as i32
+    };
+    PixelRect {
+        left: local_pixel(frame.area.left, screen_origin.x, false),
+        top: local_pixel(frame.area.top, screen_origin.y, false),
+        right: local_pixel(frame.area.right, screen_origin.x, true),
+        bottom: local_pixel(frame.area.bottom, screen_origin.y, true),
+    }
+    .clamp(width, height)
+}
+
+fn mark_boundary_guide_dirty(state: &mut OverlayState, frame: BoundaryGuideFrame) {
+    let Some(pixmap) = state.pixmap.as_ref() else {
+        return;
+    };
+    let Some(rect) = boundary_guide_rect(
+        frame,
+        state.screen_origin,
+        state.scale,
+        pixmap.width() as i32,
+        pixmap.height() as i32,
+    ) else {
+        return;
+    };
+    state.boundary_guide_dirty = Some(
+        state
+            .boundary_guide_dirty
+            .map_or(rect, |dirty| dirty.union(rect)),
+    );
+}
+
+fn clear_boundary_guide(state: &mut OverlayState) -> bool {
+    let Some(previous) = state.boundary_guide.take() else {
+        return false;
+    };
+    mark_boundary_guide_dirty(state, previous);
+    true
+}
+
+fn has_trail_or_label_content(state: &OverlayState) -> bool {
+    (state.show_path && !state.points.is_empty()) || (state.show_label && state.label.is_some())
+}
+
 impl Default for OverlayState {
     fn default() -> Self {
         Self {
@@ -375,6 +453,8 @@ impl Default for OverlayState {
             points: Vec::new(),
             rendered_points: 0,
             needs_full_redraw: true,
+            boundary_guide: None,
+            boundary_guide_dirty: None,
             colors: TrailColors {
                 main: 0xff27e518,
                 unrecognized: 0xffff2424,
@@ -385,6 +465,8 @@ impl Default for OverlayState {
             show_label: true,
             fade_out: true,
             active: false,
+            visible: false,
+            alpha: 1.0,
             mode: OverlayMode::Trail,
             font: load_label_font(),
         }
@@ -405,6 +487,43 @@ impl OverlayState {
         F: FnMut(&mut Self, Point) -> Result<(), String>,
     {
         match command {
+            OverlayCommand::SetBoundaryGuide(frame) => {
+                let previous = self.boundary_guide;
+                if let Err(error) = ensure_surface(
+                    self,
+                    Point {
+                        x: frame.screen.left,
+                        y: frame.screen.top,
+                    },
+                ) {
+                    log::error!("create macOS boundary guide surface failed: {error}");
+                    return ApplyEffect::default();
+                }
+                self.boundary_guide = Some(frame);
+                self.set_alpha(1.0);
+                if let Some(previous) = previous {
+                    mark_boundary_guide_dirty(self, previous);
+                }
+                mark_boundary_guide_dirty(self, frame);
+                self.visible = true;
+                ApplyEffect::dirty()
+            }
+            OverlayCommand::ClearBoundaryGuide => {
+                if !clear_boundary_guide(self) {
+                    return ApplyEffect::default();
+                }
+                let has_content = has_trail_or_label_content(self);
+                if !has_content {
+                    self.hide();
+                }
+                ApplyEffect {
+                    dirty: true,
+                    fade: false,
+                    display_duration: None,
+                    fade_duration: None,
+                    suppress_render: !has_content,
+                }
+            }
             OverlayCommand::Begin {
                 origin,
                 colors,
@@ -412,6 +531,7 @@ impl OverlayState {
                 show_label,
                 fade_out,
             } => {
+                clear_boundary_guide(self);
                 if let Err(error) = ensure_surface(self, origin) {
                     log::error!("create macOS overlay surface failed: {error}");
                     return ApplyEffect::default();
@@ -463,13 +583,30 @@ impl OverlayState {
                 }
             }
             OverlayCommand::End => {
+                let guide_cleared = clear_boundary_guide(self);
                 if self.mode == OverlayMode::LabelFeedback {
-                    return ApplyEffect::default();
+                    return ApplyEffect {
+                        dirty: guide_cleared,
+                        fade: false,
+                        display_duration: None,
+                        fade_duration: None,
+                        suppress_render: false,
+                    };
                 }
                 self.active = false;
+                if !has_trail_or_label_content(self) {
+                    self.hide();
+                    return ApplyEffect {
+                        dirty: guide_cleared,
+                        fade: false,
+                        display_duration: None,
+                        fade_duration: None,
+                        suppress_render: true,
+                    };
+                }
                 if self.fade_out {
                     ApplyEffect {
-                        dirty: false,
+                        dirty: guide_cleared,
                         fade: true,
                         display_duration: None,
                         fade_duration: None,
@@ -487,6 +624,7 @@ impl OverlayState {
                 }
             }
             OverlayCommand::Cancel => {
+                clear_boundary_guide(self);
                 self.active = false;
                 self.mode = OverlayMode::Trail;
                 self.hide();
@@ -505,6 +643,7 @@ impl OverlayState {
                 display_duration,
                 fade_duration,
             } => {
+                clear_boundary_guide(self);
                 self.hide();
                 self.active = false;
                 self.mode = OverlayMode::LabelFeedback;
@@ -591,6 +730,7 @@ impl OverlayState {
         if let Some(window) = &self.window {
             window.orderFrontRegardless();
         }
+        self.visible = true;
         Ok(())
     }
 
@@ -617,6 +757,7 @@ impl OverlayState {
         )
         .and_then(|rect| rect.clamp(surface_width, surface_height));
         let full_redraw = self.needs_full_redraw
+            || self.boundary_guide_dirty.is_some()
             || trail_rect
                 .zip(label_rect)
                 .is_some_and(|(trail, label)| trail.intersects(label));
@@ -631,6 +772,9 @@ impl OverlayState {
         };
         if full_redraw {
             pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
+            if let Some(frame) = self.boundary_guide {
+                draw_boundary_guide(&mut pixmap.as_mut(), &frame, self.screen_origin, self.scale);
+            }
             if self.show_path {
                 draw_trail(&mut pixmap.as_mut(), &self.points, trail_style, (0.0, 0.0));
             }
@@ -650,6 +794,7 @@ impl OverlayState {
         }
         self.rendered_points = self.points.len();
         self.needs_full_redraw = false;
+        self.boundary_guide_dirty = None;
         if let Err(error) = self.present() {
             log::error!("present macOS overlay frame failed: {error}");
             self.hide();
@@ -699,9 +844,11 @@ impl OverlayState {
         Ok(())
     }
 
-    fn set_alpha(&self, alpha: f64) {
+    fn set_alpha(&mut self, alpha: f64) {
+        let alpha = alpha.clamp(0.0, 1.0);
+        self.alpha = alpha;
         if let Some(window) = &self.window {
-            window.setAlphaValue(alpha.clamp(0.0, 1.0));
+            window.setAlphaValue(alpha);
         }
     }
 
@@ -713,6 +860,7 @@ impl OverlayState {
         self.rendered_points = 0;
         self.needs_full_redraw = true;
         self.label = None;
+        self.visible = false;
     }
 }
 
@@ -827,6 +975,205 @@ fn pixel_rect_for_points(
         right: right + padding + 1,
         bottom: bottom + padding + 1,
     })
+}
+
+fn draw_boundary_guide(
+    pixmap: &mut PixmapMut<'_>,
+    frame: &BoundaryGuideFrame,
+    screen_origin: Point,
+    surface_scale: f32,
+) {
+    let Some(rect) = boundary_guide_rect(
+        *frame,
+        screen_origin,
+        surface_scale,
+        pixmap.width() as i32,
+        pixmap.height() as i32,
+    ) else {
+        return;
+    };
+    let Some(fill_rect) = tiny_skia::Rect::from_xywh(
+        rect.left as f32,
+        rect.top as f32,
+        (rect.right - rect.left) as f32,
+        (rect.bottom - rect.top) as f32,
+    ) else {
+        return;
+    };
+
+    let mut fill = Paint::default();
+    fill.set_color(tiny_skia::Color::from_rgba8(0, 204, 255, frame.alpha));
+    fill.anti_alias = false;
+    pixmap.fill_rect(fill_rect, &fill, Transform::identity(), None);
+
+    let frame_scale = frame.dpi_scale_milli as f32 / 1000.0;
+    let scale = if frame_scale.is_finite() && frame_scale > 0.0 {
+        frame_scale
+    } else if surface_scale.is_finite() {
+        surface_scale.max(1.0)
+    } else {
+        1.0
+    };
+    let outer_width = (2.0 * scale).max(1.0);
+    let inner_width = scale.max(1.0);
+    let left = rect.left as f32;
+    let top = rect.top as f32;
+    let right = rect.right as f32;
+    let bottom = rect.bottom as f32;
+
+    let mut outer = Paint::default();
+    outer.set_color(tiny_skia::Color::from_rgba8(16, 22, 30, 220));
+    outer.anti_alias = true;
+    let mut inner = Paint::default();
+    inner.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 240));
+    inner.anti_alias = true;
+
+    let outer_x_left = left + outer_width / 2.0;
+    let outer_x_right = right - outer_width / 2.0;
+    let outer_y_top = top + outer_width / 2.0;
+    let outer_y_bottom = bottom - outer_width / 2.0;
+    let inner_x_left = left + inner_width / 2.0;
+    let inner_x_right = right - inner_width / 2.0;
+    let inner_y_top = top + inner_width / 2.0;
+    let inner_y_bottom = bottom - inner_width / 2.0;
+
+    match frame.region {
+        CornerEdgeHit::Edge(edge) => match edge {
+            ScreenEdge::Left => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_left, top),
+                    (outer_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_right, top),
+                    (inner_x_right, bottom),
+                );
+            }
+            ScreenEdge::Right => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_right, top),
+                    (outer_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_left, top),
+                    (inner_x_left, bottom),
+                );
+            }
+            ScreenEdge::Top => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_top),
+                    (right, outer_y_top),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_bottom),
+                    (right, inner_y_bottom),
+                );
+            }
+            ScreenEdge::Bottom => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_bottom),
+                    (right, outer_y_bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_top),
+                    (right, inner_y_top),
+                );
+            }
+        },
+        CornerEdgeHit::Corner(corner) => {
+            let (outer_x, inner_x, outer_y, inner_y) = match corner {
+                ScreenCorner::LeftTop => (outer_x_left, inner_x_right, outer_y_top, inner_y_bottom),
+                ScreenCorner::LeftBottom => {
+                    (outer_x_left, inner_x_right, outer_y_bottom, inner_y_top)
+                }
+                ScreenCorner::RightTop => {
+                    (outer_x_right, inner_x_left, outer_y_top, inner_y_bottom)
+                }
+                ScreenCorner::RightBottom => {
+                    (outer_x_right, inner_x_left, outer_y_bottom, inner_y_top)
+                }
+            };
+            draw_boundary_line(
+                pixmap,
+                &outer,
+                outer_width,
+                (outer_x, top),
+                (outer_x, bottom),
+            );
+            draw_boundary_line(
+                pixmap,
+                &outer,
+                outer_width,
+                (left, outer_y),
+                (right, outer_y),
+            );
+            draw_boundary_line(
+                pixmap,
+                &inner,
+                inner_width,
+                (inner_x, top),
+                (inner_x, bottom),
+            );
+            draw_boundary_line(
+                pixmap,
+                &inner,
+                inner_width,
+                (left, inner_y),
+                (right, inner_y),
+            );
+        }
+    }
+}
+
+fn draw_boundary_line(
+    pixmap: &mut PixmapMut<'_>,
+    paint: &Paint,
+    width: f32,
+    start: (f32, f32),
+    end: (f32, f32),
+) {
+    let mut builder = PathBuilder::new();
+    builder.move_to(start.0, start.1);
+    builder.line_to(end.0, end.1);
+    let Some(path) = builder.finish() else {
+        return;
+    };
+    pixmap.stroke_path(
+        &path,
+        paint,
+        &Stroke {
+            width,
+            line_cap: LineCap::Butt,
+            line_join: LineJoin::Miter,
+            ..Default::default()
+        },
+        Transform::identity(),
+        None,
+    );
 }
 
 fn draw_trail(
@@ -1028,6 +1375,301 @@ fn draw_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenRect};
+
+    fn boundary_guide_frame(area: ScreenRect, region: CornerEdgeHit) -> BoundaryGuideFrame {
+        BoundaryGuideFrame {
+            screen: ScreenRect {
+                left: 0,
+                top: 0,
+                right: 127,
+                bottom: 127,
+            },
+            area,
+            region,
+            dpi_scale_milli: 2000,
+            alpha: 128,
+        }
+    }
+
+    fn guide_test_state() -> OverlayState {
+        OverlayState {
+            screen_origin: Point { x: 0, y: 0 },
+            width_points: 256,
+            height_points: 256,
+            scale: 2.0,
+            pixmap: Pixmap::new(512, 512),
+            ..OverlayState::default()
+        }
+    }
+
+    #[test]
+    fn boundary_guide_lifecycle_keeps_empty_overlay_visible_until_clear() {
+        let mut state = guide_test_state();
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+
+        let mut selected_origin = None;
+        let set = state.apply_with_surface(OverlayCommand::SetBoundaryGuide(frame), |_, origin| {
+            selected_origin = Some(origin);
+            Ok(())
+        });
+        assert!(set.dirty);
+        assert_eq!(selected_origin, Some(Point { x: 0, y: 0 }));
+        assert_eq!(state.boundary_guide, Some(frame));
+        assert!(state.visible);
+
+        let clear =
+            state.apply_with_surface(OverlayCommand::ClearBoundaryGuide, |_state, _origin| Ok(()));
+        assert!(clear.dirty);
+        assert!(state.boundary_guide.is_none());
+        assert!(!state.visible);
+    }
+
+    #[test]
+    fn boundary_guide_dirty_bounds_cover_previous_and_next_areas() {
+        let mut state = guide_test_state();
+        let first = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let next = boundary_guide_frame(
+            ScreenRect {
+                left: 80,
+                top: 80,
+                right: 111,
+                bottom: 111,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::RightBottom),
+        );
+
+        state.apply_with_surface(
+            OverlayCommand::SetBoundaryGuide(first),
+            |_state, _origin| Ok(()),
+        );
+        state.boundary_guide_dirty = None;
+        state.apply_with_surface(OverlayCommand::SetBoundaryGuide(next), |_state, _origin| {
+            Ok(())
+        });
+
+        assert_eq!(state.boundary_guide, Some(next));
+        assert_eq!(
+            state.boundary_guide_dirty,
+            Some(PixelRect {
+                left: 0,
+                top: 0,
+                right: 224,
+                bottom: 224,
+            })
+        );
+    }
+
+    #[test]
+    fn boundary_guide_raster_has_nontransparent_pixels_in_expected_retina_area() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut pixmap = Pixmap::new(128, 128).unwrap();
+        draw_boundary_guide(&mut pixmap.as_mut(), &frame, Point { x: 0, y: 0 }, 2.0);
+
+        let inside = ((16 * 128 + 16) * 4) as usize;
+        let outside = ((96 * 128 + 96) * 4) as usize;
+        assert!(pixmap.data()[inside + 3] > 0);
+        assert_eq!(pixmap.data()[outside + 3], 0);
+    }
+
+    #[test]
+    fn boundary_guide_rect_converts_closed_screen_area_from_offset_retina_origin() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: -48,
+                top: 24,
+                right: -17,
+                bottom: 55,
+            },
+            CornerEdgeHit::Edge(ScreenEdge::Left),
+        );
+
+        assert_eq!(
+            boundary_guide_rect(frame, Point { x: -64, y: 16 }, 2.0, 256, 256),
+            Some(PixelRect {
+                left: 32,
+                top: 16,
+                right: 96,
+                bottom: 80,
+            })
+        );
+    }
+
+    #[test]
+    fn setting_boundary_guide_restores_window_alpha_after_a_previous_fade() {
+        let mut state = guide_test_state();
+        state.set_alpha(0.0);
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Edge(ScreenEdge::Top),
+        );
+
+        state.apply_with_surface(
+            OverlayCommand::SetBoundaryGuide(frame),
+            |_state, _origin| Ok(()),
+        );
+
+        assert_eq!(state.alpha, 1.0);
+        assert!(state.visible);
+    }
+
+    #[test]
+    fn setting_boundary_guide_invalidates_an_existing_fade_generation() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Edge(ScreenEdge::Top),
+        );
+
+        assert!(starts_new_generation(&OverlayCommand::SetBoundaryGuide(
+            frame
+        )));
+        assert!(!starts_new_generation(&OverlayCommand::ClearBoundaryGuide));
+    }
+
+    #[test]
+    fn clearing_boundary_guide_keeps_existing_trail_visible() {
+        let mut state = guide_test_state();
+        state.boundary_guide = Some(boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        ));
+        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
+        state.show_path = true;
+        state.visible = true;
+
+        let effect = state.apply_with_surface(OverlayCommand::ClearBoundaryGuide, |_, _| Ok(()));
+
+        assert!(effect.dirty);
+        assert!(!effect.suppress_render);
+        assert!(state.boundary_guide.is_none());
+        assert!(state.visible);
+        assert_eq!(state.points.len(), 2);
+    }
+
+    #[test]
+    fn trail_lifecycle_commands_clear_boundary_guide() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut begun = guide_test_state();
+        begun.boundary_guide = Some(frame);
+        begun.apply_with_surface(
+            OverlayCommand::Begin {
+                origin: Point { x: 40, y: 50 },
+                colors: TrailColors {
+                    main: 0xff27e518,
+                    unrecognized: 0xffff2424,
+                },
+                show_path: true,
+                show_label: true,
+                fade_out: true,
+            },
+            |_, _| Ok(()),
+        );
+        assert!(begun.boundary_guide.is_none());
+        assert!(begun.active);
+
+        let mut cancelled = guide_test_state();
+        cancelled.boundary_guide = Some(frame);
+        cancelled.visible = true;
+        let cancel = cancelled.apply_with_surface(OverlayCommand::Cancel, |_, _| Ok(()));
+        assert!(cancel.suppress_render);
+        assert!(cancelled.boundary_guide.is_none());
+        assert!(!cancelled.visible);
+
+        let mut ended = guide_test_state();
+        ended.boundary_guide = Some(frame);
+        ended.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
+        ended.show_path = true;
+        ended.fade_out = true;
+        ended.active = true;
+        ended.visible = true;
+        let end = ended.apply_with_surface(OverlayCommand::End, |_, _| Ok(()));
+        assert!(end.dirty);
+        assert!(end.fade);
+        assert!(ended.boundary_guide.is_none());
+        assert!(ended.visible);
+    }
+
+    #[test]
+    fn label_feedback_clears_boundary_guide_before_rendering() {
+        let mut state = guide_test_state();
+        state.boundary_guide = Some(boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        ));
+        state.visible = true;
+
+        let effect = state.apply_with_surface(
+            OverlayCommand::ShowLabelFeedback {
+                origin: Point { x: 40, y: 50 },
+                text: "Ready".into(),
+                fade_out: true,
+                display_duration: None,
+                fade_duration: None,
+            },
+            |state, _| {
+                state.visible = true;
+                Ok(())
+            },
+        );
+
+        assert!(effect.dirty);
+        assert!(effect.fade);
+        assert!(state.boundary_guide.is_none());
+        assert_eq!(state.label.as_deref(), Some("Ready"));
+        assert!(state.visible);
+    }
 
     #[test]
     fn custom_fade_plan_uses_requested_duration() {
