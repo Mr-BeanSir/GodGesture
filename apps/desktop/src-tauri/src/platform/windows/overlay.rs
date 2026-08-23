@@ -684,6 +684,11 @@ fn clear_boundary_guide_surface(state: &mut OverlayState) {
     let Some(dirty) = state.boundary_guide_dirty else {
         return;
     };
+    if state.trail_fade_surface.is_some() {
+        state.needs_full_redraw = true;
+        render(state);
+        return;
+    }
     if !state.bits.is_null() && state.width > 0 && state.height > 0 {
         let byte_len = (state.width * state.height * 4) as usize;
         let data = unsafe { std::slice::from_raw_parts_mut(state.bits, byte_len) };
@@ -1845,6 +1850,29 @@ fn stop_fade_timer(state: &mut OverlayState) {
     }
 }
 
+fn render_fade_step(state: &mut OverlayState) {
+    if state.trail_fade_surface.is_some() {
+        state.needs_full_redraw = true;
+        render(state);
+    } else {
+        present(state, None);
+    }
+}
+
+fn finish_fade(state: &mut OverlayState) {
+    stop_fade(state);
+    state.points.clear();
+    state.rendered_points = 0;
+    state.label = None;
+    state.trail_fade_surface = None;
+    if state.boundary_guide.is_some() {
+        state.needs_full_redraw = true;
+        render(state);
+    } else {
+        hide(state);
+    }
+}
+
 fn fade_step(state: &mut OverlayState) {
     if !state.visible {
         stop_fade(state);
@@ -1865,24 +1893,22 @@ fn fade_step(state: &mut OverlayState) {
             .map(|started_at| started_at.elapsed())
             .unwrap_or(duration);
         if duration.is_zero() || elapsed >= duration {
-            stop_fade(state);
-            hide(state);
+            finish_fade(state);
             return;
         }
         let remaining = duration.saturating_sub(elapsed);
         state.alpha = ((remaining.as_secs_f64() / duration.as_secs_f64()) * 255.0)
             .round()
             .clamp(1.0, 255.0) as u16;
-        present(state, None);
+        render_fade_step(state);
         return;
     }
     if state.alpha <= FADE_STEP {
-        stop_fade(state);
-        hide(state);
+        finish_fade(state);
         return;
     }
     state.alpha -= FADE_STEP;
-    present(state, None);
+    render_fade_step(state);
 }
 
 fn hide(state: &mut OverlayState) {
@@ -1988,6 +2014,26 @@ mod tests {
             font: None,
             stats: OverlayStats::new(),
         }
+    }
+
+    fn test_state_with_surface(width: i32, height: i32) -> (OverlayState, Vec<u8>) {
+        let mut pixels = vec![0; (width * height * 4) as usize];
+        let mut state = test_state();
+        state.tiles.clear();
+        state.bits = pixels.as_mut_ptr();
+        state.width = width;
+        state.height = height;
+        (state, pixels)
+    }
+
+    fn pixel_at(pixels: &[u8], width: i32, x: i32, y: i32) -> [u8; 4] {
+        let offset = ((y * width + x) * 4) as usize;
+        pixels[offset..offset + 4].try_into().unwrap()
+    }
+
+    fn set_pixel(pixels: &mut [u8], width: i32, x: i32, y: i32, value: [u8; 4]) {
+        let offset = ((y * width + x) * 4) as usize;
+        pixels[offset..offset + 4].copy_from_slice(&value);
     }
 
     #[test]
@@ -2188,6 +2234,120 @@ mod tests {
         assert_eq!(state.alpha, 48);
         assert_eq!(state.fade_timer_id, 17);
         assert!(state.fade_started_at.is_some());
+    }
+
+    #[test]
+    fn guide_and_captured_trail_recompose_between_fade_steps() {
+        let (mut state, pixels) = test_state_with_surface(128, 128);
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut trail_surface = vec![0; pixels.len()];
+        set_pixel(&mut trail_surface, state.width, 80, 80, [200, 100, 50, 255]);
+        state.boundary_guide = Some(frame);
+        state.trail_fade_surface = Some(trail_surface);
+        state.visible = true;
+        state.fade_duration = Some(Duration::from_secs(10));
+
+        render(&mut state);
+        state.fade_started_at = Some(Instant::now() - Duration::from_secs(2));
+        fade_step(&mut state);
+        let first_trail = pixel_at(&pixels, state.width, 80, 80);
+        let first_guide = pixel_at(&pixels, state.width, 8, 8);
+
+        state.fade_started_at = Some(Instant::now() - Duration::from_secs(7));
+        fade_step(&mut state);
+        let second_trail = pixel_at(&pixels, state.width, 80, 80);
+        let second_guide = pixel_at(&pixels, state.width, 8, 8);
+
+        assert!(second_trail[3] < first_trail[3]);
+        assert_eq!(second_guide, first_guide);
+        assert_eq!(state.boundary_guide, Some(frame));
+        assert!(state.visible);
+    }
+
+    #[test]
+    fn trail_fade_completion_clears_old_content_but_keeps_guide_visible() {
+        let (mut state, pixels) = test_state_with_surface(128, 128);
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut trail_surface = vec![0; pixels.len()];
+        set_pixel(&mut trail_surface, state.width, 80, 80, [200, 100, 50, 255]);
+        state.boundary_guide = Some(frame);
+        state.trail_fade_surface = Some(trail_surface);
+        state.points = vec![point(10), point(20)];
+        state.label = Some("old label".into());
+        state.show_path = true;
+        state.show_label = true;
+        state.visible = true;
+        state.fade_duration = Some(Duration::from_millis(1));
+        state.fade_started_at = Some(Instant::now() - Duration::from_millis(10));
+
+        render(&mut state);
+        fade_step(&mut state);
+
+        assert!(state.visible);
+        assert_eq!(state.boundary_guide, Some(frame));
+        assert!(state.trail_fade_surface.is_none());
+        assert!(state.points.is_empty());
+        assert!(state.label.is_none());
+        assert_eq!(pixel_at(&pixels, state.width, 80, 80), [0, 0, 0, 0]);
+        assert!(pixel_at(&pixels, state.width, 8, 8)[3] > 0);
+    }
+
+    #[test]
+    fn clearing_guide_during_captured_trail_fade_preserves_fade_until_completion() {
+        let (tx, rx) = unbounded();
+        let (mut state, pixels) = test_state_with_surface(128, 128);
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut trail_surface = vec![0; pixels.len()];
+        set_pixel(&mut trail_surface, state.width, 16, 16, [200, 100, 50, 255]);
+        state.boundary_guide = Some(frame);
+        state.trail_fade_surface = Some(trail_surface);
+        state.visible = true;
+        state.fade_duration = Some(Duration::from_secs(10));
+        state.fade_started_at = Some(Instant::now() - Duration::from_secs(2));
+        state.fade_timer_id = 17;
+
+        render(&mut state);
+        tx.send(OverlayCommand::ClearBoundaryGuide).unwrap();
+        drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
+
+        assert!(state.boundary_guide.is_none());
+        assert!(state.visible);
+        assert_eq!(state.fade_timer_id, 17);
+        assert!(state.fade_started_at.is_some());
+
+        state.fade_started_at = Some(Instant::now() - Duration::from_secs(5));
+        fade_step(&mut state);
+        assert!(pixel_at(&pixels, state.width, 16, 16)[3] > 0);
+        assert!(state.visible);
+
+        state.fade_started_at = Some(Instant::now() - Duration::from_secs(11));
+        fade_step(&mut state);
+        assert!(!state.visible);
+        assert!(state.trail_fade_surface.is_none());
     }
 
     #[test]
