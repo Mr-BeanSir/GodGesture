@@ -156,6 +156,7 @@ struct OverlayState {
     fade_delay_until: Option<Instant>,
     fade_timer_id: usize,
     next_fade_timer_id: usize,
+    trail_fade_surface: Option<Vec<u8>>,
     dpi_factor: f32,
     font: Option<ab_glyph::FontVec>,
     stats: OverlayStats,
@@ -518,6 +519,7 @@ fn overlay_thread_main(
             fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
+            trail_fade_surface: None,
             dpi_factor: 1.0,
             font: load_label_font(),
             stats: OverlayStats::new(),
@@ -665,8 +667,76 @@ fn clear_boundary_guide(state: &mut OverlayState) -> bool {
     true
 }
 
+fn clear_pixmap_region(pixmap: &mut PixmapMut<'_>, dirty: PixelRect) {
+    let Some(dirty) = dirty.clamp(pixmap.width() as i32, pixmap.height() as i32) else {
+        return;
+    };
+    let width = pixmap.width() as usize;
+    let data = pixmap.data_mut();
+    for row in dirty.top as usize..dirty.bottom as usize {
+        let start = (row * width + dirty.left as usize) * 4;
+        let end = (row * width + dirty.right as usize) * 4;
+        data[start..end].fill(0);
+    }
+}
+
+fn clear_boundary_guide_surface(state: &mut OverlayState) {
+    let Some(dirty) = state.boundary_guide_dirty else {
+        return;
+    };
+    if !state.bits.is_null() && state.width > 0 && state.height > 0 {
+        let byte_len = (state.width * state.height * 4) as usize;
+        let data = unsafe { std::slice::from_raw_parts_mut(state.bits, byte_len) };
+        if let Some(mut pixmap) =
+            PixmapMut::from_bytes(data, state.width as u32, state.height as u32)
+        {
+            clear_pixmap_region(&mut pixmap, dirty);
+            present(state, Some(dirty));
+        }
+    }
+    state.boundary_guide_dirty = None;
+}
+
+fn capture_trail_fade_surface(state: &mut OverlayState) {
+    if state.trail_fade_surface.is_some()
+        || state.bits.is_null()
+        || state.width <= 0
+        || state.height <= 0
+    {
+        return;
+    }
+    let byte_len = (state.width * state.height * 4) as usize;
+    let data = unsafe { std::slice::from_raw_parts(state.bits, byte_len) };
+    state.trail_fade_surface = Some(data.to_vec());
+}
+
+fn restore_trail_fade_surface(state: &OverlayState, pixmap: &mut PixmapMut<'_>) -> bool {
+    let Some(source) = state.trail_fade_surface.as_deref() else {
+        return false;
+    };
+    let destination = pixmap.data_mut();
+    if destination.len() != source.len() {
+        return false;
+    }
+    let alpha = state.alpha.min(255) as u32;
+    for (destination, source) in destination.iter_mut().zip(source) {
+        *destination = ((*source as u32 * alpha + 127) / 255) as u8;
+    }
+    true
+}
+
+fn present_source_alpha(state: &OverlayState) -> u8 {
+    if state.boundary_guide.is_some() || state.trail_fade_surface.is_some() {
+        255
+    } else {
+        state.alpha.min(255) as u8
+    }
+}
+
 fn has_trail_or_label_content(state: &OverlayState) -> bool {
-    (state.show_path && !state.points.is_empty()) || (state.show_label && state.label.is_some())
+    (state.show_path && !state.points.is_empty())
+        || (state.show_label && state.label.is_some())
+        || state.trail_fade_surface.is_some()
 }
 
 fn has_visual_content(state: &OverlayState) -> bool {
@@ -696,6 +766,9 @@ where
         match cmd {
             OverlayCommand::SetBoundaryGuide(frame) => {
                 let previous = state.boundary_guide;
+                if state.fade_timer_id != 0 {
+                    capture_trail_fade_surface(state);
+                }
                 state.boundary_guide = Some(frame);
                 ensure_surface(state, boundary_guide_origin(frame));
                 if let Some(previous) = previous {
@@ -706,7 +779,11 @@ where
                 visual_dirty = true;
             }
             OverlayCommand::ClearBoundaryGuide => {
-                visual_dirty |= clear_boundary_guide(state);
+                let cleared = clear_boundary_guide(state);
+                if cleared {
+                    clear_boundary_guide_surface(state);
+                }
+                visual_dirty |= cleared;
             }
             OverlayCommand::Begin {
                 origin,
@@ -715,13 +792,16 @@ where
                 show_label,
                 fade_out,
             } => {
-                clear_boundary_guide(state);
+                if clear_boundary_guide(state) {
+                    clear_boundary_guide_surface(state);
+                }
                 fade_after_render = false;
                 stop_fade(state);
                 hide(state);
                 state.points.clear();
                 state.points.push(origin);
                 state.rendered_points = 0;
+                state.trail_fade_surface = None;
                 state.needs_full_redraw = true;
                 state.needs_full_present = true;
                 state.colors = colors;
@@ -752,7 +832,9 @@ where
                 }
             }
             OverlayCommand::End => {
-                clear_boundary_guide(state);
+                if clear_boundary_guide(state) {
+                    clear_boundary_guide_surface(state);
+                }
                 if !has_trail_or_label_content(state) {
                     hide(state);
                 }
@@ -769,7 +851,9 @@ where
                 state.rendered_points = 0;
             }
             OverlayCommand::Cancel => {
-                clear_boundary_guide(state);
+                if clear_boundary_guide(state) {
+                    clear_boundary_guide_surface(state);
+                }
                 fade_after_render = false;
                 hide(state);
                 visual_dirty = false;
@@ -783,12 +867,15 @@ where
                 display_duration,
                 fade_duration,
             } => {
-                clear_boundary_guide(state);
+                if clear_boundary_guide(state) {
+                    clear_boundary_guide_surface(state);
+                }
                 stop_fade(state);
                 hide(state);
                 state.label = None;
                 state.points.clear();
                 state.rendered_points = 0;
+                state.trail_fade_surface = None;
                 state.needs_full_redraw = true;
                 state.needs_full_present = true;
                 ensure_surface(state, origin);
@@ -1070,14 +1157,17 @@ fn render(state: &mut OverlayState) {
 
     let dirty = if full_redraw {
         pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
+        let restored_trail_fade = restore_trail_fade_surface(state, &mut pixmap);
         if let Some(frame) = state.boundary_guide {
             draw_boundary_guide(&mut pixmap, &frame, state.monitor_origin, state.dpi_factor);
         }
-        if state.show_path {
+        if !restored_trail_fade && state.show_path {
             draw_trail(&mut pixmap, &state.points, trail_style, (0.0, 0.0));
         }
-        if let Some(text) = state.label.as_deref().filter(|_| state.show_label) {
-            draw_label(state, &mut pixmap, text);
+        if !restored_trail_fade {
+            if let Some(text) = state.label.as_deref().filter(|_| state.show_label) {
+                draw_label(state, &mut pixmap, text);
+            }
         }
         PixelRect::full(width, height)
     } else {
@@ -1149,7 +1239,9 @@ fn draw_boundary_guide(
     };
 
     let mut fill = Paint::default();
-    fill.set_color(tiny_skia::Color::from_rgba8(0, 204, 255, frame.alpha));
+    fill.set_color(skia_dib_color(
+        (u32::from(frame.alpha) << 24) | 0x00_00_CC_FF,
+    ));
     fill.anti_alias = false;
     pixmap.fill_rect(fill_rect, &fill, Transform::identity(), None);
 
@@ -1166,10 +1258,10 @@ fn draw_boundary_guide(
     let right = rect.right as f32;
     let bottom = rect.bottom as f32;
     let mut outer = Paint::default();
-    outer.set_color(tiny_skia::Color::from_rgba8(16, 22, 30, 220));
+    outer.set_color(skia_dib_color(0xDC_10_16_1E));
     outer.anti_alias = true;
     let mut inner = Paint::default();
-    inner.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 240));
+    inner.set_color(skia_dib_color(0xF0_FF_FF_FF));
     inner.anti_alias = true;
 
     let outer_x_left = left + outer_width / 2.0;
@@ -1598,7 +1690,7 @@ fn present(state: &mut OverlayState, dirty: Option<PixelRect>) {
         let blend = BLENDFUNCTION {
             BlendOp: 0, // AC_SRC_OVER
             BlendFlags: 0,
-            SourceConstantAlpha: state.alpha.min(255) as u8,
+            SourceConstantAlpha: present_source_alpha(state),
             AlphaFormat: 1, // AC_SRC_ALPHA
         };
         if state.dirty_updates_supported {
@@ -1891,6 +1983,7 @@ mod tests {
             fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
+            trail_fade_surface: None,
             dpi_factor: 1.0,
             font: None,
             stats: OverlayStats::new(),
@@ -1995,6 +2088,106 @@ mod tests {
         let outside = ((48 * 64 + 48) * 4) as usize;
         assert!(pixmap.data()[inside + 3] > 0);
         assert_eq!(pixmap.data()[outside + 3], 0);
+    }
+
+    #[test]
+    fn boundary_guide_fill_uses_windows_dib_channel_semantics() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Edge(ScreenEdge::Top),
+        );
+        let mut pixmap = Pixmap::new(64, 64).unwrap();
+        draw_boundary_guide(&mut pixmap.as_mut(), &frame, (0, 0), 1.0);
+
+        let pixel = ((8 * 64 + 8) * 4) as usize;
+        assert_eq!(&pixmap.data()[pixel..pixel + 4], &[128, 102, 0, 128]);
+    }
+
+    #[test]
+    fn clear_boundary_guide_erases_previous_bitmap_pixels() {
+        let dirty = PixelRect {
+            left: 4,
+            top: 5,
+            right: 12,
+            bottom: 13,
+        };
+        let mut pixmap = Pixmap::new(32, 32).unwrap();
+        pixmap.fill(tiny_skia::Color::from_rgba8(12, 34, 56, 255));
+
+        clear_pixmap_region(&mut pixmap.as_mut(), dirty);
+
+        for y in dirty.top..dirty.bottom {
+            for x in dirty.left..dirty.right {
+                let offset = ((y * 32 + x) * 4) as usize;
+                assert_eq!(&pixmap.data()[offset..offset + 4], &[0, 0, 0, 0]);
+            }
+        }
+        let outside = ((0 * 32 + 0) * 4) as usize;
+        assert_eq!(&pixmap.data()[outside..outside + 4], &[12, 34, 56, 255]);
+    }
+
+    #[test]
+    fn end_clears_guide_without_canceling_trail_fade() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        state.boundary_guide = Some(boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        ));
+        state.points = vec![point(10), point(20)];
+        state.show_path = true;
+        state.visible = true;
+        state.fade_out = true;
+        state.fade_duration = Some(Duration::from_millis(500));
+        state.fade_timer_id = 17;
+        state.fade_started_at = Some(Instant::now());
+
+        tx.send(OverlayCommand::End).unwrap();
+        drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
+
+        assert!(state.boundary_guide.is_none());
+        assert!(state.points.is_empty());
+        assert_ne!(state.fade_timer_id, 0);
+        assert!(state.fade_started_at.is_some() || state.fade_delay_until.is_some());
+    }
+
+    #[test]
+    fn set_boundary_guide_uses_independent_present_alpha_during_trail_fade() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        state.visible = true;
+        state.alpha = 48;
+        state.fade_timer_id = 17;
+        state.fade_started_at = Some(Instant::now());
+
+        tx.send(OverlayCommand::SetBoundaryGuide(boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        )))
+        .unwrap();
+        drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
+
+        assert_eq!(present_source_alpha(&state), 255);
+        assert_eq!(state.alpha, 48);
+        assert_eq!(state.fade_timer_id, 17);
+        assert!(state.fade_started_at.is_some());
     }
 
     #[test]
