@@ -339,7 +339,7 @@ impl CornerEdgeDetector {
                     area: corner_guide_area(corner, screen.bounds),
                     region: CornerEdgeHit::Corner(corner),
                     dpi_scale_milli: dpi_scale_milli(screen.dpi_scale),
-                    alpha: guide_alpha(distance, CORNER_SEQUENCE_DIST),
+                    alpha: guide_alpha(distance, CORNER_GUIDE_RADIUS),
                 });
             }
         }
@@ -1085,6 +1085,7 @@ mod tests {
 
         assert_eq!(weaker.region, CornerEdgeHit::Corner(ScreenCorner::LeftTop));
         assert!(weaker.alpha < exact.alpha);
+        assert_eq!(weaker.alpha, 24);
         assert!(weaker.area.contains(p(7, 7)));
 
         assert!(detector
