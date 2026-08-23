@@ -368,6 +368,7 @@ impl Default for PathTrackerPreferences {
 pub struct GestureViewPreferences {
     pub show_path: bool,
     pub show_command_name: bool,
+    pub show_boundary_guide: bool,
     pub fade_out: bool,
     pub right_button_path_color: String,
     pub middle_button_path_color: String,
@@ -380,6 +381,7 @@ impl Default for GestureViewPreferences {
         Self {
             show_path: true,
             show_command_name: true,
+            show_boundary_guide: false,
             fade_out: true,
             right_button_path_color: "#FF27E518".into(),
             middle_button_path_color: "#FF2DE0FF".into(),
@@ -935,6 +937,23 @@ mod tests {
             }));
             assert!(result.is_err(), "version {version} should be rejected");
         }
+    }
+
+    #[test]
+    fn gesture_view_boundary_guide_uses_camel_case_and_defaults_false() {
+        let defaulted: GestureViewPreferences =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!defaulted.show_boundary_guide);
+
+        let enabled: GestureViewPreferences = serde_json::from_value(serde_json::json!({
+            "showBoundaryGuide": true
+        }))
+        .unwrap();
+        assert!(enabled.show_boundary_guide);
+        assert_eq!(
+            serde_json::to_value(enabled).unwrap()["showBoundaryGuide"],
+            true
+        );
     }
 
     #[test]

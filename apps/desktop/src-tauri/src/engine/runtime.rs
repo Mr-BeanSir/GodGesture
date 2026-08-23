@@ -15,7 +15,7 @@ use super::config::{
     BoundaryMouseButton, BoundaryToken, BoundaryWheelDirection, Command, ConfigDocument,
     GestureInput, GestureInputButton, GestureIntent, Locale,
 };
-use super::corners::{CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
+use super::corners::{BoundaryGuideFrame, CornerEdgeDetector, CornerEdgeHit, ScreenInfo};
 use super::intents::{ForegroundApp, IntentFinder};
 use super::parser::StrokeEvent;
 use super::tracker::{Action, Input, MouseButton, PathTracker, TrackerHost, TrackerParams};
@@ -56,6 +56,7 @@ pub enum EngineMsg {
     },
     BoundaryPathEnded,
     BoundaryPathCancelled,
+    BoundaryGuideChanged(Option<BoundaryGuideFrame>),
     /// 增量识别结果变化(None=无匹配),仅用于更新覆盖层提示。
     RecognitionChanged {
         name: Option<String>,
@@ -213,6 +214,8 @@ pub struct EngineShared {
     /// 两个开关的缓存,免得每条鼠标移动都去锁配置
     corners_enabled: AtomicBool,
     edges_enabled: AtomicBool,
+    show_boundary_guide: AtomicBool,
+    boundary_guide_last: Mutex<Option<BoundaryGuideFrame>>,
 }
 
 impl EngineShared {
@@ -224,6 +227,7 @@ impl EngineShared {
         let params = tracker_params_from(&config);
         let corners_enabled = config.hot_corners.enabled;
         let edges_enabled = config.rub_edges.enabled;
+        let show_boundary_guide = config.preferences.gesture_view.show_boundary_guide;
         let shared = Arc::new(Self {
             tracker: Mutex::new(PathTracker::new(params)),
             session: Mutex::new(None),
@@ -240,18 +244,22 @@ impl EngineShared {
             buttons_down: AtomicU8::new(0),
             corners_enabled: AtomicBool::new(corners_enabled),
             edges_enabled: AtomicBool::new(edges_enabled),
+            show_boundary_guide: AtomicBool::new(show_boundary_guide),
+            boundary_guide_last: Mutex::new(None),
         });
         (shared, rx)
     }
 
     /// 进入手势录制模式。
     pub fn start_recording(&self) {
+        self.clear_boundary_guide();
         self.cancel_boundary_sequence();
         self.recording.store(true, Ordering::SeqCst);
     }
 
     /// 退出录制并取消正在进行的捕获;下一次触发键抬起仍会被追踪器吞掉。
     pub fn cancel_recording(&self) {
+        self.clear_boundary_guide();
         self.recording.store(false, Ordering::SeqCst);
         if self.tracker.lock().cancel_capture() {
             *self.session.lock() = None;
@@ -265,6 +273,7 @@ impl EngineShared {
 
     pub fn set_paused(&self, paused: bool) {
         if paused {
+            self.clear_boundary_guide();
             self.cancel_boundary_sequence();
         }
         let previous = self.paused.swap(paused, Ordering::SeqCst);
@@ -285,6 +294,7 @@ impl EngineShared {
     pub fn toggle_paused(&self) -> bool {
         let now = !self.paused.fetch_xor(true, Ordering::SeqCst);
         if now {
+            self.clear_boundary_guide();
             self.cancel_boundary_sequence();
         }
         let _ = self.tx.send(EngineMsg::PauseChanged(now));
@@ -299,10 +309,22 @@ impl EngineShared {
     pub fn replace_config(&self, config: ConfigDocument) {
         self.cancel_boundary_sequence();
         self.tracker.lock().set_params(tracker_params_from(&config));
-        self.corners_enabled
-            .store(config.hot_corners.enabled, Ordering::Relaxed);
-        self.edges_enabled
-            .store(config.rub_edges.enabled, Ordering::Relaxed);
+        let corners_enabled = config.hot_corners.enabled;
+        let edges_enabled = config.rub_edges.enabled;
+        let show_boundary_guide = config.preferences.gesture_view.show_boundary_guide;
+        let corners_changed = self
+            .corners_enabled
+            .swap(corners_enabled, Ordering::Relaxed)
+            != corners_enabled;
+        let edges_changed =
+            self.edges_enabled.swap(edges_enabled, Ordering::Relaxed) != edges_enabled;
+        let guide_preference_changed = self
+            .show_boundary_guide
+            .swap(show_boundary_guide, Ordering::Relaxed)
+            != show_boundary_guide;
+        if corners_changed || edges_changed || guide_preference_changed {
+            self.clear_boundary_guide();
+        }
         self.finder.lock().replace_config(config);
         let _ = self.tx.send(EngineMsg::ScriptConfigChanged);
     }
@@ -345,6 +367,19 @@ impl EngineShared {
             v.show_command_name,
             v.fade_out,
         )
+    }
+
+    fn set_boundary_guide(&self, next: Option<BoundaryGuideFrame>) {
+        let mut last = self.boundary_guide_last.lock();
+        if *last == next {
+            return;
+        }
+        let _ = self.tx.send(EngineMsg::BoundaryGuideChanged(next));
+        *last = next;
+    }
+
+    fn clear_boundary_guide(&self) {
+        self.set_boundary_guide(None);
     }
 
     /// 钩子线程入口:裁决是否吞事件
@@ -393,6 +428,9 @@ impl EngineShared {
                     .fetch_and(!button_bit(*b), Ordering::Relaxed);
             }
             _ => {}
+        }
+        if self.buttons_down.load(Ordering::Relaxed) != 0 {
+            self.clear_boundary_guide();
         }
         if let Input::ButtonUp(button, _) = &input {
             let bit = button_bit(*button);
@@ -806,6 +844,7 @@ impl EngineShared {
     }
 
     fn start_boundary_path(&self, pos: Point) {
+        self.clear_boundary_guide();
         log::debug!(
             target: "gesture.boundary",
             "event=boundary_path_started x={} y={}",
@@ -816,8 +855,14 @@ impl EngineShared {
     }
 
     fn cancel_boundary_sequence(&self) {
-        let result = self.boundary.lock().cancel();
+        let (was_active, result) = {
+            let mut boundary = self.boundary.lock();
+            (boundary.is_active(), boundary.cancel())
+        };
         self.apply_boundary_result(result);
+        if was_active {
+            self.clear_boundary_guide();
+        }
     }
 
     /// 触发角 / 摩擦边判定(钩子线程)。命中即把解析好的命令投给执行线程 ——
@@ -826,20 +871,49 @@ impl EngineShared {
         let corners = self.corners_enabled.load(Ordering::Relaxed);
         let edges = self.edges_enabled.load(Ordering::Relaxed);
         if !corners && !edges {
+            self.clear_boundary_guide();
             return;
         }
         // 暂停 / 录制 / 手势捕获中:整个状态机停摆,不喂数据。
         // 参考实现里 _isPaused 短路整个钩子过程、_captured 挡住触发角判定的调用点,
         // 语义一致;录制期间抑制是本项目有意加的(见 corners.rs 头部说明)。
         if self.is_paused() || self.is_recording() {
+            self.clear_boundary_guide();
             return;
         }
         if self.tracker.lock().is_capturing() {
+            self.clear_boundary_guide();
             return;
         }
         if self.boundary.lock().is_active() {
+            self.clear_boundary_guide();
             return;
         }
+
+        let buttons_held = self.buttons_down.load(Ordering::Relaxed) != 0;
+        let disable_in_fullscreen = {
+            let finder = self.finder.lock();
+            finder
+                .config()
+                .preferences
+                .path_tracker
+                .disable_in_fullscreen
+        };
+        let show_boundary_guide = self.show_boundary_guide.load(Ordering::Relaxed);
+        let fullscreen_suppressed =
+            show_boundary_guide && disable_in_fullscreen && self.platform.is_fullscreen();
+        let guide = if show_boundary_guide && !buttons_held && !fullscreen_suppressed {
+            self.corner_edge.lock().guide_at(
+                pos,
+                now,
+                || self.platform.screen_at(pos),
+                corners,
+                edges,
+            )
+        } else {
+            None
+        };
+        self.set_boundary_guide(guide);
 
         let Some(hit) = self
             .corner_edge
@@ -854,17 +928,14 @@ impl EngineShared {
         // 这个位置差别是用户可见的:按住左键把窗口拖到左上角(Aero Snap)再松手,
         // 若在喂之前就 return,武装被完整保留,松手后随便动一下就会误触发角命令 ——
         // 等于每次贴角吸附窗口都白触发一次。
-        if self.buttons_down.load(Ordering::Relaxed) != 0 {
+        if buttons_held {
             return;
         }
 
-        let disable_in_fullscreen = {
-            let finder = self.finder.lock();
-            let config = finder.config();
-            config.preferences.path_tracker.disable_in_fullscreen
-        };
-        // 全屏抑制与手势共用同一偏好;放在最后才查,免得每次移动都问系统
-        if disable_in_fullscreen && self.platform.is_fullscreen() {
+        // 全屏抑制与手势共用同一偏好;guide 开启时上面已查询并复用结果。
+        if disable_in_fullscreen
+            && (fullscreen_suppressed || (!show_boundary_guide && self.platform.is_fullscreen()))
+        {
             return;
         }
         let result = {
@@ -1713,6 +1784,13 @@ mod tests {
         clicks: Mutex<Vec<(MouseButton, Point)>>,
         wheels: Mutex<Vec<bool>>,
         tray_points: Mutex<Vec<Point>>,
+        fullscreen: AtomicBool,
+    }
+
+    impl BoundaryPlatform {
+        fn set_fullscreen(&self, fullscreen: bool) {
+            self.fullscreen.store(fullscreen, Ordering::SeqCst);
+        }
     }
 
     impl PlatformServices for BoundaryPlatform {
@@ -1725,7 +1803,7 @@ mod tests {
         }
 
         fn is_fullscreen(&self) -> bool {
-            false
+            self.fullscreen.load(Ordering::SeqCst)
         }
 
         fn synthesize_click(&self, button: MouseButton, pos: Point) {
@@ -1769,6 +1847,211 @@ mod tests {
             order: 0,
         });
         config
+    }
+
+    fn guide_config() -> ConfigDocument {
+        let mut config = ConfigDocument::default();
+        config.preferences.gesture_view.show_boundary_guide = true;
+        config
+    }
+
+    #[test]
+    fn guide_is_emitted_without_boundary_actions_and_deduplicated() {
+        let config = guide_config();
+        assert!(config.boundary_intents.is_empty());
+        let (shared, rx) = EngineShared::new(config, Arc::new(BoundaryPlatform::default()));
+
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 50, y: 50 })));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 50, y: 50 })));
+
+        let messages = rx.try_iter().collect::<Vec<_>>();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| matches!(
+                    message,
+                    EngineMsg::BoundaryGuideChanged(Some(frame))
+                        if frame.region == CornerEdgeHit::Corner(ScreenCorner::LeftTop)
+                ))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn guide_hides_disabled_hot_corners_and_rub_edges() {
+        let mut corners_disabled = guide_config();
+        corners_disabled.hot_corners.enabled = false;
+        let (shared, rx) =
+            EngineShared::new(corners_disabled, Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 10, y: 500 }));
+        let messages = rx.try_iter().collect::<Vec<_>>();
+        assert!(!messages.iter().any(|message| matches!(
+            message,
+            EngineMsg::BoundaryGuideChanged(Some(frame))
+                if matches!(frame.region, CornerEdgeHit::Corner(_))
+        )));
+        assert!(messages.iter().any(|message| matches!(
+            message,
+            EngineMsg::BoundaryGuideChanged(Some(frame))
+                if frame.region == CornerEdgeHit::Edge(ScreenEdge::Left)
+        )));
+
+        let mut edges_disabled = guide_config();
+        edges_disabled.rub_edges.enabled = false;
+        let (shared, rx) = EngineShared::new(edges_disabled, Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 10, y: 500 }));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        let messages = rx.try_iter().collect::<Vec<_>>();
+        assert!(!messages.iter().any(|message| matches!(
+            message,
+            EngineMsg::BoundaryGuideChanged(Some(frame))
+                if matches!(frame.region, CornerEdgeHit::Edge(_))
+        )));
+        assert!(messages.iter().any(|message| matches!(
+            message,
+            EngineMsg::BoundaryGuideChanged(Some(frame))
+                if frame.region == CornerEdgeHit::Corner(ScreenCorner::LeftTop)
+        )));
+    }
+
+    #[test]
+    fn guide_clears_when_pointer_leaves() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 500, y: 500 }));
+
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_paused() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        shared.set_paused(true);
+
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_recording_starts() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        shared.start_recording();
+
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_a_tracker_capture_becomes_active() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Right,
+            Point { x: 500, y: 500 },
+        ));
+        shared.on_hook_event(Input::Move(Point { x: 510, y: 500 }));
+
+        assert!(shared.tracker.lock().is_capturing());
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_a_boundary_capture_becomes_active() {
+        let mut config = guide_config();
+        config.boundary_intents.push(BoundaryIntent {
+            id: "20000000-0000-4000-8000-000000000002".into(),
+            name: "Boundary guide capture".into(),
+            enabled: true,
+            origin: BoundaryOrigin::HotCorner {
+                corner: "leftTop".into(),
+            },
+            sequence: vec![
+                BoundaryToken::Wheel {
+                    direction: BoundaryWheelDirection::Forward,
+                },
+                BoundaryToken::Stroke {
+                    direction: Direction::Right,
+                },
+            ],
+            command: Command::DoNothing,
+            order: 0,
+        });
+        let (shared, rx) = EngineShared::new(config, Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        assert!(shared.on_hook_event(Input::Wheel {
+            forward: true,
+            pos: Point { x: 50, y: 50 },
+        }));
+
+        assert!(shared.boundary.lock().is_active());
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_a_mouse_button_is_held() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Left,
+            Point { x: 500, y: 500 },
+        ));
+
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_during_fullscreen_suppression() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let (shared, rx) = EngineShared::new(guide_config(), platform.clone());
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        platform.set_fullscreen(true);
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn guide_clears_when_preferences_or_global_region_switches_change() {
+        let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+
+        let mut corners_disabled = guide_config();
+        corners_disabled.hot_corners.enabled = false;
+        shared.replace_config(corners_disabled);
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+
+        shared.on_hook_event(Input::Move(Point { x: 10, y: 500 }));
+        let mut guide_disabled = guide_config();
+        guide_disabled.preferences.gesture_view.show_boundary_guide = false;
+        shared.replace_config(guide_disabled);
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
     }
 
     #[test]

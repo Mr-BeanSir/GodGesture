@@ -369,6 +369,12 @@ fn spawn_engine_consumer(
                             fade_out,
                         });
                     }
+                    EngineMsg::BoundaryGuideChanged(Some(frame)) => {
+                        overlay.send(OverlayCmd::SetBoundaryGuide(frame));
+                    }
+                    EngineMsg::BoundaryGuideChanged(None) => {
+                        overlay.send(OverlayCmd::ClearBoundaryGuide);
+                    }
                     EngineMsg::BoundaryPathGrown { point } => {
                         overlay.send(OverlayCmd::Grow(point));
                     }
