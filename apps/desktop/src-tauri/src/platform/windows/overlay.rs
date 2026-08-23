@@ -10,6 +10,7 @@
 //!
 //! 命令提示标签(文字)在 M1 后段接入(需字形栅格化)。
 
+use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenEdge};
 use crate::engine::types::Point;
 pub use crate::platform::overlay::OverlayCommand as OverlayCmd;
 use crate::platform::overlay::OverlaySink;
@@ -139,6 +140,8 @@ struct OverlayState {
     needs_full_redraw: bool,
     needs_full_present: bool,
     dirty_updates_supported: bool,
+    boundary_guide: Option<BoundaryGuideFrame>,
+    boundary_guide_dirty: Option<PixelRect>,
     colors: TrailColors,
     recognized: bool,
     label: Option<String>,
@@ -237,6 +240,15 @@ impl PixelRect {
             top: self.top + dy,
             right: self.right + dx,
             bottom: self.bottom + dy,
+        }
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            left: self.left.min(other.left),
+            top: self.top.min(other.top),
+            right: self.right.max(other.right),
+            bottom: self.bottom.max(other.bottom),
         }
     }
 }
@@ -487,6 +499,8 @@ fn overlay_thread_main(
             needs_full_redraw: true,
             needs_full_present: true,
             dirty_updates_supported: true,
+            boundary_guide: None,
+            boundary_guide_dirty: None,
             colors: TrailColors {
                 main: 0xFF27E518,
                 unrecognized: 0xFFFF8040,
@@ -602,6 +616,63 @@ fn append_visual_point(points: &mut Vec<Point>, point: Point, limit: usize) -> b
     step_ok
 }
 
+fn boundary_guide_origin(frame: BoundaryGuideFrame) -> Point {
+    Point {
+        x: frame.screen.left,
+        y: frame.screen.top,
+    }
+}
+
+fn boundary_guide_rect(
+    frame: BoundaryGuideFrame,
+    monitor_origin: (i32, i32),
+    width: i32,
+    height: i32,
+) -> Option<PixelRect> {
+    let area = frame.area;
+    PixelRect {
+        left: area.left.saturating_sub(monitor_origin.0),
+        top: area.top.saturating_sub(monitor_origin.1),
+        right: area
+            .right
+            .saturating_sub(monitor_origin.0)
+            .saturating_add(1),
+        bottom: area
+            .bottom
+            .saturating_sub(monitor_origin.1)
+            .saturating_add(1),
+    }
+    .clamp(width, height)
+}
+
+fn mark_boundary_guide_dirty(state: &mut OverlayState, frame: BoundaryGuideFrame) {
+    let Some(rect) = boundary_guide_rect(frame, state.monitor_origin, state.width, state.height)
+    else {
+        return;
+    };
+    state.boundary_guide_dirty = Some(
+        state
+            .boundary_guide_dirty
+            .map_or(rect, |dirty| dirty.union(rect)),
+    );
+}
+
+fn clear_boundary_guide(state: &mut OverlayState) -> bool {
+    let Some(previous) = state.boundary_guide.take() else {
+        return false;
+    };
+    mark_boundary_guide_dirty(state, previous);
+    true
+}
+
+fn has_trail_or_label_content(state: &OverlayState) -> bool {
+    (state.show_path && !state.points.is_empty()) || (state.show_label && state.label.is_some())
+}
+
+fn has_visual_content(state: &OverlayState) -> bool {
+    state.boundary_guide.is_some() || has_trail_or_label_content(state)
+}
+
 /// Applies at most one frame's worth of commands and reports whether another wake is required.
 /// Rendering before returning prevents a continuously growing queue from starving the overlay.
 fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bool {
@@ -623,6 +694,20 @@ where
     let mut fade_after_render = false;
     for cmd in batch.commands {
         match cmd {
+            OverlayCommand::SetBoundaryGuide(frame) => {
+                let previous = state.boundary_guide;
+                state.boundary_guide = Some(frame);
+                ensure_surface(state, boundary_guide_origin(frame));
+                if let Some(previous) = previous {
+                    mark_boundary_guide_dirty(state, previous);
+                }
+                mark_boundary_guide_dirty(state, frame);
+                set_overlay_visible(state, true);
+                visual_dirty = true;
+            }
+            OverlayCommand::ClearBoundaryGuide => {
+                visual_dirty |= clear_boundary_guide(state);
+            }
             OverlayCommand::Begin {
                 origin,
                 colors,
@@ -630,6 +715,7 @@ where
                 show_label,
                 fade_out,
             } => {
+                clear_boundary_guide(state);
                 fade_after_render = false;
                 stop_fade(state);
                 hide(state);
@@ -666,6 +752,10 @@ where
                 }
             }
             OverlayCommand::End => {
+                clear_boundary_guide(state);
+                if !has_trail_or_label_content(state) {
+                    hide(state);
+                }
                 fade_after_render = false;
                 if state.visible {
                     if state.fade_out {
@@ -679,6 +769,7 @@ where
                 state.rendered_points = 0;
             }
             OverlayCommand::Cancel => {
+                clear_boundary_guide(state);
                 fade_after_render = false;
                 hide(state);
                 visual_dirty = false;
@@ -692,6 +783,7 @@ where
                 display_duration,
                 fade_duration,
             } => {
+                clear_boundary_guide(state);
                 stop_fade(state);
                 hide(state);
                 state.label = None;
@@ -721,7 +813,12 @@ where
     }
     state.stats.record_batch(grow_count, queue_depth);
     if visual_dirty {
-        render(state);
+        if has_visual_content(state) {
+            render(state);
+        } else {
+            state.boundary_guide_dirty = None;
+            hide(state);
+        }
     }
     if fade_after_render && state.visible {
         start_fade(state);
@@ -941,6 +1038,9 @@ fn render(state: &mut OverlayState) {
         return;
     };
     let raster_started = Instant::now();
+    let guide_dirty = state.boundary_guide_dirty;
+    let guide_requires_full_redraw = guide_dirty.is_some();
+    let requested_full_redraw = state.needs_full_redraw;
     let first_unrendered = state.rendered_points.min(state.points.len());
     let incremental_start = first_unrendered.saturating_sub(1);
     let dpi = state.dpi_factor.max(1.0);
@@ -956,7 +1056,8 @@ fn render(state: &mut OverlayState) {
         .as_deref()
         .filter(|_| state.show_label)
         .and_then(|text| measure_label_rect(state, text));
-    let full_redraw = state.needs_full_redraw
+    let full_redraw = requested_full_redraw
+        || guide_requires_full_redraw
         || incremental_dirty
             .zip(label_rect)
             .is_some_and(|(trail, label)| trail.intersects(label));
@@ -969,6 +1070,9 @@ fn render(state: &mut OverlayState) {
 
     let dirty = if full_redraw {
         pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
+        if let Some(frame) = state.boundary_guide {
+            draw_boundary_guide(&mut pixmap, &frame, state.monitor_origin, state.dpi_factor);
+        }
         if state.show_path {
             draw_trail(&mut pixmap, &state.points, trail_style, (0.0, 0.0));
         }
@@ -998,13 +1102,302 @@ fn render(state: &mut OverlayState) {
     state.needs_full_redraw = false;
     let raster_elapsed = raster_started.elapsed();
 
-    let present_dirty = (!state.needs_full_present).then_some(dirty);
+    let present_dirty = if state.needs_full_present || requested_full_redraw {
+        None
+    } else if guide_requires_full_redraw {
+        let mut guide_present_dirty = guide_dirty.expect("guide dirty bounds are present");
+        if let Some(trail) = incremental_dirty {
+            guide_present_dirty = guide_present_dirty.union(trail);
+        }
+        if let Some(label) = label_rect {
+            guide_present_dirty = guide_present_dirty.union(label);
+        }
+        Some(guide_present_dirty)
+    } else {
+        Some(dirty)
+    };
     let present_started = Instant::now();
     present(state, present_dirty);
     let present_elapsed = present_started.elapsed();
     state.needs_full_present = false;
+    state.boundary_guide_dirty = None;
     set_overlay_visible(state, true);
     state.stats.record_render(raster_elapsed, present_elapsed);
+}
+
+fn draw_boundary_guide(
+    pixmap: &mut PixmapMut<'_>,
+    frame: &BoundaryGuideFrame,
+    monitor_origin: (i32, i32),
+    surface_dpi: f32,
+) {
+    let Some(rect) = boundary_guide_rect(
+        *frame,
+        monitor_origin,
+        pixmap.width() as i32,
+        pixmap.height() as i32,
+    ) else {
+        return;
+    };
+
+    let width = (rect.right - rect.left) as f32;
+    let height = (rect.bottom - rect.top) as f32;
+    let Some(fill_rect) =
+        tiny_skia::Rect::from_xywh(rect.left as f32, rect.top as f32, width, height)
+    else {
+        return;
+    };
+
+    let mut fill = Paint::default();
+    fill.set_color(tiny_skia::Color::from_rgba8(0, 204, 255, frame.alpha));
+    fill.anti_alias = false;
+    pixmap.fill_rect(fill_rect, &fill, Transform::identity(), None);
+
+    let frame_dpi = frame.dpi_scale_milli as f32 / 1000.0;
+    let dpi = if frame_dpi.is_finite() && frame_dpi > 0.0 {
+        frame_dpi
+    } else {
+        surface_dpi.max(1.0)
+    };
+    let outer_width = (2.0 * dpi).max(1.0);
+    let inner_width = dpi.max(1.0);
+    let left = rect.left as f32;
+    let top = rect.top as f32;
+    let right = rect.right as f32;
+    let bottom = rect.bottom as f32;
+    let mut outer = Paint::default();
+    outer.set_color(tiny_skia::Color::from_rgba8(16, 22, 30, 220));
+    outer.anti_alias = true;
+    let mut inner = Paint::default();
+    inner.set_color(tiny_skia::Color::from_rgba8(255, 255, 255, 240));
+    inner.anti_alias = true;
+
+    let outer_x_left = left + outer_width / 2.0;
+    let outer_x_right = right - outer_width / 2.0;
+    let outer_y_top = top + outer_width / 2.0;
+    let outer_y_bottom = bottom - outer_width / 2.0;
+    let inner_x_left = left + inner_width / 2.0;
+    let inner_x_right = right - inner_width / 2.0;
+    let inner_y_top = top + inner_width / 2.0;
+    let inner_y_bottom = bottom - inner_width / 2.0;
+
+    match frame.region {
+        CornerEdgeHit::Edge(edge) => match edge {
+            ScreenEdge::Left => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_left, top),
+                    (outer_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_right, top),
+                    (inner_x_right, bottom),
+                );
+            }
+            ScreenEdge::Right => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_right, top),
+                    (outer_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_left, top),
+                    (inner_x_left, bottom),
+                );
+            }
+            ScreenEdge::Top => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_top),
+                    (right, outer_y_top),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_bottom),
+                    (right, inner_y_bottom),
+                );
+            }
+            ScreenEdge::Bottom => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_bottom),
+                    (right, outer_y_bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_top),
+                    (right, inner_y_top),
+                );
+            }
+        },
+        CornerEdgeHit::Corner(corner) => match corner {
+            ScreenCorner::LeftTop => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_left, top),
+                    (outer_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_top),
+                    (right, outer_y_top),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_right, top),
+                    (inner_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_bottom),
+                    (right, inner_y_bottom),
+                );
+            }
+            ScreenCorner::LeftBottom => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_left, top),
+                    (outer_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_bottom),
+                    (right, outer_y_bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_right, top),
+                    (inner_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_top),
+                    (right, inner_y_top),
+                );
+            }
+            ScreenCorner::RightTop => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_right, top),
+                    (outer_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_top),
+                    (right, outer_y_top),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_left, top),
+                    (inner_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_bottom),
+                    (right, inner_y_bottom),
+                );
+            }
+            ScreenCorner::RightBottom => {
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (outer_x_right, top),
+                    (outer_x_right, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &outer,
+                    outer_width,
+                    (left, outer_y_bottom),
+                    (right, outer_y_bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (inner_x_left, top),
+                    (inner_x_left, bottom),
+                );
+                draw_boundary_line(
+                    pixmap,
+                    &inner,
+                    inner_width,
+                    (left, inner_y_top),
+                    (right, inner_y_top),
+                );
+            }
+        },
+    }
+}
+
+fn draw_boundary_line(
+    pixmap: &mut PixmapMut<'_>,
+    paint: &Paint,
+    width: f32,
+    start: (f32, f32),
+    end: (f32, f32),
+) {
+    let mut builder = PathBuilder::new();
+    builder.move_to(start.0, start.1);
+    builder.line_to(end.0, end.1);
+    let Some(path) = builder.finish() else {
+        return;
+    };
+    pixmap.stroke_path(
+        &path,
+        paint,
+        &Stroke {
+            width,
+            line_cap: LineCap::Butt,
+            line_join: LineJoin::Miter,
+            ..Default::default()
+        },
+        Transform::identity(),
+        None,
+    );
 }
 
 fn draw_trail(
@@ -1429,11 +1822,27 @@ unsafe extern "system" fn wnd_proc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenRect};
     use tiny_skia::Pixmap;
     use windows::Win32::UI::WindowsAndMessaging::WS_POPUP;
 
     fn point(value: i32) -> Point {
         Point { x: value, y: value }
+    }
+
+    fn boundary_guide_frame(area: ScreenRect, region: CornerEdgeHit) -> BoundaryGuideFrame {
+        BoundaryGuideFrame {
+            screen: ScreenRect {
+                left: 0,
+                top: 0,
+                right: 127,
+                bottom: 127,
+            },
+            area,
+            region,
+            dpi_scale_milli: 1000,
+            alpha: 128,
+        }
     }
 
     fn test_state() -> OverlayState {
@@ -1463,6 +1872,8 @@ mod tests {
             needs_full_redraw: true,
             needs_full_present: true,
             dirty_updates_supported: true,
+            boundary_guide: None,
+            boundary_guide_dirty: None,
             colors: TrailColors {
                 main: 0xff27e518,
                 unrecognized: 0xffff2424,
@@ -1484,6 +1895,106 @@ mod tests {
             font: None,
             stats: OverlayStats::new(),
         }
+    }
+
+    #[test]
+    fn boundary_guide_lifecycle_keeps_empty_overlay_visible_until_clear() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+
+        tx.send(OverlayCommand::SetBoundaryGuide(frame)).unwrap();
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {}
+        ));
+        assert_eq!(state.boundary_guide, Some(frame));
+        assert!(state.visible);
+
+        tx.send(OverlayCommand::ClearBoundaryGuide).unwrap();
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {}
+        ));
+        assert!(state.boundary_guide.is_none());
+        assert!(!state.visible);
+    }
+
+    #[test]
+    fn boundary_guide_dirty_bounds_cover_previous_and_next_areas() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        state.monitor_origin = (0, 0);
+        state.width = 128;
+        state.height = 128;
+        let first = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let next = boundary_guide_frame(
+            ScreenRect {
+                left: 80,
+                top: 80,
+                right: 111,
+                bottom: 111,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::RightBottom),
+        );
+
+        tx.send(OverlayCommand::SetBoundaryGuide(first)).unwrap();
+        tx.send(OverlayCommand::SetBoundaryGuide(next)).unwrap();
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {}
+        ));
+        assert_eq!(state.boundary_guide, Some(next));
+        assert_eq!(
+            state.boundary_guide_dirty,
+            Some(PixelRect {
+                left: 0,
+                top: 0,
+                right: 112,
+                bottom: 112,
+            })
+        );
+    }
+
+    #[test]
+    fn boundary_guide_raster_has_nontransparent_pixels_in_expected_area() {
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        let mut pixmap = Pixmap::new(64, 64).unwrap();
+        draw_boundary_guide(&mut pixmap.as_mut(), &frame, (0, 0), 1.0);
+
+        let inside = ((8 * 64 + 8) * 4) as usize;
+        let outside = ((48 * 64 + 48) * 4) as usize;
+        assert!(pixmap.data()[inside + 3] > 0);
+        assert_eq!(pixmap.data()[outside + 3], 0);
     }
 
     #[test]
