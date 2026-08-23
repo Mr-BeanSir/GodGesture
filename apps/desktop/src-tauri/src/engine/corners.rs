@@ -49,6 +49,7 @@ const CORNER_REARM_DIST: i32 = 40;
 const CORNER_SEQUENCE_DIST: i32 = EDGE_CORNER_EXCLUDE;
 /// 角显示引导的独立半径,不改变角序列或真实命中区域。
 const CORNER_GUIDE_RADIUS: i32 = 10;
+const CORNER_GUIDE_APPROACH: i32 = 10;
 
 const GUIDE_ALPHA_LEVELS: [u8; 6] = [24, 64, 104, 144, 184, 255];
 
@@ -332,23 +333,24 @@ impl CornerEdgeDetector {
         };
 
         if corners_enabled {
-            if let Some(corner) = guide_corner(local, screen.bounds) {
+            if let Some(corner) = guide_corner_proximity(local, screen.bounds) {
                 let distance = corner_guide_distance(local, corner, screen.bounds);
                 return Some(BoundaryGuideFrame {
                     screen: screen.bounds,
                     area: corner_guide_area(corner, screen.bounds),
                     region: CornerEdgeHit::Corner(corner),
                     dpi_scale_milli: dpi_scale_milli(screen.dpi_scale),
-                    alpha: guide_alpha(distance, CORNER_GUIDE_RADIUS),
+                    alpha: guide_alpha(
+                        distance.saturating_sub(CORNER_GUIDE_RADIUS),
+                        CORNER_GUIDE_APPROACH,
+                    ),
                 });
             }
         }
 
         if edges_enabled {
             let thick = edge_thickness(screen.dpi_scale);
-            if let Some(edge) =
-                active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
-            {
+            if let Some(edge) = guide_edge(local, screen.bounds, thick) {
                 let distance =
                     dist_to_edge(edge, local, screen.bounds.width(), screen.bounds.height());
                 return Some(BoundaryGuideFrame {
@@ -356,7 +358,7 @@ impl CornerEdgeDetector {
                     area: edge_guide_area(edge, screen.bounds, thick),
                     region: CornerEdgeHit::Edge(edge),
                     dpi_scale_milli: dpi_scale_milli(screen.dpi_scale),
-                    alpha: guide_alpha(distance, thick),
+                    alpha: guide_alpha(distance.saturating_sub(thick), thick),
                 });
             }
         }
@@ -523,6 +525,24 @@ fn guide_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
     ScreenCorner::ALL
         .into_iter()
         .find(|corner| corner_guide_distance(local, *corner, bounds) <= CORNER_GUIDE_RADIUS)
+}
+
+fn guide_corner_proximity(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
+    if let Some(corner) = guide_corner(local, bounds) {
+        return Some(corner);
+    }
+    ScreenCorner::ALL.into_iter().find(|corner| {
+        corner_guide_distance(local, *corner, bounds) <= CORNER_GUIDE_RADIUS + CORNER_GUIDE_APPROACH
+    })
+}
+
+fn guide_edge(local: Point, bounds: ScreenRect, thick: i32) -> Option<ScreenEdge> {
+    active_edge(
+        local,
+        bounds.width(),
+        bounds.height(),
+        thick.saturating_mul(2),
+    )
 }
 
 fn edge_thickness(dpi_scale: f64) -> i32 {
@@ -1077,16 +1097,16 @@ mod tests {
         assert_eq!(exact.alpha, 255);
 
         let weaker = detector
-            .guide_at(p(7, 7), Instant::now(), || Some(screen()), true, true)
-            .expect("near corner should produce a guide");
+            .guide_at(p(15, 0), Instant::now(), || Some(screen()), true, true)
+            .expect("corner approach should produce a guide");
 
         assert_eq!(weaker.region, CornerEdgeHit::Corner(ScreenCorner::LeftTop));
         assert!(weaker.alpha < exact.alpha);
-        assert_eq!(weaker.alpha, 24);
-        assert!(weaker.area.contains(p(7, 7)));
+        assert_eq!(weaker.alpha, 104);
+        assert!(!weaker.area.contains(p(15, 0)));
 
         assert!(detector
-            .guide_at(p(11, 0), Instant::now(), || Some(screen()), true, true)
+            .guide_at(p(21, 0), Instant::now(), || Some(screen()), true, true)
             .is_none());
         assert!(detector
             .guide_at(p(50, 50), Instant::now(), || Some(screen()), true, true)
@@ -1097,6 +1117,62 @@ mod tests {
             .expect("left edge should produce a guide");
         assert_eq!(edge.region, CornerEdgeHit::Edge(ScreenEdge::Left));
         assert_eq!(edge.alpha, 255);
+    }
+
+    #[test]
+    fn guide_at_keeps_corner_opaque_until_the_real_radius_then_fades_inward() {
+        let mut detector = CornerEdgeDetector::default();
+        let center = detector
+            .guide_at(p(0, 0), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+        let real_edge = detector
+            .guide_at(p(10, 0), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+        let inward = detector
+            .guide_at(p(15, 0), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+
+        assert_eq!(center.alpha, 255);
+        assert_eq!(real_edge.alpha, 255);
+        assert!(inward.alpha < 255);
+        assert!(inward.alpha > 0);
+    }
+
+    #[test]
+    fn guide_at_stops_corner_proximity_after_twenty_pixels_without_changing_area() {
+        let mut detector = CornerEdgeDetector::default();
+        let frame = detector
+            .guide_at(p(19, 0), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+        assert_eq!(
+            frame.area,
+            corner_guide_area(ScreenCorner::LeftTop, screen().bounds)
+        );
+        assert!(detector
+            .guide_at(p(21, 0), Instant::now(), || Some(screen()), true, true)
+            .is_none());
+    }
+
+    #[test]
+    fn guide_at_keeps_edges_opaque_through_the_band_then_fades_toward_the_interior() {
+        let mut detector = CornerEdgeDetector::default();
+        let edge = detector
+            .guide_at(p(0, 500), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+        let inner_border = detector
+            .guide_at(p(16, 500), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+        let fade = detector
+            .guide_at(p(24, 500), Instant::now(), || Some(screen()), true, true)
+            .unwrap();
+
+        assert_eq!(edge.alpha, 255);
+        assert_eq!(inner_border.alpha, 255);
+        assert!(fade.alpha < 255);
+        assert!(fade.alpha > 0);
+        assert!(detector
+            .guide_at(p(33, 500), Instant::now(), || Some(screen()), true, true)
+            .is_none());
     }
 
     #[test]
@@ -1114,11 +1190,11 @@ mod tests {
     }
 
     #[test]
-    fn guide_alpha_increases_toward_the_boundary_and_uses_monitor_dpi() {
+    fn guide_alpha_stays_opaque_through_the_boundary_and_uses_monitor_dpi() {
         let mut detector = CornerEdgeDetector::new();
         let far = detector
-            .guide_at(p(16, 500), Instant::now(), || Some(screen()), true, true)
-            .expect("edge entry should be visible");
+            .guide_at(p(24, 500), Instant::now(), || Some(screen()), true, true)
+            .expect("edge approach should be visible");
         let near = detector
             .guide_at(p(0, 500), Instant::now(), || Some(screen()), true, true)
             .expect("edge boundary should be visible");
@@ -1173,6 +1249,7 @@ mod tests {
         assert_eq!(frame.dpi_scale_milli, 2000);
         assert!(frame.area.contains(p(32, 500)));
         assert!(!frame.area.contains(p(33, 500)));
+        assert_eq!(frame.alpha, 255);
     }
 
     #[test]
