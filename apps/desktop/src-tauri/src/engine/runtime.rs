@@ -214,6 +214,7 @@ pub struct EngineShared {
     /// 两个开关的缓存,免得每条鼠标移动都去锁配置
     corners_enabled: AtomicBool,
     edges_enabled: AtomicBool,
+    disable_in_fullscreen: AtomicBool,
     show_boundary_guide: AtomicBool,
     boundary_guide_last: Mutex<Option<BoundaryGuideFrame>>,
 }
@@ -227,6 +228,7 @@ impl EngineShared {
         let params = tracker_params_from(&config);
         let corners_enabled = config.hot_corners.enabled;
         let edges_enabled = config.rub_edges.enabled;
+        let disable_in_fullscreen = config.preferences.path_tracker.disable_in_fullscreen;
         let show_boundary_guide = config.preferences.gesture_view.show_boundary_guide;
         let shared = Arc::new(Self {
             tracker: Mutex::new(PathTracker::new(params)),
@@ -244,6 +246,7 @@ impl EngineShared {
             buttons_down: AtomicU8::new(0),
             corners_enabled: AtomicBool::new(corners_enabled),
             edges_enabled: AtomicBool::new(edges_enabled),
+            disable_in_fullscreen: AtomicBool::new(disable_in_fullscreen),
             show_boundary_guide: AtomicBool::new(show_boundary_guide),
             boundary_guide_last: Mutex::new(None),
         });
@@ -311,6 +314,7 @@ impl EngineShared {
         self.tracker.lock().set_params(tracker_params_from(&config));
         let corners_enabled = config.hot_corners.enabled;
         let edges_enabled = config.rub_edges.enabled;
+        let disable_in_fullscreen = config.preferences.path_tracker.disable_in_fullscreen;
         let show_boundary_guide = config.preferences.gesture_view.show_boundary_guide;
         let corners_changed = self
             .corners_enabled
@@ -322,6 +326,8 @@ impl EngineShared {
             .show_boundary_guide
             .swap(show_boundary_guide, Ordering::Relaxed)
             != show_boundary_guide;
+        self.disable_in_fullscreen
+            .store(disable_in_fullscreen, Ordering::Relaxed);
         if corners_changed || edges_changed || guide_preference_changed {
             self.clear_boundary_guide();
         }
@@ -891,14 +897,7 @@ impl EngineShared {
         }
 
         let buttons_held = self.buttons_down.load(Ordering::Relaxed) != 0;
-        let disable_in_fullscreen = {
-            let finder = self.finder.lock();
-            finder
-                .config()
-                .preferences
-                .path_tracker
-                .disable_in_fullscreen
-        };
+        let disable_in_fullscreen = self.disable_in_fullscreen.load(Ordering::Relaxed);
         let show_boundary_guide = self.show_boundary_guide.load(Ordering::Relaxed);
         let fullscreen_suppressed =
             show_boundary_guide && disable_in_fullscreen && self.platform.is_fullscreen();
@@ -2052,6 +2051,28 @@ mod tests {
         assert!(rx
             .try_iter()
             .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+    }
+
+    #[test]
+    fn replacing_fullscreen_preference_updates_cached_suppression() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let (shared, rx) = EngineShared::new(guide_config(), platform.clone());
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        platform.set_fullscreen(true);
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        assert!(rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
+
+        let mut enabled = guide_config();
+        enabled.preferences.path_tracker.disable_in_fullscreen = false;
+        shared.replace_config(enabled);
+        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        assert!(rx.try_iter().any(|message| matches!(
+            message,
+            EngineMsg::BoundaryGuideChanged(Some(frame))
+                if frame.region == CornerEdgeHit::Corner(ScreenCorner::LeftTop)
+        )));
     }
 
     #[test]
