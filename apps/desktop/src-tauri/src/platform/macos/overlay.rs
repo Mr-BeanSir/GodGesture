@@ -1743,6 +1743,7 @@ mod tests {
     #[test]
     fn captured_fade_keeps_window_alpha_independent_after_guide_clear() {
         let mut state = guide_test_state();
+        state.points = vec![Point { x: 8, y: 8 }];
         state.fade_active = true;
         state.trail_fade_surface = Some(vec![255; 128 * 128 * 4]);
         state.set_alpha(0.4);
@@ -1783,6 +1784,7 @@ mod tests {
                 },
                 CornerEdgeHit::Corner(ScreenCorner::LeftTop),
             )),
+            points: vec![Point { x: 8, y: 8 }],
             trail_fade_surface: Some(trail_surface),
             fade_active: true,
             visible: true,
