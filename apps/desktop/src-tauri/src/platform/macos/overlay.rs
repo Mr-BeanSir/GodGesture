@@ -92,7 +92,6 @@ fn starts_new_generation(command: &OverlayCommand) -> bool {
         command,
         OverlayCommand::Begin { .. }
             | OverlayCommand::Cancel
-            | OverlayCommand::SetBoundaryGuide(_)
             | OverlayCommand::ShowLabelFeedback { .. }
     )
 }
@@ -137,6 +136,7 @@ fn schedule_drain(
                 let effect = state.apply(queued.command);
                 dirty = (dirty || effect.dirty) && !effect.suppress_render;
                 if effect.fade {
+                    state.fade_active = true;
                     fade_requests.push((
                         queued.generation,
                         effect.display_duration,
@@ -201,9 +201,12 @@ fn spawn_fade(
                     }
                     STATE.with(|slot| {
                         if let Some(state) = slot.borrow_mut().as_mut() {
-                            state.set_alpha(alpha);
+                            state.apply_fade_alpha(alpha);
                             if finish {
-                                state.hide();
+                                state.finish_fade();
+                            }
+                            if state.boundary_guide.is_some() {
+                                state.render();
                             }
                         }
                     });
@@ -246,6 +249,7 @@ struct OverlayState {
     points: Vec<Point>,
     rendered_points: usize,
     needs_full_redraw: bool,
+    trail_fade_surface: Option<Vec<u8>>,
     boundary_guide: Option<BoundaryGuideFrame>,
     boundary_guide_dirty: Option<PixelRect>,
     colors: TrailColors,
@@ -257,6 +261,7 @@ struct OverlayState {
     active: bool,
     visible: bool,
     alpha: f64,
+    fade_active: bool,
     mode: OverlayMode,
     font: Option<ab_glyph::FontVec>,
 }
@@ -453,6 +458,7 @@ impl Default for OverlayState {
             points: Vec::new(),
             rendered_points: 0,
             needs_full_redraw: true,
+            trail_fade_surface: None,
             boundary_guide: None,
             boundary_guide_dirty: None,
             colors: TrailColors {
@@ -467,6 +473,7 @@ impl Default for OverlayState {
             active: false,
             visible: false,
             alpha: 1.0,
+            fade_active: false,
             mode: OverlayMode::Trail,
             font: load_label_font(),
         }
@@ -489,6 +496,7 @@ impl OverlayState {
         match command {
             OverlayCommand::SetBoundaryGuide(frame) => {
                 let previous = self.boundary_guide;
+                self.capture_trail_fade_surface();
                 if let Err(error) = ensure_surface(
                     self,
                     Point {
@@ -500,7 +508,7 @@ impl OverlayState {
                     return ApplyEffect::default();
                 }
                 self.boundary_guide = Some(frame);
-                self.set_alpha(1.0);
+                self.apply_fade_alpha(1.0);
                 if let Some(previous) = previous {
                     mark_boundary_guide_dirty(self, previous);
                 }
@@ -532,6 +540,7 @@ impl OverlayState {
                 fade_out,
             } => {
                 clear_boundary_guide(self);
+                self.fade_active = false;
                 if let Err(error) = ensure_surface(self, origin) {
                     log::error!("create macOS overlay surface failed: {error}");
                     return ApplyEffect::default();
@@ -540,6 +549,7 @@ impl OverlayState {
                 self.points.push(origin);
                 self.rendered_points = 0;
                 self.needs_full_redraw = true;
+                self.trail_fade_surface = None;
                 self.colors = colors;
                 self.recognized = false;
                 self.label = None;
@@ -625,6 +635,7 @@ impl OverlayState {
             }
             OverlayCommand::Cancel => {
                 clear_boundary_guide(self);
+                self.fade_active = false;
                 self.active = false;
                 self.mode = OverlayMode::Trail;
                 self.hide();
@@ -644,6 +655,7 @@ impl OverlayState {
                 fade_duration,
             } => {
                 clear_boundary_guide(self);
+                self.fade_active = false;
                 self.hide();
                 self.active = false;
                 self.mode = OverlayMode::LabelFeedback;
@@ -653,6 +665,7 @@ impl OverlayState {
                 }
                 self.points.clear();
                 self.rendered_points = 0;
+                self.trail_fade_surface = None;
                 self.needs_full_redraw = true;
                 self.recognized = true;
                 self.label = Some(text);
@@ -758,6 +771,7 @@ impl OverlayState {
         .and_then(|rect| rect.clamp(surface_width, surface_height));
         let full_redraw = self.needs_full_redraw
             || self.boundary_guide_dirty.is_some()
+            || self.trail_fade_surface.is_some()
             || trail_rect
                 .zip(label_rect)
                 .is_some_and(|(trail, label)| trail.intersects(label));
@@ -775,10 +789,10 @@ impl OverlayState {
             if let Some(frame) = self.boundary_guide {
                 draw_boundary_guide(&mut pixmap.as_mut(), &frame, self.screen_origin, self.scale);
             }
-            if self.show_path {
+            if !self.restore_trail_fade_surface() && self.show_path {
                 draw_trail(&mut pixmap.as_mut(), &self.points, trail_style, (0.0, 0.0));
             }
-            if self.show_label {
+            if self.trail_fade_surface.is_none() && self.show_label {
                 if let (Some(label), Some(font)) = (self.label.as_deref(), self.font.as_ref()) {
                     draw_label(pixmap, font, self.scale, self.label_bounds, label);
                 }
@@ -852,12 +866,69 @@ impl OverlayState {
         }
     }
 
+    fn capture_trail_fade_surface(&mut self) {
+        if !self.fade_active
+            || self.trail_fade_surface.is_some()
+            || (self.points.is_empty() && self.label.is_none())
+        {
+            return;
+        }
+        let Some(pixmap) = self.pixmap.as_ref() else {
+            return;
+        };
+        self.trail_fade_surface = Some(pixmap.data().to_vec());
+    }
+
+    fn restore_trail_fade_surface(&self, pixmap: &mut PixmapMut<'_>) -> bool {
+        let Some(source) = self.trail_fade_surface.as_deref() else {
+            return false;
+        };
+        let destination = pixmap.data_mut();
+        if destination.len() != source.len() {
+            return false;
+        }
+        let alpha = (self.alpha.clamp(0.0, 1.0) * 255.0).round() as u16;
+        for (destination, source) in destination.iter_mut().zip(source) {
+            *destination = ((*source as u16 * alpha + 127) / 255) as u8;
+        }
+        true
+    }
+
+    fn apply_fade_alpha(&mut self, alpha: f64) {
+        self.alpha = alpha.clamp(0.0, 1.0);
+        if self.boundary_guide.is_some() && self.trail_fade_surface.is_some() {
+            if let Some(window) = &self.window {
+                window.setAlphaValue(1.0);
+            }
+        } else if let Some(window) = &self.window {
+            window.setAlphaValue(self.alpha);
+        }
+    }
+
+    fn finish_fade(&mut self) {
+        self.fade_active = false;
+        if self.boundary_guide.is_some() {
+            self.trail_fade_surface = None;
+            self.points.clear();
+            self.rendered_points = 0;
+            self.label = None;
+            self.active = false;
+            self.needs_full_redraw = true;
+            self.apply_fade_alpha(1.0);
+            self.visible = true;
+        } else {
+            self.hide();
+        }
+    }
+
     fn hide(&mut self) {
         if let Some(window) = &self.window {
             window.orderOut(None);
         }
         self.points.clear();
         self.rendered_points = 0;
+        self.trail_fade_surface = None;
+        self.fade_active = false;
         self.needs_full_redraw = true;
         self.label = None;
         self.visible = false;
@@ -1543,7 +1614,7 @@ mod tests {
     }
 
     #[test]
-    fn setting_boundary_guide_invalidates_an_existing_fade_generation() {
+    fn setting_boundary_guide_keeps_existing_fade_generation() {
         let frame = boundary_guide_frame(
             ScreenRect {
                 left: 0,
@@ -1554,10 +1625,39 @@ mod tests {
             CornerEdgeHit::Edge(ScreenEdge::Top),
         );
 
-        assert!(starts_new_generation(&OverlayCommand::SetBoundaryGuide(
+        assert!(!starts_new_generation(&OverlayCommand::SetBoundaryGuide(
             frame
         )));
         assert!(!starts_new_generation(&OverlayCommand::ClearBoundaryGuide));
+    }
+
+    #[test]
+    fn guide_does_not_cancel_trail_fade_and_fade_completion_keeps_guide_visible() {
+        let mut state = guide_test_state();
+        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
+        state.show_path = true;
+        state.fade_active = true;
+        state.visible = true;
+        state.boundary_guide = Some(boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        ));
+        state.capture_trail_fade_surface();
+        assert!(state.trail_fade_surface.is_some());
+
+        state.apply_fade_alpha(0.4);
+        assert_eq!(state.alpha, 0.4);
+        state.finish_fade();
+
+        assert!(state.boundary_guide.is_some());
+        assert!(state.visible);
+        assert!(state.points.is_empty());
+        assert!(state.trail_fade_surface.is_none());
     }
 
     #[test]
