@@ -1235,266 +1235,151 @@ fn draw_boundary_guide(
         return;
     };
 
-    let width = (rect.right - rect.left) as f32;
-    let height = (rect.bottom - rect.top) as f32;
-    let Some(fill_rect) =
-        tiny_skia::Rect::from_xywh(rect.left as f32, rect.top as f32, width, height)
-    else {
-        return;
-    };
-
-    let mut fill = Paint::default();
-    fill.set_color(skia_dib_color(
-        (u32::from(frame.alpha) << 24) | 0x00_00_CC_FF,
-    ));
-    fill.anti_alias = false;
-    pixmap.fill_rect(fill_rect, &fill, Transform::identity(), None);
-
     let frame_dpi = frame.dpi_scale_milli as f32 / 1000.0;
     let dpi = if frame_dpi.is_finite() && frame_dpi > 0.0 {
         frame_dpi
     } else {
         surface_dpi.max(1.0)
     };
-    let outer_width = (2.0 * dpi).max(1.0);
-    let inner_width = dpi.max(1.0);
-    let left = rect.left as f32;
-    let top = rect.top as f32;
-    let right = rect.right as f32;
-    let bottom = rect.bottom as f32;
-    let mut outer = Paint::default();
-    outer.set_color(skia_dib_color(0xDC_10_16_1E));
-    outer.anti_alias = true;
-    let mut inner = Paint::default();
-    inner.set_color(skia_dib_color(0xF0_FF_FF_FF));
-    inner.anti_alias = true;
-
-    let outer_x_left = left + outer_width / 2.0;
-    let outer_x_right = right - outer_width / 2.0;
-    let outer_y_top = top + outer_width / 2.0;
-    let outer_y_bottom = bottom - outer_width / 2.0;
-    let inner_x_left = left + inner_width / 2.0;
-    let inner_x_right = right - inner_width / 2.0;
-    let inner_y_top = top + inner_width / 2.0;
-    let inner_y_bottom = bottom - inner_width / 2.0;
-
-    match frame.region {
-        CornerEdgeHit::Edge(edge) => match edge {
-            ScreenEdge::Left => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_left, top),
-                    (outer_x_left, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_right, top),
-                    (inner_x_right, bottom),
-                );
-            }
-            ScreenEdge::Right => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_right, top),
-                    (outer_x_right, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_left, top),
-                    (inner_x_left, bottom),
-                );
-            }
-            ScreenEdge::Top => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_top),
-                    (right, outer_y_top),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_bottom),
-                    (right, inner_y_bottom),
-                );
-            }
-            ScreenEdge::Bottom => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_bottom),
-                    (right, outer_y_bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_top),
-                    (right, inner_y_top),
-                );
-            }
-        },
-        CornerEdgeHit::Corner(corner) => match corner {
-            ScreenCorner::LeftTop => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_left, top),
-                    (outer_x_left, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_top),
-                    (right, outer_y_top),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_right, top),
-                    (inner_x_right, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_bottom),
-                    (right, inner_y_bottom),
-                );
-            }
-            ScreenCorner::LeftBottom => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_left, top),
-                    (outer_x_left, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_bottom),
-                    (right, outer_y_bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_right, top),
-                    (inner_x_right, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_top),
-                    (right, inner_y_top),
-                );
-            }
-            ScreenCorner::RightTop => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_right, top),
-                    (outer_x_right, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_top),
-                    (right, outer_y_top),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_left, top),
-                    (inner_x_left, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_bottom),
-                    (right, inner_y_bottom),
-                );
-            }
-            ScreenCorner::RightBottom => {
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (outer_x_right, top),
-                    (outer_x_right, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &outer,
-                    outer_width,
-                    (left, outer_y_bottom),
-                    (right, outer_y_bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (inner_x_left, top),
-                    (inner_x_left, bottom),
-                );
-                draw_boundary_line(
-                    pixmap,
-                    &inner,
-                    inner_width,
-                    (left, inner_y_top),
-                    (right, inner_y_top),
-                );
-            }
-        },
-    }
-}
-
-fn draw_boundary_line(
-    pixmap: &mut PixmapMut<'_>,
-    paint: &Paint,
-    width: f32,
-    start: (f32, f32),
-    end: (f32, f32),
-) {
-    let mut builder = PathBuilder::new();
-    builder.move_to(start.0, start.1);
-    builder.line_to(end.0, end.1);
-    let Some(path) = builder.finish() else {
+    let fill = guide_paint([112, 118, 126], compose_guide_alpha(128, frame.alpha));
+    let border = guide_paint([255, 255, 255], frame.alpha);
+    let stroke_width = dpi.max(1.0);
+    let path = match frame.region {
+        CornerEdgeHit::Corner(corner) => {
+            let width = (rect.right - rect.left) as f32;
+            let height = (rect.bottom - rect.top) as f32;
+            let logical_width = frame.area.right.saturating_sub(frame.area.left) as f32 * dpi;
+            let logical_height = frame.area.bottom.saturating_sub(frame.area.top) as f32 * dpi;
+            let radius = logical_width
+                .min(logical_height)
+                .min(width)
+                .min(height)
+                .max(0.0);
+            guide_corner_path(rect, corner, radius)
+        }
+        CornerEdgeHit::Edge(_) => {
+            let width = (rect.right - rect.left) as f32;
+            let height = (rect.bottom - rect.top) as f32;
+            let radius = (4.0 * dpi).min(width / 2.0).min(height / 2.0);
+            guide_rounded_rect_path(rect, radius)
+        }
+    };
+    let Some(path) = path else {
         return;
     };
+    pixmap.fill_path(
+        &path,
+        &fill,
+        tiny_skia::FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
     pixmap.stroke_path(
         &path,
-        paint,
+        &border,
         &Stroke {
-            width,
-            line_cap: LineCap::Butt,
-            line_join: LineJoin::Miter,
+            width: stroke_width,
+            line_cap: LineCap::Round,
+            line_join: LineJoin::Round,
             ..Default::default()
         },
         Transform::identity(),
         None,
     );
+}
+
+fn compose_guide_alpha(base: u8, frame: u8) -> u8 {
+    (u16::from(base) * u16::from(frame) / 255) as u8
+}
+
+fn guide_paint(rgb: [u8; 3], alpha: u8) -> Paint<'static> {
+    let argb = (u32::from(alpha) << 24)
+        | (u32::from(rgb[0]) << 16)
+        | (u32::from(rgb[1]) << 8)
+        | u32::from(rgb[2]);
+    let mut paint = Paint::default();
+    paint.set_color(skia_dib_color(argb));
+    paint.anti_alias = true;
+    paint
+}
+
+fn guide_corner_path(
+    rect: PixelRect,
+    corner: ScreenCorner,
+    radius: f32,
+) -> Option<tiny_skia::Path> {
+    const KAPPA: f32 = 0.5522848;
+    let left = rect.left as f32;
+    let top = rect.top as f32;
+    let right = rect.right as f32;
+    let bottom = rect.bottom as f32;
+    let (center_x, center_y, x_sign, y_sign) = match corner {
+        ScreenCorner::LeftTop => (left, top, 1.0, 1.0),
+        ScreenCorner::LeftBottom => (left, bottom, 1.0, -1.0),
+        ScreenCorner::RightTop => (right, top, -1.0, 1.0),
+        ScreenCorner::RightBottom => (right, bottom, -1.0, -1.0),
+    };
+    let mut builder = PathBuilder::new();
+    builder.move_to(center_x, center_y);
+    builder.line_to(center_x + x_sign * radius, center_y);
+    builder.cubic_to(
+        center_x + x_sign * radius,
+        center_y + y_sign * radius * KAPPA,
+        center_x + x_sign * radius * KAPPA,
+        center_y + y_sign * radius,
+        center_x,
+        center_y + y_sign * radius,
+    );
+    builder.close();
+    builder.finish()
+}
+
+fn guide_rounded_rect_path(rect: PixelRect, radius: f32) -> Option<tiny_skia::Path> {
+    const KAPPA: f32 = 0.5522848;
+    let left = rect.left as f32;
+    let top = rect.top as f32;
+    let right = rect.right as f32;
+    let bottom = rect.bottom as f32;
+    let mut builder = PathBuilder::new();
+    builder.move_to(left + radius, top);
+    builder.line_to(right - radius, top);
+    builder.cubic_to(
+        right - radius + radius * KAPPA,
+        top,
+        right,
+        top + radius - radius * KAPPA,
+        right,
+        top + radius,
+    );
+    builder.line_to(right, bottom - radius);
+    builder.cubic_to(
+        right,
+        bottom - radius + radius * KAPPA,
+        right - radius + radius * KAPPA,
+        bottom,
+        right - radius,
+        bottom,
+    );
+    builder.line_to(left + radius, bottom);
+    builder.cubic_to(
+        left + radius - radius * KAPPA,
+        bottom,
+        left,
+        bottom - radius + radius * KAPPA,
+        left,
+        bottom - radius,
+    );
+    builder.line_to(left, top + radius);
+    builder.cubic_to(
+        left,
+        top + radius - radius * KAPPA,
+        left + radius - radius * KAPPA,
+        top,
+        left + radius,
+        top,
+    );
+    builder.close();
+    builder.finish()
 }
 
 fn draw_trail(
@@ -1963,6 +1848,18 @@ mod tests {
         }
     }
 
+    fn corner_boundary_guide_frame() -> BoundaryGuideFrame {
+        boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 10,
+                bottom: 10,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        )
+    }
+
     fn test_state() -> OverlayState {
         OverlayState {
             tiles: vec![
@@ -2151,7 +2048,26 @@ mod tests {
         draw_boundary_guide(&mut pixmap.as_mut(), &frame, (0, 0), 1.0);
 
         let pixel = ((8 * 64 + 8) * 4) as usize;
-        assert_eq!(&pixmap.data()[pixel..pixel + 4], &[128, 102, 0, 128]);
+        assert_eq!(&pixmap.data()[pixel..pixel + 4], &[32, 30, 28, 64]);
+    }
+
+    #[test]
+    fn boundary_guide_corner_raster_is_a_quarter_disk_with_white_border() {
+        let mut frame = corner_boundary_guide_frame();
+        frame.alpha = 255;
+        let mut pixmap = Pixmap::new(16, 16).unwrap();
+        draw_boundary_guide(&mut pixmap.as_mut(), &frame, (0, 0), 1.0);
+
+        let interior = pixel_at(pixmap.data(), 16, 4, 4);
+        let outside_disk = pixel_at(pixmap.data(), 16, 9, 9);
+        let border = pixel_at(pixmap.data(), 16, 0, 0);
+
+        assert!(interior[3] > 0);
+        assert_eq!(outside_disk[3], 0);
+        assert!(
+            u16::from(border[0]) + u16::from(border[1]) + u16::from(border[2])
+                > u16::from(interior[0]) + u16::from(interior[1]) + u16::from(interior[2])
+        );
     }
 
     #[test]
