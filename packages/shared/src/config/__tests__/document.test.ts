@@ -13,6 +13,16 @@ describe("configuration document v8", () => {
     expect(document.apps).toEqual([]);
     expect(document.global.intents).toEqual([]);
     expect(document.boundaryIntents).toEqual([]);
+    expect(document.preferences.gestureView.showBoundaryGuide).toBe(false);
+  });
+
+  it("defaults the boundary guide to off and preserves an explicit value", () => {
+    expect(ConfigDocument.parse({}).preferences.gestureView.showBoundaryGuide).toBe(false);
+    expect(
+      ConfigDocument.parse({
+        preferences: { gestureView: { showBoundaryGuide: true } },
+      }).preferences.gestureView.showBoundaryGuide,
+    ).toBe(true);
   });
 
   it("rejects previous format versions instead of migrating them at read time", () => {

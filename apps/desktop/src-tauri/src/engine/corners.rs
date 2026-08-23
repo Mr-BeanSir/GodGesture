@@ -48,6 +48,8 @@ const CORNER_REARM_DIST: i32 = 40;
 /// 角序列的独立判定区域。边缘带在同一距离内排除,为角序列留出空间。
 const CORNER_SEQUENCE_DIST: i32 = EDGE_CORNER_EXCLUDE;
 
+const GUIDE_ALPHA_LEVELS: [u8; 5] = [24, 64, 104, 144, 184];
+
 // --- 摩擦边常量(参考:DetectRub 的同名局部常量)-----------------------------
 /// 边带厚度基数,实际厚度 = 此值 × DPI 缩放
 const EDGE_THICK_BASE: f64 = 16.0;
@@ -187,6 +189,15 @@ impl CornerEdgeHit {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundaryGuideFrame {
+    pub screen: ScreenRect,
+    pub area: ScreenRect,
+    pub region: CornerEdgeHit,
+    pub dpi_scale_milli: u32,
+    pub alpha: u8,
+}
+
 impl std::fmt::Display for CornerEdgeHit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -294,6 +305,61 @@ impl CornerEdgeDetector {
         let thick = (EDGE_THICK_BASE * screen.dpi_scale) as i32;
         active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
             .map(CornerEdgeHit::Edge)
+    }
+
+    /// Returns the active guide geometry without advancing corner or rub state.
+    pub fn guide_at<F>(
+        &mut self,
+        pos: Point,
+        now: Instant,
+        screen_lookup: F,
+        corners_enabled: bool,
+        edges_enabled: bool,
+    ) -> Option<BoundaryGuideFrame>
+    where
+        F: FnOnce() -> Option<ScreenInfo>,
+    {
+        if !corners_enabled && !edges_enabled {
+            return None;
+        }
+
+        let screen = self.screen_for(pos, now, screen_lookup)?;
+        let local = Point {
+            x: pos.x - screen.bounds.left,
+            y: pos.y - screen.bounds.top,
+        };
+
+        if corners_enabled {
+            if let Some(corner) = sequence_corner(local, screen.bounds) {
+                let distance = corner_guide_distance(local, corner, screen.bounds);
+                return Some(BoundaryGuideFrame {
+                    screen: screen.bounds,
+                    area: corner_guide_area(corner, screen.bounds),
+                    region: CornerEdgeHit::Corner(corner),
+                    dpi_scale_milli: dpi_scale_milli(screen.dpi_scale),
+                    alpha: guide_alpha(distance, CORNER_SEQUENCE_DIST),
+                });
+            }
+        }
+
+        if edges_enabled {
+            let thick = edge_thickness(screen.dpi_scale);
+            if let Some(edge) =
+                active_edge(local, screen.bounds.width(), screen.bounds.height(), thick)
+            {
+                let distance =
+                    dist_to_edge(edge, local, screen.bounds.width(), screen.bounds.height());
+                return Some(BoundaryGuideFrame {
+                    screen: screen.bounds,
+                    area: edge_guide_area(edge, screen.bounds, thick),
+                    region: CornerEdgeHit::Edge(edge),
+                    dpi_scale_milli: dpi_scale_milli(screen.dpi_scale),
+                    alpha: guide_alpha(distance, thick),
+                });
+            }
+        }
+
+        None
     }
 
     pub fn reset_rub(&mut self) {
@@ -431,8 +497,14 @@ fn active_edge(local: Point, w: i32, h: i32, thick: i32) -> Option<ScreenEdge> {
 }
 
 fn sequence_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
+    let local_bounds = ScreenRect {
+        left: 0,
+        top: 0,
+        right: bounds.width() - 1,
+        bottom: bounds.height() - 1,
+    };
     for corner in ScreenCorner::ALL {
-        let point = corner.point(bounds);
+        let point = corner.point(local_bounds);
         let dx = (local.x - point.x).abs();
         let dy = (local.y - point.y).abs();
         if dx <= CORNER_SEQUENCE_DIST
@@ -443,6 +515,101 @@ fn sequence_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
         }
     }
     None
+}
+
+fn edge_thickness(dpi_scale: f64) -> i32 {
+    (EDGE_THICK_BASE * dpi_scale) as i32
+}
+
+fn dpi_scale_milli(dpi_scale: f64) -> u32 {
+    if !dpi_scale.is_finite() || dpi_scale <= 0.0 {
+        return 0;
+    }
+    (dpi_scale * 1000.0).round().min(u32::MAX as f64) as u32
+}
+
+fn corner_guide_area(corner: ScreenCorner, bounds: ScreenRect) -> ScreenRect {
+    let dist = CORNER_SEQUENCE_DIST;
+    match corner {
+        ScreenCorner::LeftBottom => ScreenRect {
+            left: bounds.left,
+            top: bounds.bottom.saturating_sub(dist).max(bounds.top),
+            right: bounds.left.saturating_add(dist).min(bounds.right),
+            bottom: bounds.bottom,
+        },
+        ScreenCorner::LeftTop => ScreenRect {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.left.saturating_add(dist).min(bounds.right),
+            bottom: bounds.top.saturating_add(dist).min(bounds.bottom),
+        },
+        ScreenCorner::RightTop => ScreenRect {
+            left: bounds.right.saturating_sub(dist).max(bounds.left),
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.top.saturating_add(dist).min(bounds.bottom),
+        },
+        ScreenCorner::RightBottom => ScreenRect {
+            left: bounds.right.saturating_sub(dist).max(bounds.left),
+            top: bounds.bottom.saturating_sub(dist).max(bounds.top),
+            right: bounds.right,
+            bottom: bounds.bottom,
+        },
+    }
+}
+
+fn edge_guide_area(edge: ScreenEdge, bounds: ScreenRect, thick: i32) -> ScreenRect {
+    let thick = thick.max(0);
+    let inner_top = bounds.top.saturating_add(EDGE_CORNER_EXCLUDE + 1);
+    let inner_bottom = bounds.bottom.saturating_sub(EDGE_CORNER_EXCLUDE);
+    let inner_left = bounds.left.saturating_add(EDGE_CORNER_EXCLUDE + 1);
+    let inner_right = bounds.right.saturating_sub(EDGE_CORNER_EXCLUDE);
+
+    match edge {
+        ScreenEdge::Left => ScreenRect {
+            left: bounds.left,
+            top: inner_top,
+            right: bounds.left.saturating_add(thick).min(bounds.right),
+            bottom: inner_bottom,
+        },
+        ScreenEdge::Top => ScreenRect {
+            left: inner_left,
+            top: bounds.top,
+            right: inner_right,
+            bottom: bounds.top.saturating_add(thick).min(bounds.bottom),
+        },
+        ScreenEdge::Right => ScreenRect {
+            left: bounds.right.saturating_sub(thick).max(bounds.left),
+            top: inner_top,
+            right: bounds.right,
+            bottom: inner_bottom,
+        },
+        ScreenEdge::Bottom => ScreenRect {
+            left: inner_left,
+            top: bounds.bottom.saturating_sub(thick).max(bounds.top),
+            right: inner_right,
+            bottom: bounds.bottom,
+        },
+    }
+}
+
+fn corner_guide_distance(local: Point, corner: ScreenCorner, bounds: ScreenRect) -> i32 {
+    let point = corner.point(ScreenRect {
+        left: 0,
+        top: 0,
+        right: bounds.width() - 1,
+        bottom: bounds.height() - 1,
+    });
+    (local.x - point.x).abs().max((local.y - point.y).abs())
+}
+
+fn guide_alpha(distance: i32, max_distance: i32) -> u8 {
+    let max_distance = max_distance.max(1);
+    let distance = distance.clamp(0, max_distance) as usize;
+    let max_distance = max_distance as usize;
+    let max_index = GUIDE_ALPHA_LEVELS.len() - 1;
+    let index = ((max_distance - distance) * max_index + max_distance / 2) / max_distance;
+    GUIDE_ALPHA_LEVELS[index]
 }
 
 /// 沿边轴向的位置(左右边取 y,上下边取 x)
@@ -479,6 +646,13 @@ mod tests {
                 bottom: H - 1,
             },
             dpi_scale: 1.0,
+        }
+    }
+
+    fn screen_with_dpi(dpi_scale: f64) -> ScreenInfo {
+        ScreenInfo {
+            dpi_scale,
+            ..screen()
         }
     }
 
@@ -767,6 +941,12 @@ mod tests {
             det.on_move(p(3199, 1023), t, || Some(second)),
             Some(CornerEdgeHit::Corner(ScreenCorner::RightBottom))
         );
+
+        let mut sequence = CornerEdgeDetector::new();
+        assert_eq!(
+            sequence.sequence_at(p(1921, 1), t, || Some(second)),
+            Some(CornerEdgeHit::Corner(ScreenCorner::LeftTop))
+        );
     }
 
     /// 显示器缓存:同屏内不重复查询,超时后失效
@@ -863,6 +1043,131 @@ mod tests {
         assert_eq!(
             det.sequence_at(p(0, 101), t, || Some(screen())),
             Some(CornerEdgeHit::Edge(ScreenEdge::Left))
+        );
+    }
+
+    #[test]
+    fn guide_at_reports_near_corner_without_configured_actions() {
+        let mut detector = CornerEdgeDetector::new();
+        let frame = detector
+            .guide_at(p(50, 50), Instant::now(), || Some(screen()), true, true)
+            .expect("near corner should produce a guide");
+
+        assert_eq!(frame.region, CornerEdgeHit::Corner(ScreenCorner::LeftTop));
+        assert!(frame.alpha > 24);
+        assert!(frame.area.contains(p(50, 50)));
+    }
+
+    #[test]
+    fn guide_at_hides_disabled_sides_and_corner_exclusion_area() {
+        let mut detector = CornerEdgeDetector::new();
+        assert!(detector
+            .guide_at(p(10, 500), Instant::now(), || Some(screen()), true, false)
+            .is_none());
+        assert!(detector
+            .guide_at(p(50, 50), Instant::now(), || Some(screen()), false, true)
+            .is_none());
+        assert!(detector
+            .guide_at(p(100, 500), Instant::now(), || Some(screen()), true, true)
+            .is_none());
+    }
+
+    #[test]
+    fn guide_alpha_increases_toward_the_boundary_and_uses_monitor_dpi() {
+        let mut detector = CornerEdgeDetector::new();
+        let far = detector
+            .guide_at(p(16, 500), Instant::now(), || Some(screen()), true, true)
+            .expect("edge entry should be visible");
+        let near = detector
+            .guide_at(p(0, 500), Instant::now(), || Some(screen()), true, true)
+            .expect("edge boundary should be visible");
+
+        assert!(near.alpha > far.alpha);
+        assert_eq!(near.dpi_scale_milli, 1000);
+    }
+
+    #[test]
+    fn guide_at_uses_local_coordinates_for_offset_monitor() {
+        let offset_screen = ScreenInfo {
+            bounds: ScreenRect {
+                left: 1920,
+                top: 1080,
+                right: 1920 + W - 1,
+                bottom: 1080 + H - 1,
+            },
+            dpi_scale: 1.0,
+        };
+        let mut detector = CornerEdgeDetector::new();
+        let frame = detector
+            .guide_at(
+                p(
+                    offset_screen.bounds.left + 50,
+                    offset_screen.bounds.top + 50,
+                ),
+                Instant::now(),
+                || Some(offset_screen),
+                true,
+                true,
+            )
+            .expect("near corner on an offset monitor should produce a guide");
+
+        assert_eq!(frame.region, CornerEdgeHit::Corner(ScreenCorner::LeftTop));
+        assert!(frame.area.contains(p(
+            offset_screen.bounds.left + 50,
+            offset_screen.bounds.top + 50
+        )));
+    }
+
+    #[test]
+    fn guide_edge_area_scales_with_monitor_dpi() {
+        let mut detector = CornerEdgeDetector::new();
+        let frame = detector
+            .guide_at(
+                p(32, 500),
+                Instant::now(),
+                || Some(screen_with_dpi(2.0)),
+                true,
+                true,
+            )
+            .expect("high-DPI edge entry should be visible");
+
+        assert_eq!(frame.region, CornerEdgeHit::Edge(ScreenEdge::Left));
+        assert_eq!(frame.dpi_scale_milli, 2000);
+        assert!(frame.area.contains(p(32, 500)));
+        assert!(!frame.area.contains(p(33, 500)));
+    }
+
+    #[test]
+    fn guide_at_does_not_change_the_next_on_move_hit() {
+        let now = Instant::now();
+        let mut guided_corner = CornerEdgeDetector::new();
+        let mut plain_corner = CornerEdgeDetector::new();
+        let _ = guided_corner.guide_at(p(0, 0), now, || Some(screen()), true, true);
+        assert_eq!(
+            guided_corner.on_move(p(0, 0), now, || Some(screen())),
+            plain_corner.on_move(p(0, 0), now, || Some(screen()))
+        );
+
+        let mut guided_edge = CornerEdgeDetector::new();
+        let mut plain_edge = CornerEdgeDetector::new();
+        let _ = guided_edge.guide_at(p(5, 500), now, || Some(screen()), true, true);
+        for (x, expected) in [(600, None), (500, None), (600, None), (500, None)] {
+            assert_eq!(
+                guided_edge.on_move(p(5, x), now, || Some(screen())),
+                expected
+            );
+            assert_eq!(
+                plain_edge.on_move(p(5, x), now, || Some(screen())),
+                expected
+            );
+        }
+        assert_eq!(
+            guided_edge.on_move(p(5, 600), now, || Some(screen())),
+            plain_edge.on_move(p(5, 600), now, || Some(screen()))
+        );
+        assert_eq!(
+            guided_edge.on_move(p(5, 500), now, || Some(screen())),
+            plain_edge.on_move(p(5, 500), now, || Some(screen()))
         );
     }
 

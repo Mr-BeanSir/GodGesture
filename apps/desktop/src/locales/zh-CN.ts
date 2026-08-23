@@ -122,6 +122,7 @@ export default {
       showPath: "显示轨迹",
       showCommandName: "显示命令提示",
       fadeOut: "执行后淡出",
+      showBoundaryGuide: "边角显示",
       rightColor: "右键轨迹颜色",
       middleColor: "中键轨迹颜色",
       xColor: "X 键轨迹颜色",

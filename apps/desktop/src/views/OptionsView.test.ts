@@ -62,6 +62,7 @@ function createPreferences() {
       showPath: true,
       showCommandName: true,
       fadeOut: true,
+      showBoundaryGuide: false,
       rightButtonPathColor: "#FF27E518",
       middleButtonPathColor: "#FF2DE0FF",
       xButtonPathColor: "#FF667EE9",
@@ -197,6 +198,18 @@ describe("options view", () => {
     expect(initialMove.attributes("max")).toBe("50");
     await initialMove.setValue("98");
     expect(store.doc.preferences.pathTracker.initialValidMovePx).toBe(50);
+
+    wrapper.unmount();
+  });
+
+  it("binds the boundary guide switch to synced gesture view preferences", async () => {
+    const wrapper = await mountOptions();
+    const control = controlForLabel(wrapper, "Boundary guide");
+
+    expect(control.classes()).toContain("gg-switch");
+    expect((control.element as HTMLInputElement).checked).toBe(false);
+    await control.setValue(true);
+    expect(store.doc.preferences.gestureView.showBoundaryGuide).toBe(true);
 
     wrapper.unmount();
   });

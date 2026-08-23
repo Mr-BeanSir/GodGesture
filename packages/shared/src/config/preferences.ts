@@ -37,6 +37,7 @@ export const GestureViewPreferences = z.object({
   showPath: z.boolean().default(true),
   showCommandName: z.boolean().default(true),
   fadeOut: z.boolean().default(true),
+  showBoundaryGuide: z.boolean().default(false),
   rightButtonPathColor: argb.default("#FF27E518"),
   middleButtonPathColor: argb.default("#FF2DE0FF"),
   xButtonPathColor: argb.default("#FF667EE9"),

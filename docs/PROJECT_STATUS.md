@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-22。本文是当前实现的唯一状态入口；术语以
+最后核对：2026-08-23。本文是当前实现的唯一状态入口；术语以
 [`CONTEXT.md`](../CONTEXT.md) 为准，协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按
 [`docs/adr/README.md`](adr/README.md) 路由。本文不保存逐日开发流水；历史与发布审计按需读取
 [`docs/CHANGELOG.md`](CHANGELOG.md) 和 [`docs/history/`](history/)。
@@ -12,6 +12,15 @@
 折叠不会清空未保存字段。模板父级暂停/恢复写入 `AdminAuditLog`，不改写版本审核记录，并在审核详情展示治理记录。
 
 真实 Windows/macOS 原生窗口与输入验收、live OAuth/SMTP、RustFS 生产连接和生产部署仍按“已知边界”保持 pending。
+
+边角显示引导已接入 v8 同步配置、Desktop 设置、共享 Rust 几何查询和 Windows/macOS 原生覆盖层路径：引导显示当前
+显示器实际启用的四角与四边区域，即使没有配置对应边角动作；`hotCorners.enabled=false` 隐藏四角，
+`rubEdges.enabled=false` 隐藏四边，并且不依赖 `boundaryIntents`。Windows 已补齐旧轨迹淡出与引导并存、fade 完成保留引导、
+清除引导后继续淡出的回归测试；macOS 已修正快照合成顺序、active fade alpha 保留和缺失 pixmap 参数。当前 Windows 主机
+不能执行 macOS `cfg` 测试或原生编译，且两平台真实覆盖层视觉/输入现场均未验收，因此不将本功能记为双平台运行时验收通过。
+
+边角显示引导的 API 生成物已同步：Server 子模块 `25e3900` 刷新两个配置 schema 节点，根仓库已更新 gitlink和
+`packages/shared/src/api/generated.ts`；`pnpm check:api` 已通过。该协议变更没有新增 endpoint 或 Prisma migration。
 
 本轮已接入管理员可配置的注册开关：关闭时同时禁止邮箱密码注册和首次未绑定 OAuth 身份建号；已有账户
 密码登录、密码找回、已绑定 OAuth 登录，以及未绑定 OAuth 绑定到已有非禁用账户仍可用。Windows 边角点击重放
@@ -125,6 +134,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Server Jest `25 passed / 1 skipped`（`233 passed / 13 skipped`）、Web Console `27 files / 187 passed`、Windows cfg 的 overlay suite `32 passed`、Rust 全量库测试 `325 passed / 0 failed / 2 ignored`、Rust fmt 和库级 Clippy 均通过。最终复审修正 macOS 淡出测试 fixture 并通过定向复审；Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
 
 - 2026-08-22：`v0.2.3` 已完成本地版本发布、tag 和远程 `main` push；发布 tag 保持在 `57c2aa6`，后续 Cargo.lock 版本同步提交为 `2749bf8`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。

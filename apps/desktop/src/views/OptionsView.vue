@@ -140,6 +140,7 @@ const stayTimeoutMsId = useId();
 const showPathId = useId();
 const showCommandNameId = useId();
 const fadeOutId = useId();
+const showBoundaryGuideId = useId();
 </script>
 
 <template>
@@ -379,6 +380,17 @@ const fadeOutId = useId();
       <div class="gg-switch-row">
         <input :id="showPathId" v-model="view.showPath" class="gg-switch" type="checkbox" />
         <label :for="showPathId" class="options__switch-label">{{ t("options.view.showPath") }}</label>
+      </div>
+      <div class="gg-switch-row">
+        <input
+          :id="showBoundaryGuideId"
+          v-model="view.showBoundaryGuide"
+          class="gg-switch"
+          type="checkbox"
+        />
+        <label :for="showBoundaryGuideId" class="options__switch-label">
+          {{ t("options.view.showBoundaryGuide") }}
+        </label>
       </div>
       <div class="gg-switch-row">
         <input :id="showCommandNameId" v-model="view.showCommandName" class="gg-switch" type="checkbox" />

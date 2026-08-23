@@ -74,6 +74,9 @@ _避免_: 程序、进程
 **边角序列 (Boundary Sequence)**:
 边角起点后的零至 12 步有序输入。边缘带或精确角点周围的近角区域收到首个鼠标键/滚轮后即进入边角捕获；首 token 有候选时继续匹配，未匹配时仍记录边角轨迹但不执行命令。未形成方向笔画时取消会重放已消费的原生输入；形成方向笔画后释放主触发键只结束捕获，不重放原生点击。方向笔画可作为后续步骤。空序列表示命中起点后立即执行。
 
+**边角显示引导 (Boundary Display Guide)**:
+同步偏好 `preferences.gestureView.showBoundaryGuide` 控制的原生覆盖层视觉提示。引擎按当前显示器实际启用的四角和四边触发区域生成距离渐显帧，不读取 `boundaryIntents`；`hotCorners.enabled` 和 `rubEdges.enabled` 分别控制四角与四边是否可见。引导只用于显示区域，不推进边角状态机，不改变输入吞噬、命令匹配、点击重放、焦点或鼠标命中测试语义。Windows 与 macOS 复用同一帧数据和视觉语义，平台差异仅在原生覆盖层实现。
+
 **统一手势捕获会话 (Gesture Capture)**:
 Desktop engine 内普通手势与边角手势共用的活动输入对象,由 `engine::capture::GestureCapture` 提供。
 它统一持有方向 parser、有序输入账本、主释放锚点、已消费输入和按钮释放状态；普通手势与边角手势
