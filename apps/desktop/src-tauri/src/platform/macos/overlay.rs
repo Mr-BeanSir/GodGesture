@@ -1458,16 +1458,34 @@ mod tests {
         }
     }
 
-    fn corner_boundary_guide_frame() -> BoundaryGuideFrame {
-        boundary_guide_frame(
-            ScreenRect {
+    fn corner_boundary_guide_frame(corner: ScreenCorner) -> BoundaryGuideFrame {
+        let area = match corner {
+            ScreenCorner::LeftTop => ScreenRect {
                 left: 0,
                 top: 0,
                 right: 10,
                 bottom: 10,
             },
-            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-        )
+            ScreenCorner::RightTop => ScreenRect {
+                left: 6,
+                top: 0,
+                right: 16,
+                bottom: 10,
+            },
+            ScreenCorner::LeftBottom => ScreenRect {
+                left: 0,
+                top: 6,
+                right: 10,
+                bottom: 16,
+            },
+            ScreenCorner::RightBottom => ScreenRect {
+                left: 6,
+                top: 6,
+                right: 16,
+                bottom: 16,
+            },
+        };
+        boundary_guide_frame(area, CornerEdgeHit::Corner(corner))
     }
 
     fn guide_test_state() -> OverlayState {
@@ -1605,21 +1623,32 @@ mod tests {
 
     #[test]
     fn boundary_guide_corner_raster_is_a_quarter_disk_with_white_border() {
-        let mut frame = corner_boundary_guide_frame();
-        frame.alpha = 255;
-        let mut pixmap = Pixmap::new(16, 16).unwrap();
-        draw_boundary_guide(&mut pixmap.as_mut(), &frame, Point { x: 0, y: 0 }, 1.0);
+        for (corner, interior, outside_disk, border) in [
+            (ScreenCorner::LeftTop, (4, 4), (9, 9), (0, 0)),
+            (ScreenCorner::RightTop, (12, 4), (7, 9), (15, 0)),
+            (ScreenCorner::LeftBottom, (4, 12), (9, 7), (0, 15)),
+            (ScreenCorner::RightBottom, (12, 12), (7, 7), (15, 15)),
+        ] {
+            let mut frame = corner_boundary_guide_frame(corner);
+            frame.alpha = 255;
+            let mut pixmap = Pixmap::new(16, 16).unwrap();
+            draw_boundary_guide(&mut pixmap.as_mut(), &frame, Point { x: 0, y: 0 }, 1.0);
 
-        let interior = pixel_at(&pixmap, 4, 4);
-        let outside_disk = pixel_at(&pixmap, 9, 9);
-        let border = pixel_at(&pixmap, 0, 0);
+            let interior = pixel_at(&pixmap, interior.0, interior.1);
+            let outside_disk = pixel_at(&pixmap, outside_disk.0, outside_disk.1);
+            let border = pixel_at(&pixmap, border.0, border.1);
 
-        assert!(interior[3] > 0);
-        assert_eq!(outside_disk[3], 0);
-        assert!(
-            u16::from(border[0]) + u16::from(border[1]) + u16::from(border[2])
-                > u16::from(interior[0]) + u16::from(interior[1]) + u16::from(interior[2])
-        );
+            assert!(interior[3] > 0, "{corner:?} interior should be visible");
+            assert_eq!(
+                outside_disk[3], 0,
+                "{corner:?} wrong quadrant should be clear"
+            );
+            assert!(
+                u16::from(border[0]) + u16::from(border[1]) + u16::from(border[2])
+                    > u16::from(interior[0]) + u16::from(interior[1]) + u16::from(interior[2]),
+                "{corner:?} border should be brighter than fill"
+            );
+        }
     }
 
     #[test]
