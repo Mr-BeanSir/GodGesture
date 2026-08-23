@@ -1866,8 +1866,8 @@ mod tests {
         assert!(config.boundary_intents.is_empty());
         let (shared, rx) = EngineShared::new(config, Arc::new(BoundaryPlatform::default()));
 
-        assert!(!shared.on_hook_event(Input::Move(Point { x: 50, y: 50 })));
-        assert!(!shared.on_hook_event(Input::Move(Point { x: 50, y: 50 })));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 0, y: 0 })));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 0, y: 0 })));
 
         let messages = rx.try_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -1889,7 +1889,7 @@ mod tests {
         corners_disabled.hot_corners.enabled = false;
         let (shared, rx) =
             EngineShared::new(corners_disabled, Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         shared.on_hook_event(Input::Move(Point { x: 10, y: 500 }));
         let messages = rx.try_iter().collect::<Vec<_>>();
         assert!(!messages.iter().any(|message| matches!(
@@ -1907,7 +1907,7 @@ mod tests {
         edges_disabled.rub_edges.enabled = false;
         let (shared, rx) = EngineShared::new(edges_disabled, Arc::new(BoundaryPlatform::default()));
         shared.on_hook_event(Input::Move(Point { x: 10, y: 500 }));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         let messages = rx.try_iter().collect::<Vec<_>>();
         assert!(!messages.iter().any(|message| matches!(
             message,
@@ -1925,7 +1925,7 @@ mod tests {
     fn guide_clears_when_pointer_leaves() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
 
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         shared.on_hook_event(Input::Move(Point { x: 500, y: 500 }));
 
         assert!(rx
@@ -1936,7 +1936,7 @@ mod tests {
     #[test]
     fn guide_clears_when_paused() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         shared.set_paused(true);
 
@@ -1948,7 +1948,7 @@ mod tests {
     #[test]
     fn guide_clears_when_recording_starts() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         shared.start_recording();
 
@@ -1960,7 +1960,7 @@ mod tests {
     #[test]
     fn guide_clears_when_a_tracker_capture_becomes_active() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         shared.on_hook_event(Input::ButtonDown(
             MouseButton::Right,
@@ -1996,7 +1996,7 @@ mod tests {
             order: 0,
         });
         let (shared, rx) = EngineShared::new(config, Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         assert!(shared.on_hook_event(Input::Wheel {
             forward: true,
@@ -2012,7 +2012,7 @@ mod tests {
     #[test]
     fn guide_clears_when_a_mouse_button_is_held() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         shared.on_hook_event(Input::ButtonDown(
             MouseButton::Left,
@@ -2028,10 +2028,10 @@ mod tests {
     fn guide_clears_during_fullscreen_suppression() {
         let platform = Arc::new(BoundaryPlatform::default());
         let (shared, rx) = EngineShared::new(guide_config(), platform.clone());
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         platform.set_fullscreen(true);
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         assert!(rx
             .try_iter()
@@ -2041,7 +2041,7 @@ mod tests {
     #[test]
     fn guide_clears_when_preferences_or_global_region_switches_change() {
         let (shared, rx) = EngineShared::new(guide_config(), Arc::new(BoundaryPlatform::default()));
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
         let mut corners_disabled = guide_config();
         corners_disabled.hot_corners.enabled = false;
@@ -2063,9 +2063,9 @@ mod tests {
     fn replacing_fullscreen_preference_updates_cached_suppression() {
         let platform = Arc::new(BoundaryPlatform::default());
         let (shared, rx) = EngineShared::new(guide_config(), platform.clone());
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         platform.set_fullscreen(true);
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         assert!(rx
             .try_iter()
             .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(None))));
@@ -2073,7 +2073,7 @@ mod tests {
         let mut enabled = guide_config();
         enabled.preferences.path_tracker.disable_in_fullscreen = false;
         shared.replace_config(enabled);
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         assert!(rx.try_iter().any(|message| matches!(
             message,
             EngineMsg::BoundaryGuideChanged(Some(frame))
@@ -2089,7 +2089,7 @@ mod tests {
         config.preferences.path_tracker.disable_in_fullscreen = false;
         let (shared, rx) = EngineShared::new(config.clone(), platform);
 
-        shared.on_hook_event(Input::Move(Point { x: 50, y: 50 }));
+        shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
         assert!(rx
             .try_iter()
             .any(|message| matches!(message, EngineMsg::BoundaryGuideChanged(Some(_)))));

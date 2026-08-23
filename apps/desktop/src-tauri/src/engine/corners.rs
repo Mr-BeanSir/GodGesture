@@ -520,12 +520,9 @@ fn sequence_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
 }
 
 fn guide_corner(local: Point, bounds: ScreenRect) -> Option<ScreenCorner> {
-    for corner in ScreenCorner::ALL {
-        if corner_guide_distance(local, corner, bounds) <= CORNER_GUIDE_RADIUS {
-            return Some(corner);
-        }
-    }
-    None
+    ScreenCorner::ALL
+        .into_iter()
+        .find(|corner| corner_guide_distance(local, *corner, bounds) <= CORNER_GUIDE_RADIUS)
 }
 
 fn edge_thickness(dpi_scale: f64) -> i32 {

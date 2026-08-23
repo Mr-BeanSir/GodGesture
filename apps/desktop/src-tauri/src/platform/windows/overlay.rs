@@ -10,7 +10,7 @@
 //!
 //! 命令提示标签(文字)在 M1 后段接入(需字形栅格化)。
 
-use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenEdge};
+use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner};
 use crate::engine::types::Point;
 pub use crate::platform::overlay::OverlayCommand as OverlayCmd;
 use crate::platform::overlay::OverlaySink;
@@ -1825,7 +1825,9 @@ unsafe extern "system" fn wnd_proc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::corners::{BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenRect};
+    use crate::engine::corners::{
+        BoundaryGuideFrame, CornerEdgeHit, ScreenCorner, ScreenEdge, ScreenRect,
+    };
     use tiny_skia::Pixmap;
     use windows::Win32::UI::WindowsAndMessaging::WS_POPUP;
 
