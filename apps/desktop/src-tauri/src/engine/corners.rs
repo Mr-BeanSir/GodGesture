@@ -941,6 +941,12 @@ mod tests {
             det.on_move(p(3199, 1023), t, || Some(second)),
             Some(CornerEdgeHit::Corner(ScreenCorner::RightBottom))
         );
+
+        let mut sequence = CornerEdgeDetector::new();
+        assert_eq!(
+            sequence.sequence_at(p(1921, 1), t, || Some(second)),
+            Some(CornerEdgeHit::Corner(ScreenCorner::LeftTop))
+        );
     }
 
     /// 显示器缓存:同屏内不重复查询,超时后失效
