@@ -135,7 +135,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ## 最近验证
 
-- 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Windows cfg 的 overlay suite `32 passed`、Rust fmt 和库级 Clippy 通过。Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
+- 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Server Jest `25 passed / 1 skipped`（`233 passed / 13 skipped`）、Web Console `27 files / 187 passed`、Windows cfg 的 overlay suite `32 passed`、Rust 全量库测试 `325 passed / 0 failed / 2 ignored`、Rust fmt 和库级 Clippy 均通过。最终复审修正 macOS 淡出测试 fixture 并通过定向复审；Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
 
 - 2026-08-22：`v0.2.3` 已完成本地版本发布、tag 和远程 `main` push；发布 tag 保持在 `57c2aa6`，后续 Cargo.lock 版本同步提交为 `2749bf8`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
