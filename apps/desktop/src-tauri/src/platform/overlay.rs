@@ -35,6 +35,21 @@ pub enum OverlayCommand {
     },
 }
 
+impl OverlayCommand {
+    pub fn debug_kind(&self) -> &'static str {
+        match self {
+            Self::SetBoundaryGuide(_) => "set_boundary_guide",
+            Self::ClearBoundaryGuide => "clear_boundary_guide",
+            Self::Begin { .. } => "begin",
+            Self::Grow(_) => "grow",
+            Self::Recognized(_) => "recognized",
+            Self::End => "end",
+            Self::Cancel => "cancel",
+            Self::ShowLabelFeedback { .. } => "show_label_feedback",
+        }
+    }
+}
+
 pub trait OverlaySink {
     fn send(&self, command: OverlayCommand);
 }
@@ -138,6 +153,55 @@ mod tests {
             vec![
                 OverlayCommand::SetBoundaryGuide(frame),
                 OverlayCommand::ClearBoundaryGuide,
+            ]
+        );
+    }
+
+    #[test]
+    fn overlay_command_debug_kind_is_stable() {
+        let frame = test_boundary_guide_frame();
+        let commands = [
+            OverlayCommand::SetBoundaryGuide(frame),
+            OverlayCommand::ClearBoundaryGuide,
+            OverlayCommand::Begin {
+                origin: Point { x: 1, y: 2 },
+                colors: TrailColors {
+                    main: 0xff00ff00,
+                    unrecognized: 0xffff0000,
+                },
+                show_path: true,
+                show_label: true,
+                fade_out: true,
+            },
+            OverlayCommand::Grow(Point { x: 3, y: 4 }),
+            OverlayCommand::Recognized(Some("match".into())),
+            OverlayCommand::End,
+            OverlayCommand::Cancel,
+            OverlayCommand::ShowLabelFeedback {
+                origin: Point { x: 5, y: 6 },
+                text: "label".into(),
+                fade_out: true,
+                display_duration: None,
+                fade_duration: None,
+            },
+        ];
+
+        let kinds = commands
+            .iter()
+            .map(OverlayCommand::debug_kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            vec![
+                "set_boundary_guide",
+                "clear_boundary_guide",
+                "begin",
+                "grow",
+                "recognized",
+                "end",
+                "cancel",
+                "show_label_feedback",
             ]
         );
     }
