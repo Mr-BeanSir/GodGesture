@@ -809,8 +809,8 @@ where
                 if clear_boundary_guide(state) {
                     clear_boundary_guide_surface(state);
                 }
-                fade_after_render = false;
                 if !label_feedback_active {
+                    fade_after_render = false;
                     stop_fade(state);
                 }
                 visual_dirty = false;
@@ -2243,7 +2243,44 @@ mod tests {
     }
 
     #[test]
-    fn end_after_label_feedback_preserves_the_existing_label_fade() {
+    fn end_in_the_same_batch_starts_the_pending_label_feedback_fade_once() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        state.points = vec![point(10), point(20)];
+        state.rendered_points = 2;
+        state.show_path = true;
+
+        tx.send(OverlayCommand::ShowLabelFeedback {
+            origin: Point { x: 100, y: 200 },
+            text: "42%".into(),
+            fade_out: true,
+            display_duration: Some(Duration::from_millis(500)),
+            fade_duration: Some(Duration::from_millis(800)),
+        })
+        .unwrap();
+        tx.send(OverlayCommand::End).unwrap();
+
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |state, _origin| {
+                state.visible = true;
+            }
+        ));
+
+        assert!(state.points.is_empty());
+        assert_eq!(state.rendered_points, 0);
+        assert!(!state.show_path);
+        assert_eq!(state.label.as_deref(), Some("42%"));
+        assert_eq!(state.fade_timer_id, 1);
+        assert_eq!(state.next_fade_timer_id, 1);
+        assert!(state.fade_started_at.is_none());
+        assert!(state.fade_delay_until.is_some());
+    }
+
+    #[test]
+    fn end_in_a_later_batch_preserves_the_existing_label_feedback_fade() {
         let (tx, rx) = unbounded();
         let mut state = test_state();
         state.tiles.clear();
@@ -2260,7 +2297,6 @@ mod tests {
             state.visible = true;
         });
 
-        start_fade(&mut state);
         let feedback_timer_id = state.fade_timer_id;
         let feedback_next_timer_id = state.next_fade_timer_id;
         let feedback_fade_started_at = state.fade_started_at;
@@ -2272,6 +2308,7 @@ mod tests {
         drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
 
         assert!(state.points.is_empty());
+        assert_eq!(state.rendered_points, 0);
         assert!(!state.show_path);
         assert_eq!(state.label.as_deref(), Some("42%"));
         assert_eq!(state.fade_timer_id, feedback_timer_id);
