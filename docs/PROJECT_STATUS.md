@@ -17,7 +17,7 @@
 显示器实际启用的四角与四边区域，即使没有配置对应边角动作；角显示为 display-only 的固定 10px 半径四分之一圆，
 边显示仍为实际 DPI 缩放的边带；`hotCorners.enabled=false` 隐藏四角，`rubEdges.enabled=false` 隐藏四边，并且不依赖
 `boundaryIntents`。真实精确角命中和近角序列准入行为未改变。Windows 已补齐 End/Cancel 立即清理 trail、guide redraw 不恢复旧轨迹、
-普通标签淡出期间隐藏会清空 layered-window 表面、以及 label feedback 独立生命周期的回归测试；Windows layered-window 视觉观察仍 pending。
+普通标签淡出期间隐藏会清空 layered-window 表面、以及 label feedback 独立生命周期的回归测试；Windows layered-window 已完成无重启现场复现、截图和肉眼验收。
 macOS 原生隐藏路径也会清空 retained pixmap，macOS native compile、runtime/device acceptance、
 Retina、多屏、Spaces 和点击透传验收仍 pending；当前 Windows 主机不能执行 macOS `cfg` 测试或原生编译，因此不将本功能
 记为双平台运行时验收通过。
@@ -62,7 +62,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | 领域 | 状态 | 边界 |
 | --- | --- | --- |
 | M0 仓库奠基 | 已完成 | 独立项目从 stable `v0.1.0` 起演进，不以 WGestures 行为作为产品基准 |
-| M1 Windows 手势引擎 | Windows 主体已完成，覆盖层现场复现 pending | 轨迹不可见问题仍需无重启现场复现；macOS 真实设备按 M4 清单验收 |
+| M1 Windows 手势引擎 | Windows 主体与覆盖层现场验收已完成 | macOS 真实设备按 M4 清单验收 |
 | M2 Windows 命令与设置 | 已完成 | Windows 专属命令显式标注；原生窗口验收不由浏览器预览替代 |
 | M3 脚本引擎 | 已完成 | ADR-0012 的常驻 Node.js supervisor/Worker 是唯一生产脚本链 |
 | M4 macOS 引擎 | 代码与 CI 已完成，平台验收 pending | TCC、输入、覆盖层、多屏、AX、Keychain、插件和升级需真实 Mac 证据 |
@@ -96,7 +96,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows/macOS 原生 overlay 的 `End` 和 `Cancel` 立即清理 live trail points、render/cache/show path；`trail_fade_surface` 及等价的 snapshot capture/restore/composition/专用淡出机制已删除。`SetBoundaryGuide` 只更新引导，不承担清理旧轨迹。
 - 普通 `Trail` 在 `End` 后按 `fade_out` 独立处理命令标签：轨迹立即清除；启用淡出时保留标签并复用原生标签 fade 生命周期，淡出完成后清除并隐藏；关闭淡出或收到 `Cancel` 时立即清除标签并隐藏。
 - Label feedback 保持独立生命周期：`ShowLabelFeedback -> End` 的同批次路径仍会启动一次待定 label fade，后续批次的 `End` 保留已存在的 label fade；`End` 清理轨迹，不移除 label。
-- Windows 轨迹不可见修复已有 focused 测试和 Rust 格式证据；本轮又补充了普通手势越过起始阈值、边角覆盖层 Begin/End/Cancel 以及高耗时输入分发的 debug 事件。修改后原始复现进程已退出，必须先接管并监控实例，再做无重启运行态验收。
+- Windows 轨迹不可见修复已有 focused 测试和 Rust 格式证据；本轮又补充了普通手势越过起始阈值、边角覆盖层 Begin/End/Cancel 以及高耗时输入分发的 debug 事件。维护者已完成原始复现进程上的无重启运行态验收、截图和肉眼确认。
 - Desktop 支持 Gesture Template v2 多目标导出、详情、冲突复核和高风险采纳确认；原生使用保存面板，浏览器预览回退到下载。
 
 ### UI、配置与同步
@@ -127,7 +127,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
 - Windows NSIS 统一 `perMachine`，新安装默认 `C:\Program Files\GodGesture`，升级沿用已记录目录；不自动迁移旧 `currentUser` 安装。macOS 为 universal ad-hoc DMG，不提供 Authenticode、Developer ID、公证或 staple。
 - Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和在线插件目录通过 GitHub 分发，模板对象与数据库必须同窗口备份。
-- 当前 `pnpm@10.34.5` 已不读取根 `package.json` 的 `pnpm.onlyBuiltDependencies`；`pnpm-workspace.yaml` 的 `allowBuilds` 仍保留待维护者逐项决定的占位值，因此依赖构建脚本许可策略和 CI 安装验证仍 pending，不能把现有 warning 视为已解决。
+- pnpm 构建脚本许可已迁移到 `pnpm-workspace.yaml` 的布尔型 `allowBuilds`：`esbuild`、`unrs-resolver`、`vue-demi` 显式允许，`@scarf/scarf`、`@prisma/engines`、`prisma`、`@prisma/client` 显式禁止；根 `package.json` 的旧 `pnpm.onlyBuiltDependencies` 已移除，pnpm 10.34.5 的配置 warning 已消除。
 
 ## 已知边界
 
@@ -135,14 +135,16 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 共享 UI 浏览器预览只证明 Vue 构建的视觉、导航、焦点和溢出行为；不替代 Windows/macOS 原生窗口、权限、全局输入或覆盖层验收。
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
-- Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
-- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但隐藏前未清空 layered-window 缓存，后续 `SetBoundaryGuide` 的局部提交会再次暴露旧标签/轨迹像素，并可能因 tile dirty 范围不同表现为标签半边异常。Windows 现在在 `hide` 前将 DIB 清空并完整提交透明帧；macOS `hide` 同步清空 retained pixmap，新增跨平台隐藏表面回归测试。Windows layered-window 无重启复现和肉眼验收仍 pending；macOS 原生运行时验收仍按 M4 清单 pending。
+- Windows 轨迹不可见问题已完成无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
+- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但隐藏前未清空 layered-window 缓存，后续 `SetBoundaryGuide` 的局部提交会再次暴露旧标签/轨迹像素，并可能因 tile dirty 范围不同表现为标签半边异常。Windows 现在在 `hide` 前将 DIB 清空并完整提交透明帧；macOS `hide` 同步清空 retained pixmap，新增跨平台隐藏表面回归测试。维护者已完成 Windows layered-window 无重启复现和肉眼验收；macOS 原生运行时验收仍按 M4 清单 pending。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 - 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
 - Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-24（Windows layered-window 现场验收）：维护者在现有复现进程上完成隐藏表面清理、边角引导重绘和轨迹不再闪现的无重启复现、截图与肉眼验收；Windows layered-window 标记为完成，macOS 原生运行时和设备验收继续 pending。
 
 - 2026-08-24（Boundary Guide Hidden Surface Cleanup）：根据 `godgesture-export-2026-08-24T134640181Z-0.jsonl` 确认旧标签残留的根因是隐藏窗口缓存未收到透明帧，而不是 `End` 未清理轨迹；Windows `hide_clears_layered_surface_before_hiding`、`boundary_guide_after_end_cannot_restore_hidden_label_pixels` 与 overlay 定向测试 `37 passed / 0 failed`，Rust 全库 `336 passed / 0 failed / 2 ignored`，`cargo fmt --check` 和库级 Clippy `-D warnings` 通过。macOS 交叉检查因本机缺少 `cc` 在 `ring` 构建阶段受环境阻塞，真实 Windows layered-window 与 macOS runtime/device 仍 pending。
 

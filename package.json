@@ -7,13 +7,6 @@
   "engines": {
     "node": ">=22"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "unrs-resolver",
-      "vue-demi"
-    ]
-  },
   "scripts": {
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:server": "node scripts/dev-server.mjs",
