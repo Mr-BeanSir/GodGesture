@@ -799,10 +799,23 @@ fn drain_commands(rx: &Receiver<OverlayCommand>, state: &mut OverlayState) -> bo
 fn drain_commands_with_surface<F>(
     rx: &Receiver<OverlayCommand>,
     state: &mut OverlayState,
-    mut ensure_surface: F,
+    ensure_surface: F,
 ) -> bool
 where
     F: FnMut(&mut OverlayState, Point),
+{
+    drain_commands_with_render(rx, state, ensure_surface, render)
+}
+
+fn drain_commands_with_render<F, R>(
+    rx: &Receiver<OverlayCommand>,
+    state: &mut OverlayState,
+    mut ensure_surface: F,
+    mut render_frame: R,
+) -> bool
+where
+    F: FnMut(&mut OverlayState, Point),
+    R: FnMut(&mut OverlayState),
 {
     let batch = take_command_batch(rx, MAX_COMMANDS_PER_FRAME);
     let queue_depth = batch.commands.len() + rx.len();
@@ -834,13 +847,6 @@ where
                     mark_boundary_guide_dirty(state, previous);
                 }
                 mark_boundary_guide_dirty(state, frame);
-                set_overlay_visible(state, true);
-                log_overlay_state(
-                    "overlay_guide_visible_before_render",
-                    command_kind,
-                    "after_visibility",
-                    state,
-                );
                 visual_dirty = true;
             }
             OverlayCommand::ClearBoundaryGuide => {
@@ -977,7 +983,7 @@ where
             log_overlay_state("overlay_render_requested", "batch", "before", state);
         }
         if has_visual_content(state) {
-            render(state);
+            render_frame(state);
         } else {
             state.boundary_guide_dirty = None;
             hide(state);
@@ -2058,8 +2064,7 @@ mod tests {
     #[test]
     fn boundary_guide_lifecycle_keeps_empty_overlay_visible_until_clear() {
         let (tx, rx) = unbounded();
-        let mut state = test_state();
-        state.tiles.clear();
+        let (mut state, _pixels) = test_state_with_surface(64, 64);
         let frame = boundary_guide_frame(
             ScreenRect {
                 left: 0,
@@ -2087,6 +2092,37 @@ mod tests {
         ));
         assert!(state.boundary_guide.is_none());
         assert!(!state.visible);
+    }
+
+    #[test]
+    fn boundary_guide_stays_hidden_until_render_completes() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+        tx.send(OverlayCommand::SetBoundaryGuide(frame)).unwrap();
+
+        let mut visible_during_render = None;
+        assert!(!drain_commands_with_render(
+            &rx,
+            &mut state,
+            |_state, _origin| {},
+            |state| {
+                visible_during_render = Some(state.visible);
+                state.visible = true;
+            },
+        ));
+
+        assert_eq!(visible_during_render, Some(false));
+        assert!(state.visible);
     }
 
     #[test]

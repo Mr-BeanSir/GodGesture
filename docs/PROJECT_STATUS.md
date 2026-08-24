@@ -133,13 +133,15 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
-- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已增加原生覆盖层诊断日志，待在现有进程上稳定复现并读取日志确认；当前代码层假设是 `End`/`Cancel` 隐藏窗口后旧 DIB 仍保留，`SetBoundaryGuide` 先重新显示窗口、随后才执行重绘，现场需用 `overlay_visibility_changed` 与 `overlay_render` 的前后像素摘要验证。
+- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但 `SetBoundaryGuide` 先显示仍保留旧像素的 DIB，约 159 ms 后才完成全量重绘。Windows 现在等引导帧渲染完成后再显示窗口，并新增“渲染期间保持隐藏”的覆盖层回归测试；真实 layered-window 无重启复现和肉眼验收仍 pending。macOS 原生运行时验收仍按 M4 清单 pending。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 - 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
 - Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-24（Boundary Guide Reveal Ordering）：复现 JSONL 确认 `End` 清理轨迹逻辑正常，问题是 Windows DIB 旧像素在引导重绘前暴露；新增渲染显示顺序回归测试并通过 Windows overlay suite `33 passed / 0 failed`。Windows layered-window 无重启现场验收和 macOS native runtime/device 验收仍 pending。
 
 - 2026-08-24（Boundary Trail Diagnostic Logging）：新增 Windows/macOS 覆盖层生命周期与重绘 debug 日志；Rust 全库 `--lib --no-default-features` 测试 `331 passed / 0 failed / 2 ignored`，库级 Clippy `-D warnings` 和 Rust fmt 通过。日志仅用于现场定位，不代表 Windows layered-window 或 macOS 原生设备问题已验收。
 
