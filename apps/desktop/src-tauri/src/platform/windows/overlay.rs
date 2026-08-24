@@ -156,9 +156,16 @@ struct OverlayState {
     fade_delay_until: Option<Instant>,
     fade_timer_id: usize,
     next_fade_timer_id: usize,
+    mode: OverlayMode,
     dpi_factor: f32,
     font: Option<ab_glyph::FontVec>,
     stats: OverlayStats,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayMode {
+    Trail,
+    LabelFeedback,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -518,6 +525,7 @@ fn overlay_thread_main(
             fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
+            mode: OverlayMode::Trail,
             dpi_factor: 1.0,
             font: load_label_font(),
             stats: OverlayStats::new(),
@@ -774,6 +782,7 @@ where
                 state.show_path = show_path;
                 state.show_label = show_label;
                 state.fade_out = fade_out;
+                state.mode = OverlayMode::Trail;
                 state.display_duration = None;
                 state.fade_duration = None;
                 state.alpha = 255;
@@ -796,11 +805,14 @@ where
                 }
             }
             OverlayCommand::End => {
+                let label_feedback_active = state.mode == OverlayMode::LabelFeedback;
                 if clear_boundary_guide(state) {
                     clear_boundary_guide_surface(state);
                 }
                 fade_after_render = false;
-                stop_fade(state);
+                if !label_feedback_active {
+                    stop_fade(state);
+                }
                 visual_dirty = false;
                 state.points.clear();
                 state.rendered_points = 0;
@@ -823,6 +835,7 @@ where
                 state.points.clear();
                 state.rendered_points = 0;
                 state.show_path = false;
+                state.mode = OverlayMode::Trail;
                 state.needs_full_redraw = true;
             }
             OverlayCommand::ShowLabelFeedback {
@@ -848,6 +861,7 @@ where
                 state.show_path = false;
                 state.show_label = true;
                 state.fade_out = fade_out;
+                state.mode = OverlayMode::LabelFeedback;
                 state.display_duration = display_duration;
                 state.fade_duration = fade_duration;
                 state.alpha = 255;
@@ -1876,6 +1890,7 @@ mod tests {
             fade_delay_until: None,
             fade_timer_id: 0,
             next_fade_timer_id: 0,
+            mode: OverlayMode::Trail,
             dpi_factor: 1.0,
             font: None,
             stats: OverlayStats::new(),
@@ -2116,6 +2131,7 @@ mod tests {
         state.fade_duration = Some(Duration::from_millis(500));
         state.fade_timer_id = 17;
         state.fade_started_at = Some(Instant::now());
+        state.mode = OverlayMode::LabelFeedback;
 
         tx.send(OverlayCommand::Cancel).unwrap();
         drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
@@ -2126,6 +2142,7 @@ mod tests {
         assert_eq!(state.fade_timer_id, 0);
         assert!(state.fade_started_at.is_none());
         assert!(state.fade_delay_until.is_none());
+        assert_eq!(state.mode, OverlayMode::Trail);
     }
 
     #[test]
@@ -2223,6 +2240,44 @@ mod tests {
         assert!(state.fade_out);
         assert_eq!(state.display_duration, Some(Duration::from_millis(500)));
         assert_eq!(state.fade_duration, Some(Duration::from_millis(800)));
+    }
+
+    #[test]
+    fn end_after_label_feedback_preserves_the_existing_label_fade() {
+        let (tx, rx) = unbounded();
+        let mut state = test_state();
+        state.tiles.clear();
+
+        tx.send(OverlayCommand::ShowLabelFeedback {
+            origin: Point { x: 100, y: 200 },
+            text: "42%".into(),
+            fade_out: true,
+            display_duration: Some(Duration::from_millis(500)),
+            fade_duration: Some(Duration::from_millis(800)),
+        })
+        .unwrap();
+        drain_commands_with_surface(&rx, &mut state, |state, _origin| {
+            state.visible = true;
+        });
+
+        start_fade(&mut state);
+        let feedback_timer_id = state.fade_timer_id;
+        let feedback_next_timer_id = state.next_fade_timer_id;
+        let feedback_fade_started_at = state.fade_started_at;
+        let feedback_fade_delay_until = state.fade_delay_until;
+        assert_ne!(feedback_timer_id, 0);
+        assert!(feedback_fade_started_at.is_some() || feedback_fade_delay_until.is_some());
+
+        tx.send(OverlayCommand::End).unwrap();
+        drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
+
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert_eq!(state.label.as_deref(), Some("42%"));
+        assert_eq!(state.fade_timer_id, feedback_timer_id);
+        assert_eq!(state.next_fade_timer_id, feedback_next_timer_id);
+        assert_eq!(state.fade_started_at, feedback_fade_started_at);
+        assert_eq!(state.fade_delay_until, feedback_fade_delay_until);
     }
 
     #[test]
