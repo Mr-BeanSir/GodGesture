@@ -16,8 +16,8 @@
 边角显示引导已接入 v8 同步配置、Desktop 设置、共享 Rust 几何查询和 Windows/macOS 原生覆盖层路径：引导显示当前
 显示器实际启用的四角与四边区域，即使没有配置对应边角动作；角显示为 display-only 的固定 10px 半径四分之一圆，
 边显示仍为实际 DPI 缩放的边带；`hotCorners.enabled=false` 隐藏四角，`rubEdges.enabled=false` 隐藏四边，并且不依赖
-`boundaryIntents`。真实精确角命中和近角序列准入行为未改变。Windows 已补齐旧轨迹淡出与引导并存、fade 完成保留引导、
-清除引导后继续淡出的回归测试；Windows layered-window 视觉观察仍 pending。macOS native compile、runtime/device acceptance、
+`boundaryIntents`。真实精确角命中和近角序列准入行为未改变。Windows 已补齐 End/Cancel 立即清理 trail、guide redraw 不恢复旧轨迹、
+以及 label feedback 独立生命周期的回归测试；Windows layered-window 视觉观察仍 pending。macOS native compile、runtime/device acceptance、
 Retina、多屏、Spaces 和点击透传验收仍 pending；当前 Windows 主机不能执行 macOS `cfg` 测试或原生编译，因此不将本功能
 记为双平台运行时验收通过。
 

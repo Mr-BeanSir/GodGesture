@@ -83,3 +83,28 @@ This is a host-cfg result and is not macOS execution evidence.
   Spaces/fullscreen behavior, and click-through remain pending.
 - Windows layered-window visual observation also remains pending; automated Rust evidence does
   not replace visual inspection of the native overlay.
+
+## Post-review correction
+
+Task 3 documentation review found one stale sentence at the top of `docs/PROJECT_STATUS.md`
+that still described the removed trail-fade behavior: old trail fade coexisting with the guide,
+retaining the guide after fade completion, and continuing to fade after clearing the guide.
+That sentence was replaced with the current Windows regression coverage: `End`/`Cancel`
+immediately clear the trail, guide redraw does not restore old trail pixels, and label feedback
+has an independent lifecycle.
+
+Only these two files were modified in this follow-up:
+
+- `docs/PROJECT_STATUS.md`
+- `.superpowers/sdd/2026-08-24-boundary-guide-alpha-lifecycle/task-3-report.md`
+
+Verification after the correction:
+
+- `rg -n "旧轨迹淡出与引导并存|fade 完成保留引导|清除引导后继续淡出" docs/PROJECT_STATUS.md`
+  - No matches; the stale behavior description is absent.
+- `rg -n "End/Cancel 立即清理 trail|guide redraw 不恢复旧轨迹|label feedback 独立生命周期" docs/PROJECT_STATUS.md`
+  - Found the replacement status description at the top of the file.
+- `git diff --check`
+  - Passed, exit code 0; no whitespace errors.
+- Allowed-path check
+  - The working diff contains only `docs/PROJECT_STATUS.md` and this report file.
