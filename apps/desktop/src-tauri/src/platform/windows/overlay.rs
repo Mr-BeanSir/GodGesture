@@ -84,6 +84,14 @@ impl Overlay {
     }
 
     pub fn send(&self, cmd: OverlayCommand) {
+        if cmd.debug_kind() != "grow" {
+            log::debug!(
+                target: "platform.windows",
+                "event=overlay_command_enqueued command={} queue_depth_before={}",
+                cmd.debug_kind(),
+                self.tx.len()
+            );
+        }
         let _ = self.tx.send(cmd);
         let tid = self.thread_id.load(Ordering::SeqCst);
         if tid != 0 && !self.wake_pending.swap(true, Ordering::AcqRel) && !post_overlay_wake(tid) {
@@ -166,6 +174,12 @@ struct OverlayState {
 enum OverlayMode {
     Trail,
     LabelFeedback,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct BitmapAlphaSummary {
+    nontransparent_pixels: usize,
+    bounds: Option<PixelRect>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -257,6 +271,63 @@ impl PixelRect {
             right: self.right.max(other.right),
             bottom: self.bottom.max(other.bottom),
         }
+    }
+}
+
+fn log_overlay_state(event: &str, command: &str, phase: &str, state: &OverlayState) {
+    log::debug!(
+        target: "platform.windows",
+        "event={} command={} phase={} points={} rendered_points={} show_path={} show_label={} needs_full_redraw={} needs_full_present={} visible={} boundary_guide={} boundary_guide_dirty={:?} mode={:?}",
+        event,
+        command,
+        phase,
+        state.points.len(),
+        state.rendered_points,
+        state.show_path,
+        state.show_label,
+        state.needs_full_redraw,
+        state.needs_full_present,
+        state.visible,
+        state.boundary_guide.is_some(),
+        state.boundary_guide_dirty,
+        state.mode,
+    );
+}
+
+fn bitmap_alpha_summary(data: &[u8], width: i32, height: i32) -> BitmapAlphaSummary {
+    if width <= 0 || height <= 0 {
+        return BitmapAlphaSummary::default();
+    }
+    let width = width as usize;
+    let height = height as usize;
+    let mut nontransparent_pixels = 0;
+    let mut bounds: Option<PixelRect> = None;
+    for y in 0..height {
+        for x in 0..width {
+            let offset = (y * width + x) * 4;
+            if data.get(offset + 3).copied().unwrap_or(0) == 0 {
+                continue;
+            }
+            nontransparent_pixels += 1;
+            bounds = Some(match bounds {
+                Some(existing) => PixelRect {
+                    left: existing.left.min(x as i32),
+                    top: existing.top.min(y as i32),
+                    right: existing.right.max(x as i32 + 1),
+                    bottom: existing.bottom.max(y as i32 + 1),
+                },
+                None => PixelRect {
+                    left: x as i32,
+                    top: y as i32,
+                    right: x as i32 + 1,
+                    bottom: y as i32 + 1,
+                },
+            });
+        }
+    }
+    BitmapAlphaSummary {
+        nontransparent_pixels,
+        bounds,
     }
 }
 
@@ -738,7 +809,22 @@ where
     let mut grow_count = 0;
     let mut visual_dirty = false;
     let mut fade_after_render = false;
-    for cmd in batch.commands {
+    for (batch_index, cmd) in batch.commands.into_iter().enumerate() {
+        let command_kind = cmd.debug_kind();
+        if command_kind == "grow" {
+            if state.points.is_empty() || !state.show_path || !state.visible {
+                log_overlay_state("overlay_late_grow", command_kind, "before", state);
+            }
+        } else {
+            log_overlay_state("overlay_command_state", command_kind, "before", state);
+            log::debug!(
+                target: "platform.windows",
+                "event=overlay_command_processing command={} batch_index={} queue_depth={}",
+                command_kind,
+                batch_index,
+                queue_depth,
+            );
+        }
         match cmd {
             OverlayCommand::SetBoundaryGuide(frame) => {
                 let previous = state.boundary_guide;
@@ -749,6 +835,12 @@ where
                 }
                 mark_boundary_guide_dirty(state, frame);
                 set_overlay_visible(state, true);
+                log_overlay_state(
+                    "overlay_guide_visible_before_render",
+                    command_kind,
+                    "after_visibility",
+                    state,
+                );
                 visual_dirty = true;
             }
             OverlayCommand::ClearBoundaryGuide => {
@@ -875,9 +967,15 @@ where
                 }
             }
         }
+        if command_kind != "grow" {
+            log_overlay_state("overlay_command_state", command_kind, "after", state);
+        }
     }
     state.stats.record_batch(grow_count, queue_depth);
     if visual_dirty {
+        if state.boundary_guide.is_some() || !state.show_path || state.points.is_empty() {
+            log_overlay_state("overlay_render_requested", "batch", "before", state);
+        }
         if has_visual_content(state) {
             render(state);
         } else {
@@ -1079,6 +1177,17 @@ fn set_overlay_visible(state: &mut OverlayState, visible: bool) {
     if state.visible == visible {
         return;
     }
+    log::debug!(
+        target: "platform.windows",
+        "event=overlay_visibility_changed from={} to={} points={} rendered_points={} show_path={} needs_full_redraw={} boundary_guide={} transition_context=state_update",
+        state.visible,
+        visible,
+        state.points.len(),
+        state.rendered_points,
+        state.show_path,
+        state.needs_full_redraw,
+        state.boundary_guide.is_some(),
+    );
     unsafe {
         for tile in &state.tiles {
             if visible {
@@ -1106,6 +1215,12 @@ fn render(state: &mut OverlayState) {
     let guide_dirty = state.boundary_guide_dirty;
     let guide_requires_full_redraw = guide_dirty.is_some();
     let requested_full_redraw = state.needs_full_redraw;
+    let bitmap_diagnostic_enabled = log::log_enabled!(
+        target: "platform.windows",
+        log::Level::Debug
+    ) && (guide_requires_full_redraw || requested_full_redraw);
+    let bitmap_before =
+        bitmap_diagnostic_enabled.then(|| bitmap_alpha_summary(pixmap.data_mut(), width, height));
     let first_unrendered = state.rendered_points.min(state.points.len());
     let incremental_start = first_unrendered.saturating_sub(1);
     let dpi = state.dpi_factor.max(1.0);
@@ -1181,6 +1296,34 @@ fn render(state: &mut OverlayState) {
     } else {
         Some(dirty)
     };
+    let bitmap_after =
+        bitmap_diagnostic_enabled.then(|| bitmap_alpha_summary(pixmap.data_mut(), width, height));
+    let present_mode = if present_dirty.is_some() {
+        "dirty"
+    } else {
+        "full"
+    };
+    if guide_requires_full_redraw || !state.show_path || state.points.is_empty() {
+        log::debug!(
+            target: "platform.windows",
+            "event=overlay_render full_redraw={} requested_full_redraw={} guide_requires_full_redraw={} points={} rendered_points={} show_path={} visible={} guide_dirty={:?} incremental_dirty={:?} present_mode={} present_dirty={:?} bitmap_alpha_before_pixels={:?} bitmap_alpha_before_bounds={:?} bitmap_alpha_after_pixels={:?} bitmap_alpha_after_bounds={:?}",
+            full_redraw,
+            requested_full_redraw,
+            guide_requires_full_redraw,
+            state.points.len(),
+            state.rendered_points,
+            state.show_path,
+            state.visible,
+            guide_dirty,
+            incremental_dirty,
+            present_mode,
+            present_dirty,
+            bitmap_before.map(|summary| summary.nontransparent_pixels),
+            bitmap_before.and_then(|summary| summary.bounds),
+            bitmap_after.map(|summary| summary.nontransparent_pixels),
+            bitmap_after.and_then(|summary| summary.bounds),
+        );
+    }
     let present_started = Instant::now();
     present(state, present_dirty);
     let present_elapsed = present_started.elapsed();

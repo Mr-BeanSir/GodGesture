@@ -119,7 +119,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ### 日志、发布与部署
 
-- Desktop 在 `app_log_dir()` 写脱敏 JSONL，级别为 `off/error/warn/info/debug`；日志不上传、不参与同步，页面支持筛选、trace 折叠、导出、清理和关闭自动跟随。
+- Desktop 在 `app_log_dir()` 写脱敏 JSONL，级别为 `off/error/warn/info/debug`；日志不上传、不参与同步，页面支持筛选、trace 折叠、导出、清理和关闭自动跟随。2026-08-24 起，Windows/macOS 原生覆盖层 debug 日志记录 `End`/`Cancel`/`SetBoundaryGuide`/`ClearBoundaryGuide` 的命令顺序、轨迹状态、可见性、重绘类型和 dirty 区域；Windows 额外记录引导重绘前后的 DIB 非透明像素摘要。
 - Windows 边角点击重放在 debug 级别记录 `replay_id`、入队/调度/工作线程等待/完成耗时、队列深度、光标恢复前后位置与原始 Win32 错误码、`SendInput` 请求/插入数量和短写状态；低级钩子按钮事件、边角 token/候选索引/取消原因、释放吞咽掩码和 tracker 处理结果也按低频采集。另记录普通手势起始阈值、边角覆盖层生命周期和超过 1 ms 的输入分发。普通 `PathTracker` 无轨迹点击恢复统一记录为 `mouse_replay_requested`，不再使用边角专属事件名；触发键准入还记录 `tracker_admission_decision` 或具体拒绝原因，并包含 `self_integrity`、`target_integrity` 和 `elevation_boundary`。点击注入仍保持 FIFO，但执行已移出低级钩子消息泵，避免 `SendInput` 阻塞时丢失真实按钮释放。
 - `pnpm release` 由维护者显式指定 `patch`、`minor`、`major` 或完整 SemVer；`feat`/`fix` 只影响 Release Notes，不自动选择版本。Desktop 发布同步四个 Desktop 版本文件，Server 独立维护，不参与校验或修改。
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
@@ -133,12 +133,15 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
+- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已增加原生覆盖层诊断日志，待在现有进程上稳定复现并读取日志确认；当前代码层假设是 `End`/`Cancel` 隐藏窗口后旧 DIB 仍保留，`SetBoundaryGuide` 先重新显示窗口、随后才执行重绘，现场需用 `overlay_visibility_changed` 与 `overlay_render` 的前后像素摘要验证。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 - 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
 - Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-24（Boundary Trail Diagnostic Logging）：新增 Windows/macOS 覆盖层生命周期与重绘 debug 日志；Rust 全库 `--lib --no-default-features` 测试 `331 passed / 0 failed / 2 ignored`，库级 Clippy `-D warnings` 和 Rust fmt 通过。日志仅用于现场定位，不代表 Windows layered-window 或 macOS 原生设备问题已验收。
 
 - 2026-08-24（Boundary Guide Alpha And Trail Lifecycle Task 3）：按 Task 3 brief 完成文档同步，并重新执行 Rust fmt、Rust library test、Rust library Clippy、Shared build、Desktop typecheck、Desktop tests、`pnpm check:api` 和 `git diff --check`；实际结果与受限项详见 [Task 3 报告](../.superpowers/sdd/2026-08-24-boundary-guide-alpha-lifecycle/task-3-report.md)。记录确认角显示仅为固定 10px 半径四分之一圆的 display-only 视觉，边显示为实际 DPI 缩放边带；真实精确角命中和近角序列准入未改变。Windows layered-window 视觉观察，以及 macOS native compile/runtime/device、Retina、多屏、Spaces、点击透传验收仍 pending；Windows 自动化 Rust 结果不代表 macOS 证据。
 

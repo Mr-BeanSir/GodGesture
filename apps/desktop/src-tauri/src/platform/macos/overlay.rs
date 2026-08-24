@@ -69,6 +69,14 @@ impl Overlay {
     }
 
     pub fn send(&self, command: OverlayCommand) {
+        if command.debug_kind() != "grow" {
+            log::debug!(
+                target: "platform.macos",
+                "event=overlay_command_enqueued command={} pending_depth_before={}",
+                command.debug_kind(),
+                self.pending.lock().len()
+            );
+        }
         let generation = if starts_new_generation(&command) {
             self.generation.fetch_add(1, Ordering::AcqRel) + 1
         } else {
@@ -132,8 +140,24 @@ fn schedule_drain(
             let mut slot = slot.borrow_mut();
             let state = slot.get_or_insert_with(OverlayState::default);
             let mut dirty = false;
-            for queued in batch {
+            for (batch_index, queued) in batch.into_iter().enumerate() {
+                let command_kind = queued.command.debug_kind();
+                let lifecycle_command = command_kind != "grow";
+                if lifecycle_command || !state.active || !state.show_path {
+                    log_overlay_state("overlay_command_state", command_kind, "before", state);
+                    log::debug!(
+                        target: "platform.macos",
+                        "event=overlay_command_processing command={} batch_index={} generation={} dirty_before={}",
+                        command_kind,
+                        batch_index,
+                        queued.generation,
+                        dirty,
+                    );
+                }
                 let effect = state.apply(queued.command);
+                if lifecycle_command || !state.active || !state.show_path {
+                    log_overlay_state("overlay_command_state", command_kind, "after", state);
+                }
                 dirty = (dirty || effect.dirty) && !effect.suppress_render;
                 if effect.fade {
                     state.fade_active = true;
@@ -145,6 +169,9 @@ fn schedule_drain(
                 }
             }
             if dirty {
+                if state.boundary_guide.is_some() || !state.show_path || state.points.is_empty() {
+                    log_overlay_state("overlay_render_requested", "batch", "before", state);
+                }
                 state.render();
             }
         });
@@ -435,6 +462,27 @@ fn has_trail_or_label_content(state: &OverlayState) -> bool {
     (state.show_path && !state.points.is_empty()) || (state.show_label && state.label.is_some())
 }
 
+fn log_overlay_state(event: &str, command: &str, phase: &str, state: &OverlayState) {
+    log::debug!(
+        target: "platform.macos",
+        "event={} command={} phase={} points={} rendered_points={} show_path={} show_label={} active={} needs_full_redraw={} visible={} boundary_guide={} boundary_guide_dirty={:?} mode={:?} fade_active={}",
+        event,
+        command,
+        phase,
+        state.points.len(),
+        state.rendered_points,
+        state.show_path,
+        state.show_label,
+        state.active,
+        state.needs_full_redraw,
+        state.visible,
+        state.boundary_guide.is_some(),
+        state.boundary_guide_dirty,
+        state.mode,
+        state.fade_active,
+    );
+}
+
 impl Default for OverlayState {
     fn default() -> Self {
         Self {
@@ -508,6 +556,12 @@ impl OverlayState {
                 }
                 mark_boundary_guide_dirty(self, frame);
                 self.visible = true;
+                log_overlay_state(
+                    "overlay_guide_visible_before_render",
+                    "set_boundary_guide",
+                    "after_visibility",
+                    self,
+                );
                 ApplyEffect::dirty()
             }
             OverlayCommand::ClearBoundaryGuide => {
@@ -756,8 +810,9 @@ impl OverlayState {
             (2.0 * self.scale).ceil() as i32 + 2,
         )
         .and_then(|rect| rect.clamp(surface_width, surface_height));
+        let guide_dirty = self.boundary_guide_dirty;
         let full_redraw = self.needs_full_redraw
-            || self.boundary_guide_dirty.is_some()
+            || guide_dirty.is_some()
             || trail_rect
                 .zip(label_rect)
                 .is_some_and(|(trail, label)| trail.intersects(label));
@@ -796,6 +851,22 @@ impl OverlayState {
         self.rendered_points = self.points.len();
         self.needs_full_redraw = false;
         self.boundary_guide_dirty = None;
+        if guide_dirty.is_some() || !self.show_path || self.points.is_empty() {
+            log::debug!(
+                target: "platform.macos",
+                "event=overlay_render full_redraw={} points={} rendered_points={} show_path={} visible={} active={} guide_dirty={:?} trail_rect={:?} present_mode={} boundary_guide={}",
+                full_redraw,
+                self.points.len(),
+                self.rendered_points,
+                self.show_path,
+                self.visible,
+                self.active,
+                guide_dirty,
+                trail_rect,
+                if full_redraw { "full" } else { "incremental" },
+                self.boundary_guide.is_some(),
+            );
+        }
         if let Err(error) = self.present() {
             log::error!("present macOS overlay frame failed: {error}");
             self.hide();

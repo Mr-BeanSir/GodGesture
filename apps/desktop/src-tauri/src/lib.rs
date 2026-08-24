@@ -370,22 +370,41 @@ fn spawn_engine_consumer(
                         });
                     }
                     EngineMsg::BoundaryGuideChanged(Some(frame)) => {
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=overlay_command_send command=set_boundary_guide source=boundary_guide_changed"
+                        );
                         overlay.send(OverlayCmd::SetBoundaryGuide(frame));
                     }
                     EngineMsg::BoundaryGuideChanged(None) => {
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=overlay_command_send command=clear_boundary_guide source=boundary_guide_changed"
+                        );
                         overlay.send(OverlayCmd::ClearBoundaryGuide);
                     }
                     EngineMsg::BoundaryPathGrown { point } => {
                         overlay.send(OverlayCmd::Grow(point));
                     }
                     EngineMsg::BoundaryPathEnded => {
-                        log::debug!(target: "gesture.boundary", "event=boundary_overlay_end");
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=boundary_overlay_end"
+                        );
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=overlay_command_send command=end source=boundary_path_ended"
+                        );
                         overlay.send(OverlayCmd::End);
                     }
                     EngineMsg::BoundaryPathCancelled => {
                         log::debug!(
                             target: "gesture.boundary",
                             "event=boundary_overlay_cancel"
+                        );
+                        log::debug!(
+                            target: "gesture.boundary",
+                            "event=overlay_command_send command=cancel source=boundary_path_cancelled"
                         );
                         overlay.send(OverlayCmd::Cancel);
                     }
@@ -543,6 +562,10 @@ fn spawn_engine_consumer(
                             }
                             None => log::debug!(target: "gesture.runtime", "手势结束: 无匹配意图"),
                         }
+                        log::debug!(
+                            target: "gesture.runtime",
+                            "event=overlay_command_send command=end source=path_ended"
+                        );
                         overlay.send(OverlayCmd::End);
                         if let Some(intent) = deferred_intent {
                             execute_intent(
@@ -593,6 +616,10 @@ fn spawn_engine_consumer(
                             inputs.len(),
                             contains_key_q(&inputs)
                         );
+                        log::debug!(
+                            target: "gesture.capture",
+                            "event=overlay_command_send command=end source=gesture_captured"
+                        );
                         overlay.send(OverlayCmd::End);
                         let payload = CapturedGesture {
                             trigger,
@@ -635,6 +662,10 @@ fn spawn_engine_consumer(
                     EngineMsg::PathCancelled => {
                         active_node_script = None;
                         log::debug!(target: "gesture.capture", "手势取消");
+                        log::debug!(
+                            target: "gesture.capture",
+                            "event=overlay_command_send command=cancel source=path_cancelled"
+                        );
                         overlay.send(OverlayCmd::Cancel);
                     }
                     EngineMsg::PauseChanged(paused) => {
