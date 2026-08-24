@@ -904,11 +904,16 @@ where
             }
             OverlayCommand::End => {
                 let label_feedback_active = state.mode == OverlayMode::LabelFeedback;
+                let should_fade_label = !label_feedback_active
+                    && state.show_label
+                    && state.label.is_some()
+                    && state.fade_out
+                    && (state.visible || visual_dirty);
                 if clear_boundary_guide(state) {
                     clear_boundary_guide_surface(state);
                 }
                 if !label_feedback_active {
-                    fade_after_render = false;
+                    fade_after_render = should_fade_label;
                     stop_fade(state);
                 }
                 visual_dirty = false;
@@ -916,7 +921,9 @@ where
                 state.rendered_points = 0;
                 state.show_path = false;
                 state.needs_full_redraw = true;
-                if has_trail_or_label_content(state) {
+                let preserve_visual = (label_feedback_active && has_trail_or_label_content(state))
+                    || should_fade_label;
+                if preserve_visual {
                     visual_dirty = true;
                 } else {
                     hide(state);
@@ -1913,6 +1920,7 @@ fn hide(state: &mut OverlayState) {
     stop_fade_timer(state);
     set_overlay_visible(state, false);
     state.alpha = 255;
+    state.label = None;
 }
 
 unsafe extern "system" fn wnd_proc(
@@ -2263,7 +2271,7 @@ mod tests {
     }
 
     #[test]
-    fn end_clears_trail_immediately_without_starting_trail_fade() {
+    fn end_clears_trail_and_fades_normal_label() {
         let (tx, rx) = unbounded();
         let mut state = test_state();
         state.tiles.clear();
@@ -2282,9 +2290,6 @@ mod tests {
         state.label = Some("match".into());
         state.visible = true;
         state.fade_out = true;
-        state.fade_duration = Some(Duration::from_millis(500));
-        state.fade_timer_id = 17;
-        state.fade_started_at = Some(Instant::now());
 
         tx.send(OverlayCommand::End).unwrap();
         drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
@@ -2292,10 +2297,91 @@ mod tests {
         assert!(state.boundary_guide.is_none());
         assert!(state.points.is_empty());
         assert!(!state.show_path);
+        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(state.visible);
+        assert_ne!(state.fade_timer_id, 0);
+
+        for _ in 0..32 {
+            fade_step(&mut state);
+        }
+
+        assert!(state.label.is_none());
+        assert!(!state.visible);
+    }
+
+    #[test]
+    fn normal_trail_end_requests_label_fade_and_finishes_hidden() {
+        let (tx, rx) = unbounded();
+        let (mut state, _pixels) = test_state_with_surface(64, 64);
+        let colors = TrailColors {
+            main: 0xff27e518,
+            unrecognized: 0xffff2424,
+        };
+
+        tx.send(OverlayCommand::Begin {
+            origin: point(10),
+            colors,
+            show_path: true,
+            show_label: true,
+            fade_out: true,
+        })
+        .unwrap();
+        tx.send(OverlayCommand::Recognized(Some("match".into())))
+            .unwrap();
+        tx.send(OverlayCommand::End).unwrap();
+
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {},
+        ));
+
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(state.visible);
+        assert_ne!(state.fade_timer_id, 0);
+
+        for _ in 0..32 {
+            fade_step(&mut state);
+        }
+
+        assert!(state.label.is_none());
+        assert!(!state.visible);
+    }
+
+    #[test]
+    fn normal_trail_end_without_fade_clears_label_and_hides() {
+        let (tx, rx) = unbounded();
+        let (mut state, _pixels) = test_state_with_surface(64, 64);
+        let colors = TrailColors {
+            main: 0xff27e518,
+            unrecognized: 0xffff2424,
+        };
+
+        tx.send(OverlayCommand::Begin {
+            origin: point(10),
+            colors,
+            show_path: true,
+            show_label: true,
+            fade_out: false,
+        })
+        .unwrap();
+        tx.send(OverlayCommand::Recognized(Some("match".into())))
+            .unwrap();
+        tx.send(OverlayCommand::End).unwrap();
+
+        assert!(!drain_commands_with_surface(
+            &rx,
+            &mut state,
+            |_state, _origin| {},
+        ));
+
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert!(state.label.is_none());
+        assert!(!state.visible);
         assert_eq!(state.fade_timer_id, 0);
-        assert!(state.fade_started_at.is_none());
-        assert!(state.fade_delay_until.is_none());
-        assert!(state.label.is_some());
     }
 
     #[test]
@@ -2497,7 +2583,7 @@ mod tests {
     }
 
     #[test]
-    fn independent_label_feedback_without_fade_hides_immediately() {
+    fn independent_label_feedback_without_fade_clears_label() {
         let (tx, rx) = unbounded();
         let mut state = test_state();
         state.tiles.clear();
@@ -2519,7 +2605,7 @@ mod tests {
             &mut state,
             |_state, _origin| {},
         ));
-        assert_eq!(state.label.as_deref(), Some("0%"));
+        assert!(state.label.is_none());
         assert!(state.points.is_empty());
         assert!(!state.visible);
         assert_eq!(state.alpha, 255);
@@ -2824,7 +2910,7 @@ mod tests {
     }
 
     #[test]
-    fn reaching_visual_point_limit_does_not_delay_recognized_or_end() {
+    fn reaching_visual_point_limit_preserves_recognition_when_label_hidden() {
         let (tx, rx) = unbounded();
         for value in 1..700 {
             tx.send(OverlayCommand::Grow(Point { x: value * 3, y: 0 }))
@@ -2836,8 +2922,9 @@ mod tests {
 
         let mut state = test_state();
         assert!(!drain_commands(&rx, &mut state));
+        assert!(!state.show_label);
         assert!(state.recognized);
-        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(state.label.is_none());
         assert!(state.points.is_empty());
     }
 

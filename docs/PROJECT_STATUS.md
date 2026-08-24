@@ -93,6 +93,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 轨迹和命令提示由原生覆盖层绘制，不能迁移到 WebView。Windows 使用低级钩子与 Raw Input 兜底，macOS 使用 CGEventTap。
 - 边角显示引导为 display-only：角的真实视觉区域仍是固定 10px quarter-circle，边的真实视觉区域仍是实际 DPI-scaled edge band；真实区域内 alpha 为 100%，只有向屏幕内部越过真实区域内边界后才渐隐，角渐隐带为 10..20px，边渐隐带为一个等厚 fade band，超出不显示。该 alpha 语义不改变真实角/边命中区域、状态机或输入路径。
 - Windows/macOS 原生 overlay 的 `End` 和 `Cancel` 立即清理 live trail points、render/cache/show path；`trail_fade_surface` 及等价的 snapshot capture/restore/composition/专用淡出机制已删除。`SetBoundaryGuide` 只更新引导，不承担清理旧轨迹。
+- 普通 `Trail` 在 `End` 后按 `fade_out` 独立处理命令标签：轨迹立即清除；启用淡出时保留标签并复用原生标签 fade 生命周期，淡出完成后清除并隐藏；关闭淡出或收到 `Cancel` 时立即清除标签并隐藏。
 - Label feedback 保持独立生命周期：`ShowLabelFeedback -> End` 的同批次路径仍会启动一次待定 label fade，后续批次的 `End` 保留已存在的 label fade；`End` 清理轨迹，不移除 label。
 - Windows 轨迹不可见修复已有 focused 测试和 Rust 格式证据；本轮又补充了普通手势越过起始阈值、边角覆盖层 Begin/End/Cancel 以及高耗时输入分发的 debug 事件。修改后原始复现进程已退出，必须先接管并监控实例，再做无重启运行态验收。
 - Desktop 支持 Gesture Template v2 多目标导出、详情、冲突复核和高风险采纳确认；原生使用保存面板，浏览器预览回退到下载。
@@ -140,6 +141,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-24（普通手势命令标签残留）：复现 JSONL 显示普通 `Recognized -> End` 后 points/rendered_points 已清零、`show_path=false`，但 `show_label=true` 且 label 仍存在；Windows 因 `End` 停止 fade 后重绘了仅标签帧，macOS 因同样保留 label 且未创建 fade 导致覆盖层残留。两端现已让普通 `Trail` 标签按 `fade_out` 进入既有淡出或立即清理；Windows overlay 定向测试 `35 passed / 0 failed`，Rust 全库测试 `334 passed / 0 failed / 2 ignored`，fmt 和库级 Clippy `-D warnings` 通过。macOS native compile/runtime/device 验收仍 pending。
 
 - 2026-08-24（Boundary Guide Reveal Ordering）：复现 JSONL 确认 `End` 清理轨迹逻辑正常，问题是 Windows DIB 旧像素在引导重绘前暴露；新增渲染显示顺序回归测试并通过 Windows overlay suite `33 passed / 0 failed`。Windows layered-window 无重启现场验收和 macOS native runtime/device 验收仍 pending。
 

@@ -641,6 +641,7 @@ impl OverlayState {
             }
             OverlayCommand::End => {
                 let guide_cleared = clear_boundary_guide(self);
+                let should_fade_label = self.show_label && self.label.is_some() && self.fade_out;
                 self.active = false;
                 self.points.clear();
                 self.rendered_points = 0;
@@ -656,22 +657,23 @@ impl OverlayState {
                     };
                 }
                 self.fade_active = false;
-                if !has_trail_or_label_content(self) {
-                    self.hide();
+                if should_fade_label {
                     return ApplyEffect {
-                        dirty: guide_cleared,
-                        fade: false,
+                        dirty: guide_cleared || self.show_label,
+                        fade: true,
                         display_duration: None,
                         fade_duration: None,
-                        suppress_render: true,
+                        suppress_render: false,
                     };
                 }
+                self.label = None;
+                self.hide();
                 ApplyEffect {
-                    dirty: guide_cleared || self.show_label,
+                    dirty: guide_cleared,
                     fade: false,
                     display_duration: None,
                     fade_duration: None,
-                    suppress_render: false,
+                    suppress_render: true,
                 }
             }
             OverlayCommand::Cancel => {
@@ -1708,6 +1710,76 @@ mod tests {
     }
 
     #[test]
+    fn normal_trail_end_requests_label_fade_and_preserves_label() {
+        let mut state = guide_test_state();
+        let colors = TrailColors {
+            main: 0xff27e518,
+            unrecognized: 0xffff2424,
+        };
+
+        state.apply_with_surface(
+            OverlayCommand::Begin {
+                origin: Point { x: 10, y: 10 },
+                colors,
+                show_path: true,
+                show_label: true,
+                fade_out: true,
+            },
+            |state, _origin| {
+                state.visible = true;
+                Ok(())
+            },
+        );
+        state.apply_with_surface(
+            OverlayCommand::Recognized(Some("match".into())),
+            |_state, _origin| Ok(()),
+        );
+        let effect = state.apply_with_surface(OverlayCommand::End, |_state, _origin| Ok(()));
+
+        assert!(effect.fade);
+        assert!(state.points.is_empty());
+        assert_eq!(state.rendered_points, 0);
+        assert!(!state.show_path);
+        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(state.visible);
+    }
+
+    #[test]
+    fn normal_trail_end_without_fade_clears_label_and_hides() {
+        let mut state = guide_test_state();
+        let colors = TrailColors {
+            main: 0xff27e518,
+            unrecognized: 0xffff2424,
+        };
+
+        state.apply_with_surface(
+            OverlayCommand::Begin {
+                origin: Point { x: 10, y: 10 },
+                colors,
+                show_path: true,
+                show_label: true,
+                fade_out: false,
+            },
+            |state, _origin| {
+                state.visible = true;
+                Ok(())
+            },
+        );
+        state.apply_with_surface(
+            OverlayCommand::Recognized(Some("match".into())),
+            |_state, _origin| Ok(()),
+        );
+        let effect = state.apply_with_surface(OverlayCommand::End, |_state, _origin| Ok(()));
+
+        assert!(!effect.fade);
+        assert!(state.points.is_empty());
+        assert_eq!(state.rendered_points, 0);
+        assert!(!state.show_path);
+        assert!(state.label.is_none());
+        assert!(!state.visible);
+    }
+
+    #[test]
     fn clearing_boundary_guide_keeps_existing_trail_visible() {
         let mut state = guide_test_state();
         state.boundary_guide = Some(boundary_guide_frame(
@@ -1733,7 +1805,7 @@ mod tests {
     }
 
     #[test]
-    fn end_clears_trail_immediately_without_starting_trail_fade() {
+    fn end_clears_trail_and_fades_normal_label() {
         let frame = boundary_guide_frame(
             ScreenRect {
                 left: 0,
@@ -1778,14 +1850,14 @@ mod tests {
         ended.fade_out = true;
         ended.active = true;
         ended.visible = true;
-        ended.fade_active = true;
         let end = ended.apply_with_surface(OverlayCommand::End, |_, _| Ok(()));
-        assert!(!end.fade);
+        assert!(end.fade);
         assert!(ended.boundary_guide.is_none());
         assert!(ended.points.is_empty());
         assert!(!ended.show_path);
         assert!(!ended.fade_active);
-        assert!(ended.label.is_some());
+        assert_eq!(ended.label.as_deref(), Some("match"));
+        assert!(ended.visible);
     }
 
     #[test]
@@ -1945,7 +2017,7 @@ mod tests {
     }
 
     #[test]
-    fn independent_label_feedback_without_fade_hides_immediately() {
+    fn independent_label_feedback_without_fade_clears_label() {
         let mut state = OverlayState {
             points: vec![Point { x: 10, y: 10 }, Point { x: 20, y: 20 }],
             label: Some("old label".into()),
@@ -2045,7 +2117,7 @@ mod tests {
     }
 
     #[test]
-    fn visual_point_limit_scales_with_dpi_and_stops_only_visual_growth() {
+    fn visual_point_limit_preserves_recognition_when_label_hidden() {
         assert_eq!(max_trail_points(1.0), 512);
         assert_eq!(max_trail_points(1.25), 640);
         assert_eq!(max_trail_points(2.0), 1024);
@@ -2065,8 +2137,9 @@ mod tests {
 
         state.apply(OverlayCommand::Recognized(Some("match".into())));
         let end = state.apply(OverlayCommand::End);
+        assert!(!state.show_label);
         assert!(state.recognized);
-        assert_eq!(state.label.as_deref(), Some("match"));
+        assert!(state.label.is_none());
         assert!(!state.active);
         assert!(!end.fade);
         assert!(state.points.is_empty());
