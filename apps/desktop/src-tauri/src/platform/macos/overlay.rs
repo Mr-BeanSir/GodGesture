@@ -202,9 +202,7 @@ fn spawn_fade(
                     STATE.with(|slot| {
                         if let Some(state) = slot.borrow_mut().as_mut() {
                             state.apply_fade_alpha(alpha);
-                            if state.should_render_fade_tick() {
-                                state.render();
-                            }
+                            state.render();
                             if finish {
                                 state.finish_fade();
                             }
@@ -249,7 +247,6 @@ struct OverlayState {
     points: Vec<Point>,
     rendered_points: usize,
     needs_full_redraw: bool,
-    trail_fade_surface: Option<Vec<u8>>,
     boundary_guide: Option<BoundaryGuideFrame>,
     boundary_guide_dirty: Option<PixelRect>,
     colors: TrailColors,
@@ -458,7 +455,6 @@ impl Default for OverlayState {
             points: Vec::new(),
             rendered_points: 0,
             needs_full_redraw: true,
-            trail_fade_surface: None,
             boundary_guide: None,
             boundary_guide_dirty: None,
             colors: TrailColors {
@@ -496,8 +492,6 @@ impl OverlayState {
         match command {
             OverlayCommand::SetBoundaryGuide(frame) => {
                 let previous = self.boundary_guide;
-                self.capture_trail_fade_surface();
-                let fade_alpha = self.fade_active.then_some(self.alpha).unwrap_or(1.0);
                 if let Err(error) = ensure_surface(
                     self,
                     Point {
@@ -509,7 +503,6 @@ impl OverlayState {
                     return ApplyEffect::default();
                 }
                 self.boundary_guide = Some(frame);
-                self.apply_fade_alpha(fade_alpha);
                 if let Some(previous) = previous {
                     mark_boundary_guide_dirty(self, previous);
                 }
@@ -550,7 +543,6 @@ impl OverlayState {
                 self.points.push(origin);
                 self.rendered_points = 0;
                 self.needs_full_redraw = true;
-                self.trail_fade_surface = None;
                 self.colors = colors;
                 self.recognized = false;
                 self.label = None;
@@ -605,6 +597,11 @@ impl OverlayState {
                     };
                 }
                 self.active = false;
+                self.points.clear();
+                self.rendered_points = 0;
+                self.show_path = false;
+                self.fade_active = false;
+                self.needs_full_redraw = true;
                 if !has_trail_or_label_content(self) {
                     self.hide();
                     return ApplyEffect {
@@ -615,23 +612,12 @@ impl OverlayState {
                         suppress_render: true,
                     };
                 }
-                if self.fade_out {
-                    ApplyEffect {
-                        dirty: guide_cleared,
-                        fade: true,
-                        display_duration: None,
-                        fade_duration: None,
-                        suppress_render: false,
-                    }
-                } else {
-                    self.hide();
-                    ApplyEffect {
-                        dirty: false,
-                        fade: false,
-                        display_duration: None,
-                        fade_duration: None,
-                        suppress_render: true,
-                    }
+                ApplyEffect {
+                    dirty: guide_cleared || self.show_label,
+                    fade: false,
+                    display_duration: None,
+                    fade_duration: None,
+                    suppress_render: false,
                 }
             }
             OverlayCommand::Cancel => {
@@ -640,6 +626,7 @@ impl OverlayState {
                 self.active = false;
                 self.mode = OverlayMode::Trail;
                 self.hide();
+                self.show_path = false;
                 ApplyEffect {
                     dirty: false,
                     fade: false,
@@ -666,7 +653,6 @@ impl OverlayState {
                 }
                 self.points.clear();
                 self.rendered_points = 0;
-                self.trail_fade_surface = None;
                 self.needs_full_redraw = true;
                 self.recognized = true;
                 self.label = Some(text);
@@ -772,7 +758,6 @@ impl OverlayState {
         .and_then(|rect| rect.clamp(surface_width, surface_height));
         let full_redraw = self.needs_full_redraw
             || self.boundary_guide_dirty.is_some()
-            || self.trail_fade_surface.is_some()
             || trail_rect
                 .zip(label_rect)
                 .is_some_and(|(trail, label)| trail.intersects(label));
@@ -782,23 +767,16 @@ impl OverlayState {
             recognized: self.recognized,
             colors: self.colors,
         };
-        let trail_fade_surface = self.trail_fade_surface.as_deref();
-        let fade_alpha = self.alpha;
         let boundary_guide = self.boundary_guide;
         let Some(pixmap) = self.pixmap.as_mut() else {
             return;
         };
         if full_redraw {
             pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
-            if !Self::restore_trail_fade_surface(
-                &mut pixmap.as_mut(),
-                trail_fade_surface,
-                fade_alpha,
-            ) && self.show_path
-            {
+            if self.show_path {
                 draw_trail(&mut pixmap.as_mut(), &self.points, trail_style, (0.0, 0.0));
             }
-            if self.trail_fade_surface.is_none() && self.show_label {
+            if self.show_label {
                 if let (Some(label), Some(font)) = (self.label.as_deref(), self.font.as_ref()) {
                     draw_label(pixmap, font, self.scale, self.label_bounds, label);
                 }
@@ -875,74 +853,16 @@ impl OverlayState {
         }
     }
 
-    fn capture_trail_fade_surface(&mut self) {
-        if !self.fade_active
-            || self.trail_fade_surface.is_some()
-            || (self.points.is_empty() && self.label.is_none())
-        {
-            return;
-        }
-        let Some(pixmap) = self.pixmap.as_ref() else {
-            return;
-        };
-        self.trail_fade_surface = Some(pixmap.data().to_vec());
-    }
-
-    fn restore_trail_fade_surface(
-        pixmap: &mut PixmapMut<'_>,
-        source: Option<&[u8]>,
-        alpha: f64,
-    ) -> bool {
-        let Some(source) = source else {
-            return false;
-        };
-        let destination = pixmap.data_mut();
-        if destination.len() != source.len() {
-            return false;
-        }
-        let alpha = (alpha.clamp(0.0, 1.0) * 255.0).round() as u16;
-        for (destination, source) in destination.iter_mut().zip(source) {
-            *destination = ((*source as u16 * alpha + 127) / 255) as u8;
-        }
-        true
-    }
-
-    #[cfg(test)]
-    fn compose_fade_layers(&self, pixmap: &mut PixmapMut<'_>) -> bool {
-        let restored = Self::restore_trail_fade_surface(
-            pixmap,
-            self.trail_fade_surface.as_deref(),
-            self.alpha,
-        );
-        if let Some(frame) = self.boundary_guide {
-            draw_boundary_guide(pixmap, &frame, self.screen_origin, self.scale);
-        }
-        restored
-    }
-
     fn apply_fade_alpha(&mut self, alpha: f64) {
         self.alpha = alpha.clamp(0.0, 1.0);
         if let Some(window) = &self.window {
-            window.setAlphaValue(self.effective_window_alpha());
+            window.setAlphaValue(self.alpha);
         }
-    }
-
-    fn effective_window_alpha(&self) -> f64 {
-        if self.trail_fade_surface.is_some() {
-            1.0
-        } else {
-            self.alpha
-        }
-    }
-
-    fn should_render_fade_tick(&self) -> bool {
-        self.boundary_guide.is_some() || self.trail_fade_surface.is_some()
     }
 
     fn finish_fade(&mut self) {
         self.fade_active = false;
         if self.boundary_guide.is_some() {
-            self.trail_fade_surface = None;
             self.points.clear();
             self.rendered_points = 0;
             self.label = None;
@@ -961,7 +881,6 @@ impl OverlayState {
         }
         self.points.clear();
         self.rendered_points = 0;
-        self.trail_fade_surface = None;
         self.fade_active = false;
         self.needs_full_redraw = true;
         self.label = None;
@@ -1504,11 +1423,6 @@ mod tests {
         pixmap.data()[offset..offset + 4].try_into().unwrap()
     }
 
-    fn set_pixel(pixels: &mut [u8], width: usize, x: usize, y: usize, color: [u8; 4]) {
-        let offset = (y * width + x) * 4;
-        pixels[offset..offset + 4].copy_from_slice(&color);
-    }
-
     #[test]
     fn boundary_guide_lifecycle_keeps_empty_overlay_visible_until_clear() {
         let mut state = guide_test_state();
@@ -1675,9 +1589,12 @@ mod tests {
     }
 
     #[test]
-    fn setting_boundary_guide_restores_window_alpha_after_a_previous_fade() {
+    fn setting_boundary_guide_only_updates_guide_state() {
         let mut state = guide_test_state();
-        state.set_alpha(0.0);
+        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
+        state.show_path = true;
+        state.fade_active = true;
+        state.set_alpha(0.4);
         let frame = boundary_guide_frame(
             ScreenRect {
                 left: 0,
@@ -1693,7 +1610,11 @@ mod tests {
             |_state, _origin| Ok(()),
         );
 
-        assert_eq!(state.alpha, 1.0);
+        assert_eq!(state.alpha, 0.4);
+        assert!(state.fade_active);
+        assert_eq!(state.points.len(), 2);
+        assert!(state.show_path);
+        assert_eq!(state.boundary_guide, Some(frame));
         assert!(state.visible);
     }
 
@@ -1713,245 +1634,6 @@ mod tests {
             frame
         )));
         assert!(!starts_new_generation(&OverlayCommand::ClearBoundaryGuide));
-    }
-
-    #[test]
-    fn guide_and_captured_trail_snapshot_are_composited_across_fade_redraws() {
-        let frame = boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-        );
-        let mut state = OverlayState {
-            screen_origin: Point { x: 0, y: 0 },
-            width_points: 128,
-            height_points: 128,
-            scale: 1.0,
-            boundary_guide: Some(frame),
-            ..OverlayState::default()
-        };
-        let mut trail_surface = vec![0; 128 * 128 * 4];
-        set_pixel(&mut trail_surface, 128, 80, 80, [200, 100, 50, 255]);
-        state.trail_fade_surface = Some(trail_surface);
-
-        state.alpha = 0.75;
-        let mut first = Pixmap::new(128, 128).unwrap();
-        assert!(state.compose_fade_layers(&mut first.as_mut()));
-        let first_trail = pixel_at(&first, 80, 80);
-        let first_guide = pixel_at(&first, 8, 8);
-
-        state.alpha = 0.25;
-        let mut second = Pixmap::new(128, 128).unwrap();
-        assert!(state.compose_fade_layers(&mut second.as_mut()));
-        let second_trail = pixel_at(&second, 80, 80);
-        let second_guide = pixel_at(&second, 8, 8);
-
-        assert!(second_trail[3] < first_trail[3]);
-        assert!(first_guide[3] > 0);
-        assert_eq!(second_guide, first_guide);
-    }
-
-    #[test]
-    fn setting_boundary_guide_preserves_progressed_fade_alpha() {
-        let mut state = guide_test_state();
-        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
-        state.fade_active = true;
-        state.set_alpha(0.4);
-        state.visible = true;
-        let frame = boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Edge(ScreenEdge::Top),
-        );
-
-        state.apply_with_surface(OverlayCommand::SetBoundaryGuide(frame), |_, _| Ok(()));
-
-        assert_eq!(state.alpha, 0.4);
-        assert!(state.fade_active);
-        assert!(state.trail_fade_surface.is_some());
-        assert_eq!(state.boundary_guide, Some(frame));
-    }
-
-    #[test]
-    fn captured_fade_keeps_window_alpha_independent_after_guide_clear() {
-        let mut state = guide_test_state();
-        state.points = vec![Point { x: 8, y: 8 }];
-        state.fade_active = true;
-        state.trail_fade_surface = Some(vec![255; 128 * 128 * 4]);
-        state.set_alpha(0.4);
-
-        let frame = boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Edge(ScreenEdge::Top),
-        );
-        state.boundary_guide = Some(frame);
-        assert_eq!(state.effective_window_alpha(), 1.0);
-
-        state.apply_with_surface(OverlayCommand::ClearBoundaryGuide, |_, _| Ok(()));
-        state.apply_fade_alpha(0.2);
-
-        assert_eq!(state.effective_window_alpha(), 1.0);
-    }
-
-    #[test]
-    fn fade_tick_after_guide_clear_recomposes_captured_snapshot() {
-        let mut trail_surface = vec![0; 16 * 16 * 4];
-        set_pixel(&mut trail_surface, 16, 8, 8, [200, 100, 50, 255]);
-        let mut state = OverlayState {
-            screen_origin: Point { x: 0, y: 0 },
-            width_points: 16,
-            height_points: 16,
-            scale: 1.0,
-            boundary_guide: Some(boundary_guide_frame(
-                ScreenRect {
-                    left: 0,
-                    top: 0,
-                    right: 15,
-                    bottom: 15,
-                },
-                CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-            )),
-            points: vec![Point { x: 8, y: 8 }],
-            trail_fade_surface: Some(trail_surface),
-            fade_active: true,
-            visible: true,
-            alpha: 0.75,
-            ..OverlayState::default()
-        };
-        state.apply_with_surface(OverlayCommand::ClearBoundaryGuide, |_, _| Ok(()));
-
-        let mut first = Pixmap::new(16, 16).unwrap();
-        assert!(state.compose_fade_layers(&mut first.as_mut()));
-        assert!(state.should_render_fade_tick());
-        state.apply_fade_alpha(0.25);
-        let mut second = Pixmap::new(16, 16).unwrap();
-        assert!(state.compose_fade_layers(&mut second.as_mut()));
-
-        assert!(pixel_at(&second, 8, 8)[3] < pixel_at(&first, 8, 8)[3]);
-    }
-
-    #[test]
-    fn fade_completion_keeps_guide_and_clears_captured_content() {
-        let frame = boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-        );
-        let mut state = OverlayState {
-            screen_origin: Point { x: 0, y: 0 },
-            width_points: 128,
-            height_points: 128,
-            scale: 1.0,
-            boundary_guide: Some(frame),
-            points: vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }],
-            label: Some("old label".into()),
-            trail_fade_surface: Some(vec![255; 128 * 128 * 4]),
-            fade_active: true,
-            visible: true,
-            ..OverlayState::default()
-        };
-
-        state.finish_fade();
-        let mut composed = Pixmap::new(128, 128).unwrap();
-        assert!(!state.compose_fade_layers(&mut composed.as_mut()));
-
-        assert!(state.visible);
-        assert_eq!(state.boundary_guide, Some(frame));
-        assert!(state.trail_fade_surface.is_none());
-        assert!(state.points.is_empty());
-        assert!(state.label.is_none());
-        assert_eq!(pixel_at(&composed, 80, 80), [0, 0, 0, 0]);
-        assert!(pixel_at(&composed, 8, 8)[3] > 0);
-    }
-
-    #[test]
-    fn clearing_guide_during_captured_fade_keeps_fade_alive_until_completion() {
-        let frame = boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-        );
-        let mut trail_surface = vec![0; 128 * 128 * 4];
-        set_pixel(&mut trail_surface, 128, 80, 80, [200, 100, 50, 255]);
-        let mut state = OverlayState {
-            screen_origin: Point { x: 0, y: 0 },
-            width_points: 128,
-            height_points: 128,
-            scale: 1.0,
-            boundary_guide: Some(frame),
-            points: vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }],
-            trail_fade_surface: Some(trail_surface),
-            fade_active: true,
-            visible: true,
-            alpha: 0.4,
-            ..OverlayState::default()
-        };
-
-        let effect = state.apply_with_surface(OverlayCommand::ClearBoundaryGuide, |_, _| Ok(()));
-        let mut fading = Pixmap::new(128, 128).unwrap();
-        assert!(state.compose_fade_layers(&mut fading.as_mut()));
-
-        assert!(effect.dirty);
-        assert!(!effect.suppress_render);
-        assert!(state.boundary_guide.is_none());
-        assert!(state.fade_active);
-        assert!(state.visible);
-        assert!(pixel_at(&fading, 80, 80)[3] > 0);
-
-        state.finish_fade();
-        assert!(!state.visible);
-        assert!(!state.fade_active);
-        assert!(state.trail_fade_surface.is_none());
-    }
-
-    #[test]
-    fn guide_does_not_cancel_trail_fade_and_fade_completion_keeps_guide_visible() {
-        let mut state = guide_test_state();
-        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
-        state.show_path = true;
-        state.fade_active = true;
-        state.visible = true;
-        state.boundary_guide = Some(boundary_guide_frame(
-            ScreenRect {
-                left: 0,
-                top: 0,
-                right: 31,
-                bottom: 31,
-            },
-            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
-        ));
-        state.capture_trail_fade_surface();
-        assert!(state.trail_fade_surface.is_some());
-
-        state.apply_fade_alpha(0.4);
-        assert_eq!(state.alpha, 0.4);
-        state.finish_fade();
-
-        assert!(state.boundary_guide.is_some());
-        assert!(state.visible);
-        assert!(state.points.is_empty());
-        assert!(state.trail_fade_surface.is_none());
     }
 
     #[test]
@@ -1980,7 +1662,7 @@ mod tests {
     }
 
     #[test]
-    fn trail_lifecycle_commands_clear_boundary_guide() {
+    fn end_clears_trail_immediately_without_starting_trail_fade() {
         let frame = boundary_guide_frame(
             ScreenRect {
                 left: 0,
@@ -2020,14 +1702,37 @@ mod tests {
         ended.boundary_guide = Some(frame);
         ended.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
         ended.show_path = true;
+        ended.show_label = true;
+        ended.label = Some("match".into());
         ended.fade_out = true;
         ended.active = true;
         ended.visible = true;
+        ended.fade_active = true;
         let end = ended.apply_with_surface(OverlayCommand::End, |_, _| Ok(()));
-        assert!(end.dirty);
-        assert!(end.fade);
+        assert!(!end.fade);
         assert!(ended.boundary_guide.is_none());
-        assert!(ended.visible);
+        assert!(ended.points.is_empty());
+        assert!(!ended.show_path);
+        assert!(!ended.fade_active);
+        assert!(ended.label.is_some());
+    }
+
+    #[test]
+    fn cancel_clears_trail_immediately_without_starting_trail_fade() {
+        let mut state = guide_test_state();
+        state.points = vec![Point { x: 8, y: 8 }, Point { x: 24, y: 24 }];
+        state.show_path = true;
+        state.visible = true;
+        state.fade_out = true;
+        state.fade_active = true;
+
+        let effect = state.apply_with_surface(OverlayCommand::Cancel, |_state, _origin| Ok(()));
+
+        assert!(!effect.fade);
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
+        assert!(!state.fade_active);
+        assert!(!state.visible);
     }
 
     #[test]
@@ -2267,7 +1972,9 @@ mod tests {
         assert!(state.recognized);
         assert_eq!(state.label.as_deref(), Some("match"));
         assert!(!state.active);
-        assert!(end.fade);
+        assert!(!end.fade);
+        assert!(state.points.is_empty());
+        assert!(!state.show_path);
     }
 
     #[test]
