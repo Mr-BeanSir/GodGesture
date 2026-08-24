@@ -587,6 +587,11 @@ impl OverlayState {
             }
             OverlayCommand::End => {
                 let guide_cleared = clear_boundary_guide(self);
+                self.active = false;
+                self.points.clear();
+                self.rendered_points = 0;
+                self.show_path = false;
+                self.needs_full_redraw = true;
                 if self.mode == OverlayMode::LabelFeedback {
                     return ApplyEffect {
                         dirty: guide_cleared,
@@ -596,12 +601,7 @@ impl OverlayState {
                         suppress_render: false,
                     };
                 }
-                self.active = false;
-                self.points.clear();
-                self.rendered_points = 0;
-                self.show_path = false;
                 self.fade_active = false;
-                self.needs_full_redraw = true;
                 if !has_trail_or_label_content(self) {
                     self.hide();
                     return ApplyEffect {
@@ -1846,6 +1846,31 @@ mod tests {
         assert_eq!(feedback.fade_duration, Some(Duration::from_millis(800)));
         assert!(!end.fade);
         assert_eq!(state.mode, OverlayMode::LabelFeedback);
+    }
+
+    #[test]
+    fn end_in_label_feedback_clears_trail_without_interrupting_label_fade() {
+        let mut state = OverlayState {
+            points: vec![Point { x: 10, y: 10 }, Point { x: 20, y: 20 }],
+            rendered_points: 2,
+            show_path: true,
+            show_label: true,
+            label: Some("42%".into()),
+            active: true,
+            fade_active: true,
+            mode: OverlayMode::LabelFeedback,
+            ..OverlayState::default()
+        };
+
+        let effect = state.apply_with_surface(OverlayCommand::End, |_state, _origin| Ok(()));
+
+        assert!(state.points.is_empty());
+        assert_eq!(state.rendered_points, 0);
+        assert!(!state.show_path);
+        assert!(!state.active);
+        assert_eq!(state.label.as_deref(), Some("42%"));
+        assert!(state.fade_active);
+        assert!(!effect.fade);
     }
 
     #[test]
