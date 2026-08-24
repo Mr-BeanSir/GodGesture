@@ -69,7 +69,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | M5 后端与账户 | 已完成 | Server 是私有子模块；注册开关覆盖邮箱注册和首次未绑定 OAuth 建号；OAuth/SMTP 凭证由部署环境提供；模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8、乐观并发、后写胜出、快照和离线优先 |
 | M7 Web Console 与分发 | 已完成 | Server-owned Console、模板审核/举报/配额、系统配置、账户编辑和作者管理已接入 |
-| M8 打磨与发布 | 根仓库 `v0.2.4` 提交/tag 已推送；桌面发布 workflow 失败 | tag 指向 `84dd9ef`，之后仅同步 Cargo.lock 到 `9f4d20d`；GitHub Release/安装包未生成，原因是远端 Server 子模块缺少 gitlink `25e3900`；双平台安装验收和生产部署仍 pending |
+| M8 打磨与发布 | 根仓库 `v0.2.5` 提交/tag 已推送；本次 `pnpm release` 未创建 GitHub Release/安装包 | tag `v0.2.5` 指向 `e8ade88`，Server Web commit `777e3ce` 已推送；GitHub Actions、双平台安装验收和生产部署仍 pending |
 
 ## 部件地图
 
@@ -144,6 +144,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-25（v0.2.5 发布）：Server Web Console commit `777e3ce` 和根仓集成 commit `9da74fa` 已推送；`pnpm release patch` 创建并推送根仓 release commit `e8ade88` 与 tag `v0.2.5`。发布校验 `42/42`、仓库布局 `8/8`、`pnpm check:api` 和 `Cargo.lock` 版本同步通过；GitHub CLI 未登录，CI、安装包和 live 用户路径未核验。
 
 - 2026-08-25（Web Console 云同步设置展示）：`/config` 只读展示与 Desktop `ConfigDocument.preferences` 对应的全部可同步字段；Server `UserConfig.document`/`ConfigSnapshot.document` 继续使用现有 JSONB，不需要数据库 migration。Web Console 测试 `27 files / 188 passed`、Server Jest `26 passed / 1 skipped`（`235 passed / 13 skipped`）、Web 类型检查和生产构建通过。
 
