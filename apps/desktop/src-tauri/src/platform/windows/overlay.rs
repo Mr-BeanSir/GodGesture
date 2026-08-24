@@ -1218,7 +1218,7 @@ fn render(state: &mut OverlayState) {
     let bitmap_diagnostic_enabled = log::log_enabled!(
         target: "platform.windows",
         log::Level::Debug
-    ) && (guide_requires_full_redraw || requested_full_redraw);
+    ) && requested_full_redraw;
     let bitmap_before =
         bitmap_diagnostic_enabled.then(|| bitmap_alpha_summary(pixmap.data_mut(), width, height));
     let first_unrendered = state.rendered_points.min(state.points.len());
