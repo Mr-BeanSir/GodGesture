@@ -108,3 +108,9 @@ Verification after the correction:
   - Passed, exit code 0; no whitespace errors.
 - Allowed-path check
   - The working diff contains only `docs/PROJECT_STATUS.md` and this report file.
+
+## Post-review audit correction
+
+The SDD ledger initially recorded the Task 2 review range with the wrong base commit.
+It now records the actual Task 2 range as `c347c7d..6fd93ab`, beginning at the completed
+Task 1 implementation. No production behavior changed.
