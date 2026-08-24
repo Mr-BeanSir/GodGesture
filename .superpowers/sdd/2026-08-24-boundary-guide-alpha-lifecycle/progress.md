@@ -1,0 +1,4 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-08-24-boundary-guide-alpha-lifecycle.md
+Task 1: complete (commits a47e4c8..c347c7d, review clean)
+Task 2: complete (commits 159ecfa..6fd93ab, review follow-ups clean; Windows automated evidence available, macOS execution pending)
+Task 3: complete (documentation update, verification, report, and documentation commit)

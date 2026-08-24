@@ -41,6 +41,8 @@ alpha 的距离基准必须从屏幕最外沿改为“越过真实显示区域�
 - `fadeOut` 不再作用于轨迹；命令文字反馈仍可按现有独立反馈生命周期停留和淡出。
 - 边角引导更新、下一次 `Begin`、`ShowLabelFeedback` 不承担清理上一轮轨迹的责任。
 
+`ShowLabelFeedback` 与 `End` 的批处理顺序不改变 label feedback 的独立生命周期：同一批次中 `ShowLabelFeedback -> End` 仍在该批次渲染后启动一次待定 label fade；后续批次中的 `End` 只清理当前轨迹并保留已存在的 label fade。`End` 不移除 label。
+
 Windows/macOS overlay 都删除 `trail_fade_surface` 字段以及仅服务于轨迹淡出的捕获、合成、fade 分支和测试；实现中不保留该快照字段或等价的轨迹快照状态。清理后，旧轨迹不能在边角引导或后续手势中重新出现。
 
 ## State And Platform Boundaries
@@ -48,6 +50,7 @@ Windows/macOS overlay 都删除 `trail_fade_surface` 字段以及仅服务于轨
 - `OverlayCommand` 协议保持不变；删除只属于平台 overlay 内部的废弃状态和辅助函数。
 - 引导清除、窗口显示、点击穿透、no-activate、Spaces/fullscreen 和命令文字反馈生命周期保持不变。
 - Windows 与 macOS 使用相同 alpha 语义；平台差异只保留原生绘制和窗口管理实现。
+- 本次实现不修改 `packages/shared`、Server、backend、OpenAPI 或其他 protocol；`OverlayCommand` 协议保持不变。
 
 ## Verification
 

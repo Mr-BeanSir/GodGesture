@@ -91,6 +91,9 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 普通手势支持方向、鼠标按钮、滚轮和键盘 `KeyboardEvent.code`；独立修饰符在没有更长有序前缀时触发，可重复且不追加基础序列。
 - 边角非空序列由首个按钮/滚轮准入；有匹配候选时进入序列匹配，无匹配时保留视觉捕获但不执行意图，光标移动不会单独武装；形成方向轨迹后的主键释放不触发原生点击；精确角点保留给空序列立即动作。
 - 轨迹和命令提示由原生覆盖层绘制，不能迁移到 WebView。Windows 使用低级钩子与 Raw Input 兜底，macOS 使用 CGEventTap。
+- 边角显示引导为 display-only：角的真实视觉区域仍是固定 10px quarter-circle，边的真实视觉区域仍是实际 DPI-scaled edge band；真实区域内 alpha 为 100%，只有向屏幕内部越过真实区域内边界后才渐隐，角渐隐带为 10..20px，边渐隐带为一个等厚 fade band，超出不显示。该 alpha 语义不改变真实角/边命中区域、状态机或输入路径。
+- Windows/macOS 原生 overlay 的 `End` 和 `Cancel` 立即清理 live trail points、render/cache/show path；`trail_fade_surface` 及等价的 snapshot capture/restore/composition/专用淡出机制已删除。`SetBoundaryGuide` 只更新引导，不承担清理旧轨迹。
+- Label feedback 保持独立生命周期：`ShowLabelFeedback -> End` 的同批次路径仍会启动一次待定 label fade，后续批次的 `End` 保留已存在的 label fade；`End` 清理轨迹，不移除 label。
 - Windows 轨迹不可见修复已有 focused 测试和 Rust 格式证据；本轮又补充了普通手势越过起始阈值、边角覆盖层 Begin/End/Cancel 以及高耗时输入分发的 debug 事件。修改后原始复现进程已退出，必须先接管并监控实例，再做无重启运行态验收。
 - Desktop 支持 Gesture Template v2 多目标导出、详情、冲突复核和高风险采纳确认；原生使用保存面板，浏览器预览回退到下载。
 
@@ -137,7 +140,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ## 最近验证
 
-- 2026-08-24（Boundary Display Guide Task 3）：按 Task 3 brief 串行执行 Rust fmt、Rust library test、Rust library Clippy、Shared build、Desktop typecheck、Desktop tests、`pnpm check:api` 和 `git diff --check`；实际结果详见 `.superpowers/sdd/2026-08-24-boundary-guide-visual-correction/task-3-report.md`。文档确认角显示仅为固定 10px 半径四分之一圆的 display-only 视觉，边显示为实际 DPI 缩放边带；真实精确角命中和近角序列准入未改变。Windows 视觉观察，以及 macOS native compile、runtime/device、Retina、多屏、Spaces、点击透传验收仍 pending。
+- 2026-08-24（Boundary Guide Alpha And Trail Lifecycle Task 3）：按 Task 3 brief 完成文档同步，并重新执行 Rust fmt、Rust library test、Rust library Clippy、Shared build、Desktop typecheck、Desktop tests、`pnpm check:api` 和 `git diff --check`；实际结果与受限项详见 [Task 3 报告](../.superpowers/sdd/2026-08-24-boundary-guide-alpha-lifecycle/task-3-report.md)。记录确认角显示仅为固定 10px 半径四分之一圆的 display-only 视觉，边显示为实际 DPI 缩放边带；真实精确角命中和近角序列准入未改变。Windows layered-window 视觉观察，以及 macOS native compile/runtime/device、Retina、多屏、Spaces、点击透传验收仍 pending；Windows 自动化 Rust 结果不代表 macOS 证据。
 
 - 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Server Jest `25 passed / 1 skipped`（`233 passed / 13 skipped`）、Web Console `27 files / 187 passed`、Windows cfg 的 overlay suite `32 passed`、Rust 全量库测试 `325 passed / 0 failed / 2 ignored`、Rust fmt 和库级 Clippy 均通过。最终复审修正 macOS 淡出测试 fixture 并通过定向复审；Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
 

@@ -77,6 +77,8 @@ _避免_: 程序、进程
 **边角显示引导 (Boundary Display Guide)**:
 同步偏好 `preferences.gestureView.showBoundaryGuide` 控制的原生覆盖层视觉提示。引擎按当前显示器实际启用的四角和四边触发区域生成距离渐显帧，不读取 `boundaryIntents`；角显示仅为 display-only 的固定 10px 半径四分之一圆，边显示仍为实际 DPI 缩放的边带；`hotCorners.enabled` 和 `rubEdges.enabled` 分别控制四角与四边是否可见。引导只用于显示区域，不推进边角状态机，不改变输入吞噬、命令匹配、点击重放、焦点或鼠标命中测试语义。真实精确角命中和近角序列准入行为保持不变。Windows 与 macOS 复用同一帧数据和视觉语义，平台差异仅在原生覆盖层实现。
 
+引导 alpha 在真实角/边视觉触发区域内保持 `100%`；只有向屏幕内部越过真实区域的内边界后才渐隐。角的渐隐带为 `10..20px`，边的渐隐带与实际 DPI-scaled edge band 等厚，超出对应显示区域不生成帧；这些 display-only 区域不扩大真实命中区域。
+
 **统一手势捕获会话 (Gesture Capture)**:
 Desktop engine 内普通手势与边角手势共用的活动输入对象,由 `engine::capture::GestureCapture` 提供。
 它统一持有方向 parser、有序输入账本、主释放锚点、已消费输入和按钮释放状态；普通手势与边角手势
@@ -91,6 +93,8 @@ Windows 边角序列取消或未匹配且尚未形成方向笔画时,为恢复�
 
 **轨迹 (Trail)**:
 手势过程中屏幕上绘制的可见路径线条,按触发键区分颜色,未识别时显示告警色。
+
+轨迹只属于当前活动手势监听：原生 overlay 的 `End` 和 `Cancel` 权威立即清理 live trail points、render/cache 和 show path；不再保留 trail fade snapshot 或专用轨迹淡出机制。`ShowLabelFeedback` 与命令文字反馈拥有独立生命周期，因此 `ShowLabelFeedback -> End` 的同批次和后续批次都保留既有 label feedback 语义；`End` 不表示移除 label。
 
 **命令提示 (Hint Label)**:
 手势过程中实时显示的命令名称大字标签,识别/待执行状态用不同底色。
