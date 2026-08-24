@@ -17,7 +17,8 @@
 显示器实际启用的四角与四边区域，即使没有配置对应边角动作；角显示为 display-only 的固定 10px 半径四分之一圆，
 边显示仍为实际 DPI 缩放的边带；`hotCorners.enabled=false` 隐藏四角，`rubEdges.enabled=false` 隐藏四边，并且不依赖
 `boundaryIntents`。真实精确角命中和近角序列准入行为未改变。Windows 已补齐 End/Cancel 立即清理 trail、guide redraw 不恢复旧轨迹、
-以及 label feedback 独立生命周期的回归测试；Windows layered-window 视觉观察仍 pending。macOS native compile、runtime/device acceptance、
+普通标签淡出期间隐藏会清空 layered-window 表面、以及 label feedback 独立生命周期的回归测试；Windows layered-window 视觉观察仍 pending。
+macOS 原生隐藏路径也会清空 retained pixmap，macOS native compile、runtime/device acceptance、
 Retina、多屏、Spaces 和点击透传验收仍 pending；当前 Windows 主机不能执行 macOS `cfg` 测试或原生编译，因此不将本功能
 记为双平台运行时验收通过。
 
@@ -134,13 +135,15 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
 - GitHub/Google OAuth 真实凭证、SMTP、生产 Prisma 迁移、RustFS、生产部署和本地日志真实目录行为需部署环境或设备验证；本地契约测试不等于 live 通过。
 - Windows 轨迹不可见问题仍需无重启复现、截图和用户肉眼验收；当前开发实例可能锁定 `target/debug/godgesture.exe`，构建时可使用独立 `CARGO_TARGET_DIR`，不要强杀实例。
-- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但 `SetBoundaryGuide` 先显示仍保留旧像素的 DIB，约 159 ms 后才完成全量重绘。Windows 现在等引导帧渲染完成后再显示窗口，并新增“渲染期间保持隐藏”的覆盖层回归测试；真实 layered-window 无重启复现和肉眼验收仍 pending。macOS 原生运行时验收仍按 M4 清单 pending。
+- Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但隐藏前未清空 layered-window 缓存，后续 `SetBoundaryGuide` 的局部提交会再次暴露旧标签/轨迹像素，并可能因 tile dirty 范围不同表现为标签半边异常。Windows 现在在 `hide` 前将 DIB 清空并完整提交透明帧；macOS `hide` 同步清空 retained pixmap，新增跨平台隐藏表面回归测试。Windows layered-window 无重启复现和肉眼验收仍 pending；macOS 原生运行时验收仍按 M4 清单 pending。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 - 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
 - Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-24（Boundary Guide Hidden Surface Cleanup）：根据 `godgesture-export-2026-08-24T134640181Z-0.jsonl` 确认旧标签残留的根因是隐藏窗口缓存未收到透明帧，而不是 `End` 未清理轨迹；Windows `hide_clears_layered_surface_before_hiding`、`boundary_guide_after_end_cannot_restore_hidden_label_pixels` 与 overlay 定向测试 `37 passed / 0 failed`，Rust 全库 `336 passed / 0 failed / 2 ignored`，`cargo fmt --check` 和库级 Clippy `-D warnings` 通过。macOS 交叉检查因本机缺少 `cc` 在 `ring` 构建阶段受环境阻塞，真实 Windows layered-window 与 macOS runtime/device 仍 pending。
 
 - 2026-08-24（普通手势命令标签残留）：复现 JSONL 显示普通 `Recognized -> End` 后 points/rendered_points 已清零、`show_path=false`，但 `show_label=true` 且 label 仍存在；Windows 因 `End` 停止 fade 后重绘了仅标签帧，macOS 因同样保留 label 且未创建 fade 导致覆盖层残留。两端现已让普通 `Trail` 标签按 `fade_out` 进入既有淡出或立即清理；Windows overlay 定向测试 `35 passed / 0 failed`，Rust 全库测试 `334 passed / 0 failed / 2 ignored`，fmt 和库级 Clippy `-D warnings` 通过。macOS native compile/runtime/device 验收仍 pending。
 

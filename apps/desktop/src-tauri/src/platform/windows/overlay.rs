@@ -1865,6 +1865,18 @@ fn render_fade_step(state: &mut OverlayState) {
     present(state, None);
 }
 
+fn clear_overlay_surface(state: &mut OverlayState) {
+    if state.bits.is_null() || state.width <= 0 || state.height <= 0 {
+        return;
+    }
+    let byte_len = (state.width * state.height * 4) as usize;
+    let data = unsafe { std::slice::from_raw_parts_mut(state.bits, byte_len) };
+    data.fill(0);
+    if !state.tiles.is_empty() {
+        present(state, None);
+    }
+}
+
 fn finish_fade(state: &mut OverlayState) {
     stop_fade(state);
     state.points.clear();
@@ -1918,6 +1930,7 @@ fn fade_step(state: &mut OverlayState) {
 
 fn hide(state: &mut OverlayState) {
     stop_fade_timer(state);
+    clear_overlay_surface(state);
     set_overlay_visible(state, false);
     state.alpha = 255;
     state.label = None;
@@ -2131,6 +2144,48 @@ mod tests {
 
         assert_eq!(visible_during_render, Some(false));
         assert!(state.visible);
+    }
+
+    #[test]
+    fn hide_clears_layered_surface_before_hiding() {
+        let (mut state, mut pixels) = test_state_with_surface(64, 64);
+        state.visible = true;
+        let offset = ((32 * state.width + 32) * 4) as usize;
+        pixels[offset..offset + 4].copy_from_slice(&[9, 8, 7, 255]);
+
+        hide(&mut state);
+
+        assert_eq!(pixel_at(&pixels, state.width, 32, 32), [0, 0, 0, 0]);
+        assert!(!state.visible);
+    }
+
+    #[test]
+    fn boundary_guide_after_end_cannot_restore_hidden_label_pixels() {
+        let (tx, rx) = unbounded();
+        let (mut state, mut pixels) = test_state_with_surface(64, 64);
+        state.visible = true;
+        state.show_path = false;
+        state.show_label = true;
+        state.label = Some("match".into());
+        state.fade_out = false;
+        let old_label_pixel = ((32 * state.width + 32) * 4) as usize;
+        pixels[old_label_pixel..old_label_pixel + 4].copy_from_slice(&[9, 8, 7, 255]);
+        let frame = boundary_guide_frame(
+            ScreenRect {
+                left: 0,
+                top: 0,
+                right: 31,
+                bottom: 31,
+            },
+            CornerEdgeHit::Corner(ScreenCorner::LeftTop),
+        );
+
+        tx.send(OverlayCommand::End).unwrap();
+        tx.send(OverlayCommand::SetBoundaryGuide(frame)).unwrap();
+        drain_commands_with_surface(&rx, &mut state, |_state, _origin| {});
+
+        assert_eq!(pixel_at(&pixels, state.width, 32, 32), [0, 0, 0, 0]);
+        assert!(pixel_at(&pixels, state.width, 8, 8)[3] > 0);
     }
 
     #[test]

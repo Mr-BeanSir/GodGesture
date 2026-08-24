@@ -952,6 +952,9 @@ impl OverlayState {
         if let Some(window) = &self.window {
             window.orderOut(None);
         }
+        if let Some(pixmap) = self.pixmap.as_mut() {
+            pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
+        }
         self.points.clear();
         self.rendered_points = 0;
         self.fade_active = false;
@@ -2043,6 +2046,19 @@ mod tests {
         assert!(state.label.is_none());
         assert!(state.points.is_empty());
         assert!(!state.active);
+    }
+
+    #[test]
+    fn hide_clears_retained_pixmap_before_next_show() {
+        let mut state = OverlayState::default();
+        state.pixmap = Some(Pixmap::new(16, 16).unwrap());
+        state.visible = true;
+        state.pixmap.as_mut().unwrap().data_mut()[3] = 255;
+
+        state.hide();
+
+        assert_eq!(state.pixmap.as_ref().unwrap().data()[3], 0);
+        assert!(!state.visible);
     }
 
     #[test]
