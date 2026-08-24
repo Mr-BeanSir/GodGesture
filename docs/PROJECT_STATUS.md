@@ -69,7 +69,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | M5 后端与账户 | 已完成 | Server 是私有子模块；注册开关覆盖邮箱注册和首次未绑定 OAuth 建号；OAuth/SMTP 凭证由部署环境提供；模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8、乐观并发、后写胜出、快照和离线优先 |
 | M7 Web Console 与分发 | 已完成 | Server-owned Console、模板审核/举报/配额、系统配置、账户编辑和作者管理已接入 |
-| M8 打磨与发布 | `v0.2.4` 已发布 | tag 指向 `84dd9ef`，之后仅同步 Cargo.lock 到 `9f4d20d`；双平台安装验收和生产部署仍 pending |
+| M8 打磨与发布 | 根仓库 `v0.2.4` 提交/tag 已推送；桌面发布 workflow 失败 | tag 指向 `84dd9ef`，之后仅同步 Cargo.lock 到 `9f4d20d`；GitHub Release/安装包未生成，原因是远端 Server 子模块缺少 gitlink `25e3900`；双平台安装验收和生产部署仍 pending |
 
 ## 部件地图
 
@@ -127,6 +127,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
 - Windows NSIS 统一 `perMachine`，新安装默认 `C:\Program Files\GodGesture`，升级沿用已记录目录；不自动迁移旧 `currentUser` 安装。macOS 为 universal ad-hoc DMG，不提供 Authenticode、Developer ID、公证或 staple。
 - Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和在线插件目录通过 GitHub 分发，模板对象与数据库必须同窗口备份。
+- 当前 `pnpm@10.34.5` 已不读取根 `package.json` 的 `pnpm.onlyBuiltDependencies`；`pnpm-workspace.yaml` 的 `allowBuilds` 仍保留待维护者逐项决定的占位值，因此依赖构建脚本许可策略和 CI 安装验证仍 pending，不能把现有 warning 视为已解决。
 
 ## 已知边界
 
@@ -155,7 +156,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 - 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Server Jest `25 passed / 1 skipped`（`233 passed / 13 skipped`）、Web Console `27 files / 187 passed`、Windows cfg 的 overlay suite `32 passed`、Rust 全量库测试 `325 passed / 0 failed / 2 ignored`、Rust fmt 和库级 Clippy 均通过。最终复审修正 macOS 淡出测试 fixture 并通过定向复审；Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
 
-- 2026-08-24：`v0.2.4` 已完成版本发布、tag 和远程 `main` push；发布 tag 保持在 `84dd9ef`，后续 Cargo.lock 版本同步提交为 `9f4d20d`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
+- 2026-08-24：根仓库 `v0.2.4` release commit、tag 和远程 `main` 已 push；发布 tag 保持在 `84dd9ef`，后续 Cargo.lock 版本同步提交为 `9f4d20d`，未改写已发布 tag。GitHub Actions run `32743731223` 的 Windows/macOS checkout 都因远端 Server 仓库缺少 gitlink `25e3900` 而失败，assemble 和 GitHub Release 均跳过，当前没有可核验的安装包；双平台安装验收和生产部署仍 pending。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
