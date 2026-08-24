@@ -97,6 +97,20 @@ section; they do not choose a version automatically. A real release creates a
 `.github/workflows/desktop-release.yml`. `release-it` does not create a GitHub
 Release and does not publish npm packages.
 
+### Compatibility review gate
+
+Before creating the release commit or tag, read `docs/COMPATIBILITY.md` and ask
+the maintainer/user about every active `COMPAT-*` entry: keep it in the target
+version or remove it now. This question is required for every stable release
+and prerelease; a missing decision blocks the release.
+
+For an item that remains, update its last-reviewed version, date, time, timezone,
+and decision in `docs/COMPATIBILITY.md`. When removal is confirmed, delete the
+compatibility code and its tests together with the matching registry entry and
+source ID, then verify that neither the ID nor the old contract remains. Do not
+leave a removed entry in the registry, because the next release must not ask to
+delete the same compatibility code again.
+
 The release command synchronizes these four Desktop version files:
 
 - the root `package.json`;

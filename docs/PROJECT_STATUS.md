@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-24。本文是当前实现的唯一状态入口；术语以
+最后核对：2026-08-25。本文是当前实现的唯一状态入口；术语以
 [`CONTEXT.md`](../CONTEXT.md) 为准，协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按
 [`docs/adr/README.md`](adr/README.md) 路由。本文不保存逐日开发流水；历史与发布审计按需读取
 [`docs/CHANGELOG.md`](CHANGELOG.md) 和 [`docs/history/`](history/)。
@@ -103,7 +103,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 - `@godgesture/ui` 提供无业务原语、token、`AppDialog`、折叠 panel、确认服务、Toast 和全局 Message；不读取 router、store、API client 或 i18n。
 - Desktop 已移除 Element Plus，使用共享原语、Lucide 和原生语义控件；Web Console 由 Server 拥有，使用共享原语、Tailwind v4 和本地薄适配层。
-- 快速入门对话框包含“程序权限”步骤：Windows 用户可直接切换“以管理员身份启动”和“开机启动”，管理员项以红色说明高完整性目标窗口的使用条件和重启要求；macOS 保留开机启动并将管理员项标记为不可用。Windows 仍不使用 `uiAccess`/代码签名证书。
+- Web Console `/config` 保持只读，已展示 Desktop 设置页中全部可云同步的偏好：手势起始/停留阈值、轨迹显示与颜色、淡出、边角引导、暂停快捷键、界面语言和更新检查；开机自启、托盘可见性等本机设置不进入云同步。偏好位于整库 JSONB 文档中，不新增数据库列或 migration。
+- 快速入门对话框包含“程序权限”步骤，仅提供“开机启动”；Windows Desktop 交互启动和开机自启均在进入 Tauri 前强制执行 UAC 提权，Windows 启动任务固定使用 `HighestAvailable`，macOS 保留开机启动。Windows 仍不使用 `uiAccess`/代码签名证书。
 - 现行配置为 v8：应用分组、有序 `inputs`、边角意图和 `nodePlugin.pluginId` 为现役结构；旧格式不迁移，旧 `enable8Directions` 只读取忽略并在规范化保存时移除。
 - 首笔笔画固定 8 方向，后续笔画 4 方向；`sendText` 只接受 `text`、`key`、`hotkey`、`sleep` DSL。
 - `全屏时自动禁用手势` 仍是可配置项，新配置默认开启，已有配置的显式关闭值继续保留。
@@ -139,10 +140,14 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows 释放触发键后 hover 边/角时轨迹短暂闪现的问题已通过现有进程复现日志确认：`End` 已清空轨迹状态，但隐藏前未清空 layered-window 缓存，后续 `SetBoundaryGuide` 的局部提交会再次暴露旧标签/轨迹像素，并可能因 tile dirty 范围不同表现为标签半边异常。Windows 现在在 `hide` 前将 DIB 清空并完整提交透明帧；macOS `hide` 同步清空 retained pixmap，新增跨平台隐藏表面回归测试。维护者已完成 Windows layered-window 无重启复现和肉眼验收；macOS 原生运行时验收仍按 M4 清单 pending。
 - Windows 触发角/摩擦边右键重放的真实行为仍需在现有 Windows 进程上复现：`SendInput` 同步阻塞已定位并完成工作线程隔离，`SetCursorPos=false/error=0` 的目标已满足误警告已修正；顶部 `timer_expired` 提前回放的根因已定位并在代码层延期。通知区域新增原生输入优先适配，托盘菜单需在新构建进程中重复点击验收；其它屏幕边缘仍须结合新增的生命周期和 `mouse_input_slow` 日志验收。
 - 音量反馈的当前平台边界是：本机为 Windows，仅完成 Windows 自动化和代码验证；尚未对真实默认音频设备执行音量上调、下调、静音，以及普通手势、修饰手势、触发角、摩擦边四类入口的用户可见覆盖层现场验收。macOS native compile/runtime/parser/device acceptance pending；交叉构建曾因缺少 `cc` 在 `objc2-exception-helper` 阶段失败。该功能不得记为双平台已验收。
-- Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。此场景必须启用“以管理员身份运行”并重启 GodGesture；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 即为该诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
+- Windows 高完整性目标窗口是已验证的平台限制：普通 GodGesture 进程通常为 `Medium`，Windows Terminal 等管理员窗口为 `High`；低级鼠标钩子可能仍收到触发键按下/抬起并恢复原生点击，但收不到足以形成轨迹的移动链路，因此不会执行指定手势命令。Windows Desktop 现在统一在交互启动和开机自启时通过 UAC 运行在管理员完整性级别；不通过 `uiAccess` 绕过。`tracker_admission_decision` 中 `self_integrity=Medium target_integrity=High elevation_boundary=true` 是旧普通权限进程的诊断证据。该限制只适用于 Windows，macOS 不使用此完整性级别路径。
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-25（Web Console 云同步设置展示）：`/config` 只读展示与 Desktop `ConfigDocument.preferences` 对应的全部可同步字段；Server `UserConfig.document`/`ConfigSnapshot.document` 继续使用现有 JSONB，不需要数据库 migration。Web Console 测试 `27 files / 188 passed`、Server Jest `26 passed / 1 skipped`（`235 passed / 13 skipped`）、Web 类型检查和生产构建通过。
+
+- 2026-08-25（Windows 强制管理员启动）：Windows Desktop 已移除 `runAsAdmin` 本机设置和设置/快速入门入口；交互启动与 `--autostart` 均在进入 Tauri 前执行 UAC 提权，启动任务固定 `HighestAvailable`。Shared 测试 `94 passed`、Desktop 全量测试 `50 files / 242 passed / 3 skipped`、Desktop typecheck/build、Rust library 测试 `338 passed / 0 failed / 2 ignored`、Rust fmt、Clippy `-D warnings` 和 `git diff --check` 通过；真实 UAC/Task Scheduler 现场验收仍 pending，macOS 不使用该 Windows 提权路径。
 
 - 2026-08-24（Windows layered-window 现场验收）：维护者在现有复现进程上完成隐藏表面清理、边角引导重绘和轨迹不再闪现的无重启复现、截图与肉眼验收；Windows layered-window 标记为完成，macOS 原生运行时和设备验收继续 pending。
 

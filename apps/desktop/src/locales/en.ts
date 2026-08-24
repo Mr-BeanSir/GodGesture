@@ -63,10 +63,6 @@ export default {
     general: {
       title: "General",
       autoStart: "Start at login",
-      runAsAdmin: "Run as administrator",
-      runAsAdminHint: "If some programs run as administrator and cannot use gestures, enable this option. Restart GodGesture for the change to take effect.",
-      runAsAdminMacHint: "Administrator mode is unavailable on macOS; gesture access is granted through Accessibility permissions",
-      runAsAdminLocationWarning: "The elevated startup task points to the current executable location. If a standard user can replace that file, the replacement could gain administrator rights; moving or deleting it also breaks the task.",
       trayIconVisible: "Show tray icon",
       machineError: {
         uacCancelled: "Administrator approval was cancelled. The setting was not changed.",
@@ -83,7 +79,6 @@ export default {
         loginItemFailed: "The macOS login item could not be updated. Check System Settings, then retry.",
         loginItemRequiresApproval: "The login item requires approval. Allow GodGesture in Login Items in System Settings.",
         loginItemNotRegistered: "The GodGesture login item is not registered. Toggle Start at login again.",
-        unsupportedMachineSetting: "Run as administrator is unsupported on macOS.",
         unknown: "The machine setting operation failed. Check the app logs, then retry.",
       },
       permissions: {
@@ -680,9 +675,6 @@ export default {
       body: "These settings are stored on this device and are not synced.",
       autoStart: "Start at login",
       autoStartDesc: "Start GodGesture when you sign in.",
-      runAsAdmin: "Run as administrator",
-      runAsAdminDesc: "If a program runs as administrator and cannot use gestures, enable this option and retry after restarting GodGesture.",
-      macUnavailable: "Administrator mode is unavailable on macOS; use the system Accessibility and input permissions instead.",
       error: "The local permission settings could not be applied. Retry from Settings.",
     },
     try: {

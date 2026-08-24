@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ConfigDocument, CONFIG_FORMAT_VERSION, DEFAULT_APP_GROUP_ID } from "../document.js";
-import { PathTrackerPreferences } from "../preferences.js";
+import { MachineLocalSettings, PathTrackerPreferences } from "../preferences.js";
 
 describe("configuration document v8", () => {
   it("initializes the complete current document shape", () => {
@@ -58,5 +58,15 @@ describe("configuration document v8", () => {
 
     expect("enable8Directions" in preferences).toBe(false);
     expect(preferences.triggerButtons).toEqual(["right"]);
+  });
+
+  it("drops the legacy configurable administrator startup setting", () => {
+    const settings = MachineLocalSettings.parse({
+      autoStart: true,
+      runAsAdmin: true,
+    });
+
+    expect(settings).toEqual({ autoStart: true, trayIconVisible: true });
+    expect(settings).not.toHaveProperty("runAsAdmin");
   });
 });

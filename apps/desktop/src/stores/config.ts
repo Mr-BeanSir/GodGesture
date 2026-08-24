@@ -35,7 +35,6 @@ export const useConfigStore = defineStore("config", () => {
   const machineRecovering = ref(false);
   const machinePending = ref<Record<keyof MachineLocalSettings, number>>({
     autoStart: 0,
-    runAsAdmin: 0,
     trayIconVisible: 0,
   });
   const paused = ref(false);

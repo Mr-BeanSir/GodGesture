@@ -159,14 +159,14 @@ npm install --save-dev @godgesture/sdk
 关闭设置窗口只会隐藏窗口，GodGesture 仍在托盘运行。使用托盘“退出”才会结束
 应用。
 
-## 本机设置与管理员运行
+## 本机设置与 Windows 启动权限
 
-开机自启、以管理员身份运行和托盘图标显示属于本机专属设置，不参与同步。
+开机自启和托盘图标显示属于本机专属设置，不参与同步。
 
-Windows 的“以管理员身份运行”使用当前用户专属的任务计划，不使用 `uiAccess`。
-启用后需要 UAC 授权，并应把 GodGesture 安装在普通用户不能替换的位置；移动或
-删除可执行文件会使启动任务失效。macOS 不支持管理员运行，手势能力由 TCC 权限
-提供。
+Windows Desktop 必须以管理员身份运行。交互启动和开机自启都会先请求 UAC 授权，
+Windows 开机任务固定使用 `HighestAvailable`，不使用 `uiAccess`。应用应安装在普通
+用户不能替换的位置；移动或删除可执行文件会使启动任务失效。macOS GUI 应用不以
+root 身份运行，手势能力由 TCC 权限提供。
 
 ## 账户、同步与快照
 
@@ -201,8 +201,8 @@ Windows 的“以管理员身份运行”使用当前用户专属的任务计划
 
 - **手势没有响应**：检查顶栏是否暂停、全局应用是否禁用、当前应用是否黑名单，
   再确认触发键和全屏禁用设置。
-- **管理员窗口无响应**：Windows 启用“以管理员身份运行”并完成 UAC；GodGesture
-  不使用 `uiAccess`。
+- **管理员窗口无响应**：确认 GodGesture 已完成启动时的 UAC 授权并以管理员身份运行；
+  GodGesture 不使用 `uiAccess`。
 - **macOS 无法捕获或模拟输入**：在“选项”检查辅助功能、输入监控和输入模拟，
   必要时打开系统设置重新授权并重启应用。
 - **快捷键无法注册**：其他应用可能已占用相同组合；更换暂停快捷键。
@@ -217,10 +217,9 @@ refresh token、Updater 私钥或账户凭据。
 
 ## 卸载与本地数据
 
-卸载前建议先退出账户，并关闭“开机自动运行”和 Windows 的“以管理员身份运行”，
-让 GodGesture 删除自己拥有的登录任务。Windows 当前不会在卸载阶段自动清理遗留
-任务；异常卸载后可在任务计划程序中检查名称以 `GodGesture Startup ` 开头且确认
-属于 GodGesture 的当前用户任务。
+卸载前建议先退出账户，并关闭“开机自动运行”，让 GodGesture 删除自己拥有的登录
+任务。Windows 当前不会在卸载阶段自动清理遗留任务；异常卸载后可在任务计划程序中
+检查名称以 `GodGesture Startup ` 开头且确认属于 GodGesture 的当前用户任务。
 
 配置目录由系统按应用标识管理：Windows 使用 `%APPDATA%\com.godgesture.app`，
 macOS 使用 `~/Library/Application Support/com.godgesture.desktop`。普通卸载可能保留

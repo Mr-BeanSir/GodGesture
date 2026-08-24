@@ -42,7 +42,7 @@ function documentWithLocale(locale: "auto" | "zh-CN" | "en") {
 
 function makeBackend() {
   let document = documentWithLocale("auto");
-  let machine = MachineLocalSettings.parse({ runAsAdmin: true });
+  let machine = MachineLocalSettings.parse({});
   return {
     isTauri: false,
     configGet: vi.fn(async () => structuredClone(document)),
@@ -338,15 +338,15 @@ describe("config store machine updates", () => {
     const store = useConfigStore();
     await store.load();
 
-    const first = store.updateMachineSetting("runAsAdmin", false)!;
+    const first = store.updateMachineSetting("autoStart", false)!;
     await Promise.resolve();
-    const second = store.updateMachineSetting("runAsAdmin", true)!;
+    const second = store.updateMachineSetting("autoStart", true)!;
     rejectFirst(new BackendError("apply_failed", "failed"));
 
     await expect(first).rejects.toMatchObject({ code: "apply_failed" });
-    expect(store.machine!.runAsAdmin).toBe(true);
+    expect(store.machine!.autoStart).toBe(true);
     await second;
-    expect(store.machine!.runAsAdmin).toBe(true);
+    expect(store.machine!.autoStart).toBe(true);
   });
 
   it("keeps a newer whole-document request consistent across different fields", async () => {
@@ -387,7 +387,6 @@ describe("config store machine updates", () => {
         documentWithLocale("auto"),
         MachineLocalSettings.parse({
           autoStart: true,
-          runAsAdmin: false,
           trayIconVisible: false,
         }),
       );
@@ -404,7 +403,6 @@ describe("config store machine updates", () => {
     expect(backend.machineGet).toHaveBeenCalledTimes(2);
     expect(store.machine).toMatchObject({
       autoStart: true,
-      runAsAdmin: false,
       trayIconVisible: false,
     });
   });

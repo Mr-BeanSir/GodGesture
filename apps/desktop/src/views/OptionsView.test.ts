@@ -32,7 +32,7 @@ const store = reactive<any>({
   machineError: null,
   machineStatus: { healthy: true, code: null, message: null },
   machineRecovering: false,
-  machinePending: { autoStart: 0, runAsAdmin: 0, trayIconVisible: 0 },
+  machinePending: { autoStart: 0, trayIconVisible: 0 },
   updateMachineSetting: vi.fn(),
 });
 
@@ -73,11 +73,11 @@ function createPreferences() {
 
 function resetState(): void {
   store.doc = { preferences: createPreferences() };
-  store.machine = { autoStart: false, runAsAdmin: false, trayIconVisible: true };
+  store.machine = { autoStart: false, trayIconVisible: true };
   store.machineError = null;
   store.machineStatus = { healthy: true, code: null, message: null };
   store.machineRecovering = false;
-  store.machinePending = { autoStart: 0, runAsAdmin: 0, trayIconVisible: 0 };
+  store.machinePending = { autoStart: 0, trayIconVisible: 0 };
   store.updateMachineSetting.mockReset().mockImplementation(async (key: string, value: boolean) => {
     store.machine[key] = value;
   });
@@ -141,40 +141,12 @@ afterEach(() => {
 });
 
 describe("options view", () => {
-  it("renders the administrator hint as an accessible tooltip", async () => {
-    backend.platformStatus.mockResolvedValueOnce({
-      ...macosPermissionsMissing,
-      platform: "windows",
-    });
+  it("does not expose a configurable administrator startup setting", async () => {
     const wrapper = await mountOptions();
 
-    const info = wrapper.get("button.options__info");
-    const describedBy = info.attributes("aria-describedby");
-    expect(describedBy).toBeTruthy();
-    expect(info.attributes("title")).toBeUndefined();
-
-    const tooltip = wrapper.get(`#${describedBy}`);
-    expect(tooltip.attributes("role")).toBe("tooltip");
-    expect(tooltip.text()).toBe(
-      "If some programs run as administrator and cannot use gestures, enable this option. Restart GodGesture for the change to take effect.",
-    );
-
-    wrapper.unmount();
-  });
-
-  it("shows the updated Chinese administrator guidance in one tooltip", async () => {
-    backend.platformStatus.mockResolvedValueOnce({
-      ...macosPermissionsMissing,
-      platform: "windows",
-    });
-    setLocale("zh-CN");
-    const wrapper = await mountOptions();
-
-    const info = wrapper.get("button.options__info");
-    expect(info.attributes("title")).toBeUndefined();
-    expect(wrapper.get('[role="tooltip"]').text()).toBe(
-      "如果某些程序以管理员身份运行且无法使用手势，请开启此项。开启后需重启 GodGesture 才可生效。",
-    );
+    expect(wrapper.text()).not.toContain("Run as administrator");
+    expect(wrapper.text()).not.toContain("以管理员身份运行");
+    expect(wrapper.find('input[aria-label="Run as administrator"]').exists()).toBe(false);
 
     wrapper.unmount();
   });
@@ -222,7 +194,7 @@ describe("options view", () => {
     wrapper.unmount();
   });
 
-  it("keeps machine recovery and macOS administrator guidance accessible", async () => {
+  it("keeps machine recovery accessible without an administrator setting", async () => {
     store.machineRecovering = true;
     store.machinePending.autoStart = 1;
     const wrapper = await mountOptions();
@@ -232,14 +204,7 @@ describe("options view", () => {
     const pending = wrapper.get('[role="status"][aria-label="Saving…"]');
     expect(pending.classes()).toContain("options__pending");
 
-    const runAsAdmin = controlForLabel(wrapper, "Run as administrator");
-    expect((runAsAdmin.element as HTMLInputElement).disabled).toBe(true);
-    const hint = wrapper.get('button[aria-label*="unavailable on macOS"]');
-    expect(hint.attributes("type")).toBe("button");
-    expect(hint.attributes("title")).toBeUndefined();
-    const describedBy = hint.attributes("aria-describedby");
-    expect(describedBy).toBeTruthy();
-    expect(wrapper.get(`#${describedBy}`).text()).toContain("Administrator mode is unavailable on macOS");
+    expect(wrapper.text()).not.toContain("Run as administrator");
 
     wrapper.unmount();
   });

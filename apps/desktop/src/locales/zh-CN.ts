@@ -63,10 +63,6 @@ export default {
     general: {
       title: "通用",
       autoStart: "开机自动运行",
-      runAsAdmin: "以管理员身份运行",
-      runAsAdminHint: "如果某些程序以管理员身份运行且无法使用手势，请开启此项。开启后需重启 GodGesture 才可生效。",
-      runAsAdminMacHint: "macOS 不支持管理员运行;手势能力由系统辅助功能授权提供",
-      runAsAdminLocationWarning: "管理员启动任务会指向当前程序位置。若该位置可被普通用户修改,程序被替换后可能获得管理员权限;移动或删除程序也会使启动任务失效。",
       trayIconVisible: "显示托盘图标",
       machineError: {
         uacCancelled: "已取消管理员授权,设置未更改。",
@@ -83,7 +79,6 @@ export default {
         loginItemFailed: "无法更新 macOS 登录项。请检查系统设置后重试。",
         loginItemRequiresApproval: "登录项等待系统批准。请在系统设置的登录项中允许 GodGesture。",
         loginItemNotRegistered: "GodGesture 的登录项未注册,请重新切换开机自动运行。",
-        unsupportedMachineSetting: "macOS 不支持以管理员身份运行。",
         unknown: "本机设置操作失败。请检查应用日志后重试。",
       },
       permissions: {
@@ -680,9 +675,6 @@ export default {
       body: "这些设置只保存在本机，不会同步到其他设备。",
       autoStart: "开机启动",
       autoStartDesc: "登录系统后自动启动 GodGesture。",
-      runAsAdmin: "以管理员身份启动",
-      runAsAdminDesc: "如果某些程序以管理员身份运行且无法使用手势，请开启此项，并在重启 GodGesture 后重试。",
-      macUnavailable: "macOS 不支持管理员启动；请使用系统辅助功能和输入权限。",
       error: "本机权限设置应用失败，请前往“设置”重试。",
     },
     try: {

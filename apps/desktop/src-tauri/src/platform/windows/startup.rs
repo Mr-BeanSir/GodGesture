@@ -44,14 +44,12 @@ const HELPER_OTHER_FAILED: u32 = 26;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupPolicy {
     pub enabled: bool,
-    pub highest: bool,
 }
 
 impl From<&MachineLocalSettings> for StartupPolicy {
     fn from(value: &MachineLocalSettings) -> Self {
         Self {
             enabled: value.auto_start,
-            highest: value.run_as_admin,
         }
     }
 }
@@ -176,27 +174,44 @@ fn rollback_machine<E: MachineEffects>(
 pub enum EarlyMode {
     Interactive,
     Autostart,
-    TaskHelper { enabled: bool, highest: bool },
+    TaskHelper { enabled: bool },
+}
+
+impl EarlyMode {
+    pub fn requires_elevation(self) -> bool {
+        matches!(self, Self::Interactive | Self::Autostart)
+    }
+
+    pub fn elevation_parameters(self) -> &'static str {
+        match self {
+            Self::Autostart => AUTOSTART_ARG,
+            Self::Interactive | Self::TaskHelper { .. } => "",
+        }
+    }
 }
 
 pub fn parse_early_mode(args: impl IntoIterator<Item = String>) -> Result<EarlyMode, StartupError> {
     let args = args.into_iter().skip(1).collect::<Vec<_>>();
+    let parse_enabled = |value: &str| match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err(StartupError::new(
+            "invalid_helper_args",
+            "invalid startup helper arguments",
+        )),
+    };
     match args.as_slice() {
         [] => Ok(EarlyMode::Interactive),
         [value] if value == AUTOSTART_ARG => Ok(EarlyMode::Autostart),
-        [helper, enabled, highest] if helper == "--startup-helper" => {
-            let parse = |value: &str| match value {
-                "0" => Ok(false),
-                "1" => Ok(true),
-                _ => Err(StartupError::new(
-                    "invalid_helper_args",
-                    "invalid startup helper arguments",
-                )),
-            };
-            Ok(EarlyMode::TaskHelper {
-                enabled: parse(enabled)?,
-                highest: parse(highest)?,
-            })
+        [helper, enabled] if helper == "--startup-helper" => {
+            let enabled = parse_enabled(enabled)?;
+            Ok(EarlyMode::TaskHelper { enabled })
+        }
+        // COMPAT-0001: accept the pre-0.2.4 helper's ignored highest flag.
+        [helper, enabled, legacy_highest] if helper == "--startup-helper" => {
+            let enabled = parse_enabled(enabled)?;
+            let _ = parse_enabled(legacy_highest)?;
+            Ok(EarlyMode::TaskHelper { enabled })
         }
         _ => Err(StartupError::new(
             "invalid_helper_args",
@@ -218,7 +233,7 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-pub fn task_xml(policy: &StartupPolicy, sid: &str, exe: &Path) -> String {
+pub fn task_xml(_policy: &StartupPolicy, sid: &str, exe: &Path) -> String {
     let command = xml_escape(&exe.to_string_lossy());
     let working_dir = xml_escape(
         &exe.parent()
@@ -226,17 +241,12 @@ pub fn task_xml(policy: &StartupPolicy, sid: &str, exe: &Path) -> String {
             .to_string_lossy(),
     );
     let sid = xml_escape(sid);
-    let run_level = if policy.highest {
-        "HighestAvailable"
-    } else {
-        "LeastPrivilege"
-    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>{OWNER_MARKER}</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{sid}</UserId></LogonTrigger></Triggers>
-  <Principals><Principal id="Author"><UserId>{sid}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>{run_level}</RunLevel></Principal></Principals>
+  <Principals><Principal id="Author"><UserId>{sid}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>
   <Actions Context="Author"><Exec><Command>{command}</Command><Arguments>{AUTOSTART_ARG}</Arguments><WorkingDirectory>{working_dir}</WorkingDirectory></Exec></Actions>
 </Task>"#
@@ -247,7 +257,7 @@ pub fn is_owned_xml(xml: &str) -> bool {
     xml.contains(&format!("<Description>{OWNER_MARKER}</Description>"))
 }
 
-fn task_matches(xml: &str, policy: &StartupPolicy, sid: &str, exe: &Path) -> bool {
+fn task_matches(xml: &str, _policy: &StartupPolicy, sid: &str, exe: &Path) -> bool {
     let command = xml_escape(&exe.to_string_lossy());
     let working_dir = xml_escape(
         &exe.parent()
@@ -256,11 +266,7 @@ fn task_matches(xml: &str, policy: &StartupPolicy, sid: &str, exe: &Path) -> boo
     );
     is_owned_xml(xml)
         && xml.contains(&format!("<UserId>{}</UserId>", xml_escape(sid)))
-        && (if policy.highest {
-            xml.contains("<RunLevel>HighestAvailable</RunLevel>")
-        } else {
-            !xml.contains("<RunLevel>HighestAvailable</RunLevel>")
-        })
+        && xml.contains("<RunLevel>HighestAvailable</RunLevel>")
         && xml.contains(&format!("<Command>{command}</Command>"))
         && xml.contains(&format!("<Arguments>{AUTOSTART_ARG}</Arguments>"))
         && xml.contains(&format!(
@@ -444,10 +450,6 @@ pub fn restore_with_elevation(snapshot: &TaskSnapshot, sid: &str) -> Result<(), 
         Err(error) if error.code == "task_access_denied" => {
             let policy = StartupPolicy {
                 enabled: snapshot.xml.is_some(),
-                highest: snapshot
-                    .xml
-                    .as_deref()
-                    .is_some_and(|xml| xml.contains("<RunLevel>HighestAvailable</RunLevel>")),
             };
             run_elevated_helper(&policy)
         }
@@ -589,8 +591,8 @@ fn shell_runas(parameters: &str, wait: bool) -> Result<u32, StartupError> {
     Ok(exit_code)
 }
 
-pub fn elevate_interactive() -> Result<(), StartupError> {
-    shell_runas("", false).map(|_| ())
+pub fn elevate_interactive(parameters: &str) -> Result<(), StartupError> {
+    shell_runas(parameters, false).map(|_| ())
 }
 
 pub fn reconcile_with_elevation(policy: &StartupPolicy, sid: &str) -> Result<(), StartupError> {
@@ -609,13 +611,7 @@ fn run_elevated_helper(policy: &StartupPolicy) -> Result<(), StartupError> {
             "startup task elevation requires this account to own an elevatable split token",
         ));
     }
-    let exit = shell_runas(
-        &format!(
-            "--startup-helper {} {}",
-            policy.enabled as u8, policy.highest as u8
-        ),
-        true,
-    )?;
+    let exit = shell_runas(&format!("--startup-helper {}", policy.enabled as u8), true)?;
     if exit == 0 {
         Ok(())
     } else {
@@ -719,47 +715,25 @@ mod tests {
     }
 
     #[test]
-    fn all_machine_setting_combinations_derive_expected_policy() {
-        for (auto_start, run_as_admin, expected) in [
-            (
-                false,
-                false,
-                StartupPolicy {
-                    enabled: false,
-                    highest: false,
-                },
-            ),
-            (
-                true,
-                false,
-                StartupPolicy {
-                    enabled: true,
-                    highest: false,
-                },
-            ),
-            (
-                false,
-                true,
-                StartupPolicy {
-                    enabled: false,
-                    highest: true,
-                },
-            ),
-            (
-                true,
-                true,
-                StartupPolicy {
-                    enabled: true,
-                    highest: true,
-                },
-            ),
-        ] {
+    fn startup_modes_require_elevation_except_task_helpers() {
+        assert!(EarlyMode::Interactive.requires_elevation());
+        assert!(EarlyMode::Autostart.requires_elevation());
+        assert!(!EarlyMode::TaskHelper { enabled: true }.requires_elevation());
+        assert_eq!(EarlyMode::Interactive.elevation_parameters(), "");
+        assert_eq!(EarlyMode::Autostart.elevation_parameters(), AUTOSTART_ARG);
+    }
+
+    #[test]
+    fn machine_settings_only_control_startup_task_presence() {
+        for (auto_start, expected) in [(false, false), (true, true)] {
             let settings = MachineLocalSettings {
                 auto_start,
-                run_as_admin,
                 tray_icon_visible: true,
             };
-            assert_eq!(StartupPolicy::from(&settings), expected);
+            assert_eq!(
+                StartupPolicy::from(&settings),
+                StartupPolicy { enabled: expected }
+            );
         }
     }
 
@@ -767,14 +741,7 @@ mod tests {
     fn task_identity_and_definition_are_stable_and_structured() {
         let sid = "S-1-5-21-100";
         let exe = Path::new(r"C:\Program Files\GodGesture\GodGesture.exe");
-        let xml = task_xml(
-            &StartupPolicy {
-                enabled: true,
-                highest: true,
-            },
-            sid,
-            exe,
-        );
+        let xml = task_xml(&StartupPolicy { enabled: true }, sid, exe);
         assert_eq!(task_name_for_sid(sid), "GodGesture Startup S-1-5-21-100");
         assert!(is_owned_xml(&xml));
         assert!(xml.contains("<LogonType>InteractiveToken</LogonType>"));
@@ -784,16 +751,24 @@ mod tests {
     }
 
     #[test]
-    fn least_privilege_and_xml_escaping_are_explicit() {
+    fn startup_task_always_uses_highest_available() {
         let xml = task_xml(
-            &StartupPolicy {
-                enabled: true,
-                highest: false,
-            },
+            &StartupPolicy { enabled: true },
+            "S-1-5-21-1",
+            Path::new(r"C:\GodGesture\GodGesture.exe"),
+        );
+        assert!(xml.contains("<RunLevel>HighestAvailable</RunLevel>"));
+        assert!(!xml.contains("<RunLevel>LeastPrivilege</RunLevel>"));
+    }
+
+    #[test]
+    fn startup_task_xml_escapes_paths() {
+        let xml = task_xml(
+            &StartupPolicy { enabled: true },
             "S-1-5-21-1",
             Path::new(r"C:\A & B\GodGesture.exe"),
         );
-        assert!(xml.contains("<RunLevel>LeastPrivilege</RunLevel>"));
+        assert!(xml.contains("<RunLevel>HighestAvailable</RunLevel>"));
         assert!(xml.contains(r"C:\A &amp; B\GodGesture.exe"));
     }
 
@@ -809,10 +784,7 @@ mod tests {
 
     #[test]
     fn normalized_task_xml_can_be_recognized_without_byte_equality() {
-        let policy = StartupPolicy {
-            enabled: true,
-            highest: false,
-        };
+        let policy = StartupPolicy { enabled: true };
         let exe = Path::new(r"C:\GodGesture\GodGesture.exe");
         let xml = task_xml(&policy, "S-1-5-21-1", exe).replace("\n", "");
         assert!(task_matches(&xml, &policy, "S-1-5-21-1", exe));
@@ -829,18 +801,21 @@ mod tests {
             EarlyMode::Autostart
         );
         assert_eq!(
-            parse_early_mode([
-                "app".into(),
-                "--startup-helper".into(),
-                "1".into(),
-                "0".into()
-            ])
-            .unwrap(),
-            EarlyMode::TaskHelper {
-                enabled: true,
-                highest: false
-            }
+            parse_early_mode(["app".into(), "--startup-helper".into(), "1".into(),]).unwrap(),
+            EarlyMode::TaskHelper { enabled: true }
         );
+        for legacy_highest in ["0", "1"] {
+            assert_eq!(
+                parse_early_mode([
+                    "app".into(),
+                    "--startup-helper".into(),
+                    "1".into(),
+                    legacy_highest.into(),
+                ])
+                .unwrap(),
+                EarlyMode::TaskHelper { enabled: true }
+            );
+        }
         assert!(parse_early_mode([
             "app".into(),
             "--startup-helper".into(),
@@ -943,14 +918,8 @@ mod tests {
         let sid = current_user_sid().expect("current SID");
         let exe = current_exe().expect("current executable");
         let name = format!("GodGesture Startup Test {}", std::process::id());
-        let enabled = StartupPolicy {
-            enabled: true,
-            highest: false,
-        };
-        let disabled = StartupPolicy {
-            enabled: false,
-            highest: false,
-        };
+        let enabled = StartupPolicy { enabled: true };
+        let disabled = StartupPolicy { enabled: false };
 
         let result = (|| {
             reconcile_for_exe_named(&enabled, &sid, &exe, &name)?;

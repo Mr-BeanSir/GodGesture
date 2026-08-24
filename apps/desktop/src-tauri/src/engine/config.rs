@@ -563,9 +563,9 @@ impl Default for ConfigDocument {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
+// COMPAT-0002: serde ignores the removed runAsAdmin field from legacy machine settings.
 pub struct MachineLocalSettings {
     pub auto_start: bool,
-    pub run_as_admin: bool,
     pub tray_icon_visible: bool,
 }
 
@@ -573,7 +573,6 @@ impl Default for MachineLocalSettings {
     fn default() -> Self {
         Self {
             auto_start: false,
-            run_as_admin: false,
             tray_icon_visible: true,
         }
     }

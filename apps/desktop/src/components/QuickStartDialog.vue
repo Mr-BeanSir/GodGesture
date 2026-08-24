@@ -45,7 +45,6 @@ const steps = computed(() => [
   t("quickGuide.steps.try"),
   t("quickGuide.steps.personalize"),
 ]);
-const isWindows = computed(() => platformStatus.value?.platform === "windows");
 const isMacOS = computed(() => platformStatus.value?.platform === "macos");
 const permissionsGranted = computed(() =>
   Boolean(
@@ -76,7 +75,6 @@ const readinessTitle = computed(() => {
 const machineErrorVisible = computed(() => Boolean(store.machineError));
 
 const autoStartId = useId();
-const runAsAdminId = useId();
 
 watch(
   () => props.modelValue,
@@ -233,21 +231,6 @@ function navigate(destination: "gestures" | "templates") {
           :title="t('quickGuide.permissions.error')"
         />
         <div class="quick-guide__machine-settings">
-          <div class="quick-guide__machine-row">
-            <div class="quick-guide__machine-copy">
-              <label :for="runAsAdminId">{{ t("quickGuide.permissions.runAsAdmin") }}</label>
-              <span :class="{ 'is-warning': isWindows }">{{ t(isWindows ? "quickGuide.permissions.runAsAdminDesc" : "quickGuide.permissions.macUnavailable") }}</span>
-            </div>
-            <input
-              :id="runAsAdminId"
-              class="gg-switch"
-              type="checkbox"
-              :aria-label="t('quickGuide.permissions.runAsAdmin')"
-              :checked="Boolean(machine?.runAsAdmin)"
-              :disabled="dialogBusy || !isWindows || !machine"
-              @change="updateMachineToggle('runAsAdmin', $event)"
-            />
-          </div>
           <div class="quick-guide__machine-row">
             <div class="quick-guide__machine-copy">
               <label :for="autoStartId">{{ t("quickGuide.permissions.autoStart") }}</label>
@@ -474,7 +457,6 @@ function navigate(destination: "gestures" | "templates") {
   font-size: 12px;
   line-height: 1.45;
 }
-.quick-guide__machine-copy span.is-warning { color: var(--gg-danger); }
 .quick-guide__machine-row .gg-switch {
   justify-self: end;
 }

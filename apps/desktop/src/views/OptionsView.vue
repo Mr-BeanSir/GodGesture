@@ -5,7 +5,6 @@
  */
 import { computed, onMounted, ref, useId } from "vue";
 import { useI18n } from "vue-i18n";
-import { CircleHelp } from "lucide-vue-next";
 import type { HotkeyKeyName, MachineLocalSettings } from "@godgesture/shared";
 import { AppAlert, AppButton, AppSpinner } from "@godgesture/ui";
 import { useConfigStore } from "../stores/config";
@@ -76,7 +75,6 @@ const MACHINE_ERROR_KEYS: Record<string, string> = {
   login_item_failed: "loginItemFailed",
   login_item_requires_approval: "loginItemRequiresApproval",
   login_item_not_registered: "loginItemNotRegistered",
-  unsupported_machine_setting: "unsupportedMachineSetting",
 };
 
 const machineErrorMessage = computed(() => {
@@ -121,8 +119,6 @@ function updateTrackerNumberFromInput(
 }
 
 const autoStartId = useId();
-const runAsAdminId = useId();
-const runAsAdminHintId = useId();
 const trayIconVisibleId = useId();
 const autoCheckForUpdateId = useId();
 const triggerRightId = useId();
@@ -211,39 +207,6 @@ const showBoundaryGuideId = useId();
           :aria-label="t('footer.saving')"
         />
       </div>
-      <div class="gg-switch-row">
-        <input
-          :id="runAsAdminId"
-          class="gg-switch"
-          type="checkbox"
-          :checked="machine.runAsAdmin"
-          :disabled="store.machineRecovering || isMacOS"
-          @change="updateMachineToggle('runAsAdmin', $event)"
-        />
-        <label :for="runAsAdminId" class="options__switch-label">{{ t("options.general.runAsAdmin") }}</label>
-        <button
-          type="button"
-          class="gg-icon-button options__info"
-          :aria-label="isMacOS ? t('options.general.runAsAdminMacHint') : t('options.general.runAsAdminHint')"
-          :aria-describedby="runAsAdminHintId"
-        >
-          <CircleHelp aria-hidden="true" />
-          <span :id="runAsAdminHintId" class="options__tooltip" role="tooltip">
-            {{ isMacOS ? t("options.general.runAsAdminMacHint") : t("options.general.runAsAdminHint") }}
-          </span>
-        </button>
-        <AppSpinner
-          v-if="store.machinePending.runAsAdmin"
-          class="options__pending"
-          size="sm"
-          :aria-label="t('footer.saving')"
-        />
-      </div>
-      <AppAlert
-        v-if="machine.runAsAdmin && !isMacOS"
-        variant="warning"
-        :title="t('options.general.runAsAdminLocationWarning')"
-      />
       <div class="gg-switch-row">
         <input
           :id="trayIconVisibleId"
@@ -502,47 +465,6 @@ const showBoundaryGuideId = useId();
   display: inline-flex;
   align-items: center;
   color: var(--gg-text);
-}
-.options__info {
-  position: relative;
-  display: inline-flex;
-  color: var(--gg-text-muted);
-}
-.options__tooltip {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 8px);
-  left: 50%;
-  width: max-content;
-  max-width: 280px;
-  padding: 8px 10px;
-  border: 1px solid var(--gg-border);
-  border-radius: 4px;
-  background: var(--gg-surface);
-  box-shadow: 0 10px 28px rgb(15 23 42 / 0.14);
-  color: var(--gg-text);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.45;
-  text-align: left;
-  white-space: normal;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -2px);
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-.options__info:hover .options__tooltip,
-.options__info:focus-visible .options__tooltip,
-.options__info:focus-within .options__tooltip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-.options__info:focus-visible {
-  z-index: 21;
-}
-.options__info svg {
-  width: 18px;
-  height: 18px;
 }
 .options__trigger-buttons {
   min-width: 0;

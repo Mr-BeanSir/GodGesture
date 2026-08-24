@@ -1017,15 +1017,6 @@ fn machine_set_blocking(
     let store = app.state::<Arc<ConfigStore>>();
     let transaction = app.state::<ConfigTransaction>();
     let _transaction = transaction.0.lock();
-    if settings.run_as_admin {
-        let (elevated, split_token) = platform::windows::startup::elevation_state()?;
-        if !elevated && !split_token {
-            return Err(StartupError::new(
-                "admin_account_required",
-                "run as administrator requires an administrator account with an elevatable token",
-            ));
-        }
-    }
 
     let mut effects = DesktopMachineEffects {
         store: store.inner(),
@@ -1160,13 +1151,6 @@ fn machine_set_blocking(
     settings: MachineLocalSettings,
     app: &tauri::AppHandle,
 ) -> Result<(), StartupError> {
-    if settings.run_as_admin {
-        return Err(StartupError::new(
-            "unsupported_machine_setting",
-            "run as administrator is unsupported on macOS",
-        ));
-    }
-
     let store = app.state::<Arc<ConfigStore>>();
     let transaction = app.state::<ConfigTransaction>();
     let _transaction = transaction.0.lock();
@@ -1692,8 +1676,8 @@ pub fn run() {
     };
 
     #[cfg(windows)]
-    if let EarlyMode::TaskHelper { enabled, highest } = early_mode {
-        let result = platform::windows::startup::run_helper(&StartupPolicy { enabled, highest });
+    if let EarlyMode::TaskHelper { enabled } = early_mode {
+        let result = platform::windows::startup::run_helper(&StartupPolicy { enabled });
         if let Err(err) = &result {
             log::error!("启动任务 helper 失败 [{}]: {}", err.code, err.message);
         }
@@ -1701,30 +1685,24 @@ pub fn run() {
     }
 
     #[cfg(windows)]
-    if early_mode == EarlyMode::Interactive {
-        let config_dir = std::env::var_os("APPDATA")
-            .map(std::path::PathBuf::from)
-            .map(|path| path.join("com.godgesture.app"));
-        if let Some(config_dir) = config_dir {
-            let machine = ConfigStore::new(config_dir).load_machine();
-            if machine.run_as_admin {
-                match platform::windows::startup::elevation_state() {
-                    Ok((true, _)) => {}
-                    Ok((false, true)) => {
-                        if let Err(err) = platform::windows::startup::elevate_interactive() {
-                            log::error!("管理员启动失败 [{}]: {}", err.code, err.message);
-                        }
-                        return;
-                    }
-                    Ok((false, false)) => {
-                        log::error!("管理员启动被拒绝: 当前账户没有可提升的 split token");
-                        return;
-                    }
-                    Err(err) => {
-                        log::error!("管理员启动校验失败 [{}]: {}", err.code, err.message);
-                        return;
-                    }
+    if early_mode.requires_elevation() {
+        match platform::windows::startup::elevation_state() {
+            Ok((true, _)) => {}
+            Ok((false, true)) => {
+                if let Err(err) = platform::windows::startup::elevate_interactive(
+                    early_mode.elevation_parameters(),
+                ) {
+                    log::error!("管理员启动失败 [{}]: {}", err.code, err.message);
                 }
+                return;
+            }
+            Ok((false, false)) => {
+                log::error!("管理员启动被拒绝: 当前账户没有可提升的 split token");
+                return;
+            }
+            Err(err) => {
+                log::error!("管理员启动校验失败 [{}]: {}", err.code, err.message);
+                return;
             }
         }
     }
@@ -1794,14 +1772,7 @@ pub fn run() {
             #[cfg(windows)]
             let machine = store.load_machine();
             #[cfg(target_os = "macos")]
-            let mut machine = store.load_machine();
-            #[cfg(target_os = "macos")]
-            if machine.run_as_admin {
-                machine.run_as_admin = false;
-                if let Err(error) = store.save_machine(&machine) {
-                    log::warn!("cannot clear unsupported macOS runAsAdmin setting: {error}");
-                }
-            }
+            let machine = store.load_machine();
             app.manage(store);
             app.manage(plugin_workspace);
             app.manage(ConfigTransaction(parking_lot::Mutex::new(())));

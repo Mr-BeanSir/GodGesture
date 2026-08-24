@@ -1,6 +1,6 @@
 /**
  * 偏好设置 —— 参与同步的部分(SyncedPreferences)与本机专属部分(MachineLocalSettings)。
- * 术语表:本机专属设置 = 开机自启、以管理员身份运行、托盘图标隐藏,其余全部同步。
+ * 术语表:本机专属设置 = 开机自启、托盘图标隐藏,其余全部同步。
  */
 import { z } from "zod";
 import { TriggerButton } from "./gestures.js";
@@ -69,9 +69,9 @@ export const SyncedPreferences = z.object({
 export type SyncedPreferences = z.infer<typeof SyncedPreferences>;
 
 /** 本机专属设置 —— 不随账户漫游,不进同步载荷 */
+// COMPAT-0002: strip the removed runAsAdmin field from legacy machine settings.
 export const MachineLocalSettings = z.object({
   autoStart: z.boolean().default(false),
-  runAsAdmin: z.boolean().default(false),
   trayIconVisible: z.boolean().default(true),
 });
 export type MachineLocalSettings = z.infer<typeof MachineLocalSettings>;
