@@ -69,7 +69,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | M5 后端与账户 | 已完成 | Server 是私有子模块；注册开关覆盖邮箱注册和首次未绑定 OAuth 建号；OAuth/SMTP 凭证由部署环境提供；模板服务使用 PostgreSQL + RustFS |
 | M6 云同步 | 已完成 | 整库 v8、乐观并发、后写胜出、快照和离线优先 |
 | M7 Web Console 与分发 | 已完成 | Server-owned Console、模板审核/举报/配额、系统配置、账户编辑和作者管理已接入 |
-| M8 打磨与发布 | `v0.2.3` 已发布 | tag 指向 `57c2aa6`，之后仅同步 Cargo.lock 到 `2749bf8`；双平台安装验收和生产部署仍 pending |
+| M8 打磨与发布 | `v0.2.4` 已发布 | tag 指向 `84dd9ef`，之后仅同步 Cargo.lock 到 `9f4d20d`；双平台安装验收和生产部署仍 pending |
 
 ## 部件地图
 
@@ -155,7 +155,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 - 2026-08-23（边角显示引导）：Shared 测试 `93 passed`，Desktop typecheck、Desktop 测试 `50 files / 243 passed / 3 skipped`、Desktop build、`pnpm check:api`、Server Jest `25 passed / 1 skipped`（`233 passed / 13 skipped`）、Web Console `27 files / 187 passed`、Windows cfg 的 overlay suite `32 passed`、Rust 全量库测试 `325 passed / 0 failed / 2 ignored`、Rust fmt 和库级 Clippy 均通过。最终复审修正 macOS 淡出测试 fixture 并通过定向复审；Windows layered-window 现场视觉验收、macOS native compile/runtime/Retina/Spaces/点击透传和真实设备验收仍 pending。
 
-- 2026-08-22：`v0.2.3` 已完成本地版本发布、tag 和远程 `main` push；发布 tag 保持在 `57c2aa6`，后续 Cargo.lock 版本同步提交为 `2749bf8`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
+- 2026-08-24：`v0.2.4` 已完成版本发布、tag 和远程 `main` push；发布 tag 保持在 `84dd9ef`，后续 Cargo.lock 版本同步提交为 `9f4d20d`，未改写已发布 tag。双平台安装验收和生产部署仍 pending。
 - 2026-08-19：Desktop 测试 `50 files / 238 passed / 3 skipped`、typecheck 和 build 通过；仅保留动态导入与大 chunk 警告。
 - 2026-08-21：Desktop Rust 全量 `--lib --no-default-features` 测试 `274 passed, 2 ignored`，格式检查和库级 Clippy 通过；新增边角未匹配轨迹不 replay、无轨迹点击仍 replay 回归测试。真实 Windows/macOS 输入现场仍 pending。
 - 2026-08-21：Windows 托盘原生输入优先适配新增；系统托盘路由回归测试与窗口类识别测试通过，真实托盘菜单重复点击仍 pending。
