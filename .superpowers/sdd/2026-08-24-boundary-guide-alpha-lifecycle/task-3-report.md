@@ -59,7 +59,7 @@ The following commands were executed after the documentation edits:
     worktree, and the subsequent API generation check could not open the absent
     `apps/server/openapi.json`. This is an existing worktree/submodule artifact limitation;
     no API or Server file was generated or modified.
-- `git diff --check`
+- `git diff --check` (working-tree check after the documentation correction)
   - Passed, exit code 0; no whitespace errors.
 - `rg -n "trail_fade_surface|capture_trail_fade_surface|restore_trail_fade_surface" apps/desktop/src-tauri/src`
   - No matches. `rg` returned exit code 1 for the expected absent symbols; the wrapper
@@ -104,7 +104,7 @@ Verification after the correction:
   - No matches; the stale behavior description is absent.
 - `rg -n "End/Cancel 立即清理 trail|guide redraw 不恢复旧轨迹|label feedback 独立生命周期" docs/PROJECT_STATUS.md`
   - Found the replacement status description at the top of the file.
-- `git diff --check`
+- `git diff --check` (working-tree check after the stale-status correction)
   - Passed, exit code 0; no whitespace errors.
 - Allowed-path check
   - The working diff contains only `docs/PROJECT_STATUS.md` and this report file.
@@ -114,3 +114,16 @@ Verification after the correction:
 The SDD ledger initially recorded the Task 2 review range with the wrong base commit.
 It now records the actual Task 2 range as `c347c7d..6fd93ab`, beginning at the completed
 Task 1 implementation. No production behavior changed.
+
+## Final whole-range reconciliation
+
+This final documentation-only follow-up changes only the implementation plan and this
+report. It does not modify production code, protocol, Shared, Server, OpenAPI, database,
+the SDD ledger, or any other existing plan file.
+
+The earlier `git diff --check` entry above is the working-tree check run after the prior
+documentation correction; it covered only the uncommitted changes present at that point.
+The final whole-range check is recorded separately below:
+
+- `git diff --check a47e4c8..HEAD` (whole-range check after this reconciliation)
+  - Passed, exit code 0; no whitespace errors, including the plan file's EOF.

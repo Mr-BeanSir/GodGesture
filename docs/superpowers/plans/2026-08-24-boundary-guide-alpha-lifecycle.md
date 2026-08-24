@@ -33,7 +33,7 @@
 - Preserve `BoundaryGuideFrame.area`, `region`, DPI fields, and all real hit-test functions.
 - Keep `guide_at` as the display-only entry point; only its guide proximity lookup and alpha calculation change.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add focused unit assertions that expose the old screen-edge alpha behavior:
 
@@ -94,7 +94,7 @@ fn guide_at_keeps_edges_opaque_through_the_band_then_fades_toward_the_interior()
 
 Use the repository's existing fixtures and adjust only coordinates needed to match their screen dimensions and DPI. The expected assertions must remain literal and must not call the new helper to compute expected alpha.
 
-- [ ] **Step 2: Run the focused tests and verify they fail for the old behavior**
+- [x] **Step 2: Run the focused tests and verify they fail for the old behavior**
 
 Run:
 
@@ -104,7 +104,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --no-default-
 
 Expected: failure showing alpha is currently strongest at the screen edge and/or the inward proximity frame is missing.
 
-- [ ] **Step 3: Implement the minimal display-only geometry change**
+- [x] **Step 3: Implement the minimal display-only geometry change**
 
 Keep `guide_corner`, `corner_guide_area`, `corner_guide_distance`, `active_edge`, and `dist_to_edge` unchanged for their existing consumers. Add display-only helpers that:
 
@@ -117,7 +117,7 @@ Keep `guide_corner`, `corner_guide_area`, `corner_guide_distance`, `active_edge`
 
 Do not change the true hit-test functions or the order in which corners and edges are selected.
 
-- [ ] **Step 4: Run the focused tests and the existing corner regression tests**
+- [x] **Step 4: Run the focused tests and the existing corner regression tests**
 
 Run:
 
@@ -127,7 +127,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --no-default-
 
 Expected: all corner geometry, disabled-region, offset-monitor, and state-machine regressions pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/desktop/src-tauri/src/engine/corners.rs
@@ -146,7 +146,7 @@ git commit -m "fix: align boundary guide alpha with trigger area"
 - `End` and `Cancel` must clear live points/path rendering immediately.
 - No platform overlay state may contain `trail_fade_surface` or another captured trail bitmap used by fade redraws.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 For each platform's existing state fixture, add or adapt tests to assert observable behavior:
 
@@ -175,7 +175,7 @@ fn cancel_clears_trail_immediately_without_starting_trail_fade() {
 
 Where the existing platform state names differ, use that platform's real state transitions. Replace tests that directly construct or assert `trail_fade_surface`; tests must exercise `End`, `Cancel`, boundary-guide updates, and independent label feedback rather than asserting a removed field.
 
-- [ ] **Step 2: Run the focused overlay tests and verify they fail against the current snapshot implementation**
+- [x] **Step 2: Run the focused overlay tests and verify they fail against the current snapshot implementation**
 
 Run the Windows and macOS overlay test filters separately from the repository root:
 
@@ -186,7 +186,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --no-default-
 
 Expected: the new immediate-clear assertions fail because the current `End`/`Cancel` path starts or preserves fade state and captures trail pixels.
 
-- [ ] **Step 3: Remove the snapshot implementation and make end/cancel authoritative cleanup**
+- [x] **Step 3: Remove the snapshot implementation and make end/cancel authoritative cleanup**
 
 On both platforms:
 
@@ -199,7 +199,7 @@ On both platforms:
 
 Do not remove or merge the independent label fade behavior unless it currently depends on the removed trail bitmap; if it does, retain its live label state and redraw path without trail pixels.
 
-- [ ] **Step 4: Run the focused overlay tests and existing overlay regression tests**
+- [x] **Step 4: Run the focused overlay tests and existing overlay regression tests**
 
 Run:
 
@@ -210,7 +210,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --no-default-
 
 Expected: both platform suites pass, including guide raster/dirty bounds, label feedback, visibility, and lifecycle tests; no test or production reference to `trail_fade_surface` remains.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/desktop/src-tauri/src/platform/windows/overlay.rs apps/desktop/src-tauri/src/platform/macos/overlay.rs
@@ -228,7 +228,7 @@ git commit -m "fix: clear gesture trails at overlay lifecycle end"
 - Documentation records behavior only after the implementation and tests establish it.
 - No shared protocol or backend changes are expected for this task.
 
-- [ ] **Step 1: Update terminology and status records**
+- [x] **Step 1: Update terminology and status records**
 
 Record that:
 
@@ -239,7 +239,7 @@ Record that:
 - label feedback remains independent;
 - Windows visual observation and macOS native/device acceptance remain pending unless separately performed.
 
-- [ ] **Step 2: Run formatting, targeted tests, and static checks**
+- [x] **Step 2: Run formatting, targeted tests, and static checks**
 
 Run:
 
@@ -254,7 +254,7 @@ pnpm check:api
 git diff --check
 ```
 
-- [ ] **Step 3: Search for removed mechanisms and inspect the final diff**
+- [x] **Step 3: Search for removed mechanisms and inspect the final diff**
 
 Run:
 
@@ -266,10 +266,9 @@ git status --porcelain=v1
 
 Expected: the search returns no production or test references, and the only untracked pre-existing user file remains untouched.
 
-- [ ] **Step 4: Commit documentation and verification baseline**
+- [x] **Step 4: Commit documentation and verification baseline**
 
 ```powershell
 git add CONTEXT.md docs/PROJECT_STATUS.md docs/superpowers/specs/2026-08-24-boundary-guide-alpha-lifecycle-design.md
 git commit -m "docs: record boundary guide lifecycle behavior"
 ```
-
