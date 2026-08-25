@@ -1,7 +1,8 @@
 import { computed, onScopeDispose, ref } from "vue";
 import { defineStore } from "pinia";
 import { useBackend, type LogEntry, type LogLevel, type LogsQueryRequest } from "../api/backend";
-import { appLog } from "../logging";
+import { appLog, setLogLevel } from "../logging";
+import { setBackendDiagnosticLevel } from "../runtime-diagnostics";
 
 export const useLogsStore = defineStore("logs", () => {
   const backend = useBackend();
@@ -20,6 +21,12 @@ export const useLogsStore = defineStore("logs", () => {
   let unlisten: (() => void) | undefined;
 
   const hasEntries = computed(() => entries.value.length > 0);
+
+  function applyLevel(next: LogLevel): void {
+    level.value = next;
+    setBackendDiagnosticLevel(next);
+    setLogLevel(next);
+  }
 
   function newestFirst(next: LogEntry[]): LogEntry[] {
     return next
@@ -57,7 +64,7 @@ export const useLogsStore = defineStore("logs", () => {
       const result = await backend.logsQuery(request());
       entries.value = newestFirst(result.entries).slice(0, 2000);
       total.value = result.total ?? result.entries.length;
-      if (result.level) level.value = result.level;
+      if (result.level) applyLevel(result.level);
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause);
       appLog.error("logs", "日志查询失败");
@@ -71,7 +78,7 @@ export const useLogsStore = defineStore("logs", () => {
     if (requestPromise) return requestPromise;
     requestPromise = (async () => {
       try {
-        level.value = await backend.logLevelGet();
+        applyLevel(await backend.logLevelGet());
         unlisten = await backend.onLogEvent((entry) => {
           if (!matches(entry)) return;
           entries.value = [entry, ...entries.value].slice(0, 2000);
@@ -91,7 +98,7 @@ export const useLogsStore = defineStore("logs", () => {
 
   async function setLevel(next: LogLevel): Promise<void> {
     try {
-      level.value = await backend.logLevelSet(next);
+      applyLevel(await backend.logLevelSet(next));
       appLog.info("logs", `日志级别已设置为 ${next}`);
       await refresh();
     } catch (cause) {

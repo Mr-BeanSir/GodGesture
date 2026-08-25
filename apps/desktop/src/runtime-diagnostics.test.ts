@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backend, LogEntryLevel } from "./api/backend";
-import { installRuntimeDiagnostics } from "./runtime-diagnostics";
+import {
+  installRuntimeDiagnostics,
+  setBackendDiagnosticLevel,
+} from "./runtime-diagnostics";
 
 type LogCall = [LogEntryLevel, string, string];
 
@@ -19,12 +22,22 @@ const originalConsole = {
 
 let cleanup: (() => void) | undefined;
 
+beforeEach(() => {
+  setBackendDiagnosticLevel("debug");
+});
+
 function messages(): string[] {
   return vi.mocked(backend.logWrite).mock.calls.map((call) => call[2]);
 }
 
 function levels(): LogEntryLevel[] {
   return vi.mocked(backend.logWrite).mock.calls.map((call) => call[0]);
+}
+
+async function flushDiagnosticWrites(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 afterEach(() => {
@@ -37,7 +50,10 @@ afterEach(() => {
   console.error = originalConsole.error;
   console.log = originalConsole.log;
   document.body.innerHTML = "";
-  vi.mocked(backend.logWrite).mockClear();
+  vi.mocked(backend.logWrite)
+    .mockReset()
+    .mockImplementation(async (..._args: LogCall) => undefined);
+  setBackendDiagnosticLevel("off");
 });
 
 describe("runtime diagnostics", () => {
@@ -54,6 +70,7 @@ describe("runtime diagnostics", () => {
       headers: { Authorization: "Bearer token" },
       body: "password=secret",
     });
+    await flushDiagnosticWrites();
 
     expect(levels()).toEqual(["debug", "info"]);
     expect(messages().join("\n")).toContain("url=https://example.test/api/config");
@@ -62,6 +79,22 @@ describe("runtime diagnostics", () => {
     expect(messages().join("\n")).not.toContain("secret");
     expect(messages().join("\n")).not.toContain("token");
     expect(messages().join("\n")).not.toContain("access_token");
+  });
+
+  it("does not record internal Tauri IPC fetches", async () => {
+    const nativeFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+    })) as unknown as typeof fetch;
+    globalThis.fetch = nativeFetch;
+    cleanup = installRuntimeDiagnostics(backend);
+
+    await fetch("http://ipc.localhost/log_write");
+    await flushDiagnosticWrites();
+
+    expect(vi.mocked(backend.logWrite)).not.toHaveBeenCalled();
+    expect(nativeFetch).toHaveBeenCalledTimes(1);
   });
 
   it("classifies HTTP failures and network errors", async () => {
@@ -77,6 +110,7 @@ describe("runtime diagnostics", () => {
 
     await fetch("https://example.test/api?secret=hidden");
     await expect(fetch("https://example.test/api?secret=hidden")).rejects.toThrow("network offline");
+    await flushDiagnosticWrites();
 
     expect(levels()).toEqual(["debug", "warn", "debug", "error"]);
     expect(messages().join("\n")).toContain("status=503");
@@ -89,11 +123,59 @@ describe("runtime diagnostics", () => {
     cleanup = installRuntimeDiagnostics(backend);
 
     console.warn("Authorization: Bearer very-secret-token");
-    await Promise.resolve();
+    await flushDiagnosticWrites();
 
     expect(nativeWarn).toHaveBeenCalledWith("Authorization: Bearer very-secret-token");
     expect(levels()).toEqual(["warn"]);
     expect(messages()[0]).not.toContain("very-secret-token");
+  });
+
+  it("does not create IPC work while local collection is disabled", async () => {
+    setBackendDiagnosticLevel("off");
+    const nativeWarn = vi.fn();
+    console.warn = nativeWarn;
+    cleanup = installRuntimeDiagnostics(backend);
+
+    console.warn("this must stay local");
+    await flushDiagnosticWrites();
+
+    expect(nativeWarn).toHaveBeenCalledWith("this must stay local");
+    expect(vi.mocked(backend.logWrite)).not.toHaveBeenCalled();
+  });
+
+  it("does not feed Tauri callback warnings back into the diagnostic IPC path", async () => {
+    const nativeError = vi.fn();
+    console.error = nativeError;
+    cleanup = installRuntimeDiagnostics(backend);
+
+    console.error("[TAURI] Couldn't find callback id 2547625492");
+    await flushDiagnosticWrites();
+
+    expect(nativeError).toHaveBeenCalledWith("[TAURI] Couldn't find callback id 2547625492");
+    expect(vi.mocked(backend.logWrite)).not.toHaveBeenCalled();
+  });
+
+  it("serializes a console burst instead of leaving every IPC callback in flight", async () => {
+    const nativeDebug = vi.fn();
+    console.debug = nativeDebug;
+    const resolvers: Array<() => void> = [];
+    vi.mocked(backend.logWrite).mockImplementation(
+      async () => await new Promise<void>((resolve) => resolvers.push(resolve)),
+    );
+    cleanup = installRuntimeDiagnostics(backend);
+
+    console.debug("first");
+    console.debug("second");
+    console.debug("third");
+
+    expect(vi.mocked(backend.logWrite)).toHaveBeenCalledTimes(1);
+    resolvers.shift()?.();
+    await flushDiagnosticWrites();
+    expect(vi.mocked(backend.logWrite)).toHaveBeenCalledTimes(2);
+    resolvers.shift()?.();
+    await flushDiagnosticWrites();
+    expect(vi.mocked(backend.logWrite)).toHaveBeenCalledTimes(3);
+    resolvers.shift()?.();
   });
 
   it("records uncaught errors and rejected promises without serializing event data", async () => {
@@ -107,7 +189,7 @@ describe("runtime diagnostics", () => {
       value: { message: "promise failed", accessToken: "secret-token" },
     });
     window.dispatchEvent(rejection);
-    await Promise.resolve();
+    await flushDiagnosticWrites();
 
     expect(levels()).toEqual(["error", "error"]);
     expect(messages().join("\n")).toContain("render failed");
@@ -130,7 +212,7 @@ describe("runtime diagnostics", () => {
 
     button.click();
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    await Promise.resolve();
+    await flushDiagnosticWrites();
 
     expect(levels()).toEqual(["debug", "debug"]);
     expect(messages().join("\n")).toContain("save-config");
@@ -151,6 +233,7 @@ describe("runtime diagnostics", () => {
 
     expect(secondCleanup).toBe(firstCleanup);
     await fetch("https://example.test/once");
+    await flushDiagnosticWrites();
     expect(nativeFetch).toHaveBeenCalledTimes(1);
     expect(vi.mocked(backend.logWrite)).toHaveBeenCalledTimes(2);
 

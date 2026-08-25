@@ -108,6 +108,12 @@ Windows 快捷键录制期间由常驻低级键盘钩子优先接收按键,将�
 尝试阻断系统快捷键;Windows 保留组合仍可能由系统优先处理。录制结束、取消或失焦时立即
 停用。macOS 与浏览器预览继续使用平台原生 WebView 键盘事件路径。
 
+**Windows WebView DevTools 快捷键 (Windows WebView DevTools Shortcut)**:
+Desktop 主窗口在 Windows WebView2 中关闭浏览器专用 accelerator,让 F12 继续进入页面的
+`keydown` contract;前端随后调用 Tauri `devtools_toggle`,由原生 WebView 打开独立的
+`OpenDevToolsWindow`。这不是页面内嵌开发者工具。Tauri 的 `devtools` feature 与窗口配置
+同时启用,因此 release 构建也保留该能力;浏览器预览仍使用 no-op mock。
+
 **Windows 手势键盘捕获 (Windows Gesture Keyboard Capture)**:
 普通手势录制和识别期间优先使用 `WH_KEYBOARD_LL` 接收键盘事件,Windows Raw Input 通过隐藏
 message-only 窗口和 `RIDEV_INPUTSINK` 作为兜底;不使用 `RIDEV_NOLEGACY`。两路输入按虚拟键码、
@@ -277,7 +283,15 @@ Desktop 启动时安装一次的进程内统一采集层,覆盖前端 fetch、Ta
 OAuth loopback 与 Node 宿主生命周期写入同一日志中心。HTTP 只记录 method、协议/主机/端口/
 pathname、status、耗时和 content-length;IPC 只记录 command 与耗时;UI 只记录稳定控件标识或元素
 类型。请求头、请求体、URL credentials/query/fragment、令牌、密码、剪贴板、输入框值、完整配置和
-插件源码均不记录。采集层失败不得阻塞原业务操作,日志命令自身绕过 IPC 诊断网关避免递归。
+插件源码均不记录。Tauri 内部 `ipc.localhost` fetch 不计入 `http.fetch`,避免 `log_write` 等诊断
+写入造成反馈放大;真实业务 HTTP、更新器、OAuth 和插件下载请求仍保留。采集层失败不得阻塞原
+业务操作,日志命令自身绕过 IPC 诊断网关避免递归。
+
+**开发期管理员终端预检 (Elevated Development Terminal Preflight)**:
+Windows Desktop 仍必须以管理员身份运行。`pnpm dev:desktop` 在启动 Vite/Tauri 前通过
+Windows PowerShell 查询当前 Node 进程的管理员令牌;普通权限终端直接退出并提示使用管理员
+PowerShell 或其他管理员终端重试,不启动 UAC 子进程,也不进入 debug 控制台链路。发布版由应用
+自身的 UAC `runas` 路径保证管理员启动;该预检不适用于 macOS。
 
 **发布版 DevTools 快捷键 (Release DevTools Shortcut)**:
 Desktop 主窗口在发布构建中启用 WebView DevTools,统一由 `F12` 打开或关闭;快捷键不提供设置项,

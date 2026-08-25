@@ -1,21 +1,31 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   invokeCommand,
   setBackendDiagnosticWriter,
 } from "../backend";
+import { setBackendDiagnosticLevel } from "../../runtime-diagnostics";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 describe("Tauri invoke diagnostics", () => {
+  let restoreWriter: (() => void) | undefined;
+
   beforeEach(() => {
     invoke.mockReset();
+    setBackendDiagnosticLevel("debug");
+  });
+
+  afterEach(() => {
+    restoreWriter?.();
+    restoreWriter = undefined;
+    setBackendDiagnosticLevel("off");
   });
 
   it("records command timing without arguments or result", async () => {
     const writer = vi.fn();
-    const restore = setBackendDiagnosticWriter(writer);
+    restoreWriter = setBackendDiagnosticWriter(writer);
     invoke.mockResolvedValue({ ok: true });
 
     await expect(
@@ -31,12 +41,11 @@ describe("Tauri invoke diagnostics", () => {
     expect(writer.mock.calls[1][1]).toBe("ipc");
     expect(writer.mock.calls[1][2]).toMatch(/^success command=config_set durationMs=\d+$/);
     expect(writer.mock.calls.map((call) => call[2]).join("\n")).not.toContain("secret-token");
-    restore();
   });
 
   it("records a failed command and preserves the original error", async () => {
     const writer = vi.fn();
-    const restore = setBackendDiagnosticWriter(writer);
+    restoreWriter = setBackendDiagnosticWriter(writer);
     const failure = new Error("permission denied");
     invoke.mockRejectedValue(failure);
 
@@ -48,6 +57,5 @@ describe("Tauri invoke diagnostics", () => {
     expect(writer.mock.calls[1][1]).toBe("ipc");
     expect(writer.mock.calls[1][2]).toMatch(/^failed command=machine_set durationMs=\d+$/);
     expect(writer.mock.calls.map((call) => call[2]).join("\n")).not.toContain("secret");
-    restore();
   });
 });

@@ -69,6 +69,27 @@ fn devtools_toggle(window: tauri::WebviewWindow) -> Result<bool, String> {
     }
 }
 
+#[cfg(windows)]
+fn disable_windows_browser_accelerators(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows_core::Interface;
+
+    window
+        .with_webview(|webview| {
+            let result: webview2_com::Result<()> = (|| unsafe {
+                let core_webview = webview.controller().CoreWebView2()?;
+                let settings = core_webview.Settings()?;
+                let settings = settings.cast::<ICoreWebView2Settings3>()?;
+                settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                log::warn!("disable WebView2 browser accelerators failed: {error}");
+            }
+        })
+        .map_err(|error| format!("configure WebView2 browser accelerators: {error}"))
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
 
@@ -1749,6 +1770,9 @@ pub fn run() {
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
                 window.set_decorations(false)?;
+                if let Err(error) = disable_windows_browser_accelerators(&window) {
+                    log::warn!("Windows WebView 浏览器快捷键配置失败: {error}");
+                }
             }
 
             let config_dir = app

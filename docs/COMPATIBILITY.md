@@ -36,11 +36,4 @@
 
 ## 当前登记
 
-当前仓库版本：`0.2.5`
-
-登记时间基线：`2026-08-25 01:08:01 +08:00`（Asia/Shanghai）
-
-| ID | 状态 | 代码位置 | 兼容目标与保留原因 | 登记版本 / 时间 | 删除条件 | 最近复核 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `COMPAT-0001` | active | `apps/desktop/src-tauri/src/platform/windows/startup.rs` 的 `parse_early_mode`，`--startup-helper` 三参数分支 | 接受旧版启动任务传入的 `--startup-helper <enabled> <highest>`，校验旧权限位但忽略其结果；避免升级后已有任务调用 helper 失败 | `0.2.4` / `2026-08-25 01:08:01 +08:00` | 维护者确认所有受支持的启动任务都已使用新两参数格式重建，并决定不再接受旧权限位 | `0.2.5` / `2026-08-25 02:10:49 +08:00` / 保留 |
-| `COMPAT-0002` | active | `packages/shared/src/config/preferences.ts` 的 `MachineLocalSettings`；`apps/desktop/src-tauri/src/engine/config.rs` 的同名 Rust 结构 | 读取旧 `machine.json` 中的 `runAsAdmin` 时忽略该字段，并在下一次保存时清除；避免移除可选设置后旧本机配置无法启动 | `0.2.4` / `2026-08-25 01:08:01 +08:00` | 维护者确认不再需要接受带 `runAsAdmin` 的旧本机配置，并完成对应的严格拒绝/迁移决策 | `0.2.5` / `2026-08-25 02:10:49 +08:00` / 保留 |
+当前没有登记中的兼容代码。

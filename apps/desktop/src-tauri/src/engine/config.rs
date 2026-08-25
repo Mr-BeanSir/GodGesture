@@ -562,8 +562,7 @@ impl Default for ConfigDocument {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", default)]
-// COMPAT-0002: serde ignores the removed runAsAdmin field from legacy machine settings.
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct MachineLocalSettings {
     pub auto_start: bool,
     pub tray_icon_visible: bool,
@@ -970,6 +969,14 @@ mod tests {
         assert!(serialized["preferences"]["pathTracker"]
             .get("enable8Directions")
             .is_none());
+    }
+
+    #[test]
+    fn machine_settings_reject_removed_fields() {
+        let result = serde_json::from_value::<MachineLocalSettings>(serde_json::json!({
+            "runAsAdmin": true,
+        }));
+        assert!(result.is_err());
     }
 
     #[test]

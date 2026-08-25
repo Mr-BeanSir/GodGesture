@@ -60,13 +60,8 @@ describe("configuration document v8", () => {
     expect(preferences.triggerButtons).toEqual(["right"]);
   });
 
-  it("drops the legacy configurable administrator startup setting", () => {
-    const settings = MachineLocalSettings.parse({
-      autoStart: true,
-      runAsAdmin: true,
-    });
-
-    expect(settings).toEqual({ autoStart: true, trayIconVisible: true });
-    expect(settings).not.toHaveProperty("runAsAdmin");
+  it("rejects removed machine settings fields", () => {
+    expect(() => MachineLocalSettings.parse({ runAsAdmin: true })).toThrow();
   });
+
 });

@@ -4,11 +4,24 @@ import "@godgesture/ui/styles.css";
 import "./desktop.css";
 import App from "./App.vue";
 import { i18n } from "./locales";
-import { appLog } from "./logging";
+import { appLog, setLogLevel } from "./logging";
 import { useBackend, setBackendDiagnosticWriter } from "./api/backend";
-import { installRuntimeDiagnostics } from "./runtime-diagnostics";
+import {
+  installRuntimeDiagnostics,
+  setBackendDiagnosticLevel,
+} from "./runtime-diagnostics";
 
 const backend = useBackend();
+void backend.logLevelGet().then(
+  (level) => {
+    setBackendDiagnosticLevel(level);
+    setLogLevel(level);
+  },
+  () => {
+    setBackendDiagnosticLevel("off");
+    setLogLevel("off");
+  },
+);
 setBackendDiagnosticWriter((level, target, message) => appLog[level](target, message));
 installRuntimeDiagnostics(backend);
 

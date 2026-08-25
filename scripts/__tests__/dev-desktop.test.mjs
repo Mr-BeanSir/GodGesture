@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   findAvailablePortPair,
+  isWindowsProcessElevated,
   tauriDevArgs,
 } from "../dev-desktop.mjs";
 
@@ -50,4 +51,42 @@ test("passes the selected devUrl to Tauri without dropping forwarded args", () =
     build: { devUrl: "http://127.0.0.1:14202" },
   });
   assert.deepEqual(args.slice(4), ["--verbose"]);
+});
+
+test("does not require elevation on non-Windows development hosts", () => {
+  assert.equal(isWindowsProcessElevated({ platform: "darwin" }), true);
+});
+
+test("checks the current Windows token through PowerShell", () => {
+  let invocation;
+  const elevated = isWindowsProcessElevated({
+    platform: "win32",
+    execFileSyncImpl(...args) {
+      invocation = args;
+      return Buffer.from("");
+    },
+  });
+
+  assert.equal(elevated, true);
+  assert.equal(invocation[0], "powershell.exe");
+  assert.deepEqual(invocation[1].slice(0, 3), [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+  ]);
+  assert.equal(invocation[1][3], "-Command");
+  assert.match(invocation[1][4], /WindowsBuiltInRole\]::Administrator/);
+  assert.deepEqual(invocation[2], { stdio: "ignore" });
+});
+
+test("rejects a Windows development host when the token is not elevated", () => {
+  assert.equal(
+    isWindowsProcessElevated({
+      platform: "win32",
+      execFileSyncImpl() {
+        throw new Error("PowerShell role check returned exit code 1");
+      },
+    }),
+    false,
+  );
 });

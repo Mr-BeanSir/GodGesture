@@ -1,8 +1,17 @@
-import type { Backend, LogEntryLevel } from "./api/backend";
+import type { Backend, LogEntryLevel, LogLevel } from "./api/backend";
 
 const MAX_MESSAGE_LENGTH = 1200;
+const MAX_PENDING_WRITES = 256;
 const CONSOLE_METHODS = ["debug", "info", "warn", "error", "log"] as const;
 type ConsoleMethod = (typeof CONSOLE_METHODS)[number];
+
+const LOG_LEVEL_RANK: Record<LogLevel, number> = {
+  off: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+};
 
 export type BackendDiagnosticWriter = (
   level: LogEntryLevel,
@@ -12,6 +21,15 @@ export type BackendDiagnosticWriter = (
 
 let diagnosticWriter: BackendDiagnosticWriter | null = null;
 let activeCleanup: (() => void) | null = null;
+let diagnosticLevel: LogLevel = "off";
+
+export function setBackendDiagnosticLevel(level: LogLevel): void {
+  diagnosticLevel = level;
+}
+
+function acceptsDiagnosticLevel(level: LogEntryLevel): boolean {
+  return diagnosticLevel !== "off" && LOG_LEVEL_RANK[diagnosticLevel] >= LOG_LEVEL_RANK[level];
+}
 
 export function setBackendDiagnosticWriter(
   writer: BackendDiagnosticWriter | null,
@@ -55,28 +73,57 @@ function requestErrorCategory(error: unknown): string {
   return "unknown";
 }
 
-function safeLog(
-  backend: Backend,
-  level: LogEntryLevel,
-  target: string,
-  message: string,
-): void {
-  try {
-    void Promise.resolve(backend.logWrite(level, target, sanitizeText(message))).catch(
-      () => undefined,
-    );
-  } catch {
-    // Instrumentation must never alter the operation it observes.
+interface DiagnosticSink {
+  write(level: LogEntryLevel, target: string, message: string): void;
+  dispose(): void;
+}
+
+function createDiagnosticSink(backend: Backend): DiagnosticSink {
+  type PendingWrite = [LogEntryLevel, string, string];
+  const pending: PendingWrite[] = [];
+  let draining = false;
+  let disposed = false;
+
+  async function drain(): Promise<void> {
+    if (draining) return;
+    draining = true;
+    try {
+      while (!disposed && pending.length > 0) {
+        const next = pending.shift();
+        if (!next || !acceptsDiagnosticLevel(next[0])) continue;
+        try {
+          await backend.logWrite(next[0], next[1], sanitizeText(next[2]));
+        } catch {
+          // Instrumentation must never alter the operation it observes.
+        }
+      }
+    } finally {
+      draining = false;
+      if (!disposed && pending.length > 0) void drain();
+    }
   }
+
+  return {
+    write(level, target, message) {
+      if (disposed || !acceptsDiagnosticLevel(level)) return;
+      if (pending.length >= MAX_PENDING_WRITES) pending.shift();
+      pending.push([level, target, message]);
+      void drain();
+    },
+    dispose() {
+      disposed = true;
+      pending.length = 0;
+    },
+  };
 }
 
 function logThroughBackend(
-  backend: Backend,
+  sink: DiagnosticSink,
   level: LogEntryLevel,
   target: string,
   message: string,
 ): void {
-  safeLog(backend, level, target, message);
+  sink.write(level, target, message);
 }
 
 function safeUrl(input: RequestInfo | URL): string {
@@ -89,6 +136,14 @@ function safeUrl(input: RequestInfo | URL): string {
     return `${url.protocol}//${url.host}${url.pathname || "/"}`;
   } catch {
     return sanitizeText(raw.split(/[?#]/, 1)[0]);
+  }
+}
+
+function isInternalTauriIpc(input: RequestInfo | URL): boolean {
+  try {
+    return new URL(safeUrl(input)).hostname === "ipc.localhost";
+  } catch {
+    return false;
   }
 }
 
@@ -108,22 +163,23 @@ function responseContentLength(response: Response): string | null {
   }
 }
 
-function installFetchDiagnostics(backend: Backend): () => void {
+function installFetchDiagnostics(sink: DiagnosticSink): () => void {
   const originalFetch = globalThis.fetch;
   const wrappedFetch = async (
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> => {
+    if (isInternalTauriIpc(input)) return originalFetch(input, init);
     const method = requestMethod(input, init);
     const url = safeUrl(input);
     const startedAt = Date.now();
-    logThroughBackend(backend, "debug", "http.fetch", `start method=${method} url=${url}`);
+    logThroughBackend(sink, "debug", "http.fetch", `start method=${method} url=${url}`);
     try {
       const response = await originalFetch(input, init);
       const level: LogEntryLevel = response.status >= 400 ? "warn" : "info";
       const contentLength = responseContentLength(response);
       logThroughBackend(
-        backend,
+        sink,
         level,
         "http.fetch",
         `complete method=${method} url=${url} status=${response.status} durationMs=${Date.now() - startedAt}${contentLength === null ? "" : ` contentLength=${contentLength}`}`,
@@ -131,7 +187,7 @@ function installFetchDiagnostics(backend: Backend): () => void {
       return response;
     } catch (error) {
       logThroughBackend(
-        backend,
+        sink,
         "error",
         "http.fetch",
         `failed method=${method} url=${url} durationMs=${Date.now() - startedAt} category=${requestErrorCategory(error)}`,
@@ -145,7 +201,7 @@ function installFetchDiagnostics(backend: Backend): () => void {
   };
 }
 
-function installConsoleDiagnostics(backend: Backend): () => void {
+function installConsoleDiagnostics(sink: DiagnosticSink): () => void {
   const originals = new Map<ConsoleMethod, (...args: unknown[]) => void>();
   const wrappers = new Map<ConsoleMethod, (...args: unknown[]) => void>();
   for (const method of CONSOLE_METHODS) {
@@ -162,12 +218,9 @@ function installConsoleDiagnostics(backend: Backend): () => void {
             : method === "info"
               ? "info"
               : "debug";
-        logThroughBackend(
-          backend,
-          level,
-          "console",
-          args.map(formatUnknown).join(" "),
-        );
+        const message = args.map(formatUnknown).join(" ");
+        if (/\[TAURI\]\s*Couldn't find callback id\b/i.test(message)) return;
+        logThroughBackend(sink, level, "console", message);
       }
     };
     wrappers.set(method, wrapper);
@@ -197,12 +250,12 @@ function controlForEvent(target: EventTarget | null, selector: string): Element 
   return target.closest(selector);
 }
 
-function installUiDiagnostics(backend: Backend): () => void {
+function installUiDiagnostics(sink: DiagnosticSink): () => void {
   const onClick = (event: MouseEvent): void => {
     const element = controlForEvent(event.target, "button,a");
     if (!element) return;
     logThroughBackend(
-      backend,
+      sink,
       "debug",
       "ui.action",
       `event=click element=${element.tagName.toLowerCase()} control=${controlIdentifier(element)}`,
@@ -212,7 +265,7 @@ function installUiDiagnostics(backend: Backend): () => void {
     const element = controlForEvent(event.target, "select,input[type=checkbox],input[type=radio]");
     if (!element) return;
     logThroughBackend(
-      backend,
+      sink,
       "debug",
       "ui.action",
       `event=change element=${element.tagName.toLowerCase()} control=${controlIdentifier(element)}`,
@@ -226,12 +279,12 @@ function installUiDiagnostics(backend: Backend): () => void {
   };
 }
 
-function installGlobalErrorDiagnostics(backend: Backend): () => void {
+function installGlobalErrorDiagnostics(sink: DiagnosticSink): () => void {
   const onError = (event: ErrorEvent): void => {
-    logThroughBackend(backend, "error", "runtime", `uncaught=${formatUnknown(event.error ?? event.message)}`);
+    logThroughBackend(sink, "error", "runtime", `uncaught=${formatUnknown(event.error ?? event.message)}`);
   };
   const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-    logThroughBackend(backend, "error", "runtime", `unhandledRejection=${formatUnknown(event.reason)}`);
+    logThroughBackend(sink, "error", "runtime", `unhandledRejection=${formatUnknown(event.reason)}`);
   };
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onUnhandledRejection);
@@ -244,17 +297,19 @@ function installGlobalErrorDiagnostics(backend: Backend): () => void {
 export function installRuntimeDiagnostics(backend: Backend): () => void {
   if (activeCleanup) return activeCleanup;
 
+  const sink = createDiagnosticSink(backend);
   const cleanups = [
-    installFetchDiagnostics(backend),
-    installConsoleDiagnostics(backend),
-    installUiDiagnostics(backend),
-    installGlobalErrorDiagnostics(backend),
+    installFetchDiagnostics(sink),
+    installConsoleDiagnostics(sink),
+    installUiDiagnostics(sink),
+    installGlobalErrorDiagnostics(sink),
   ];
   let disposed = false;
   const cleanup = (): void => {
     if (disposed) return;
     disposed = true;
     for (const dispose of cleanups.reverse()) dispose();
+    sink.dispose();
     if (activeCleanup === cleanup) activeCleanup = null;
   };
   activeCleanup = cleanup;
@@ -266,5 +321,5 @@ export function writeBackendDiagnostic(
   target: string,
   message: string,
 ): void {
-  diagnosticWriter?.(level, target, message);
+  if (acceptsDiagnosticLevel(level)) diagnosticWriter?.(level, target, message);
 }

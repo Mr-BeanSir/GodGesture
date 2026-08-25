@@ -6,7 +6,7 @@ Windows 普通权限进程不能操作更高完整性级别的窗口,而用户�
 
 - 普通交互启动和 `--autostart` 启动在进入 Tauri 应用前检查进程是否已提升;未提升时通过系统 UAC `runas` 重新启动,原进程退出,用户取消或无法提升则不继续运行。
 - Windows 开机任务固定使用 `HighestAvailable`;不再根据用户设置选择 `LeastPrivilege`。
-- 设置页和快速入门不再提供管理员身份开关,`runAsAdmin` 不再是本机设置协议字段。旧 `machine.json` 中的同名字段只在兼容读取时被忽略,后续保存时清除。
+- 设置页和快速入门不再提供管理员身份开关,`runAsAdmin` 不再是本机设置协议字段。包含该旧字段的 `machine.json` 不再作为兼容格式读取或迁移,会按未知字段拒绝。
 
 GodGesture 仍不使用需要 Authenticode 签名和受信安装位置的 `uiAccess`;管理员身份由应用启动时的 UAC 提升和 Windows 任务计划共同保证。
 

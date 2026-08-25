@@ -27,7 +27,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::Shell::{
     ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
-    SHELLEXECUTEINFOW,
+    SEE_MASK_NO_CONSOLE, SHELLEXECUTEINFOW,
 };
 
 const OWNER_MARKER: &str = "GodGesture startup task v1";
@@ -205,12 +205,6 @@ pub fn parse_early_mode(args: impl IntoIterator<Item = String>) -> Result<EarlyM
         [value] if value == AUTOSTART_ARG => Ok(EarlyMode::Autostart),
         [helper, enabled] if helper == "--startup-helper" => {
             let enabled = parse_enabled(enabled)?;
-            Ok(EarlyMode::TaskHelper { enabled })
-        }
-        // COMPAT-0001: accept the pre-0.2.4 helper's ignored highest flag.
-        [helper, enabled, legacy_highest] if helper == "--startup-helper" => {
-            let enabled = parse_enabled(enabled)?;
-            let _ = parse_enabled(legacy_highest)?;
             Ok(EarlyMode::TaskHelper { enabled })
         }
         _ => Err(StartupError::new(
@@ -547,7 +541,10 @@ fn shell_runas(parameters: &str, wait: bool) -> Result<u32, StartupError> {
         .collect::<Vec<_>>();
     let mut info = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI,
+        fMask: SEE_MASK_NOCLOSEPROCESS
+            | SEE_MASK_NOASYNC
+            | SEE_MASK_FLAG_NO_UI
+            | SEE_MASK_NO_CONSOLE,
         lpVerb: verb,
         lpFile: windows::core::PCWSTR(exe_w.as_ptr()),
         lpParameters: windows::core::PCWSTR(params_w.as_ptr()),
@@ -804,23 +801,11 @@ mod tests {
             parse_early_mode(["app".into(), "--startup-helper".into(), "1".into(),]).unwrap(),
             EarlyMode::TaskHelper { enabled: true }
         );
-        for legacy_highest in ["0", "1"] {
-            assert_eq!(
-                parse_early_mode([
-                    "app".into(),
-                    "--startup-helper".into(),
-                    "1".into(),
-                    legacy_highest.into(),
-                ])
-                .unwrap(),
-                EarlyMode::TaskHelper { enabled: true }
-            );
-        }
         assert!(parse_early_mode([
             "app".into(),
             "--startup-helper".into(),
             "1".into(),
-            "0".into(),
+            "unexpected".into(),
             "C:\\other.exe".into()
         ])
         .is_err());

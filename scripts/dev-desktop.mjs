@@ -1,5 +1,5 @@
 import net from "node:net";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
@@ -50,7 +50,41 @@ export function tauriDevArgs({ devPort }, forwardedArgs = []) {
   return [TAURI_CLI, "dev", "--config", override, ...forwardedArgs];
 }
 
+export function isWindowsProcessElevated({
+  platform = process.platform,
+  execFileSyncImpl = execFileSync,
+} = {}) {
+  if (platform !== "win32") {
+    return true;
+  }
+
+  try {
+    execFileSyncImpl(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$identity = [Security.Principal.WindowsIdentity]::GetCurrent(); $principal = New-Object Security.Principal.WindowsPrincipal($identity); if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 }; exit 1",
+      ],
+      { stdio: "ignore" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runDesktopDev(forwardedArgs = process.argv.slice(2)) {
+  if (!isWindowsProcessElevated()) {
+    console.error(
+      "[GodGesture] Windows Desktop development must be started from an elevated PowerShell or terminal.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const ports = await findAvailablePortPair();
   const url = `http://127.0.0.1:${ports.devPort}`;
   console.log(`[GodGesture] Desktop dev server: ${url}`);

@@ -15,8 +15,10 @@ pnpm dev:desktop
 
 Vite/HMR 首选 `127.0.0.1:14200/14201`。`pnpm dev:desktop` 会在任一端口被占用
 时自动选择下一组连续端口,并将同一地址传给 Tauri `devUrl`;它不会终止现有
-Node/Cargo 或其他占用进程。完整 GodGesture 实例已存在时,新实例会退出并唤起
-既有设置窗口。
+Node/Cargo 或其他占用进程。Windows Desktop 仍必须管理员运行;`pnpm dev:desktop` 会在
+启动 Vite/Tauri 前检查当前终端是否已提升。普通权限终端会直接退出并提示使用管理员
+PowerShell 或其他管理员终端重试,不会启动 UAC 子进程或额外的 debug 控制台。
+完整 GodGesture 实例已存在时,新实例会退出并唤起既有设置窗口。
 
 只启动浏览器界面时：
 

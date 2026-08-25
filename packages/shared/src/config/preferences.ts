@@ -69,9 +69,8 @@ export const SyncedPreferences = z.object({
 export type SyncedPreferences = z.infer<typeof SyncedPreferences>;
 
 /** 本机专属设置 —— 不随账户漫游,不进同步载荷 */
-// COMPAT-0002: strip the removed runAsAdmin field from legacy machine settings.
 export const MachineLocalSettings = z.object({
   autoStart: z.boolean().default(false),
   trayIconVisible: z.boolean().default(true),
-});
+}).strict();
 export type MachineLocalSettings = z.infer<typeof MachineLocalSettings>;

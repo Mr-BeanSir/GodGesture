@@ -1,7 +1,25 @@
-import { useBackend, type Backend, type LogEntryLevel } from "./api/backend";
+import {
+  useBackend,
+  type Backend,
+  type LogEntryLevel,
+  type LogLevel,
+} from "./api/backend";
 
 /** WebView 日志入口:桌面端写入 Rust 日志中心,浏览器预览写入内存 mock。 */
 let backend: Backend | null = null;
+let currentLevel: LogLevel = "off";
+
+const LOG_LEVEL_RANK: Record<LogLevel, number> = {
+  off: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+};
+
+export function setLogLevel(level: LogLevel): void {
+  currentLevel = level;
+}
 
 function getBackend(): Backend | null {
   if (backend) return backend;
@@ -38,6 +56,7 @@ function formatMessage(message: unknown): string {
 }
 
 export function writeLog(level: LogEntryLevel, target: string, message: unknown): void {
+  if (currentLevel === "off" || LOG_LEVEL_RANK[currentLevel] < LOG_LEVEL_RANK[level]) return;
   const text = formatMessage(message);
   const currentBackend = getBackend();
   if (!currentBackend || typeof currentBackend.logWrite !== "function") return;
