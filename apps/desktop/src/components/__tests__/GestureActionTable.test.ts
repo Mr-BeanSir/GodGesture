@@ -79,10 +79,10 @@ describe("GestureActionTable reuse contract", () => {
   it("is used by both the editable gestures page and the read-only template detail", async () => {
     const [gesturesSource, templatesSource] = await Promise.all([
       readFile(join(process.cwd(), "src", "views", "GesturesView.vue"), "utf8"),
-      readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8"),
+      readFile(join(process.cwd(), "src", "components", "GestureTemplateAdoptionDialog.vue"), "utf8"),
     ]);
 
     expect(gesturesSource).toContain('from "../components/GestureActionTable.vue"');
-    expect(templatesSource).toContain('from "../components/GestureActionTable.vue"');
+    expect(templatesSource).toContain('from "./GestureActionTable.vue"');
   });
 });

@@ -154,6 +154,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 ## 最近验证
 
 - 2026-08-25（手势模板导入与手势页入口）：新增 `AppChoiceDialog` 选择卡片原语、Tauri `gesture_template_open` 双平台 contract、shared 模板采纳 store 的本地 package 入口、手势模板导入复核和手势页“导入/导出”“分组/应用”路由；Desktop 定向测试 `54 files / 265 passed / 3 skipped`、Desktop typecheck、UI typecheck、Rust 模板命令编译测试和 `git diff --check` 通过。浏览器 mock 的文件选择返回取消；真实 Windows/macOS 文件选择器和导入现场验收仍 pending。
+- 2026-08-25（手势模板导入复核复用）：提取 `GestureTemplateAdoptionDialog` 作为在线模板页与手势页本地导入的唯一详细复核入口；本地 JSON 解析后复用目标应用/手势预览、Review、风险确认、冲突策略、插件提示和采纳流程，删除导入页重复的简化复核实现。Desktop 全量测试 `54 files / 265 passed / 3 skipped`、typecheck 与 `git diff --check` 通过；真实 Windows/macOS 文件选择器和导入现场验收仍 pending。
 
 - 2026-08-25（Cargo.lock 发布同步）：release-it 已在 bumper 更新 `Cargo.toml` 后运行 `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`，并把生成的 `Cargo.lock` 纳入 release commit；Windows 发布 Rust 测试、Windows/macOS CI 的 Cargo test/check/clippy/performance 命令均使用 `--locked`，Tauri Windows/macOS 构建通过 `-- --locked` 转发给 Cargo。当前 `v0.2.6` 的 `Cargo.lock` 根包已从 `0.2.5` 同步为 `0.2.6`，未改写 `v0.2.6` tag；`pnpm validate:release` 通过（43 tests passed，发布 workflow 校验通过）。
 

@@ -995,12 +995,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .gestures__apps-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 42px;
-  padding: 0 6px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--gg-border);
   font-size: 13px;
   color: var(--gg-text-muted);
@@ -1014,8 +1014,9 @@ onBeforeUnmount(() => {
 }
 .gestures__apps-head-button {
   min-width: 0;
-  width: 100%;
-  padding: 0 8px;
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--gg-text-muted);

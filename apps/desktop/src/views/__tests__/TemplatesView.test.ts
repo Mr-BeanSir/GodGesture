@@ -150,6 +150,7 @@ afterEach(() => {
 describe("TemplatesView", () => {
   it("uses shared UI primitives and Lucide without legacy UI contracts", async () => {
     const source = await readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8");
+    const adoptionSource = await readFile(join(process.cwd(), "src", "components", "GestureTemplateAdoptionDialog.vue"), "utf8");
     const forbiddenContracts = [
       ["element", "plus"].join("-"),
       ["@element", "plus/icons-vue"].join("-"),
@@ -165,11 +166,12 @@ describe("TemplatesView", () => {
     expect(source).toContain("AppAlert");
     expect(source).toContain("AppBadge");
     expect(source).toContain("AppButton");
-    expect(source).toContain("AppDialog");
+    expect(source).toContain("GestureTemplateAdoptionDialog");
     expect(source).toContain("AppEmptyState");
     expect(source).toContain("AppSkeleton");
-    expect(source).toContain("pushToast");
-    expect(source).toContain("useConfirmDialog");
+    expect(adoptionSource).toContain("AppDialog");
+    expect(adoptionSource).toContain("pushToast");
+    expect(adoptionSource).toContain("useConfirmDialog");
     expect(source).not.toMatch(new RegExp(forbiddenContracts.join("|"), "i"));
   });
 
@@ -267,7 +269,7 @@ describe("TemplatesView", () => {
   });
 
   it("uses the requested fixed template detail dialog dimensions", async () => {
-    const source = await readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8");
+    const source = await readFile(join(process.cwd(), "src", "components", "GestureTemplateAdoptionDialog.vue"), "utf8");
 
     expect(source).toContain(":global(.template-detail)");
     expect(source).toContain(":global(.template-detail .gg-dialog__body)");
@@ -298,7 +300,7 @@ describe("TemplatesView", () => {
       expect(document.querySelector(".template-detail__review .template-detail__risk-confirm")).toBeNull();
       expect(document.querySelector<HTMLButtonElement>("[data-testid='templates-adopt']")?.disabled).toBe(true);
 
-      const source = await readFile(join(process.cwd(), "src", "views", "TemplatesView.vue"), "utf8");
+      const source = await readFile(join(process.cwd(), "src", "components", "GestureTemplateAdoptionDialog.vue"), "utf8");
       const ruleStart = source.indexOf(".template-detail__risk-confirm {");
       const ruleEnd = source.indexOf("}", ruleStart);
       expect(source.slice(ruleStart, ruleEnd)).toContain("margin-right: auto;");

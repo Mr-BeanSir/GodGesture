@@ -33,11 +33,21 @@ const templates = reactive<any>({
   conflictPolicy: "keepExisting",
   openLocalPackage: vi.fn((value: unknown) => {
     templates.selectedPackage = value;
-    templates.selectedEntry = { title: "Local template" };
+    templates.selectedEntry = {
+      id: "local-template",
+      versionNumber: 1,
+      title: "Local template",
+      summary: "Imported locally",
+      author: "Local author",
+      tags: [],
+    };
   }),
   setConflictPolicy: vi.fn(),
   adopt: vi.fn().mockResolvedValue(true),
-  closeDetails: vi.fn(),
+  closeDetails: vi.fn(() => {
+    templates.selectedEntry = null;
+    templates.selectedPackage = null;
+  }),
 });
 
 vi.mock("../../api/backend", () => ({ useBackend: () => backend }));
@@ -57,6 +67,8 @@ import GestureTemplateImportDialog from "../GestureTemplateImportDialog.vue";
 const i18n = createI18n({
   legacy: false,
   locale: "en",
+  missingWarn: false,
+  fallbackWarn: false,
   messages: {
     en: {
       common: { cancel: "Cancel", close: "Close", ok: "OK" },
@@ -109,7 +121,8 @@ describe("GestureTemplateImportDialog", () => {
 
     expect(backend.gestureTemplateOpen).toHaveBeenCalledOnce();
     expect(templates.openLocalPackage).toHaveBeenCalledWith(expect.objectContaining({ title: "Local template" }));
-    expect(document.body.textContent).toContain("Review before import");
+    expect(document.body.textContent).toContain("Local template");
+    expect(document.querySelector(".template-detail__workspace")).not.toBeNull();
 
     wrapper.unmount();
   });

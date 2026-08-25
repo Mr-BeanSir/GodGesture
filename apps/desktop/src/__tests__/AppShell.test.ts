@@ -295,7 +295,7 @@ describe("desktop app shell", () => {
 
   it("keeps Desktop workbench layout contracts stable", () => {
     const gestures = readFileSync(resolve(process.cwd(), "src/views/GesturesView.vue"), "utf8");
-    const templates = readFileSync(resolve(process.cwd(), "src/views/TemplatesView.vue"), "utf8");
+    const templates = readFileSync(resolve(process.cwd(), "src/components/GestureTemplateAdoptionDialog.vue"), "utf8");
 
     expect(gestures).toContain("grid-template-columns: 200px minmax(0, 1fr);");
     expect(templates).toContain('class="template-detail__workspace"');
