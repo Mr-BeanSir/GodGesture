@@ -489,7 +489,7 @@ test("locks every Cargo path in macOS CI and desktop release builds", async () =
   )?.run;
   assert.match(
     normalizeShellBlock(performanceRun),
-    /cargo test --manifest-path apps\/desktop\/src-tauri\/Cargo\.toml --release --locked engine::node_host::tests::node_host_performance_gate/,
+    /cargo test[\s\\]+--manifest-path apps\/desktop\/src-tauri\/Cargo\.toml[\s\\]+--release[\s\\]+--locked[\s\\]+engine::node_host::tests::node_host_performance_gate/,
   );
 
   const architectureRun = macosWorkflow.jobs.validate.steps.find(

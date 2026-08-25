@@ -11,6 +11,9 @@
   "github": {
     "release": false
   },
+  "hooks": {
+    "after:bump": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib"
+  },
   "plugins": {
     "@release-it/bumper": {
       "in": "package.json",

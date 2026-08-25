@@ -56,7 +56,7 @@ jobs:
         run: pnpm --filter @godgesture/desktop test
 
       - name: Test Rust library
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release --locked
 
       - name: Require updater signing key
         shell: pwsh
@@ -72,7 +72,7 @@ jobs:
           GODGESTURE_API: ${{ vars.GODGESTURE_API }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @godgesture/desktop tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis
+        run: pnpm --filter @godgesture/desktop tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis -- --locked
 
       - name: Verify and prepare Windows release files
         shell: pwsh
@@ -185,7 +185,7 @@ jobs:
           GODGESTURE_API: ${{ vars.GODGESTURE_API }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg
+        run: pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg -- --locked
 
       - name: Verify and prepare macOS release files
         shell: bash
