@@ -111,12 +111,27 @@ source ID, then verify that neither the ID nor the old contract remains. Do not
 leave a removed entry in the registry, because the next release must not ask to
 delete the same compatibility code again.
 
-The release command synchronizes these four Desktop version files:
+The release command synchronizes these four Desktop manifest files and the
+Cargo lockfile:
 
 - the root `package.json`;
 - `apps/desktop/src-tauri/tauri.conf.json`;
 - `apps/desktop/package.json`;
-- `apps/desktop/src-tauri/Cargo.toml`.
+- `apps/desktop/src-tauri/Cargo.toml`;
+- `apps/desktop/src-tauri/Cargo.lock`.
+
+The release-it bumper first updates the four manifest versions. Its
+`after:bump` hook then runs this unlocked Cargo command from the repository
+root so Cargo can update the root package entry in `Cargo.lock`:
+
+```text
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+```
+
+The generated `Cargo.lock` is included in the same release commit. Release and
+CI build paths use `--locked` after this synchronization step: direct Cargo
+commands pass the flag directly, while Tauri builds forward it with `-- --locked`.
+If the lockfile is stale or incomplete, CI fails instead of changing it.
 
 The Server is an independent private subproject: its internal version is not
 read, modified, or validated by this release flow. `packages/shared`,

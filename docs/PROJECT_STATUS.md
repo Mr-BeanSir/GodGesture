@@ -127,7 +127,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - Windows Desktop 的开发启动器现在在启动 Vite/Tauri 前通过 PowerShell 查询当前 Node 进程是否为管理员令牌；普通权限 `pnpm dev:desktop` 直接退出并提示使用管理员终端，不再触发 UAC 子进程或依赖 dev runner 等待提权实例。生产版仍保留应用自身的 UAC `runas`，Windows 强制管理员边界和 macOS 启动路径不变。
 - Desktop 发布构建的主窗口已启用 WebView DevTools，Tauri `devtools` feature 与配置同时打开；Windows WebView2 关闭浏览器专用 accelerator 后由 F12 页面 contract 调用 `devtools_toggle`，原生打开独立 DevTools 窗口，不嵌入页面。浏览器预览为 no-op；Windows/macOS 共用 contract，但真实设备上的 F12、DevTools 窗口和原生行为仍分别 pending。
 - Windows 边角点击重放在 debug 级别记录 `replay_id`、入队/调度/工作线程等待/完成耗时、队列深度、光标恢复前后位置与原始 Win32 错误码、`SendInput` 请求/插入数量和短写状态；低级钩子按钮事件、边角 token/候选索引/取消原因、释放吞咽掩码和 tracker 处理结果也按低频采集。另记录普通手势起始阈值、边角覆盖层生命周期和超过 1 ms 的输入分发。普通 `PathTracker` 无轨迹点击恢复统一记录为 `mouse_replay_requested`，不再使用边角专属事件名；触发键准入还记录 `tracker_admission_decision` 或具体拒绝原因，并包含 `self_integrity`、`target_integrity` 和 `elevation_boundary`。点击注入仍保持 FIFO，但执行已移出低级钩子消息泵，避免 `SendInput` 阻塞时丢失真实按钮释放。
-- `pnpm release` 由维护者显式指定 `patch`、`minor`、`major` 或完整 SemVer；`feat`/`fix` 只影响 Release Notes，不自动选择版本。Desktop 发布同步四个 Desktop 版本文件，Server 独立维护，不参与校验或修改。
+- `pnpm release` 由维护者显式指定 `patch`、`minor`、`major` 或完整 SemVer；`feat`/`fix` 只影响 Release Notes，不自动选择版本。Desktop 发布先同步四个 manifest，再由 release-it 的 `after:bump` hook 运行不带 `--locked` 的 Cargo 命令同步 `Cargo.lock`；发布 commit 同时包含两者。CI 和 Tauri 发布构建使用 `--locked`，Server 独立维护，不参与校验或修改。
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
 - Windows NSIS 统一 `perMachine`，新安装默认 `C:\Program Files\GodGesture`，升级沿用已记录目录；不自动迁移旧 `currentUser` 安装。macOS 为 universal ad-hoc DMG，不提供 Authenticode、Developer ID、公证或 staple。
 - Server 生产部署由维护者使用 1Panel 手动完成，交付物为 docker-compose；更新和在线插件目录通过 GitHub 分发，模板对象与数据库必须同窗口备份。
@@ -149,6 +149,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-25（Cargo.lock 发布同步）：release-it 已在 bumper 更新 `Cargo.toml` 后运行 `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`，并把生成的 `Cargo.lock` 纳入 release commit；Windows 发布 Rust 测试、Windows/macOS CI 的 Cargo test/check/clippy/performance 命令均使用 `--locked`，Tauri Windows/macOS 构建通过 `-- --locked` 转发给 Cargo。当前 `v0.2.6` 的 `Cargo.lock` 根包已从 `0.2.5` 同步为 `0.2.6`，未改写 `v0.2.6` tag；`pnpm validate:release` 通过（43 tests passed，发布 workflow 校验通过）。
 
 - 2026-08-25（删除遗留兼容代码）：维护者确认删除 `COMPAT-0001` 与 `COMPAT-0002`；Windows startup helper 不再接受旧三参数格式，Shared/Rust `MachineLocalSettings` 对已移除的 `runAsAdmin` 字段改为严格拒绝，兼容登记、源代码标记和旧兼容测试已删除。Shared 测试 `12 files / 94 passed`、Server Jest `26 passed / 1 skipped`（`235 passed / 13 skipped`）、Web Console `27 files / 188 passed`、Server typecheck 和 Web typecheck 通过；Rust library 测试 `344 passed / 0 failed / 2 ignored`。
 
