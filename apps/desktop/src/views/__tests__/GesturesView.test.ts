@@ -18,6 +18,7 @@ vi.mock("../../components/CaptureDialog.vue", () => ({ default: { template: "<di
 vi.mock("../../components/AddActionDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../components/AppDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../components/GestureExportDialog.vue", () => ({ default: { template: "<div />" } }));
+vi.mock("../../components/GestureTemplateImportDialog.vue", () => ({ default: { template: "<div />" } }));
 
 const defaultGroupId = "20000000-0000-4000-8000-000000000001";
 const appId = "10000000-0000-4000-8000-000000000001";
@@ -145,6 +146,22 @@ afterEach(() => {
 });
 
 describe("GesturesView", () => {
+  it("consolidates transfer and group/app actions behind card choices", async () => {
+    const { view, confirmHost } = mountGestures();
+    try {
+      await nextTick();
+      const headButtons = view.findAll(".gestures__apps-head-button");
+
+      expect(headButtons.map((button) => button.text())).toEqual(["Import / Export", "Group / App"]);
+      expect(view.text()).not.toContain("Export\n");
+      expect(view.text()).not.toContain("Group\n");
+      expect(view.text()).not.toContain("App\n");
+    } finally {
+      view.unmount();
+      confirmHost.unmount();
+    }
+  });
+
   it("keeps the Desktop workbench controls flat and compact", () => {
     const source = readFileSync(resolve(process.cwd(), "src/views/GesturesView.vue"), "utf8");
     const actionTable = readFileSync(resolve(process.cwd(), "src/components/GestureActionTable.vue"), "utf8");

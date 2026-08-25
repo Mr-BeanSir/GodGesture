@@ -8,6 +8,8 @@ import { useI18n } from "vue-i18n";
 import {
   ChevronDown,
   Download,
+  FileJson,
+  FolderTree,
   GripVertical,
   MoreHorizontal,
   Pencil,
@@ -17,6 +19,7 @@ import {
 } from "lucide-vue-next";
 import {
   AppButton,
+  AppChoiceDialog,
   AppDialog as SharedAppDialog,
   pushMessage,
   pushToast,
@@ -55,6 +58,7 @@ import AppIcon from "../components/AppIcon.vue";
 import AddActionDialog from "../components/AddActionDialog.vue";
 import BoundaryIntentEditor from "../components/BoundaryIntentEditor.vue";
 import GestureExportDialog from "../components/GestureExportDialog.vue";
+import GestureTemplateImportDialog from "../components/GestureTemplateImportDialog.vue";
 import GestureActionTable, { type GestureActionTableRow } from "../components/GestureActionTable.vue";
 
 const GLOBAL = "__global__";
@@ -73,6 +77,9 @@ const appDialogVisible = ref(false);
 const editingApp = ref<AppEntry | null>(null);
 const addActionVisible = ref(false);
 const exportVisible = ref(false);
+const importVisible = ref(false);
+const transferChoiceVisible = ref(false);
+const groupAppChoiceVisible = ref(false);
 const editingBoundaryId = ref<string | null>(null);
 const collapsedGroups = ref<Record<string, boolean>>({});
 
@@ -93,6 +100,31 @@ const groupNameTitle = ref("");
 const groupNameValue = ref("");
 const groupNameError = ref("");
 const groupNameTarget = ref<AppGroup | null>(null);
+
+const transferChoices = computed(() => [
+  {
+    id: "import",
+    title: t("gestures.transferDialog.importTitle"),
+    description: t("gestures.transferDialog.importDescription"),
+  },
+  {
+    id: "export",
+    title: t("gestures.transferDialog.exportTitle"),
+    description: t("gestures.transferDialog.exportDescription"),
+  },
+]);
+const groupAppChoices = computed(() => [
+  {
+    id: "app",
+    title: t("gestures.groupAppDialog.appTitle"),
+    description: t("gestures.groupAppDialog.appDescription"),
+  },
+  {
+    id: "group",
+    title: t("gestures.groupAppDialog.groupTitle"),
+    description: t("gestures.groupAppDialog.groupDescription"),
+  },
+]);
 
 type ActionRow =
   | { kind: "gesture"; key: string; id: string; name: string; intent: GestureIntent }
@@ -297,6 +329,18 @@ function submitGroupName() {
 
 function addGroup() {
   openGroupNameDialog(null);
+}
+
+function selectTransferChoice(id: string) {
+  transferChoiceVisible.value = false;
+  if (id === "import") importVisible.value = true;
+  if (id === "export") exportVisible.value = true;
+}
+
+function selectGroupAppChoice(id: string) {
+  groupAppChoiceVisible.value = false;
+  if (id === "app") openAddApp();
+  if (id === "group") addGroup();
 }
 
 function renameGroup(group: AppGroup) {
@@ -662,20 +706,14 @@ onBeforeUnmount(() => {
   <div class="gestures">
     <aside class="gestures__apps">
       <div class="gestures__apps-head">
-        <AppButton variant="quiet" size="sm" class="gestures__apps-head-button" @click="exportVisible = true">
+        <AppButton variant="quiet" size="sm" class="gestures__apps-head-button" @click="transferChoiceVisible = true">
           <Download aria-hidden="true" />
-          {{ t("gestures.export") }}
+          {{ t("gestures.importExport") }}
         </AppButton>
-        <div class="gestures__apps-head-actions">
-          <AppButton variant="quiet" size="sm" class="gestures__apps-head-button" @click="addGroup">
-            <Plus aria-hidden="true" />
-            {{ t("gestures.addGroup") }}
-          </AppButton>
-          <AppButton variant="quiet" size="sm" class="gestures__apps-head-button" @click="openAddApp">
-            <Plus aria-hidden="true" />
-            {{ t("gestures.addApp") }}
-          </AppButton>
-        </div>
+        <AppButton variant="quiet" size="sm" class="gestures__apps-head-button" @click="groupAppChoiceVisible = true">
+          <Plus aria-hidden="true" />
+          {{ t("gestures.groupApp") }}
+        </AppButton>
       </div>
       <ul class="gestures__app-list">
         <li class="gestures__app-item" :class="{ 'is-active': currentIsGlobal }">
@@ -889,6 +927,33 @@ onBeforeUnmount(() => {
     />
     <AppEntryDialog v-model="appDialogVisible" :app="editingApp" @save="onAppSave" />
     <GestureExportDialog v-model="exportVisible" :config="doc" />
+    <GestureTemplateImportDialog v-model="importVisible" />
+    <AppChoiceDialog
+      :open="transferChoiceVisible"
+      :title="t('gestures.transferDialog.title')"
+      :close-label="t('common.cancel')"
+      :items="transferChoices"
+      @close="transferChoiceVisible = false"
+      @select="selectTransferChoice"
+    >
+      <template #icon="{ item }">
+        <FileJson v-if="item.id === 'import'" aria-hidden="true" />
+        <Download v-else aria-hidden="true" />
+      </template>
+    </AppChoiceDialog>
+    <AppChoiceDialog
+      :open="groupAppChoiceVisible"
+      :title="t('gestures.groupAppDialog.title')"
+      :close-label="t('common.cancel')"
+      :items="groupAppChoices"
+      @close="groupAppChoiceVisible = false"
+      @select="selectGroupAppChoice"
+    >
+      <template #icon="{ item }">
+        <FolderTree v-if="item.id === 'group'" aria-hidden="true" />
+        <Plus v-else aria-hidden="true" />
+      </template>
+    </AppChoiceDialog>
     <SharedAppDialog
       :open="groupNameDialogOpen"
       :title="groupNameTitle"
