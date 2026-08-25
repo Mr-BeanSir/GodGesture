@@ -1015,12 +1015,13 @@ onBeforeUnmount(() => {
 .gestures__apps-head-button {
   min-width: 0;
   width: 100%;
-  padding: 0 2px;
+  padding: 0 8px;
   border: 0;
   background: transparent;
   color: var(--gg-text-muted);
   font-size: 12px;
   font-weight: 600;
+  justify-content: flex-start;
   white-space: nowrap;
 }
 .gestures__apps-head-button :deep(svg) {

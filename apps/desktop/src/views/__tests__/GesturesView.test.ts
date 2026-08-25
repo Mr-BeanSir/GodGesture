@@ -178,6 +178,7 @@ describe("GesturesView", () => {
     expect(actionTable).toContain("min-width: 0");
     expect(actionTable).toContain("padding: 2px 8px");
     expect(source).toContain(".gestures__app-actions .gg-icon-button :deep(svg)");
+    expect(source).toMatch(/\.gestures__apps-head-button\s*\{[^}]*padding: 0 8px;[^}]*justify-content: flex-start;/s);
     expect(actionTable).toContain("width: 59px");
     expect(actionTable).toContain(".gesture-action-table__status-button:hover:not(:disabled)");
     expect(actionTable).toContain("color: #38b567");
