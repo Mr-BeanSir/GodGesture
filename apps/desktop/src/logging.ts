@@ -17,8 +17,8 @@ function sanitize(value: string): string {
   return value
     .replace(/\b(Bearer\s+)[^\s]+/gi, "$1[redacted]")
     .replace(
-      /(refresh[_-]?token|access[_-]?token|password|secret|authorization)\s*[:=]\s*[^,\s}]+/gi,
-      "$1=[redacted]",
+      /(["']?(?:refresh[_-]?token|access[_-]?token|password|secret|authorization)["']?\s*[:=]\s*["']?)[^,"'\s}]+/gi,
+      "$1[redacted]",
     )
     .replace(/\b[A-Za-z0-9+/]{32,}={0,2}\b/g, "[redacted]");
 }

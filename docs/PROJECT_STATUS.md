@@ -123,6 +123,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 ### 日志、发布与部署
 
 - Desktop 在 `app_log_dir()` 写脱敏 JSONL，级别为 `off/error/warn/info/debug`；日志不上传、不参与同步，页面支持筛选、trace 折叠、导出、清理和关闭自动跟随。2026-08-24 起，Windows/macOS 原生覆盖层 debug 日志记录 `End`/`Cancel`/`SetBoundaryGuide`/`ClearBoundaryGuide` 的命令顺序、轨迹状态、可见性、重绘类型和 dirty 区域；Windows 额外记录引导重绘前后的 DIB 非透明像素摘要。
+- Desktop 已接入进程内统一运行时诊断采集：前端 fetch、Tauri IPC、页面导航、稳定控件 UI 操作、console、未捕获异常和未处理 Promise 统一进入本地日志；Rust 模板/插件 HTTP 请求、更新阶段、OAuth loopback 阶段和既有 Node supervisor/worker 生命周期也使用同一日志中心。采集只保留脱敏 URL 的协议/主机/端口/pathname、method、status、耗时、content-length、command、稳定控件标识或错误类别，不记录 headers/body/token/password/clipboard/input value/完整配置；日志命令保持 raw IPC 以避免递归。
+- Desktop 发布构建的主窗口已启用 WebView DevTools，F12 通过 `devtools_toggle` 打开或关闭，浏览器预览为 no-op；Windows/macOS 共用该 contract，但真实设备上的 F12、DevTools 窗口和原生行为仍分别 pending。
 - Windows 边角点击重放在 debug 级别记录 `replay_id`、入队/调度/工作线程等待/完成耗时、队列深度、光标恢复前后位置与原始 Win32 错误码、`SendInput` 请求/插入数量和短写状态；低级钩子按钮事件、边角 token/候选索引/取消原因、释放吞咽掩码和 tracker 处理结果也按低频采集。另记录普通手势起始阈值、边角覆盖层生命周期和超过 1 ms 的输入分发。普通 `PathTracker` 无轨迹点击恢复统一记录为 `mouse_replay_requested`，不再使用边角专属事件名；触发键准入还记录 `tracker_admission_decision` 或具体拒绝原因，并包含 `self_integrity`、`target_integrity` 和 `elevation_boundary`。点击注入仍保持 FIFO，但执行已移出低级钩子消息泵，避免 `SendInput` 阻塞时丢失真实按钮释放。
 - `pnpm release` 由维护者显式指定 `patch`、`minor`、`major` 或完整 SemVer；`feat`/`fix` 只影响 Release Notes，不自动选择版本。Desktop 发布同步四个 Desktop 版本文件，Server 独立维护，不参与校验或修改。
 - Release body 由脚本同时归类合并 PR 与直接提交；原生 `generate_release_notes` 关闭。GitHub Release 是发布日志，`docs/CHANGELOG.md` 只保存历史和发布审计资料。
@@ -132,6 +134,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ## 已知边界
 
+- 发布版 F12/DevTools 的 Windows 与 macOS 原生现场验收尚未完成；当前自动化只验证键盘 contract、Tauri handler 注册和 mock backend，不代表任一平台现场通过。
 - 真实 Mac 的 TCC、全局输入、点击透传、X1/X2、Retina 多屏、Spaces/全屏覆盖层、AX、Bundle ID/图标、Keychain、插件恢复和已安装升级仍 pending，清单见 [`docs/qa/M4_MACOS_SMOKE.md`](qa/M4_MACOS_SMOKE.md)。
 - 共享 UI 浏览器预览只证明 Vue 构建的视觉、导航、焦点和溢出行为；不替代 Windows/macOS 原生窗口、权限、全局输入或覆盖层验收。
 - Windows 安装/卸载后遗留 Task Scheduler 任务的自动清理未纳入安装器；移动或删除可执行文件会使旧任务失效。
@@ -144,6 +147,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-25（Desktop F12 与统一运行时诊断）：新增 release DevTools contract、前端 fetch/IPC/UI/console/异常采集、Rust HTTP wrapper、更新器/OAuth 生命周期日志；未修改 Server、Web Console、数据库 schema 或 migration。Desktop 定向测试 `23 passed`、typecheck 通过；Rust 全量 library 测试 `343 passed / 0 failed / 2 ignored`，Rust fmt 通过。Windows/macOS F12/DevTools 真实现场仍 pending，Node 生命周期沿用既有 `node.supervisor`/`node.worker` 诊断链路。
 
 - 2026-08-25（v0.2.5 发布）：Server Web Console commit `777e3ce` 和根仓集成 commit `9da74fa` 已推送；`pnpm release patch` 创建并推送根仓 release commit `e8ade88` 与 tag `v0.2.5`。发布校验 `42/42`、仓库布局 `8/8`、`pnpm check:api` 和 `Cargo.lock` 版本同步通过；GitHub CLI 未登录，CI、安装包和 live 用户路径未核验。
 

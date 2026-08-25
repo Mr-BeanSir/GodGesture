@@ -7,12 +7,10 @@ import {
 import type { Backend } from "../api/backend";
 import {
   CloudError,
-  describeCloudCause,
   INVALID_REFRESH_CODES,
   normalizeCloudError,
 } from "./errors";
 import { apiData, responseErrorCode } from "./transport";
-import { appLog } from "../logging";
 import { resolveApiOrigin } from "./origin";
 
 export { resolveApiOrigin } from "./origin";
@@ -243,10 +241,6 @@ export class CloudSession {
         new Request(request, { signal: controller.signal }),
       );
     } catch (error) {
-      appLog.error(
-        "cloud",
-        `网络请求失败 method=${request.method} url=${request.url} cause=${describeCloudCause(error)}`,
-      );
       throw normalizeCloudError(error, request.url);
     } finally {
       globalThis.clearTimeout(timeout);

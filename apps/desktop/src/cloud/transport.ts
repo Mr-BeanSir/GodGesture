@@ -27,12 +27,7 @@ export async function apiData<T>(
   try {
     result = await request;
   } catch (error) {
-    const normalized = normalizeCloudError(error, endpoint);
-    appLog.error(
-      "cloud",
-      `请求失败 endpoint=${endpoint} status=${normalized.status} code=${normalized.code}`,
-    );
-    throw normalized;
+    throw normalizeCloudError(error, endpoint);
   }
   if (!result.response.ok) {
     const failure = new CloudError(
@@ -67,12 +62,7 @@ export async function apiVoid(
   try {
     result = await request;
   } catch (error) {
-    const normalized = normalizeCloudError(error, endpoint);
-    appLog.error(
-      "cloud",
-      `请求失败 endpoint=${endpoint} status=${normalized.status} code=${normalized.code}`,
-    );
-    throw normalized;
+    throw normalizeCloudError(error, endpoint);
   }
   if (!result.response.ok) {
     const failure = new CloudError(

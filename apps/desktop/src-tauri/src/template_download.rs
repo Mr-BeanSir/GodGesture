@@ -1,3 +1,4 @@
+use super::http::LoggedHttpClient;
 use futures_util::StreamExt;
 use reqwest::{header, redirect::Policy, Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -220,20 +221,21 @@ fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
     fs::rename(source, target)
 }
 
-fn default_client() -> Result<Client, TemplateDownloadError> {
+fn default_client() -> Result<LoggedHttpClient, TemplateDownloadError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    Client::builder()
+    let client = Client::builder()
         .redirect(Policy::none())
         .user_agent(concat!("GodGesture/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| {
             log::error!("build template HTTP client failed: {error}");
             TemplateDownloadError::new("template_network", "template HTTP client is unavailable")
-        })
+        })?;
+    Ok(LoggedHttpClient::new(client, "http.reqwest"))
 }
 
 async fn download_with_client(
-    client: Client,
+    client: LoggedHttpClient,
     input: &str,
     kind: TemplateResourceKind,
 ) -> Result<String, TemplateDownloadError> {

@@ -4,6 +4,13 @@ import "@godgesture/ui/styles.css";
 import "./desktop.css";
 import App from "./App.vue";
 import { i18n } from "./locales";
+import { appLog } from "./logging";
+import { useBackend, setBackendDiagnosticWriter } from "./api/backend";
+import { installRuntimeDiagnostics } from "./runtime-diagnostics";
+
+const backend = useBackend();
+setBackendDiagnosticWriter((level, target, message) => appLog[level](target, message));
+installRuntimeDiagnostics(backend);
 
 document.documentElement.classList.add("gg-desktop");
 

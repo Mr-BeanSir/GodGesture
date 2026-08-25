@@ -5,6 +5,7 @@ use super::plugin_workspace::{
     PluginOperationJournal, PluginWorkspace, OPERATION_COMMITTED_FILE, OPERATION_JOURNAL_FILE,
     OPERATION_JOURNAL_VERSION,
 };
+use crate::http::LoggedHttpClient;
 use futures_util::StreamExt;
 use reqwest::{header, redirect::Policy, Client};
 use serde::Deserialize;
@@ -402,7 +403,10 @@ fn download_github_archive(source: &OnlinePluginSource) -> Result<Vec<u8>, Plugi
             })?;
         tokio::time::timeout(
             DOWNLOAD_TIMEOUT,
-            download_github_archive_with_client(client, archive_url),
+            download_github_archive_with_client(
+                LoggedHttpClient::new(client, "http.reqwest"),
+                archive_url,
+            ),
         )
         .await
         .map_err(|_| PluginInstallError::new("plugin_download", "plugin download timed out"))?
@@ -456,7 +460,7 @@ fn repository_name_without_git_suffix(value: &str) -> &str {
 }
 
 async fn download_github_archive_with_client(
-    client: Client,
+    client: LoggedHttpClient,
     mut url: Url,
 ) -> Result<Vec<u8>, PluginInstallError> {
     for redirect_count in 0..=MAX_REDIRECTS {

@@ -319,6 +319,12 @@ pub fn oauth_loopback_start(
             )
         })?
         .port();
+    log::info!(
+        target: "oauth",
+        "event=loopback_start port={} path={}",
+        port,
+        CALLBACK_PATH
+    );
     let attempt_id = uuid::Uuid::new_v4().to_string();
     let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -327,6 +333,7 @@ pub fn oauth_loopback_start(
 
     {
         let mut attempts = state.attempts.lock();
+        let replaced = attempts.len();
         for attempt in attempts.values() {
             attempt.cancelled.store(true, Ordering::Release);
         }
@@ -338,6 +345,9 @@ pub fn oauth_loopback_start(
                 cancelled,
             },
         );
+        if replaced > 0 {
+            log::debug!(target: "oauth", "event=loopback_replaced attempts={replaced}");
+        }
     }
 
     std::thread::Builder::new()
@@ -348,11 +358,14 @@ pub fn oauth_loopback_start(
         })
         .map_err(|err| {
             state.attempts.lock().remove(&attempt_id);
+            log::error!(target: "oauth", "event=loopback_start_failed code=worker_spawn_failed");
             NativeAccountError::new(
                 "oauth_loopback_start_failed",
                 format!("cannot start the OAuth loopback worker: {err}"),
             )
         })?;
+
+    log::info!(target: "oauth", "event=loopback_started");
 
     Ok(OAuthLoopbackStart {
         attempt_id,
@@ -365,6 +378,7 @@ pub async fn oauth_loopback_finish(
     attempt_id: String,
     state: tauri::State<'_, OAuthLoopbackState>,
 ) -> Result<OAuthLoopbackResult, NativeAccountError> {
+    log::debug!(target: "oauth", "event=loopback_finish_started");
     let receiver = {
         let mut attempts = state.attempts.lock();
         attempts
@@ -388,19 +402,35 @@ pub async fn oauth_loopback_finish(
         )
     });
     state.attempts.lock().remove(&attempt_id);
-    match waited? {
+    let result = match waited? {
         Ok(result) => result,
         Err(_) => Err(NativeAccountError::new(
             "oauth_loopback_timeout",
             "OAuth loopback callback timed out",
         )),
+    };
+    match &result {
+        Ok(result) => log::info!(
+            target: "oauth",
+            "event=loopback_completed outcome={}",
+            oauth_result_kind(result)
+        ),
+        Err(error) => log::warn!(
+            target: "oauth",
+            "event=loopback_failed code={}",
+            error.code
+        ),
     }
+    result
 }
 
 #[tauri::command]
 pub fn oauth_loopback_cancel(attempt_id: String, state: tauri::State<'_, OAuthLoopbackState>) {
     if let Some(attempt) = state.attempts.lock().remove(&attempt_id) {
         attempt.cancelled.store(true, Ordering::Release);
+        log::info!(target: "oauth", "event=loopback_cancelled");
+    } else {
+        log::debug!(target: "oauth", "event=loopback_cancel_ignored");
     }
 }
 
@@ -412,12 +442,14 @@ fn wait_for_oauth_callback(
     let deadline = Instant::now() + OAUTH_TIMEOUT;
     loop {
         if cancelled.load(Ordering::Acquire) {
+            log::info!(target: "oauth", "event=callback_cancelled");
             return Err(NativeAccountError::new(
                 "oauth_cancelled",
                 "OAuth login was cancelled",
             ));
         }
         if Instant::now() >= deadline {
+            log::warn!(target: "oauth", "event=callback_timeout");
             return Err(NativeAccountError::new(
                 "oauth_loopback_timeout",
                 "OAuth login timed out",
@@ -435,7 +467,11 @@ fn wait_for_oauth_callback(
                 }
                 Err(err) => {
                     respond(&mut stream, 400, "Invalid OAuth callback.");
-                    log::debug!("ignored OAuth loopback request: {}", err.code);
+                    log::debug!(
+                        target: "oauth",
+                        "event=callback_rejected code={}",
+                        err.code
+                    );
                 }
             },
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
@@ -448,6 +484,18 @@ fn wait_for_oauth_callback(
                 ));
             }
         }
+    }
+}
+
+fn oauth_result_kind(result: &OAuthLoopbackResult) -> &'static str {
+    if result.code.is_some() {
+        "code"
+    } else if result.pending_oauth.is_some() {
+        "pending_oauth"
+    } else if result.error.is_some() {
+        "error"
+    } else {
+        "empty"
     }
 }
 
@@ -657,6 +705,34 @@ mod tests {
             STATE,
         )
         .is_err());
+    }
+
+    #[test]
+    fn oauth_result_kind_does_not_include_callback_values() {
+        assert_eq!(
+            oauth_result_kind(&OAuthLoopbackResult {
+                code: Some("secret-code".into()),
+                pending_oauth: None,
+                error: None,
+            }),
+            "code"
+        );
+        assert_eq!(
+            oauth_result_kind(&OAuthLoopbackResult {
+                code: None,
+                pending_oauth: Some("secret-pending".into()),
+                error: None,
+            }),
+            "pending_oauth"
+        );
+        assert_eq!(
+            oauth_result_kind(&OAuthLoopbackResult {
+                code: None,
+                pending_oauth: None,
+                error: Some("secret-error".into()),
+            }),
+            "error"
+        );
     }
 
     #[test]

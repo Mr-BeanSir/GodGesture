@@ -271,6 +271,19 @@ Web 控制台中仅管理员可访问的账户元数据与会话管理区域。�
 插件宿主;默认采集级别为 `off`,可选 `error`、`warn`、`info`、`debug`,不上传 Server、不参与
 同步。日志必须脱敏,不得包含密码、验证码、access/refresh token、剪贴板正文或插件源码。
 
+**桌面运行时诊断采集 (Desktop Runtime Diagnostics)**:
+Desktop 启动时安装一次的进程内统一采集层,覆盖前端 fetch、Tauri IPC、页面导航、按钮/链接/
+选择框/复选框操作、console 输出、未捕获异常和未处理 Promise,并把可观察的 Rust HTTP、更新、
+OAuth loopback 与 Node 宿主生命周期写入同一日志中心。HTTP 只记录 method、协议/主机/端口/
+pathname、status、耗时和 content-length;IPC 只记录 command 与耗时;UI 只记录稳定控件标识或元素
+类型。请求头、请求体、URL credentials/query/fragment、令牌、密码、剪贴板、输入框值、完整配置和
+插件源码均不记录。采集层失败不得阻塞原业务操作,日志命令自身绕过 IPC 诊断网关避免递归。
+
+**发布版 DevTools 快捷键 (Release DevTools Shortcut)**:
+Desktop 主窗口在发布构建中启用 WebView DevTools,统一由 `F12` 打开或关闭;快捷键不提供设置项,
+浏览器预览使用 no-op mock。Windows 与 macOS 共用前端键盘入口和 Tauri `devtools_toggle` 命令,
+真实平台现场验收仍分别执行。
+
 **日志采集级别 (Log Collection Level)**:
 本地日志的阈值设置。`error` 只记录错误,`warn` 包含错误和警告,`info` 再包含信息,
 `debug` 为一期最细粒度;不提供 `trace`。`off` 表示不落盘普通日志。

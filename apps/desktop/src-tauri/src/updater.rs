@@ -121,7 +121,6 @@ impl UpdaterCommandError {
     }
 
     fn from_native(error: NativeUpdaterError, phase: UpdatePhase) -> Self {
-        log::warn!("updater {phase:?} failed: {error}");
         let code = match &error {
             NativeUpdaterError::InsecureTransportProtocol
             | NativeUpdaterError::UrlParse(_)
@@ -142,6 +141,10 @@ impl UpdaterCommandError {
             _ if phase == UpdatePhase::Check => "update_check_failed",
             _ => "update_install_failed",
         };
+        log::warn!(
+            target: "updater",
+            "event=operation_failed phase={phase:?} code={code}"
+        );
         Self::new(code, error.to_string())
     }
 }
@@ -190,6 +193,15 @@ fn validate_update_endpoint(value: &str) -> Result<Url, UpdaterCommandError> {
     Ok(endpoint)
 }
 
+fn safe_update_endpoint(endpoint: &Url) -> String {
+    let mut safe = endpoint.clone();
+    let _ = safe.set_username("");
+    let _ = safe.set_password(None);
+    safe.set_query(None);
+    safe.set_fragment(None);
+    safe.to_string()
+}
+
 fn configured_update_endpoint() -> Result<Url, UpdaterCommandError> {
     validate_update_endpoint(
         option_env!("GODGESTURE_UPDATE_ENDPOINT").unwrap_or(DEFAULT_UPDATE_ENDPOINT),
@@ -202,6 +214,12 @@ fn manifest_target_for_os(os: &str) -> Option<&'static str> {
 
 async fn check_native_update(app: &AppHandle) -> Result<Option<Update>, UpdaterCommandError> {
     let endpoint = configured_update_endpoint()?;
+    let started_at = std::time::Instant::now();
+    log::debug!(
+        target: "updater",
+        "event=check_started endpoint={}",
+        safe_update_endpoint(&endpoint)
+    );
     let mut builder = app
         .updater_builder()
         .endpoints(vec![endpoint])
@@ -213,10 +231,25 @@ async fn check_native_update(app: &AppHandle) -> Result<Option<Update>, UpdaterC
     let updater = builder
         .build()
         .map_err(|error| UpdaterCommandError::from_native(error, UpdatePhase::Check))?;
-    updater
+    let result = updater
         .check()
         .await
-        .map_err(|error| UpdaterCommandError::from_native(error, UpdatePhase::Check))
+        .map_err(|error| UpdaterCommandError::from_native(error, UpdatePhase::Check));
+    match &result {
+        Ok(Some(update)) => log::info!(
+            target: "updater",
+            "event=check_completed available=true version={} durationMs={}",
+            update.version,
+            started_at.elapsed().as_millis()
+        ),
+        Ok(None) => log::info!(
+            target: "updater",
+            "event=check_completed available=false durationMs={}",
+            started_at.elapsed().as_millis()
+        ),
+        Err(_) => {}
+    }
+    result
 }
 
 #[tauri::command]
@@ -226,6 +259,7 @@ pub async fn update_check(
 ) -> Result<Option<UpdateMetadata>, UpdaterCommandError> {
     state.begin(UpdaterOperation::Checking)?;
     state.replace_pending(None);
+    log::info!(target: "updater", "event=check_command_started");
     let result = check_native_update(&app).await;
     let metadata = match result {
         Ok(update) => {
@@ -235,13 +269,20 @@ pub async fn update_check(
         }
         Err(error) => Err(error),
     };
+    if metadata.is_err() {
+        log::warn!(target: "updater", "event=check_command_failed");
+    }
     state.finish();
     metadata
 }
 
 #[tauri::command]
 pub fn update_cancel(state: State<'_, DesktopUpdaterState>) -> Result<(), UpdaterCommandError> {
-    state.cancel_pending()
+    let result = state.cancel_pending();
+    if result.is_ok() {
+        log::info!(target: "updater", "event=cancel_completed");
+    }
+    result
 }
 
 #[tauri::command]
@@ -251,8 +292,11 @@ pub async fn update_install(
     on_event: Channel<UpdateDownloadEvent>,
 ) -> Result<(), UpdaterCommandError> {
     state.begin(UpdaterOperation::Installing)?;
+    let started_at = std::time::Instant::now();
+    log::info!(target: "updater", "event=install_started");
     let Some(update) = state.take_pending() else {
         state.finish();
+        log::warn!(target: "updater", "event=install_failed code=update_not_pending");
         return Err(UpdaterCommandError::new(
             "update_not_pending",
             "there is no checked update ready to install",
@@ -260,6 +304,7 @@ pub async fn update_install(
     };
 
     let progress = Arc::new(Mutex::new(DownloadProgress::default()));
+    let download_started_at = std::time::Instant::now();
     let chunk_progress = Arc::clone(&progress);
     let finish_progress = Arc::clone(&progress);
     let chunk_events = on_event.clone();
@@ -269,9 +314,20 @@ pub async fn update_install(
             move |chunk_length, content_length| {
                 let mut progress = chunk_progress.lock();
                 if !progress.started {
+                    log::debug!(
+                        target: "updater",
+                        "event=download_started contentLength={}",
+                        content_length.map_or_else(|| "-".to_owned(), |value| value.to_string())
+                    );
                     let _ = chunk_events.send(UpdateDownloadEvent::Started { content_length });
                 }
                 let downloaded = progress.record(chunk_length);
+                log::debug!(
+                    target: "updater",
+                    "event=download_progress chunkLength={} downloaded={}",
+                    chunk_length,
+                    downloaded
+                );
                 let _ = chunk_events.send(UpdateDownloadEvent::Progress {
                     chunk_length,
                     downloaded,
@@ -279,6 +335,12 @@ pub async fn update_install(
             },
             move || {
                 let downloaded = finish_progress.lock().downloaded;
+                log::debug!(
+                    target: "updater",
+                    "event=download_finished downloaded={} durationMs={}",
+                    downloaded,
+                    download_started_at.elapsed().as_millis()
+                );
                 let _ = finish_events.send(UpdateDownloadEvent::Finished { downloaded });
             },
         )
@@ -286,6 +348,7 @@ pub async fn update_install(
 
     if let Err(error) = result {
         state.finish();
+        log::error!(target: "updater", "event=install_failed code=update_install_failed");
         return Err(UpdaterCommandError::from_native(
             error,
             UpdatePhase::Install,
@@ -293,6 +356,11 @@ pub async fn update_install(
     }
 
     state.finish();
+    log::info!(
+        target: "updater",
+        "event=install_completed durationMs={}",
+        started_at.elapsed().as_millis()
+    );
     app.restart()
 }
 
@@ -313,6 +381,18 @@ mod tests {
                 "update_configuration_invalid"
             );
         }
+    }
+
+    #[test]
+    fn logged_endpoint_removes_credentials_query_and_fragment() {
+        let endpoint =
+            Url::parse("https://user:password@example.test/latest.json?token=secret#part").unwrap();
+
+        let safe = safe_update_endpoint(&endpoint);
+
+        assert_eq!(safe, "https://example.test/latest.json");
+        assert!(!safe.contains("password"));
+        assert!(!safe.contains("secret"));
     }
 
     #[test]

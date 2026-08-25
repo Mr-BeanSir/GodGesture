@@ -1,6 +1,7 @@
 mod account;
 mod app_acquisition;
 pub mod engine;
+mod http;
 mod logging;
 pub mod platform;
 mod template_download;

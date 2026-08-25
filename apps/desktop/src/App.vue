@@ -288,6 +288,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
             :key="item.id"
             type="button"
             class="app__nav-item"
+            :data-testid="`nav-${item.id}`"
             :class="{ 'app__nav-item--active': active === item.id }"
             :aria-current="active === item.id ? 'page' : undefined"
             @click="selectSection(item.id)"

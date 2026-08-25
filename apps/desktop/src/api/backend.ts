@@ -33,6 +33,9 @@ import type {
   OnlinePluginSource,
 } from "@godgesture/shared";
 import { createMockBackend } from "./mock";
+import { writeBackendDiagnostic } from "../runtime-diagnostics";
+
+export { setBackendDiagnosticWriter, type BackendDiagnosticWriter } from "../runtime-diagnostics";
 
 /** 录制中/录制完成推送的手势载荷 */
 export interface CapturedGesture {
@@ -322,34 +325,55 @@ export function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+export async function invokeCommand<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  const startedAt = Date.now();
+  writeBackendDiagnostic("debug", "ipc", `start command=${command}`);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const result = args === undefined
+      ? await invoke<T>(command)
+      : await invoke<T>(command, args);
+    writeBackendDiagnostic(
+      "debug",
+      "ipc",
+      `success command=${command} durationMs=${Date.now() - startedAt}`,
+    );
+    return result;
+  } catch (error) {
+    writeBackendDiagnostic(
+      "error",
+      "ipc",
+      `failed command=${command} durationMs=${Date.now() - startedAt}`,
+    );
+    throw error;
+  }
+}
+
 function createTauriBackend(): Backend {
   return {
     isTauri: true,
 
     async configGet() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<ConfigDocument>("config_get");
+      return invokeCommand<ConfigDocument>("config_get");
     },
     async configSet(document) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("config_set", { document });
+      await invokeCommand("config_set", { document });
     },
     async nodePluginsGet() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<PluginWorkspaceSnapshot>("node_plugins_get");
+      return invokeCommand<PluginWorkspaceSnapshot>("node_plugins_get");
     },
     async nodePluginsRescan() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<PluginWorkspaceSnapshot>("node_plugins_rescan");
+      return invokeCommand<PluginWorkspaceSnapshot>("node_plugins_rescan");
     },
     async nodePluginsDirectory() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<string>("node_plugins_directory");
+      return invokeCommand<string>("node_plugins_directory");
     },
     async nodePluginInstall(source) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<PluginWorkspaceSnapshot>("node_plugin_install", {
+        return await invokeCommand<PluginWorkspaceSnapshot>("node_plugin_install", {
           source,
         });
       } catch (error) {
@@ -391,40 +415,32 @@ function createTauriBackend(): Backend {
       return listen<LogEntry>("log-event", (event) => handler(event.payload));
     },
     async machineGet() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<MachineLocalSettings>("machine_get");
+      return invokeCommand<MachineLocalSettings>("machine_get");
     },
     async machineSet(settings) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("machine_set", { settings });
+        await invokeCommand("machine_set", { settings });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async machineStatus() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<MachineRuntimeStatus>("machine_status");
+      return invokeCommand<MachineRuntimeStatus>("machine_status");
     },
     async platformStatus() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<PlatformRuntimeStatus>("platform_status");
+      return invokeCommand<PlatformRuntimeStatus>("platform_status");
     },
     async platformRequestPermissions() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<PlatformRuntimeStatus>("platform_request_permissions");
+      return invokeCommand<PlatformRuntimeStatus>("platform_request_permissions");
     },
     async platformOpenPermissionSettings() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("platform_open_permission_settings");
+      await invokeCommand("platform_open_permission_settings");
     },
     async engineIsPaused() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<boolean>("engine_is_paused");
+      return invokeCommand<boolean>("engine_is_paused");
     },
     async engineTogglePause() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<boolean>("engine_toggle_pause");
+      return invokeCommand<boolean>("engine_toggle_pause");
     },
     async onPauseChanged(handler) {
       const { listen } = await import("@tauri-apps/api/event");
@@ -433,20 +449,16 @@ function createTauriBackend(): Backend {
       );
     },
     async captureStart() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("capture_start");
+      await invokeCommand("capture_start");
     },
     async captureCancel() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("capture_cancel");
+      await invokeCommand("capture_cancel");
     },
     async hotkeyCaptureStart() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("hotkey_capture_start");
+      await invokeCommand("hotkey_capture_start");
     },
     async hotkeyCaptureCancel() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("hotkey_capture_cancel");
+      await invokeCommand("hotkey_capture_cancel");
     },
     async onHotkeyCapture(handler) {
       const { listen } = await import("@tauri-apps/api/event");
@@ -461,13 +473,11 @@ function createTauriBackend(): Backend {
       );
     },
     async pickWindow() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<PickedWindow | null>("pick_window");
+      return invokeCommand<PickedWindow | null>("pick_window");
     },
     async resolveAppFile(path) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<PickedWindow>("resolve_app_file", { path });
+        return await invokeCommand<PickedWindow>("resolve_app_file", { path });
       } catch (error) {
         throw normalizeBackendError(error);
       }
@@ -483,13 +493,11 @@ function createTauriBackend(): Backend {
       });
     },
     async appIcon(request) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<string | null>("app_icon", { request });
+      return invokeCommand<string | null>("app_icon", { request });
     },
     async gestureTemplateSave(fileName, contents, title) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<string | null>("gesture_template_save", {
+        return await invokeCommand<string | null>("gesture_template_save", {
           fileName,
           contents,
           title,
@@ -499,9 +507,8 @@ function createTauriBackend(): Backend {
       }
     },
     async downloadTemplateText(url, resourceKind) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<string>("download_template_text", {
+        return await invokeCommand<string>("download_template_text", {
           url,
           resourceKind,
         });
@@ -510,25 +517,22 @@ function createTauriBackend(): Backend {
       }
     },
     async catalogCacheGet(kind) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<string | null>("catalog_cache_get", { kind });
+        return await invokeCommand<string | null>("catalog_cache_get", { kind });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async catalogCacheSet(kind, contents) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("catalog_cache_set", { kind, contents });
+        await invokeCommand("catalog_cache_set", { kind, contents });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async accountCredentialGet(apiOrigin) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<string | null>("account_credential_get", {
+        return await invokeCommand<string | null>("account_credential_get", {
           apiOrigin,
         });
       } catch (error) {
@@ -536,45 +540,39 @@ function createTauriBackend(): Backend {
       }
     },
     async accountCredentialSet(apiOrigin, refreshToken) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("account_credential_set", { apiOrigin, refreshToken });
+        await invokeCommand("account_credential_set", { apiOrigin, refreshToken });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async accountCredentialDelete(apiOrigin) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("account_credential_delete", { apiOrigin });
+        await invokeCommand("account_credential_delete", { apiOrigin });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async accountDeviceInfo() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<DesktopDeviceInfo>("account_device_info");
+      return invokeCommand<DesktopDeviceInfo>("account_device_info");
     },
     async syncMetadataGet() {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<SyncMetadata | null>("sync_metadata_get");
+        return await invokeCommand<SyncMetadata | null>("sync_metadata_get");
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async syncMetadataSet(metadata) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("sync_metadata_set", { metadata });
+        await invokeCommand("sync_metadata_set", { metadata });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async oauthLoopbackStart(clientState) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<OAuthLoopbackStart>("oauth_loopback_start", {
+        return await invokeCommand<OAuthLoopbackStart>("oauth_loopback_start", {
           clientState,
         });
       } catch (error) {
@@ -582,9 +580,8 @@ function createTauriBackend(): Backend {
       }
     },
     async oauthLoopbackFinish(attemptId) {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<OAuthLoopbackResult>("oauth_loopback_finish", {
+        return await invokeCommand<OAuthLoopbackResult>("oauth_loopback_finish", {
           attemptId,
         });
       } catch (error) {
@@ -592,38 +589,34 @@ function createTauriBackend(): Backend {
       }
     },
     async oauthLoopbackCancel(attemptId) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("oauth_loopback_cancel", { attemptId });
+      await invokeCommand("oauth_loopback_cancel", { attemptId });
     },
     async updateCheck() {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        return await invoke<UpdateMetadata | null>("update_check");
+        return await invokeCommand<UpdateMetadata | null>("update_check");
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async updateCancel() {
-      const { invoke } = await import("@tauri-apps/api/core");
       try {
-        await invoke("update_cancel");
+        await invokeCommand("update_cancel");
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async updateInstall(handler) {
-      const { Channel, invoke } = await import("@tauri-apps/api/core");
+      const { Channel } = await import("@tauri-apps/api/core");
       const onEvent = new Channel<UpdateDownloadEvent>();
       onEvent.onmessage = handler;
       try {
-        await invoke("update_install", { onEvent });
+        await invokeCommand("update_install", { onEvent });
       } catch (error) {
         throw normalizeBackendError(error);
       }
     },
     async devtoolsToggle() {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke<boolean>("devtools_toggle");
+      return invokeCommand<boolean>("devtools_toggle");
     },
     async openExternal(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
