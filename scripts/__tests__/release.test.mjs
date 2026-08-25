@@ -301,7 +301,7 @@ test("keeps custom config passthrough while forcing publication disabled", async
   }
 });
 
-test("configures release-it for four version files without npm or GitHub publication", async () => {
+test("configures release-it for version files and Cargo lock synchronization", async () => {
   const config = JSON.parse(
     await readFile(new URL("../../.release-it.json", import.meta.url), "utf8"),
   );
@@ -319,6 +319,10 @@ test("configures release-it for four version files without npm or GitHub publica
   assert.equal(config.git.commitMessage, "chore: release v${version}");
   assert.equal(config.git.tagName, "v${version}");
   assert.equal(config.git.push, true);
+  assert.equal(
+    config.hooks["after:bump"],
+    "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib",
+  );
   assert.equal(tauriConfig.app.windows[0].devtools, true);
   assert.deepEqual(config.plugins["@release-it/bumper"].out, [
     "package.json",
@@ -441,7 +445,59 @@ test("runs Windows Rust tests in the release profile before packaging", async ()
   assert.ok(rustTestStep);
   assert.equal(
     rustTestStep.run,
-    "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release",
+    "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release --locked",
+  );
+});
+
+test("locks every Cargo path in macOS CI and desktop release builds", async () => {
+  const releaseWorkflow = parseYaml(
+    await readFile(
+      new URL("../../.github/workflows/desktop-release.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  const macosWorkflow = parseYaml(
+    await readFile(
+      new URL("../../.github/workflows/macos-ci.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+
+  const releaseBuildRuns = [
+    releaseWorkflow.jobs.windows.steps.find(
+      (step) => step.name === "Build x64 NSIS installer and updater signature",
+    )?.run,
+    releaseWorkflow.jobs.macos.steps.find(
+      (step) => step.name === "Build ad-hoc universal app, DMG, and updater archive",
+    )?.run,
+  ];
+  assert.deepEqual(releaseBuildRuns, [
+    "pnpm --filter @godgesture/desktop tauri build --ci --target x86_64-pc-windows-msvc --bundles nsis -- --locked",
+    "pnpm --filter @godgesture/desktop tauri build --ci --target universal-apple-darwin --bundles app,dmg -- --locked",
+  ]);
+
+  const nativeRustRun = macosWorkflow.jobs.validate.steps.find(
+    (step) => step.name === "Test native Rust target",
+  )?.run;
+  assert.equal(
+    normalizeShellBlock(nativeRustRun),
+    "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --locked cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+  );
+
+  const performanceRun = macosWorkflow.jobs.validate.steps.find(
+    (step) => step.name === "Gate Node plugin host performance",
+  )?.run;
+  assert.match(
+    normalizeShellBlock(performanceRun),
+    /cargo test --manifest-path apps\/desktop\/src-tauri\/Cargo\.toml --release --locked engine::node_host::tests::node_host_performance_gate/,
+  );
+
+  const architectureRun = macosWorkflow.jobs.validate.steps.find(
+    (step) => step.name === "Check both macOS architectures",
+  )?.run;
+  assert.equal(
+    normalizeShellBlock(architectureRun),
+    "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --target aarch64-apple-darwin --locked cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --target x86_64-apple-darwin --locked",
   );
 });
 
@@ -495,6 +551,14 @@ async function createFixture({
     version: sdkVersion,
   });
   return root;
+}
+
+function normalizeShellBlock(value) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function writeJson(path, value) {
