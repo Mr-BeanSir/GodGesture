@@ -13,6 +13,8 @@
 
 真实 Windows/macOS 原生窗口与输入验收、live OAuth/SMTP、RustFS 生产连接和生产部署仍按“已知边界”保持 pending。
 
+Desktop 手势页现已将“导入/导出”与“分组/应用”分别收敛为可键盘操作的选择卡片入口：导出继续进入既有“选择交付方式”，本地导入通过 Tauri JSON 文件选择器解析后复用模板 store 的冲突计划、风险确认、插件安装和原子采纳流程；分组/应用卡片直接打开既有添加应用或添加分组窗口。Windows 与 macOS 共用同一 Vue、shared 协议和 Backend contract，不新增数据库字段或 migration；真实双平台文件选择器和导入现场仍需设备验收。
+
 边角显示引导已接入 v8 同步配置、Desktop 设置、共享 Rust 几何查询和 Windows/macOS 原生覆盖层路径：引导显示当前
 显示器实际启用的四角与四边区域，即使没有配置对应边角动作；角显示为 display-only 的固定 10px 半径四分之一圆，
 边显示仍为实际 DPI 缩放的边带；`hotCorners.enabled=false` 隐藏四角，`rubEdges.enabled=false` 隐藏四边，并且不依赖
@@ -78,7 +80,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 | Desktop Rust | Tauri 生命周期、跨平台手势引擎、原生输入/命令/覆盖层、本地配置 | `apps/desktop/src-tauri/src/lib.rs`、`engine/`、`platform/` |
 | Desktop Vue | 设置、账户、模板、插件、同步和本地日志界面；消费共享 UI 并保留 store/Tauri/i18n 绑定 | `apps/desktop/src/App.vue`、`src/views/`、`src/stores/` |
 | Shared | v8 配置、认证、同步/快照分页、模板、插件目录、DSL 和生成客户端 | `packages/shared/src/` |
-| Shared UI | 无业务 Vue 原语、`--gg-*` token、Dialog/确认/Toast 和基础状态组件 | `packages/ui/src/` |
+| Shared UI | 无业务 Vue 原语、`--gg-*` token、Dialog/选择卡片/确认/Toast 和基础状态组件 | `packages/ui/src/` |
 | Server | 私有 NestJS 子模块：REST、Prisma/PostgreSQL、认证、设备、同步和快照 | `apps/server/src/`、`apps/server/prisma/` |
 | Web Console | Server-owned Vue/Vite SPA：只读配置、设备、快照、安全、作者模板和管理员区域 | `apps/server/web-console/src/` |
 | SDK / 插件示例 | `@godgesture/sdk` 类型和五生命周期 demo | `packages/sdk/`、`distribution/plugins/` |
@@ -114,6 +116,7 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 ### 模板、插件与 Web Console
 
 - 官方模板目录由 Server 的 PostgreSQL 元数据、审核/举报/配额/指标模型和 RustFS 不可变对象提供；匿名用户可浏览/采纳，官方端点登录用户可投稿；自定义端点不提供目录或投稿。Desktop 从构建时官方 Server origin 分页读取并通过短期签名 URL 下载。
+- Desktop 手势页支持本地 Gesture Template v2 JSON 导入：原生文件选择器只返回受大小限制的文本，shared 协议先校验，随后通过 `useTemplatesStore.openLocalPackage()` 进入与在线模板相同的 plan/adopt 流程；插件安装失败、配置并发变化或校验失败都不会覆盖现有配置。手势页的“导出”仍保留 JSON/公共目录交付选择，“分组/应用”使用无 footer 的选择卡片直接进入既有窗口。
 - 公共目录每个模板族只展示最高已发布版本；更新审核期间保留旧版本，通过后切换；父模板暂停隐藏目录、详情和下载，恢复后重新投影。作者可按状态撤回、重新投稿或删除模板族，最新 50 个版本受保留策略约束。
 - `TemplatePolicy` 是数据库级单例；RustFS 参数和加密凭证由 `SystemConfig` 管理，OAuth、SMTP、JWT 与指标 HMAC 仍只在部署环境管理。
 - 模板审核状态转换在事务内按版本 ID 和来源状态条件更新；竞争失败不会写入模板状态、审核记录或管理员审计。
@@ -149,6 +152,8 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 - 部分应用窗口内的右键“无日志”仍需按链路区分：若连 `platform.windows/event=mouse_button_received` 都没有，问题位于低级钩子或日志采集边界，不是应用意图匹配；若有 `tracker_admission_decision` 但 `allowed=false`，则是应用黑名单/全屏策略。窗口外无轨迹但出现 `mouse_replay_requested` 属于待定点击的原生右键恢复，不代表执行了手势。
 
 ## 最近验证
+
+- 2026-08-25（手势模板导入与手势页入口）：新增 `AppChoiceDialog` 选择卡片原语、Tauri `gesture_template_open` 双平台 contract、shared 模板采纳 store 的本地 package 入口、手势模板导入复核和手势页“导入/导出”“分组/应用”路由；Desktop 定向测试 `54 files / 265 passed / 3 skipped`、Desktop typecheck、UI typecheck、Rust 模板命令编译测试和 `git diff --check` 通过。浏览器 mock 的文件选择返回取消；真实 Windows/macOS 文件选择器和导入现场验收仍 pending。
 
 - 2026-08-25（Cargo.lock 发布同步）：release-it 已在 bumper 更新 `Cargo.toml` 后运行 `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --lib`，并把生成的 `Cargo.lock` 纳入 release commit；Windows 发布 Rust 测试、Windows/macOS CI 的 Cargo test/check/clippy/performance 命令均使用 `--locked`，Tauri Windows/macOS 构建通过 `-- --locked` 转发给 Cargo。当前 `v0.2.6` 的 `Cargo.lock` 根包已从 `0.2.5` 同步为 `0.2.6`，未改写 `v0.2.6` tag；`pnpm validate:release` 通过（43 tests passed，发布 workflow 校验通过）。
 
