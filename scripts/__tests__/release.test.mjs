@@ -305,6 +305,12 @@ test("configures release-it for four version files without npm or GitHub publica
   const config = JSON.parse(
     await readFile(new URL("../../.release-it.json", import.meta.url), "utf8"),
   );
+  const tauriConfig = JSON.parse(
+    await readFile(
+      new URL("../../apps/desktop/src-tauri/tauri.conf.json", import.meta.url),
+      "utf8",
+    ),
+  );
 
   assert.equal(config.npm, false);
   assert.equal(config.github.release, false);
@@ -313,6 +319,7 @@ test("configures release-it for four version files without npm or GitHub publica
   assert.equal(config.git.commitMessage, "chore: release v${version}");
   assert.equal(config.git.tagName, "v${version}");
   assert.equal(config.git.push, true);
+  assert.equal(tauriConfig.app.windows[0].devtools, true);
   assert.deepEqual(config.plugins["@release-it/bumper"].out, [
     "package.json",
     "apps/desktop/package.json",

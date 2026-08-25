@@ -33,7 +33,9 @@ import { useUpdateStore } from "./stores/update";
 import { usePluginsStore } from "./stores/plugins";
 import { useTemplatesStore } from "./stores/templates";
 import { resolveLocale, setLocale, type AppLocale } from "./locales";
+import { appLog } from "./logging";
 import { listenForSingleInstance } from "./single-instance";
+import { isDevtoolsShortcut } from "./devtools-shortcut";
 import {
   completeQuickGuide,
   isQuickGuideForced,
@@ -123,8 +125,20 @@ const localeSetting = computed<LocaleSetting>({
 });
 
 function selectSection(section: Section): void {
+  if (active.value === section) return;
+  const previous = active.value;
   active.value = section;
+  appLog.info("ui.navigation", `from=${previous} to=${section}`);
   void focusWorkspaceHeading();
+}
+
+function onWindowKeydown(event: KeyboardEvent): void {
+  if (!isDevtoolsShortcut(event)) return;
+  event.preventDefault();
+  void store.backend.devtoolsToggle().then(
+    (isOpen) => appLog.info("ui.devtools", `open=${isOpen}`),
+    (error) => appLog.error("devtools", `切换 DevTools 失败: ${error instanceof Error ? error.message : String(error)}`),
+  );
 }
 
 function setQuickStartVisible(visible: boolean): void {
@@ -173,6 +187,7 @@ watch(
 );
 
 onMounted(() => {
+  window.addEventListener("keydown", onWindowKeydown);
   void (async () => {
     if (!store.backend.isTauri && typeof window !== "undefined") {
       active.value = resolveInitialSection(window.location.search);
@@ -216,6 +231,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => unlistenSingleInstance?.());
+onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 </script>
 
 <template>

@@ -11,11 +11,19 @@ import { usePluginsStore } from "../stores/plugins";
 import { useTemplatesStore } from "../stores/templates";
 import { useUpdateStore } from "../stores/update";
 
+const { appLog } = vi.hoisted(() => ({ appLog: {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+} }));
+
 vi.mock("../stores/config", () => ({ useConfigStore: vi.fn() }));
 vi.mock("../stores/account", () => ({ useAccountStore: vi.fn() }));
 vi.mock("../stores/plugins", () => ({ usePluginsStore: vi.fn() }));
 vi.mock("../stores/templates", () => ({ useTemplatesStore: vi.fn() }));
 vi.mock("../stores/update", () => ({ useUpdateStore: vi.fn() }));
+vi.mock("../logging", () => ({ appLog }));
 vi.mock("../components/QuickStartDialog.vue", () => ({
   default: { name: "QuickStartDialog", setup: () => () => null },
 }));
@@ -37,7 +45,7 @@ vi.mock("../views/LogsView.vue", () => ({ default: { name: "LogsView", setup: ()
 vi.mock("../views/AboutView.vue", () => ({ default: { name: "AboutView", setup: () => () => null } }));
 
 const configStore = reactive<any>({
-  backend: { isTauri: false },
+  backend: { isTauri: false, devtoolsToggle: vi.fn(async () => false) },
   doc: { preferences: { locale: "auto" }, global: { intents: [] } },
   ready: true,
   loading: false,
@@ -63,7 +71,7 @@ const updateStore = reactive<any>({
 function resetStores(): void {
   document.documentElement.classList.remove("dark");
   window.localStorage.clear();
-  configStore.backend = { isTauri: false };
+  configStore.backend = { isTauri: false, devtoolsToggle: vi.fn(async () => false) };
   configStore.doc = { preferences: { locale: "auto" }, global: { intents: [] } };
   configStore.ready = true;
   configStore.loading = false;
@@ -80,6 +88,10 @@ function resetStores(): void {
   updateStore.metadata = null;
   updateStore.dismissAutomaticPrompt.mockReset();
   updateStore.scheduleAutomaticCheck.mockReset();
+  appLog.debug.mockReset();
+  appLog.info.mockReset();
+  appLog.warn.mockReset();
+  appLog.error.mockReset();
   vi.mocked(useConfigStore).mockReturnValue(configStore);
   vi.mocked(useAccountStore).mockReturnValue(accountStore);
   vi.mocked(usePluginsStore).mockReturnValue(pluginsStore);
@@ -121,6 +133,45 @@ describe("desktop app shell", () => {
     await templates?.trigger("click");
 
     expect(templates?.classes()).toContain("app__nav-item--active");
+    wrapper.unmount();
+  });
+
+  it("toggles release DevTools with F12 and prevents the browser default", async () => {
+    const wrapper = await mountShell();
+    const event = new KeyboardEvent("keydown", {
+      key: "F12",
+      code: "F12",
+      cancelable: true,
+    });
+
+    window.dispatchEvent(event);
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(configStore.backend.devtoolsToggle).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("does not toggle DevTools for other keys", async () => {
+    const wrapper = await mountShell();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F11", code: "F11" }));
+    await flushPromises();
+
+    expect(configStore.backend.devtoolsToggle).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("logs actual navigation while ignoring repeated section selection", async () => {
+    const wrapper = await mountShell();
+    const gestures = wrapper.findAll(".app__aside .app__nav-item").find((item) => item.text() === "Gestures");
+    const templates = wrapper.findAll(".app__aside .app__nav-item").find((item) => item.text() === "Gesture Templates");
+
+    await gestures?.trigger("click");
+    await templates?.trigger("click");
+
+    expect(appLog.info).toHaveBeenCalledWith("ui.navigation", "from=gestures to=templates");
+    expect(appLog.info).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
 

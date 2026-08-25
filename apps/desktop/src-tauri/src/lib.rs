@@ -57,6 +57,17 @@ impl MachineRuntimeStatus {
 
 struct ConfigTransaction(parking_lot::Mutex<()>);
 
+#[tauri::command]
+fn devtools_toggle(window: tauri::WebviewWindow) -> Result<bool, String> {
+    if window.is_devtools_open() {
+        window.close_devtools();
+        Ok(false)
+    } else {
+        window.open_devtools();
+        Ok(true)
+    }
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 struct PauseHotkeyRegistration(parking_lot::Mutex<Option<String>>);
 
@@ -1915,6 +1926,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            devtools_toggle,
             config_get,
             config_set,
             node_plugins_get,

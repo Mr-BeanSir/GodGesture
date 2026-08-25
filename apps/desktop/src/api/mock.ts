@@ -519,6 +519,9 @@ export function createMockBackend(): Backend {
       handler({ event: "finished", data: { downloaded: 1024 } });
       pendingUpdate = null;
     },
+    async devtoolsToggle() {
+      return false;
+    },
     async openExternal(url) {
       window.open(url, "_blank", "noopener");
     },

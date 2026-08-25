@@ -42,6 +42,13 @@ describe("mock backend updater", () => {
   });
 });
 
+describe("mock backend DevTools", () => {
+  it("provides a no-op DevTools toggle in browser preview", async () => {
+    const backend = createMockBackend();
+    await expect(backend.devtoolsToggle()).resolves.toBe(false);
+  });
+});
+
 describe("mock backend Node plugin workspace", () => {
   it("returns filesystem projects and their declared lifecycles", async () => {
     const backend = createMockBackend();

@@ -265,6 +265,7 @@ export interface Backend {
   updateInstall(
     handler: (event: UpdateDownloadEvent) => void,
   ): Promise<void>;
+  devtoolsToggle(): Promise<boolean>;
 
   /** 系统浏览器打开外部链接 */
   openExternal(url: string): Promise<void>;
@@ -619,6 +620,10 @@ function createTauriBackend(): Backend {
       } catch (error) {
         throw normalizeBackendError(error);
       }
+    },
+    async devtoolsToggle() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<boolean>("devtools_toggle");
     },
     async openExternal(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
