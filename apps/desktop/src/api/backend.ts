@@ -19,6 +19,7 @@
  * - resolve_app_file(path): {exeName, exePath, appName, aumid, bundleId}
  * - app_icon(request): string | null             // base64 png
  * - gesture_template_save(fileName, contents, title): string | null
+ * - gesture_template_open(title): string | null
  * - download_template_text(url, resourceKind): string
  * - catalog_cache_get(kind): string | null
  * - catalog_cache_set(kind, contents): void
@@ -244,6 +245,8 @@ export interface Backend {
     contents: string,
     title: string,
   ): Promise<string | null>;
+  /** 打开系统文件面板并读取一个手势模板;取消时返回 null。 */
+  gestureTemplateOpen(title: string): Promise<string | null>;
   downloadTemplateText(
     url: string,
     resourceKind: TemplateResourceKind,
@@ -502,6 +505,13 @@ function createTauriBackend(): Backend {
           contents,
           title,
         });
+      } catch (error) {
+        throw normalizeBackendError(error);
+      }
+    },
+    async gestureTemplateOpen(title) {
+      try {
+        return await invokeCommand<string | null>("gesture_template_open", { title });
       } catch (error) {
         throw normalizeBackendError(error);
       }

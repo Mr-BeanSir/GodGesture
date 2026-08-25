@@ -1499,6 +1499,40 @@ async fn gesture_template_save(
     .map_err(|error| format!("save gesture template task failed: {error}"))?
 }
 
+#[tauri::command]
+async fn gesture_template_open(
+    app: tauri::AppHandle,
+    title: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title(title)
+            .add_filter("JSON", &["json"])
+            .blocking_pick_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|error| format!("resolve selected template path: {error}"))?;
+        let metadata = std::fs::metadata(&path)
+            .map_err(|error| format!("read gesture template metadata: {error}"))?;
+        if metadata.len() > 256 * 1024 {
+            return Err("gesture template content is too large".into());
+        }
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|error| format!("read gesture template: {error}"))?;
+        if contents.is_empty() {
+            return Err("gesture template content is empty".into());
+        }
+        Ok(Some(contents))
+    })
+    .await
+    .map_err(|error| format!("open gesture template task failed: {error}"))?
+}
+
 /// 托盘:暂停/继续 · 设置 · 退出(对齐 WGestures 托盘菜单)
 #[cfg(any(windows, target_os = "macos"))]
 fn setup_tray(app: &tauri::App, shared: Arc<EngineShared>, visible: bool) -> tauri::Result<()> {
@@ -1980,6 +2014,7 @@ pub fn run() {
             platform_request_permissions,
             platform_open_permission_settings,
             gesture_template_save,
+            gesture_template_open,
             template_download::download_template_text,
             template_download::catalog_cache_get,
             template_download::catalog_cache_set,

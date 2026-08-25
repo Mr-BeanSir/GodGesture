@@ -456,6 +456,9 @@ export function createMockBackend(): Backend {
     async gestureTemplateSave() {
       return null;
     },
+    async gestureTemplateOpen() {
+      return null;
+    },
     async downloadTemplateText() {
       throw new Error("Template downloads are unavailable in browser preview");
     },

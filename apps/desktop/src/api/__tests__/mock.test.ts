@@ -21,6 +21,12 @@ describe("mock backend application acquisition", () => {
     expect(unlisten).toBeTypeOf("function");
     expect(() => unlisten()).not.toThrow();
   });
+
+  it("cancels the local gesture-template picker in browser preview", async () => {
+    const backend = createMockBackend();
+
+    await expect(backend.gestureTemplateOpen("Open gesture template")).resolves.toBeNull();
+  });
 });
 
 describe("mock backend updater", () => {
