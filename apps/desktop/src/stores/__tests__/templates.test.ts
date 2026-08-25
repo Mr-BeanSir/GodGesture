@@ -171,6 +171,21 @@ describe("templates store", () => {
     expect(store.adopted).toBe(false);
   });
 
+  it("plans a validated local package through the same adoption context", () => {
+    const values = fixture();
+    const store = useTemplatesStore();
+
+    store.openLocalPackage(values.templatePackage);
+
+    expect(store.selectedEntry?.title).toBe(values.templatePackage.title);
+    expect(store.selectedPackage).toEqual(values.templatePackage);
+    expect(store.adoptionPlan?.stats).toEqual({
+      added: 1,
+      replaced: 0,
+      skipped: 0,
+    });
+  });
+
   it.skip("installs template plugins before committing the planned configuration", async () => {
     const values = fixture(true);
     slots.source = makeSource(values.catalog, values.templatePackage);

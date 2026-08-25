@@ -4,6 +4,7 @@ import {
   ConfigDocument,
   TemplateAdoptionError,
   planGestureTemplateAdoption,
+  gestureTemplatePackageRisks,
   type GestureTemplateCatalog,
   type GestureTemplateCatalogEntry,
   type GestureTemplatePackage,
@@ -180,6 +181,29 @@ export const useTemplatesStore = defineStore("templates", () => {
     }
   }
 
+  function openLocalPackage(templatePackage: GestureTemplatePackage) {
+    detailGeneration += 1;
+    const now = new Date().toISOString();
+    selectedEntry.value = {
+      id: newId(),
+      versionNumber: 1,
+      title: templatePackage.title,
+      summary: templatePackage.summary,
+      author: templatePackage.author,
+      tags: [...templatePackage.tags],
+      risks: gestureTemplatePackageRisks(templatePackage),
+      downloadCount: 0,
+      publishedAt: now,
+      updatedAt: now,
+    };
+    selectedPackage.value = structuredClone(templatePackage);
+    loadingPackage.value = false;
+    packageError.value = null;
+    adoptionError.value = null;
+    adopted.value = false;
+    buildPlan();
+  }
+
   function closeDetails() {
     detailGeneration += 1;
     selectedEntry.value = null;
@@ -244,6 +268,7 @@ export const useTemplatesStore = defineStore("templates", () => {
     adopted,
     loadCatalog,
     openDetails,
+    openLocalPackage,
     closeDetails,
     setConflictPolicy,
     buildPlan,
