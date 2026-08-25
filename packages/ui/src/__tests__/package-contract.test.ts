@@ -11,6 +11,7 @@ describe("shared UI package contract", () => {
     expect(ui).toHaveProperty("AppMessage");
     expect(ui).toHaveProperty("AppMessageViewport");
     expect(ui).toHaveProperty("AppDialog");
+    expect(ui).toHaveProperty("AppChoiceDialog");
     expect(ui).toHaveProperty("AppCollapsiblePanel");
     expect(ui).toHaveProperty("AppEmptyState");
     expect(ui).toHaveProperty("AppSpinner");

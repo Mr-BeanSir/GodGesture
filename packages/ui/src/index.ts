@@ -3,6 +3,7 @@ export { default as AppBadge } from "./components/AppBadge.vue";
 export { default as AppButton } from "./components/AppButton.vue";
 export { default as AppCollapsiblePanel } from "./components/AppCollapsiblePanel.vue";
 export { default as AppDialog } from "./components/AppDialog.vue";
+export { default as AppChoiceDialog } from "./components/AppChoiceDialog.vue";
 export { default as AppEmptyState } from "./components/AppEmptyState.vue";
 export { default as AppMessage } from "./components/AppMessage.vue";
 export { default as AppMessageViewport } from "./components/AppMessageViewport.vue";
