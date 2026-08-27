@@ -32,6 +32,16 @@ impl MouseButton {
         }
     }
 
+    /// Returns whether this button is enabled as a gesture trigger.
+    ///
+    /// Ordinary and boundary admissions must use the same trigger contract:
+    /// non-trigger buttons may only be consumed after a capture already owns
+    /// the input.
+    pub fn is_configured_trigger(self, trigger_buttons: &[TriggerButton]) -> bool {
+        self.as_trigger()
+            .is_some_and(|trigger| trigger_buttons.contains(&trigger))
+    }
+
     fn as_modifier(self) -> Modifier {
         match self {
             MouseButton::Left => Modifier::LeftButtonDown,
@@ -274,7 +284,7 @@ impl PathTracker {
                 let Some(trigger) = btn.as_trigger() else {
                     return Outcome::pass();
                 };
-                if !self.params.trigger_buttons.contains(&trigger) {
+                if !btn.is_configured_trigger(&self.params.trigger_buttons) {
                     return Outcome::pass();
                 }
                 if !host.is_gesturing_allowed(pos) {

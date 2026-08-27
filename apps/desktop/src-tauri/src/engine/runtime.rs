@@ -698,36 +698,37 @@ impl EngineShared {
         self.try_activate_boundary_input(input, now)
     }
 
-    /// 边角捕获只在首个按钮/滚轮输入到来时按当前位置进入;无匹配候选时也保留视觉捕获,
-    /// 移动本身不再武装它,且不会让 PathTracker 接管。
+    /// 边角捕获只在已启用的触发键首个按下事件到来时按当前位置进入;无匹配候选时也保留
+    /// 视觉捕获,移动和滚轮本身不再武装它,且不会让 PathTracker 接管。
     fn try_activate_boundary_input(&self, input: &Input, now: Instant) -> InputRoute {
-        let (pos, token, replay) = match input {
-            Input::ButtonDown(button, pos) => (
-                *pos,
-                BoundaryToken::Button {
-                    button: boundary_button(*button),
-                },
-                Some(BoundaryReplay::Click {
-                    button: *button,
-                    pos: *pos,
-                }),
-            ),
-            Input::Wheel { forward, pos } => (
-                *pos,
-                BoundaryToken::Wheel {
-                    direction: if *forward {
-                        BoundaryWheelDirection::Forward
-                    } else {
-                        BoundaryWheelDirection::Backward
-                    },
-                },
-                Some(BoundaryReplay::Wheel { forward: *forward }),
-            ),
+        let (button, pos) = match input {
+            Input::ButtonDown(button, pos) => (*button, *pos),
             _ => return InputRoute::Continue,
         };
         if self.is_paused() || self.is_recording() || self.tracker.lock().is_capturing() {
             return InputRoute::Continue;
         }
+        let trigger_buttons = {
+            let finder = self.finder.lock();
+            finder
+                .config()
+                .preferences
+                .path_tracker
+                .trigger_buttons
+                .clone()
+        };
+        if !button.is_configured_trigger(&trigger_buttons) {
+            log::debug!(
+                target: "gesture.boundary",
+                "event=boundary_activation_rejected button={:?} reason=not_configured_trigger",
+                button
+            );
+            return InputRoute::Continue;
+        }
+        let token = BoundaryToken::Button {
+            button: boundary_button(button),
+        };
+        let replay = Some(BoundaryReplay::Click { button, pos });
         let disable_in_fullscreen = self
             .finder
             .lock()
@@ -1985,6 +1986,9 @@ mod tests {
                 corner: "leftTop".into(),
             },
             sequence: vec![
+                BoundaryToken::Button {
+                    button: BoundaryMouseButton::Right,
+                },
                 BoundaryToken::Wheel {
                     direction: BoundaryWheelDirection::Forward,
                 },
@@ -1998,6 +2002,10 @@ mod tests {
         let (shared, rx) = EngineShared::new(config, Arc::new(BoundaryPlatform::default()));
         shared.on_hook_event(Input::Move(Point { x: 0, y: 0 }));
 
+        assert!(shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Right,
+            Point { x: 50, y: 50 },
+        )));
         assert!(shared.on_hook_event(Input::Wheel {
             forward: true,
             pos: Point { x: 50, y: 50 },
@@ -2103,11 +2111,16 @@ mod tests {
     }
 
     #[test]
-    fn rub_edge_sequence_waits_for_input_after_pointer_enters_the_edge_band() {
+    fn rub_edge_sequence_waits_for_trigger_and_input_after_pointer_enters_the_edge_band() {
         let platform = Arc::new(BoundaryPlatform::default());
-        let mut config = boundary_config(vec![BoundaryToken::Wheel {
-            direction: BoundaryWheelDirection::Forward,
-        }]);
+        let mut config = boundary_config(vec![
+            BoundaryToken::Button {
+                button: BoundaryMouseButton::Right,
+            },
+            BoundaryToken::Wheel {
+                direction: BoundaryWheelDirection::Forward,
+            },
+        ]);
         config.boundary_intents[0].origin = BoundaryOrigin::RubEdge {
             edge: "bottom".into(),
         };
@@ -2117,10 +2130,18 @@ mod tests {
         assert!(!rx
             .try_iter()
             .any(|message| matches!(message, EngineMsg::BoundaryPathStarted { .. })));
+        assert!(shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(shared.on_hook_event(Input::Wheel {
             forward: true,
             pos: Point { x: 960, y: 1079 },
         }));
+        assert!(shared.on_hook_event(Input::ButtonUp(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(rx.try_iter().any(|message| matches!(
             message,
             EngineMsg::CornerEdgeFired {
@@ -2131,20 +2152,33 @@ mod tests {
     }
 
     #[test]
-    fn rub_edge_wheel_rearms_from_the_current_pointer_position() {
+    fn rub_edge_wheel_sequence_starts_from_the_current_pointer_position_after_trigger() {
         let platform = Arc::new(BoundaryPlatform::default());
-        let mut config = boundary_config(vec![BoundaryToken::Wheel {
-            direction: BoundaryWheelDirection::Forward,
-        }]);
+        let mut config = boundary_config(vec![
+            BoundaryToken::Button {
+                button: BoundaryMouseButton::Right,
+            },
+            BoundaryToken::Wheel {
+                direction: BoundaryWheelDirection::Forward,
+            },
+        ]);
         config.boundary_intents[0].origin = BoundaryOrigin::RubEdge {
             edge: "bottom".into(),
         };
         let (shared, rx) = EngineShared::new(config, platform);
 
+        assert!(shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(shared.on_hook_event(Input::Wheel {
             forward: true,
             pos: Point { x: 960, y: 1079 },
         }));
+        assert!(shared.on_hook_event(Input::ButtonUp(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(rx.try_iter().any(|message| matches!(
             message,
             EngineMsg::CornerEdgeFired {
@@ -2177,9 +2211,14 @@ mod tests {
                     origin: BoundaryOrigin::RubEdge {
                         edge: "bottom".into(),
                     },
-                    sequence: vec![BoundaryToken::Wheel {
-                        direction: BoundaryWheelDirection::Forward,
-                    }],
+                    sequence: vec![
+                        BoundaryToken::Button {
+                            button: BoundaryMouseButton::Right,
+                        },
+                        BoundaryToken::Wheel {
+                            direction: BoundaryWheelDirection::Forward,
+                        },
+                    ],
                     command: Command::DoNothing,
                     order: 1,
                 },
@@ -2189,10 +2228,18 @@ mod tests {
         let (shared, rx) = EngineShared::new(config, platform);
 
         assert!(!shared.on_hook_event(Input::Move(Point { x: 960, y: 1079 })));
+        assert!(shared.on_hook_event(Input::ButtonDown(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(shared.on_hook_event(Input::Wheel {
             forward: true,
             pos: Point { x: 960, y: 1079 },
         }));
+        assert!(shared.on_hook_event(Input::ButtonUp(
+            MouseButton::Right,
+            Point { x: 960, y: 1079 },
+        )));
         assert!(rx.try_iter().any(|message| matches!(
             message,
             EngineMsg::CornerEdgeFired { intent_id, .. }
@@ -2571,6 +2618,59 @@ mod tests {
             MouseButton::Right,
             Point { x: 1080, y: 500 },
         )));
+        assert!(!rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryPathStarted { .. })));
+    }
+
+    #[test]
+    fn left_button_cannot_start_boundary_capture_at_a_corner() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let config = boundary_config(vec![BoundaryToken::Button {
+            button: BoundaryMouseButton::Left,
+        }]);
+        let (shared, rx) = EngineShared::new(config, platform);
+        let corner = Point { x: 1, y: 1 };
+
+        assert!(!shared.on_hook_event(Input::ButtonDown(MouseButton::Left, corner)));
+        assert!(!shared.on_hook_event(Input::Move(Point { x: 120, y: 1 })));
+        assert!(!shared.on_hook_event(Input::ButtonUp(MouseButton::Left, Point { x: 120, y: 1 },)));
+        assert!(!rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryPathStarted { .. })));
+    }
+
+    #[test]
+    fn wheel_cannot_start_boundary_capture_at_a_corner() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let config = boundary_config(vec![BoundaryToken::Wheel {
+            direction: BoundaryWheelDirection::Forward,
+        }]);
+        let (shared, rx) = EngineShared::new(config, platform);
+        let corner = Point { x: 1, y: 1 };
+
+        assert!(!shared.on_hook_event(Input::Wheel {
+            forward: true,
+            pos: corner,
+        }));
+        assert!(!shared.boundary.lock().is_active());
+        assert!(!rx
+            .try_iter()
+            .any(|message| matches!(message, EngineMsg::BoundaryPathStarted { .. })));
+    }
+
+    #[test]
+    fn boundary_admission_reuses_the_configured_trigger_button_list() {
+        let platform = Arc::new(BoundaryPlatform::default());
+        let mut config = boundary_config(vec![BoundaryToken::Button {
+            button: BoundaryMouseButton::Right,
+        }]);
+        config.preferences.path_tracker.trigger_buttons = vec![TriggerButton::Middle];
+        let (shared, rx) = EngineShared::new(config, platform);
+        let corner = Point { x: 1, y: 1 };
+
+        assert!(!shared.on_hook_event(Input::ButtonDown(MouseButton::Right, corner)));
+        assert!(!shared.boundary.lock().is_active());
         assert!(!rx
             .try_iter()
             .any(|message| matches!(message, EngineMsg::BoundaryPathStarted { .. })));

@@ -1,6 +1,6 @@
 # GodGesture 当前项目状态
 
-最后核对：2026-08-25。本文是当前实现的唯一状态入口；术语以
+最后核对：2026-08-27。本文是当前实现的唯一状态入口；术语以
 [`CONTEXT.md`](../CONTEXT.md) 为准，协作规则以 [`AGENTS.md`](../AGENTS.md) 为准，架构理由按
 [`docs/adr/README.md`](adr/README.md) 路由。本文不保存逐日开发流水；历史与发布审计按需读取
 [`docs/CHANGELOG.md`](CHANGELOG.md) 和 [`docs/history/`](history/)。
@@ -14,6 +14,8 @@
 真实 Windows/macOS 原生窗口与输入验收、live OAuth/SMTP、RustFS 生产连接和生产部署仍按“已知边界”保持 pending。
 
 Desktop 手势页现已将“导入/导出”与“分组/应用”分别收敛为可键盘操作的选择卡片入口：导出继续进入既有“选择交付方式”，本地导入通过 Tauri JSON 文件选择器解析后复用模板 store 的冲突计划、风险确认、插件安装和原子采纳流程；分组/应用卡片直接打开既有添加应用或添加分组窗口。Windows 与 macOS 共用同一 Vue、shared 协议和 Backend contract，不新增数据库字段或 migration；真实双平台文件选择器和导入现场仍需设备验收。
+
+2026-08-27 已修复边缘/近角区域绕过普通触发键校验的问题：普通 `PathTracker` 与边角 `BoundaryMatcher` 准入共用 `MouseButton::is_configured_trigger`；只有当前配置启用的触发键按下才能建立边角捕获，左键和滚轮不会单独创建轨迹或消费输入，但仍可作为已建立捕获的后续步骤。对应回归测试覆盖左键首发、滚轮首发和自定义触发键列表；Rust 引擎测试已通过，Windows/macOS 原生设备现场验收仍 pending。
 
 边角显示引导已接入 v8 同步配置、Desktop 设置、共享 Rust 几何查询和 Windows/macOS 原生覆盖层路径：引导显示当前
 显示器实际启用的四角与四边区域，即使没有配置对应边角动作；角显示为 display-only 的固定 10px 半径四分之一圆，
@@ -90,9 +92,9 @@ endpoint；macOS 在同一次 `osascript` 中设置并读取 `output volume`/`ou
 
 ### 输入与覆盖层
 
-- 普通手势和边角序列共用 `engine/capture.rs` 的 `GestureCapture`、有序匹配、消费记录和主释放键语义；`PathTracker` 负责普通准入，`BoundaryMatcher` 负责边角候选；边缘或近角区域一旦命中即归属边角路由，即使首 token 没有匹配候选也进入视觉捕获、显示轨迹并阻止 `PathTracker` 接管；无方向笔画的取消才重放原生输入，形成轨迹后按 `PathTracker` 语义吞掉主键释放且不 replay；架构理由见 ADR-0013。
+- 普通手势和边角序列共用 `engine/capture.rs` 的 `GestureCapture`、有序匹配、消费记录和主释放键语义；`PathTracker` 负责普通准入，`BoundaryMatcher` 负责边角候选；普通与边角准入共用 `MouseButton::is_configured_trigger`，边缘或近角区域只有已启用触发键按下才会归属边角路由，即使首 token 没有匹配候选也进入视觉捕获、显示轨迹并阻止 `PathTracker` 接管；滚轮和左键只能作为已建立捕获的后续步骤；无方向笔画的取消才重放原生输入，形成轨迹后按 `PathTracker` 语义吞掉主键释放且不 replay；架构理由见 ADR-0013。
 - 普通手势支持方向、鼠标按钮、滚轮和键盘 `KeyboardEvent.code`；独立修饰符在没有更长有序前缀时触发，可重复且不追加基础序列。
-- 边角非空序列由首个按钮/滚轮准入；有匹配候选时进入序列匹配，无匹配时保留视觉捕获但不执行意图，光标移动不会单独武装；形成方向轨迹后的主键释放不触发原生点击；精确角点保留给空序列立即动作。
+- 边角非空序列由已启用触发键的首个按钮准入；有匹配候选时进入序列匹配，无匹配时保留视觉捕获但不执行意图，光标移动、滚轮或左键都不会单独武装；滚轮和左键可作为已建立捕获的后续步骤。形成方向轨迹后的主键释放不触发原生点击；精确角点保留给空序列立即动作。
 - 轨迹和命令提示由原生覆盖层绘制，不能迁移到 WebView。Windows 使用低级钩子与 Raw Input 兜底，macOS 使用 CGEventTap。
 - 边角显示引导为 display-only：角的真实视觉区域仍是固定 10px quarter-circle，边的真实视觉区域仍是实际 DPI-scaled edge band；真实区域内 alpha 为 100%，只有向屏幕内部越过真实区域内边界后才渐隐，角渐隐带为 10..20px，边渐隐带为一个等厚 fade band，超出不显示。该 alpha 语义不改变真实角/边命中区域、状态机或输入路径。
 - Windows/macOS 原生 overlay 的 `End` 和 `Cancel` 立即清理 live trail points、render/cache/show path；`trail_fade_surface` 及等价的 snapshot capture/restore/composition/专用淡出机制已删除。`SetBoundaryGuide` 只更新引导，不承担清理旧轨迹。
